@@ -5,10 +5,10 @@
 import { createClient } from '@supabase/supabase-js'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_KEY
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
-  throw new Error('[SB] .env dosyasında VITE_SUPABASE_URL ve VITE_SUPABASE_KEY tanımlanmalıdır.')
+  throw new Error('[SB] .env dosyasında VITE_SUPABASE_URL ve VITE_SUPABASE_PUBLISHABLE_KEY tanımlanmalıdır.')
 }
 
 export const _sb = createClient(SUPABASE_URL, SUPABASE_KEY)

@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 
 const SUPABASE_URL = 'https://pkvcpoerpuskpxtkyjjn.supabase.co';
-const SUPABASE_KEY = 'BURAYA_KENDİ_PUBLISHABLE_KEYİM';
+const SUPABASE_KEY = 'sb_publishable_VpmbKlxoHBAjh1My04RdkQ_hsg80VD9';
 
 const _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
