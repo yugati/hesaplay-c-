@@ -105,10 +105,64 @@ import {
   sbUpsertProjeMaterials,
   sbUpsertProjeSpecs,
   sbUpsertProjeItems,
+  sbGetProjeAlternatives,
+  sbInsertProjeAlternative,
+  sbUpdateProjeAlternative,
+  sbDeleteProjeAlternative,
 } from './supabase.js'
 
 // xlsx global
 window.XLSX = XLSX
+
+// Supabase hataları için güvenli sarmalayıcı:
+// fn hata fırlatsa bile çağıran kod devam eder (closeModal/render/toast çalışır).
+// Hata görünür bir toast olarak gösterilir.
+function safe(fn) {
+  return async function (...args) {
+    try {
+      return await fn.apply(this, args)
+    } catch (e) {
+      const msg = e?.message || e?.code || 'Bağlantı sorunu'
+      console.error('Supabase hatası:', msg, e)
+      if (typeof window !== 'undefined' && window.toast) {
+        window.toast('⚠ Supabase: ' + msg, 'err')
+      }
+    }
+  }
+}
+
+// ─── Backend Yetki Kontrolü ───────────────────────────────────────────────────
+// window.CURRENT_USER üzerinden çalışır; frontend izin sistemiyle senkron.
+function _permCheck(module, action) {
+  const user = window.CURRENT_USER
+  if (!user) throw new Error('Oturum açılmamış')
+  if (user.role === 'admin') return
+  // izleyici ve eski roller (sef, saha, viewer) yalnızca okuyabilir
+  if (user.role !== 'saha_personeli') {
+    throw new Error(`${module} modülünde yazma yetkisi yok`)
+  }
+  // saha_personeli: permissions JSONB'den kontrol et
+  const perms = (user.permissions && user.permissions[module]) || {}
+  if (!perms[action]) {
+    const actionLabel = { create: 'Ekleme', update: 'Düzenleme', delete: 'Silme' }[action] || action
+    throw new Error(`${module} modülünde ${actionLabel} yetkisi yok`)
+  }
+}
+
+function guardedSafe(module, action, fn) {
+  return async function (...args) {
+    try {
+      _permCheck(module, action)
+      return await fn.apply(this, args)
+    } catch (e) {
+      const msg = e?.message || e?.code || 'Yetki/bağlantı sorunu'
+      console.error('Yetki/Supabase hatası:', msg, e)
+      if (typeof window !== 'undefined' && window.toast) {
+        window.toast('⚠ ' + msg, 'err')
+      }
+    }
+  }
+}
 
 // ─── Users ───────────────────────────────────────────────────────────────────
 window.sbLoginUser         = sbLoginUser
@@ -132,88 +186,94 @@ window.sbGetAuditLog       = sbGetAuditLog
 
 // ─── Alet ────────────────────────────────────────────────────────────────────
 window.sbGetAletItems      = sbGetAletItems
-window.sbInsertAletItem    = sbInsertAletItem
-window.sbInsertAletItems   = sbInsertAletItems
-window.sbUpdateAletItem    = sbUpdateAletItem
-window.sbDeleteAletItem    = sbDeleteAletItem
+window.sbInsertAletItem    = guardedSafe('alet', 'create', sbInsertAletItem)
+window.sbInsertAletItems   = guardedSafe('alet', 'create', sbInsertAletItems)
+window.sbUpdateAletItem    = guardedSafe('alet', 'update', sbUpdateAletItem)
+window.sbDeleteAletItem    = guardedSafe('alet', 'delete', sbDeleteAletItem)
 
 // ─── Saha ────────────────────────────────────────────────────────────────────
 window.sbGetSahaPanels     = sbGetSahaPanels
-window.sbInsertSahaPanel   = sbInsertSahaPanel
-window.sbUpdateSahaPanel   = sbUpdateSahaPanel
-window.sbDeleteSahaPanel   = sbDeleteSahaPanel
+window.sbInsertSahaPanel   = guardedSafe('saha', 'create', sbInsertSahaPanel)
+window.sbUpdateSahaPanel   = guardedSafe('saha', 'update', sbUpdateSahaPanel)
+window.sbDeleteSahaPanel   = guardedSafe('saha', 'delete', sbDeleteSahaPanel)
 window.sbGetSahaLines      = sbGetSahaLines
-window.sbInsertSahaLine    = sbInsertSahaLine
-window.sbDeleteSahaLine    = sbDeleteSahaLine
+window.sbInsertSahaLine    = guardedSafe('saha', 'create', sbInsertSahaLine)
+window.sbDeleteSahaLine    = guardedSafe('saha', 'delete', sbDeleteSahaLine)
 window.sbGetSahaSockets    = sbGetSahaSockets
-window.sbInsertSahaSocket  = sbInsertSahaSocket
-window.sbUpdateSahaSocket  = sbUpdateSahaSocket
-window.sbDeleteSahaSocket  = sbDeleteSahaSocket
+window.sbInsertSahaSocket  = guardedSafe('saha', 'create', sbInsertSahaSocket)
+window.sbUpdateSahaSocket  = guardedSafe('saha', 'update', sbUpdateSahaSocket)
+window.sbDeleteSahaSocket  = guardedSafe('saha', 'delete', sbDeleteSahaSocket)
 window.sbGetAllSahaSettings = sbGetAllSahaSettings
-window.sbSetSahaSetting    = sbSetSahaSetting
+window.sbSetSahaSetting    = guardedSafe('saha', 'update', sbSetSahaSetting)
 
 // ─── Rapor ───────────────────────────────────────────────────────────────────
 window.sbGetRaporEntries          = sbGetRaporEntries
-window.sbInsertRaporEntry         = sbInsertRaporEntry
-window.sbInsertRaporEntries       = sbInsertRaporEntries
-window.sbDeleteRaporEntry         = sbDeleteRaporEntry
-window.sbDeleteRaporEntriesByIds  = sbDeleteRaporEntriesByIds
+window.sbInsertRaporEntry         = guardedSafe('rapor', 'create', sbInsertRaporEntry)
+window.sbInsertRaporEntries       = guardedSafe('rapor', 'create', sbInsertRaporEntries)
+window.sbDeleteRaporEntry         = guardedSafe('rapor', 'delete', sbDeleteRaporEntry)
+window.sbDeleteRaporEntriesByIds  = guardedSafe('rapor', 'delete', sbDeleteRaporEntriesByIds)
 window.sbGetRaporEkipler          = sbGetRaporEkipler
-window.sbInsertRaporEkip          = sbInsertRaporEkip
-window.sbInsertRaporEkipler       = sbInsertRaporEkipler
+window.sbInsertRaporEkip          = guardedSafe('rapor', 'create', sbInsertRaporEkip)
+window.sbInsertRaporEkipler       = guardedSafe('rapor', 'create', sbInsertRaporEkipler)
 
 // ─── Gecici ──────────────────────────────────────────────────────────────────
 window.sbGetGeciciLib          = sbGetGeciciLib
-window.sbInsertGeciciLibItem   = sbInsertGeciciLibItem
-window.sbInsertGeciciLibItems  = sbInsertGeciciLibItems
-window.sbUpdateGeciciLibItem   = sbUpdateGeciciLibItem
-window.sbDeleteGeciciLibItem   = sbDeleteGeciciLibItem
+window.sbInsertGeciciLibItem   = guardedSafe('gecici', 'create', sbInsertGeciciLibItem)
+window.sbInsertGeciciLibItems  = guardedSafe('gecici', 'create', sbInsertGeciciLibItems)
+window.sbUpdateGeciciLibItem   = guardedSafe('gecici', 'update', sbUpdateGeciciLibItem)
+window.sbDeleteGeciciLibItem   = guardedSafe('gecici', 'delete', sbDeleteGeciciLibItem)
 window.sbGetGeciciMoves        = sbGetGeciciMoves
-window.sbInsertGeciciMove      = sbInsertGeciciMove
-window.sbInsertGeciciMoves     = sbInsertGeciciMoves
-window.sbDeleteGeciciMove      = sbDeleteGeciciMove
-window.sbDeleteGeciciMovesByIds = sbDeleteGeciciMovesByIds
+window.sbInsertGeciciMove      = guardedSafe('gecici', 'create', sbInsertGeciciMove)
+window.sbInsertGeciciMoves     = guardedSafe('gecici', 'create', sbInsertGeciciMoves)
+window.sbDeleteGeciciMove      = guardedSafe('gecici', 'delete', sbDeleteGeciciMove)
+window.sbDeleteGeciciMovesByIds = guardedSafe('gecici', 'delete', sbDeleteGeciciMovesByIds)
 window.sbGetGeciciOrders       = sbGetGeciciOrders
-window.sbInsertGeciciOrder     = sbInsertGeciciOrder
-window.sbInsertGeciciOrders    = sbInsertGeciciOrders
-window.sbDeleteGeciciOrder     = sbDeleteGeciciOrder
+window.sbInsertGeciciOrder     = guardedSafe('gecici', 'create', sbInsertGeciciOrder)
+window.sbInsertGeciciOrders    = guardedSafe('gecici', 'create', sbInsertGeciciOrders)
+window.sbDeleteGeciciOrder     = guardedSafe('gecici', 'delete', sbDeleteGeciciOrder)
 
 // ─── Proje ───────────────────────────────────────────────────────────────────
 window.sbGetProjeBuildings     = sbGetProjeBuildings
-window.sbInsertProjeBuilding   = sbInsertProjeBuilding
-window.sbInsertProjeBuildings  = sbInsertProjeBuildings
-window.sbDeleteProjeBuilding   = sbDeleteProjeBuilding
+window.sbInsertProjeBuilding   = guardedSafe('tanimlar', 'create', sbInsertProjeBuilding)
+window.sbInsertProjeBuildings  = guardedSafe('tanimlar', 'create', sbInsertProjeBuildings)
+window.sbDeleteProjeBuilding   = guardedSafe('tanimlar', 'delete', sbDeleteProjeBuilding)
 window.sbGetProjeSections      = sbGetProjeSections
-window.sbInsertProjeSection    = sbInsertProjeSection
-window.sbInsertProjeSections   = sbInsertProjeSections
-window.sbDeleteProjeSection    = sbDeleteProjeSection
+window.sbInsertProjeSection    = guardedSafe('tanimlar', 'create', sbInsertProjeSection)
+window.sbInsertProjeSections   = guardedSafe('tanimlar', 'create', sbInsertProjeSections)
+window.sbDeleteProjeSection    = guardedSafe('tanimlar', 'delete', sbDeleteProjeSection)
 window.sbGetProjeSartnames     = sbGetProjeSartnames
-window.sbInsertProjeSartname   = sbInsertProjeSartname
-window.sbInsertProjeSartnames  = sbInsertProjeSartnames
-window.sbUpdateProjeSartname   = sbUpdateProjeSartname
-window.sbDeleteProjeSartname   = sbDeleteProjeSartname
+window.sbInsertProjeSartname   = guardedSafe('tanimlar', 'create', sbInsertProjeSartname)
+window.sbInsertProjeSartnames  = guardedSafe('tanimlar', 'create', sbInsertProjeSartnames)
+window.sbUpdateProjeSartname   = guardedSafe('tanimlar', 'update', sbUpdateProjeSartname)
+window.sbDeleteProjeSartname   = guardedSafe('tanimlar', 'delete', sbDeleteProjeSartname)
 window.sbGetProjeMaterials     = sbGetProjeMaterials
-window.sbInsertProjeMaterial   = sbInsertProjeMaterial
-window.sbInsertProjeMaterials  = sbInsertProjeMaterials
-window.sbUpdateProjeMaterial   = sbUpdateProjeMaterial
-window.sbDeleteProjeMaterial   = sbDeleteProjeMaterial
-window.sbDeleteProjeMaterials  = sbDeleteProjeMaterials
+window.sbInsertProjeMaterial   = guardedSafe('kutuphane', 'create', sbInsertProjeMaterial)
+window.sbInsertProjeMaterials  = guardedSafe('kutuphane', 'create', sbInsertProjeMaterials)
+window.sbUpdateProjeMaterial   = guardedSafe('kutuphane', 'update', sbUpdateProjeMaterial)
+window.sbDeleteProjeMaterial   = guardedSafe('kutuphane', 'delete', sbDeleteProjeMaterial)
+window.sbDeleteProjeMaterials  = guardedSafe('kutuphane', 'delete', sbDeleteProjeMaterials)
 window.sbGetProjeSpecs         = sbGetProjeSpecs
-window.sbInsertProjeSpec       = sbInsertProjeSpec
-window.sbInsertProjeSpecs      = sbInsertProjeSpecs
-window.sbUpdateProjeSpec       = sbUpdateProjeSpec
-window.sbDeleteProjeSpec       = sbDeleteProjeSpec
-window.sbDeleteProjeSpecs      = sbDeleteProjeSpecs
+window.sbInsertProjeSpec       = guardedSafe('proje', 'create', sbInsertProjeSpec)
+window.sbInsertProjeSpecs      = guardedSafe('proje', 'create', sbInsertProjeSpecs)
+window.sbUpdateProjeSpec       = guardedSafe('proje', 'update', sbUpdateProjeSpec)
+window.sbDeleteProjeSpec       = guardedSafe('proje', 'delete', sbDeleteProjeSpec)
+window.sbDeleteProjeSpecs      = guardedSafe('proje', 'delete', sbDeleteProjeSpecs)
 window.sbGetProjeItems         = sbGetProjeItems
-window.sbInsertProjeItem       = sbInsertProjeItem
-window.sbInsertProjeItems      = sbInsertProjeItems
-window.sbUpdateProjeItem       = sbUpdateProjeItem
-window.sbDeleteProjeItem       = sbDeleteProjeItem
-window.sbDeleteProjeItems      = sbDeleteProjeItems
+window.sbInsertProjeItem       = guardedSafe('proje', 'create', sbInsertProjeItem)
+window.sbInsertProjeItems      = guardedSafe('proje', 'create', sbInsertProjeItems)
+window.sbUpdateProjeItem       = guardedSafe('proje', 'update', sbUpdateProjeItem)
+window.sbDeleteProjeItem       = guardedSafe('proje', 'delete', sbDeleteProjeItem)
+window.sbDeleteProjeItems      = guardedSafe('proje', 'delete', sbDeleteProjeItems)
 window.sbGetProjeOrders        = sbGetProjeOrders
-window.sbInsertProjeOrder      = sbInsertProjeOrder
-window.sbInsertProjeOrders     = sbInsertProjeOrders
-window.sbDeleteProjeOrder      = sbDeleteProjeOrder
-window.sbUpsertProjeMaterials  = sbUpsertProjeMaterials
-window.sbUpsertProjeSpecs      = sbUpsertProjeSpecs
-window.sbUpsertProjeItems      = sbUpsertProjeItems
+window.sbInsertProjeOrder      = guardedSafe('proje', 'create', sbInsertProjeOrder)
+window.sbInsertProjeOrders     = guardedSafe('proje', 'create', sbInsertProjeOrders)
+window.sbDeleteProjeOrder      = guardedSafe('proje', 'delete', sbDeleteProjeOrder)
+window.sbUpsertProjeMaterials  = guardedSafe('kutuphane', 'update', sbUpsertProjeMaterials)
+window.sbUpsertProjeSpecs      = guardedSafe('proje', 'update', sbUpsertProjeSpecs)
+window.sbUpsertProjeItems      = guardedSafe('proje', 'update', sbUpsertProjeItems)
+
+// ─── Alternatif Ürün ─────────────────────────────────────────────────────────
+window.sbGetProjeAlternatives    = sbGetProjeAlternatives
+window.sbInsertProjeAlternative  = guardedSafe('proje', 'create', sbInsertProjeAlternative)
+window.sbUpdateProjeAlternative  = guardedSafe('proje', 'update', sbUpdateProjeAlternative)
+window.sbDeleteProjeAlternative  = guardedSafe('proje', 'delete', sbDeleteProjeAlternative)

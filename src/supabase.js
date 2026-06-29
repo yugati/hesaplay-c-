@@ -69,21 +69,23 @@ export async function sbGetAllUsers() {
   )
 }
 
-export async function sbCreateUser({ username, password, role, sections, buildings }) {
+export async function sbCreateUser({ username, password, role, sections, buildings, permissions }) {
   return usersQuery(
     supabase
       .from('users')
-      .insert([{ username, password, role, sections, buildings }])
+      .insert([{ username, password, role, sections, buildings, permissions: permissions || {} }])
       .select()
       .single()
   )
 }
 
-export async function sbUpdateUser(id, { password, role, sections, buildings }) {
+export async function sbUpdateUser(id, { password, role, sections, buildings, permissions }) {
+  const update = { password, role, sections, buildings }
+  if (permissions !== undefined) update.permissions = permissions
   return usersQuery(
     supabase
       .from('users')
-      .update({ password, role, sections, buildings })
+      .update(update)
       .eq('id', id)
       .select()
       .single()
@@ -360,6 +362,15 @@ export async function sbInsertProjeOrders(items) { return sbInsertEntities('proj
 export async function sbDeleteProjeOrder(id) { return sbDeleteEntity('proje_orders', id) }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Alternatif Ürün modülü
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function sbGetProjeAlternatives() { return sbGetAll('proje_alternatives') }
+export async function sbInsertProjeAlternative(e) { return sbInsertEntity('proje_alternatives', e) }
+export async function sbUpdateProjeAlternative(id, e) { return sbUpdateEntity('proje_alternatives', id, e) }
+export async function sbDeleteProjeAlternative(id) { return sbDeleteEntity('proje_alternatives', id) }
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Upsert (import / sync sonrası toplu güncelleme)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -408,6 +419,7 @@ export async function sbLoadAllData() {
     geciciLib, geciciMoves, geciciOrders,
     projeBuildingsRes, projeSectionsRes, projeSartnames,
     projeMaterials, projeSpecs, projeItems, projeOrders,
+    projeAlternatives,
     auditRes, settingsRes,
   ] = await Promise.all([
     sbGetAll('alet_items'),
@@ -427,6 +439,7 @@ export async function sbLoadAllData() {
     sbGetAll('proje_specs'),
     sbGetAll('proje_items'),
     sbGetAll('proje_orders'),
+    sbGetAll('proje_alternatives'),
     supabase.from('audit_log').select('data').order('created_at', { ascending: true }).limit(2000),
     supabase.from('app_settings').select('key, value'),
   ])
@@ -473,6 +486,7 @@ export async function sbLoadAllData() {
       specs: projeSpecs,
       items: projeItems,
       orders: projeOrders,
+      alternatives: projeAlternatives,
     },
     meta: {
       created: settingsMap.created || Date.now(),
