@@ -17,6 +17,10 @@ import {
   sbMigrateLocalDB,
   sbWipeAllData,
   sbWipeProjeData,
+  sbWipeAletData,
+  sbWipeSahaData,
+  sbWipeGeciciData,
+  sbWipeRaporData,
   // Settings & Audit
   sbGetSetting,
   sbSetSetting,
@@ -177,6 +181,10 @@ window.sbLoadAllData       = sbLoadAllData
 window.sbMigrateLocalDB    = sbMigrateLocalDB
 window.sbWipeAllData       = sbWipeAllData
 window.sbWipeProjeData     = sbWipeProjeData
+window.sbWipeAletData      = sbWipeAletData
+window.sbWipeSahaData      = sbWipeSahaData
+window.sbWipeGeciciData    = sbWipeGeciciData
+window.sbWipeRaporData     = sbWipeRaporData
 
 // ─── Settings & Audit ────────────────────────────────────────────────────────
 window.sbGetSetting        = sbGetSetting

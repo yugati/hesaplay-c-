@@ -595,3 +595,35 @@ export async function sbWipeProjeData() {
     supabase.from('proje_sections').delete().gte('created_at', '2000-01-01T00:00:00Z'),
   ])
 }
+
+// Sadece el aletleri verisini sil
+export async function sbWipeAletData() {
+  await sbDeleteAll('alet_items')
+}
+
+// Sadece santiye sahasi verisini sil
+export async function sbWipeSahaData() {
+  await Promise.allSettled([
+    sbDeleteAll('saha_panels'),
+    sbDeleteAll('saha_lines'),
+    sbDeleteAll('saha_sockets'),
+    supabase.from('saha_settings').delete().gte('created_at', '2000-01-01T00:00:00Z'),
+  ])
+}
+
+// Sadece gecici elektrik ambari verisini sil
+export async function sbWipeGeciciData() {
+  await Promise.allSettled([
+    sbDeleteAll('gecici_lib'),
+    sbDeleteAll('gecici_moves'),
+    sbDeleteAll('gecici_orders'),
+  ])
+}
+
+// Sadece saha raporu verisini sil
+export async function sbWipeRaporData() {
+  await Promise.allSettled([
+    sbDeleteAll('rapor_entries'),
+    supabase.from('rapor_ekipler').delete().gte('created_at', '2000-01-01T00:00:00Z'),
+  ])
+}
