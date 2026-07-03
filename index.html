@@ -69,6 +69,7 @@ header .hsub{font-size:11px;color:var(--mute);font-family:var(--mono)}
 .sect-tab.gecici.on{background:linear-gradient(135deg,var(--grid-d),var(--grid));color:#022;box-shadow:0 3px 12px rgba(0,180,166,.3)}
 .sect-tab.alet.on{background:linear-gradient(135deg,#b45309,#d97706);color:#fff;box-shadow:0 3px 12px rgba(217,119,6,.3)}
 .sect-tab.saha.on{background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;box-shadow:0 3px 12px rgba(168,85,247,.3)}
+.sect-tab.hakedis.on{background:linear-gradient(135deg,#15803d,#22c55e);color:#022;box-shadow:0 3px 12px rgba(34,197,94,.32)}
 .spacer{flex:1}
 .user-chip{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--mute);font-family:var(--mono)}
 .icon-btn{background:var(--bg);border:1px solid var(--line);color:var(--mute);width:34px;height:34px;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:.15s}
@@ -196,6 +197,16 @@ tbody tr:hover{background:var(--panel2)}
 .sel-card-sub{font-size:12px;color:var(--mute);margin-bottom:12px}
 .sel-card-tags{display:flex;gap:5px;flex-wrap:wrap;min-height:20px}
 .sel-card-bar{display:flex;align-items:center;gap:9px;margin:10px 0 4px}
+/* "Tum Sartnameler" ozet bari - grid'deki tekil sartname kartlarindan ayrisan, tam genislikte bir bar */
+.sart-all-bar{display:flex;align-items:center;gap:16px;background:linear-gradient(90deg,color-mix(in srgb,var(--cc,#a855f7) 8%,var(--panel)),var(--panel));border:1px dashed color-mix(in srgb,var(--cc,#a855f7) 45%,var(--line));border-radius:14px;padding:16px 20px;cursor:pointer;transition:border-color .12s,box-shadow .12s,transform .12s;box-shadow:var(--shadow-sm);margin-bottom:18px}
+.sart-all-bar:hover{border-color:var(--cc,#a855f7);border-style:solid;box-shadow:var(--shadow-md);transform:translateY(-2px)}
+.sart-all-ico{width:44px;height:44px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sart-all-info{flex:1;min-width:0}
+.sart-all-title{font-size:14px;font-weight:700}
+.sart-all-bars{display:flex;gap:20px;flex-wrap:wrap;margin-top:8px}
+.sart-all-bar-item{display:flex;align-items:center;gap:9px;min-width:160px;flex:1}
+.sart-all-bar-item .scb-track{flex:1}
+.sart-all-arrow{color:var(--mute);flex-shrink:0}
 /* bolum & sartname tanimlari */
 .def-sec-bar{display:flex;gap:12px;align-items:flex-start;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap}
 .def-sec-chips{display:flex;gap:8px;flex-wrap:wrap;flex:1}
@@ -595,6 +606,8 @@ datalist{display:none}
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 20l-5.5 2V6L9 4l6 2 5.5-2v16L15 22z"/><path d="M9 4v16M15 6v16"/></svg>Santiye Sahasi</button>
       <button class="sect-tab rapor" data-sec="rapor" onclick="switchSection('rapor')">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Gunluk Rapor</button>
+      <button class="sect-tab hakedis" data-sec="hakedis" onclick="switchSection('hakedis')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Hakedis</button>
     </div>
     <label class="nav-backdrop" for="navToggle"></label>
     <div class="spacer"></div>
@@ -736,6 +749,7 @@ let CURRENT_USER=null;   // giris yapan kullanici
 let SB_USERS=[];         // Supabase kullanici onbellek
 let PUSERS=false;        // admin kullanici yonetim ekrani gorunumu
 let PAUDIT=false;        // admin denetim kaydi ekrani gorunumu
+let HKBINA="";           // hakedis ekrani bina filtresi
 // ROLLER: admin (tam yetki) | izleyici (salt goruntuleme) | saha_personeli (modul bazli izin)
 const ROLES={ admin:'Yonetici', izleyici:'Izleyici', saha_personeli:'Saha Personeli' };
 // eski rol adlarini yeni modele esle (geriye uyumluluk - salt okunur)
@@ -956,6 +970,7 @@ function render(){
   else if(SEC==='alet') m.innerHTML=renderAletler();
   else if(SEC==='saha') m.innerHTML=renderSaha();
   else if(SEC==='rapor'){ m.innerHTML=renderRapor(); wireToolbar(); return; }
+  else if(SEC==='hakedis'){ m.innerHTML=renderHakedis(); wireToolbar(); return; }
   wireToolbar();
 }
 // proje filtrelenmis item/spec/order yardimcilari
@@ -1314,10 +1329,13 @@ function renderDefinitions(){
       let rows='';
       if(list.length){
         list.forEach(sr=>{ const usedBy=DB.proje.specs.filter(sp=>sp.bina===bina && (sp.cat===DEF_SEC) && specGroupKey(sp)===sr.code).length;
+          const feeTag=sr.montajBedeli?`<span class="cat-tag" style="background:var(--green)22;color:var(--green)">₺${fmtNum(sr.montajBedeli)}</span>`:'';
+          const hideTag=sr.hakedisGoster===false?`<span class="cat-tag" style="background:var(--dim)33;color:var(--mute)" title="Hakediste gizli">Hakedis: gizli</span>`:'';
           rows+=`<div class="srt-row">
             <div style="flex:1;min-width:0"><div class="srt-code">${esc(sr.code)}</div>${sr.name&&sr.name!==sr.code?`<div class="srt-name">${esc(sr.name)}</div>`:''}</div>
+            ${feeTag}${hideTag}
             <span class="t-meta">${usedBy} kalem</span>
-            <button class="mini-btn" title="Duzenle" onclick="editSartname('${sr.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
+            <button class="mini-btn" title="Duzenle" onclick="openSartnameModal('${sr.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
             <button class="mini-btn del" title="Sil" onclick="delSartname('${sr.id}')">${icoTrash()}</button>
           </div>`; });
       } else { rows=`<div class="srt-empty">Bu binada ${esc(DEF_SEC)} icin sartname yok</div>`; }
@@ -1454,20 +1472,32 @@ async function addSartname(bina,section){ if(!guard('define'))return;
   DB.proje.sartnames.push(sartEntity);
   render(); toast("Sartname eklendi");
 }
-async function editSartname(id){ if(!guard('define'))return;
+function openSartnameModal(id){ if(!guard('define'))return;
   const sr=(DB.proje.sartnames||[]).find(x=>x.id===id); if(!sr)return;
-  const code=prompt("Sartname kodu:",sr.code); if(code===null)return; const c=code.trim(); if(!c)return;
-  const name=prompt("Aciklama:",sr.name||''); if(name===null)return;
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>Sartname Duzenle</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <div class="frow"><label>Sartname Kodu *</label><input id="sr_code" value="${esc(sr.code)}"></div>
+    <div class="frow"><label>Aciklama</label><input id="sr_name" value="${esc(sr.name||'')}"></div>
+    <div class="frow"><label>Montaj Bedeli (TL) <span class="t-meta">(bu sartname %100 montaj oldugunda hak edilen tutar)</span></label><input id="sr_fee" type="number" step="any" min="0" value="${sr.montajBedeli||''}" placeholder="0"></div>
+    <label class="chk" style="display:flex;align-items:center;gap:8px;margin-top:2px"><input type="checkbox" id="sr_show" ${sr.hakedisGoster!==false?'checked':''} style="width:auto"> Hakedis raporunda goster</label>
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveSartname('${id}')">Kaydet</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function saveSartname(id){
+  const sr=(DB.proje.sartnames||[]).find(x=>x.id===id); if(!sr)return;
+  const code=document.getElementById('sr_code').value.trim(); if(!code){toast('Sartname kodu gerekli','err');return;}
+  const name=document.getElementById('sr_name').value.trim();
+  const fee=Number(document.getElementById('sr_fee').value)||0;
+  const show=document.getElementById('sr_show').checked;
   const oldCode=sr.code;
-  sr.code=c; sr.name=name.trim()||c;
+  sr.code=code; sr.name=name||code; sr.montajBedeli=fee; sr.hakedisGoster=show;
   // bagli spec'lerin grup adini guncelle
   const affectedSpecs=[];
-  if(oldCode!==c){ DB.proje.specs.forEach(sp=>{ if(sp.bina===sr.bina && sp.cat===sr.section && specGroupKey(sp)===oldCode){ sp.grup=c; affectedSpecs.push(sp); } }); }
+  if(oldCode!==code){ DB.proje.specs.forEach(sp=>{ if(sp.bina===sr.bina && sp.cat===sr.section && specGroupKey(sp)===oldCode){ sp.grup=code; affectedSpecs.push(sp); } }); }
   await Promise.all([
     sbUpdateProjeSartname(id,{...sr}),
     ...affectedSpecs.map(sp=>sbUpdateProjeSpec(sp.id,{...sp}))
   ]);
-  render(); toast("Sartname guncellendi");
+  closeModal(); render(); toast("Sartname guncellendi");
 }
 async function delSartname(id){ if(!guard('define'))return;
   const sr=(DB.proje.sartnames||[]).find(x=>x.id===id); if(!sr)return;
@@ -1633,16 +1663,18 @@ function renderSpekSecim(){
     .sort((a,b)=>(a.code||'').localeCompare(b.code||'','tr'));
   const catSpecs=DB.proje.specs.filter(s=>!s.is_deleted && s.bina===PBINA && s.cat===PCAT);
   let cards='';
-  // "Tum Sartnameler" karti (sadece birden fazla sartname varsa anlamli)
+  // "Tum Sartnameler" - grid ile karismasin diye ayri, tam genislikte bir ozet bar olarak gosterilir (asagida allBarHtml)
+  let allBarHtml='';
   if(sartList.length>0){
     let ttA=0,ggA=0,montajA=0; catSpecs.forEach(s=>{ if(s.exclude)return; const{got}=specProgress(s); const{installed}=specMontajProgress(s); ttA+=Number(s.target)||0; ggA+=got; montajA+=installed; });
     const pctA=ttA>0?Math.min(100,ggA/ttA*100):0; const montajPctA=ttA>0?Math.min(100,montajA/ttA*100):0;
-    cards+=`<div class="sel-card" onclick="setPSpec('__all')" style="--cc:${cc}">
-      <div class="sel-card-ico" style="background:${cc}1f;color:${cc}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></div>
-      <div class="sel-card-name">Tum Sartnameler</div>
-      <div class="sel-card-sub">${catSpecs.length} kalem · ${sartList.length} sartname</div>
-      ${catSpecs.length?`<div class="sel-card-bar"><div class="scb-track"><i style="width:${pctA}%;background:${cc}"></i></div><span class="scb-pct" style="color:${cc}">${pctA.toFixed(0)}% tedarik</span></div><div class="sel-card-bar" style="margin-top:3px"><div class="scb-track"><i style="width:${montajPctA}%;background:${montajPctA>=100?'var(--green)':'var(--amber)'}"></i></div><span class="scb-pct" style="color:${montajPctA>=100?'var(--green)':'var(--amber)'}">${montajPctA.toFixed(0)}% montaj</span></div>`:''}
-      <div class="sel-card-tags"><span class="cat-tag" style="background:${cc}22;color:${cc}">Hepsi birlikte</span></div>
+    allBarHtml=`<div class="sart-all-bar" onclick="setPSpec('__all')" style="--cc:${cc}">
+      <div class="sart-all-ico" style="background:${cc}1f;color:${cc}"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></div>
+      <div class="sart-all-info">
+        <div class="sart-all-title">Tum Sartnameler <span class="t-meta">· ${sartList.length} sartname · ${catSpecs.length} kalem</span></div>
+        ${catSpecs.length?`<div class="sart-all-bars"><div class="sart-all-bar-item"><div class="scb-track"><i style="width:${pctA}%;background:${cc}"></i></div><span class="scb-pct" style="color:${cc}">${pctA.toFixed(0)}% tedarik</span></div><div class="sart-all-bar-item"><div class="scb-track"><i style="width:${montajPctA}%;background:${montajPctA>=100?'var(--green)':'var(--amber)'}"></i></div><span class="scb-pct" style="color:${montajPctA>=100?'var(--green)':'var(--amber)'}">${montajPctA.toFixed(0)}% montaj</span></div></div>`:`<div class="t-meta" style="margin-top:4px">Henuz kalem yok</div>`}
+      </div>
+      <div class="sart-all-arrow">${icoChevron()}</div>
     </div>`;
   }
   // her TANIMLI sartname icin kart
@@ -1668,6 +1700,7 @@ function renderSpekSecim(){
   return `<div class="sel-wrap">
     <div class="sel-bc"><button onclick="resetPSel()">Binalar</button> ${icoChevron()} <button onclick="backToCat()" style="color:${col}">${esc(PBINA)}</button> ${icoChevron()} <b style="color:${cc}">${esc(PCAT)}</b></div>
     <div class="sel-head"><h2>Sartname Secimi</h2><p><b style="color:${col}">${esc(PBINA)}</b> binasi · <b style="color:${cc}">${esc(PCAT)}</b> bolumu icin sartname secin</p></div>
+    ${allBarHtml}
     <div class="sel-grid">${cards}</div>
     ${emptyMsg}
     <div class="sel-add"><button class="btn btn-add" onclick="addSartnameForSel()">${icoPlus()} Sartname Ekle</button></div>
@@ -1866,6 +1899,69 @@ function specMontajProgress(spec){
   const installed=(DB.rapor.entries||[]).filter(e=>e.specId===spec.id).reduce((s,e)=>s+(Number(e.miktar)||0),0);
   const pct=Math.min(100,(installed/Number(spec.target))*100);
   return {installed, pct};
+}
+/* ─── HAKEDIS ────────────────────────────────────────────────────────────
+   Her sartname icin montaj bedeli (TL) ve hakedisGoster (bool) alanlari
+   sartname entity'sinde tutulur. Teslimat = sartnamenin tum kalemleri %100
+   montaj oldugunda otomatik gerceklesmis sayilir. Teslimattan once hak edis
+   0 TL'dir (kismi montaj hak edis dogurmaz); %100'de tam bedel kazanilir. */
+function hakedisRows(binaFilter){
+  const binas=binaFilter?[binaFilter]:projBuildings();
+  const rows=[];
+  binas.forEach(bina=>{
+    (DB.proje.sartnames||[]).filter(sr=>sr.bina===bina && sr.hakedisGoster!==false).forEach(sr=>{
+      const specs=DB.proje.specs.filter(s=>!s.is_deleted && s.bina===bina && s.cat===sr.section && specGroupKey(s)===sr.code);
+      let tt=0,montaj=0; specs.forEach(s=>{ if(s.exclude)return; const{installed}=specMontajProgress(s); tt+=Number(s.target)||0; montaj+=installed; });
+      const pct=tt>0?Math.min(100,montaj/tt*100):0;
+      const delivered=tt>0 && pct>=100;
+      const fee=Number(sr.montajBedeli)||0;
+      rows.push({bina,section:sr.section,code:sr.code,name:sr.name,pct,fee,delivered,tutar:delivered?fee:0,itemCount:specs.length});
+    });
+  });
+  rows.sort((a,b)=>a.bina.localeCompare(b.bina,'tr')||a.section.localeCompare(b.section,'tr')||a.code.localeCompare(b.code,'tr'));
+  return rows;
+}
+function setHkBina(v){ HKBINA=v; render(); }
+function renderHakedis(){
+  if(!isAdmin()) return '<div class="empty" style="padding:60px 20px"><p>Bu ekrani goruntuleme yetkiniz yok</p></div>';
+  const binas=projBuildings();
+  const rows=hakedisRows(HKBINA||null);
+  const grandTotal=rows.reduce((s,r)=>s+r.tutar,0);
+  const grandFee=rows.reduce((s,r)=>s+r.fee,0);
+  const binaOpts=`<option value="">Tum Binalar</option>`+binas.map(b=>`<option value="${esc(b)}" ${HKBINA===b?'selected':''}>${esc(b)}</option>`).join('');
+  const deliveredCount=rows.filter(r=>r.delivered).length;
+  const trs=rows.map(r=>{
+    const bcol=buildingColor(r.bina); const cc=catColor(r.section);
+    const statusTag=r.delivered?`<span class="cat-tag" style="background:var(--green)22;color:var(--green)">✓ Teslim Edildi</span>`:`<span class="cat-tag" style="background:var(--dim)33;color:var(--mute)">Bekliyor</span>`;
+    return `<tr>
+      <td><span class="bina-tag" style="background:${bcol}22;color:${bcol}">${esc(r.bina)}</span></td>
+      <td><span class="cat-tag" style="background:${cc}22;color:${cc}">${esc(r.section)}</span></td>
+      <td class="t-code">${esc(r.code)}</td>
+      <td class="t-qty">${r.itemCount}</td>
+      <td class="t-qty">%${r.pct.toFixed(0)}</td>
+      <td>${statusTag}</td>
+      <td class="t-qty">₺${fmtNum(r.fee)}</td>
+      <td class="t-qty" style="color:${r.delivered?'var(--green)':'var(--dim)'};font-weight:700">₺${fmtNum(r.tutar)}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="8" style="text-align:center;color:var(--mute);padding:30px">Hakediste gosterilecek sartname yok. "Bolum & Sartname" ekranindan sartnameyi duzenleyip montaj bedeli tanimlayin.</td></tr>`;
+  return `<div class="sel-wrap" style="max-width:1300px">
+    <div class="sel-head"><h2>Hakedis</h2><p>Bir sartnamenin tum kalemleri %100 montaj oldugunda teslimat gerceklesmis sayilir ve tam bedel hak edilir. Kismi montaj hak edis dogurmaz. Sadece "Hakediste goster" isaretli sartnameler listelenir.</p></div>
+    <div class="stats">${statRow([['Toplam Sartname Bedeli','₺'+fmtNum(grandFee),'tanimli','var(--blue)'],['Hak Edilen Tutar','₺'+fmtNum(grandTotal),'toplam','var(--green)'],['Teslim Edilen',deliveredCount+' / '+rows.length,'sartname','var(--amber)']])}</div>
+    <div class="toolbar"><select class="selbox" onchange="setHkBina(this.value)">${binaOpts}</select>
+      <button class="btn btn-grid" onclick="exportHakedis()">${icoXls()} Excel</button></div>
+    <div class="tablewrap"><table><thead><tr><th>Bina</th><th>Bolum</th><th>Sartname</th><th>Kalem</th><th>Montaj</th><th>Durum</th><th>Bedel</th><th>Hak Edilen</th></tr></thead><tbody>${trs}</tbody></table></div>
+  </div>`;
+}
+function exportHakedis(){
+  const rows=hakedisRows(null);
+  if(!rows.length){ toast("Aktarilacak veri yok","err"); return; }
+  const aoa=[["bina","bolum","sartname_kodu","montaj_yuzde","durum","montaj_bedeli","hak_edilen_tutar"]];
+  rows.forEach(r=>aoa.push([r.bina,r.section,r.code,Number(r.pct.toFixed(1)),r.delivered?'Teslim Edildi':'Bekliyor',r.fee,Number(r.tutar.toFixed(2))]));
+  const grand=rows.reduce((s,r)=>s+r.tutar,0);
+  aoa.push(['','','','','','TOPLAM',Number(grand.toFixed(2))]);
+  const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:12},{wch:14},{wch:38},{wch:13},{wch:14},{wch:14},{wch:16}];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Hakedis");
+  XLSX.writeFile(wb,`Hakedis_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel indirildi");
 }
 /* ─── Alternatif Ürün yardımcıları ─────────────────────────────────────── */
 function altStatusLabel(s){ return {oneri:'Öneri',onaylandi:'Onaylandı','kullanımda':'Kullanımda',reddedildi:'Reddedildi'}[s]||s; }
