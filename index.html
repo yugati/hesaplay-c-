@@ -4071,7 +4071,7 @@ function renderRaporOzet(list){
   return `<div class="ozet-grid">${html}</div>`;
 }
 function shortEkip(e){ if(!e)return''; const parts=String(e).split(' - '); return parts[parts.length-1]||e; }
-let _rMat=null; let _rLines=[]; let _rEditId=null; let _rEditIsGroup=false;
+let _rMat=null; let _rLines=[]; let _rEditId=null; let _rEditIsGroup=false; let _rSaving=false;
 function openRaporModal(id){
   const e=id?rEntries().find(x=>x.id===id):null;
   // Duzenleme: ayni groupId'li tum kalemleri yukle; yoksa tek kalem
@@ -4093,7 +4093,7 @@ function openRaporModal(id){
     </div>
     <div class="frow"><label>Notlar</label><input id="r_not" value="${e?esc(e.notlar||''):''}" placeholder="opsiyonel"></div>
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:4px"><input type="checkbox" id="r_stok" ${e?(e.stokDus?'checked':''):'checked'} style="width:auto"> Stoktan dus (islenen miktarlar stoktan azaltilsin)</label>
-  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveRaporEntry()">Kaydet</button></div></div></div>`;
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" id="r_saveBtn" onclick="saveRaporEntry()">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   rBinaChange();
   if(e){ setTimeout(()=>{ const s=document.getElementById('r_sart'); if(s)s.value=e.projeKodu||''; },0); }
@@ -4232,6 +4232,7 @@ function rMatPick(){ const el=document.getElementById('r_mat'); const bina=docum
   }, false);
 }
 async function saveRaporEntry(){
+  if(_rSaving)return;
   if(!guard('define',{bina:document.getElementById('r_bina')?.value||PBINA})){return;}
   const tarih=document.getElementById('r_tarih').value;
   const bina=document.getElementById('r_bina').value;
@@ -4245,54 +4246,60 @@ async function saveRaporEntry(){
   const sartCode=document.getElementById('r_sart').value;
   const sart=sartCode?(DB.proje.sartnames||[]).find(x=>x.bina===bina&&x.code===sartCode):null;
   if(sart && cats.length && cats[0]!==sart.section){ toast(`Secili sartname "${sart.section}" bolumune ait, is kalemleri "${cats[0]}" bolumunden - uyusmuyor.`,'err'); return; }
-  const ortak={
-    tarih, bina,
-    projeKodu:document.getElementById('r_sart').value||'',
-    adamSayisi:document.getElementById('r_adam').value?Number(document.getElementById('r_adam').value):null,
-    vardiya:document.getElementById('r_vardiya').value, ekip:document.getElementById('r_ekip').value,
-    notlar:document.getElementById('r_not').value.trim(),
-    stokDus:document.getElementById('r_stok').checked
-  };
-  if(!DB.rapor.entries)DB.rapor.entries=[];
-  // Duzenleme ise: eski kayitlari (ve bagli stok hareketlerini) temizle
-  if(_rEditId){
-    const oldEntries = _rEditIsGroup ? DB.rapor.entries.filter(x=>x.groupId===_rEditId) : DB.rapor.entries.filter(x=>x.id===_rEditId);
-    const oldIds=oldEntries.map(o=>o.id);
-    const oldMoveIds=oldEntries.filter(o=>o._moveId).map(o=>o._moveId);
-    await Promise.all([
-      sbDeleteRaporEntriesByIds(oldIds),
-      ...(oldMoveIds.length?[sbDeleteProjeItems(oldMoveIds)]:[])
-    ]);
-    oldEntries.forEach(o=>{ if(o._moveId) DB.proje.items=DB.proje.items.filter(it=>it.id!==o._moveId); });
-    const delIds=new Set(oldIds);
-    DB.rapor.entries=DB.rapor.entries.filter(x=>!delIds.has(x.id));
-  }
-  // groupId: birden fazla kalem varsa grup olustur
-  const groupId = lines.length>1 ? uid() : null;
-  const newEntries=[], newItems=[];
-  lines.forEach(l=>{
-    const entry={
-      id:uid(), groupId,
-      ...ortak,
-      projeKodu: ortak.projeKodu || l.grup || '',
-      malzeme:l.name, code:l.code||'', specId:l.specId||null, matId:l.matId||null, cat:l.cat||'',
-      miktar:Number(l.miktar), birim:(l.unit||'').trim(),
-      kat:(l.kat||'').trim(), kot:(l.kot||'').trim(),
-      created:Date.now()
+  _rSaving=true;
+  const saveBtn=document.getElementById('r_saveBtn'); if(saveBtn)saveBtn.disabled=true;
+  try{
+    const ortak={
+      tarih, bina,
+      projeKodu:document.getElementById('r_sart').value||'',
+      adamSayisi:document.getElementById('r_adam').value?Number(document.getElementById('r_adam').value):null,
+      vardiya:document.getElementById('r_vardiya').value, ekip:document.getElementById('r_ekip').value,
+      notlar:document.getElementById('r_not').value.trim(),
+      stokDus:document.getElementById('r_stok').checked
     };
-    if(entry.stokDus){
-      const moveId=uid(); entry._moveId=moveId;
-      newItems.push({id:moveId, name:entry.malzeme, qty:entry.miktar, unit:entry.birim, date:new Date(entry.tarih).getTime(), order:'SAHA-'+entry.tarih, note:'Sahada islendi'+(entry.ekip?' ('+shortEkip(entry.ekip)+')':''), cat:entry.cat, code:entry.code, specId:entry.specId, matId:entry.matId, grup:entry.projeKodu, bina:entry.bina, type:'out', img:null, _fromRapor:entry.id});
+    if(!DB.rapor.entries)DB.rapor.entries=[];
+    // Duzenleme ise: eski kayitlari (ve bagli stok hareketlerini) temizle
+    if(_rEditId){
+      const oldEntries = _rEditIsGroup ? DB.rapor.entries.filter(x=>x.groupId===_rEditId) : DB.rapor.entries.filter(x=>x.id===_rEditId);
+      const oldIds=oldEntries.map(o=>o.id);
+      const oldMoveIds=oldEntries.filter(o=>o._moveId).map(o=>o._moveId);
+      await Promise.all([
+        sbDeleteRaporEntriesByIds(oldIds),
+        ...(oldMoveIds.length?[sbDeleteProjeItems(oldMoveIds)]:[])
+      ]);
+      oldEntries.forEach(o=>{ if(o._moveId) DB.proje.items=DB.proje.items.filter(it=>it.id!==o._moveId); });
+      const delIds=new Set(oldIds);
+      DB.rapor.entries=DB.rapor.entries.filter(x=>!delIds.has(x.id));
     }
-    newEntries.push(entry);
-  });
-  await Promise.all([
-    sbInsertRaporEntries(newEntries),
-    ...(newItems.length?[sbInsertProjeItems(newItems)]:[])
-  ]);
-  newEntries.forEach(e=>DB.rapor.entries.push(e));
-  newItems.forEach(item=>DB.proje.items.push(item));
-  closeModal(); render(); toast(_rEditId?'Kayit guncellendi':(lines.length>1?lines.length+' is kalemi eklendi':'Saha kaydi eklendi'));
+    // groupId: birden fazla kalem varsa grup olustur
+    const groupId = lines.length>1 ? uid() : null;
+    const newEntries=[], newItems=[];
+    lines.forEach(l=>{
+      const entry={
+        id:uid(), groupId,
+        ...ortak,
+        projeKodu: ortak.projeKodu || l.grup || '',
+        malzeme:l.name, code:l.code||'', specId:l.specId||null, matId:l.matId||null, cat:l.cat||'',
+        miktar:Number(l.miktar), birim:(l.unit||'').trim(),
+        kat:(l.kat||'').trim(), kot:(l.kot||'').trim(),
+        created:Date.now()
+      };
+      if(entry.stokDus){
+        const moveId=uid(); entry._moveId=moveId;
+        newItems.push({id:moveId, name:entry.malzeme, qty:entry.miktar, unit:entry.birim, date:new Date(entry.tarih).getTime(), order:'SAHA-'+entry.tarih, note:'Sahada islendi'+(entry.ekip?' ('+shortEkip(entry.ekip)+')':''), cat:entry.cat, code:entry.code, specId:entry.specId, matId:entry.matId, grup:entry.projeKodu, bina:entry.bina, type:'out', img:null, _fromRapor:entry.id});
+      }
+      newEntries.push(entry);
+    });
+    await Promise.all([
+      sbInsertRaporEntries(newEntries),
+      ...(newItems.length?[sbInsertProjeItems(newItems)]:[])
+    ]);
+    newEntries.forEach(e=>DB.rapor.entries.push(e));
+    newItems.forEach(item=>DB.proje.items.push(item));
+    closeModal(); render(); toast(_rEditId?'Kayit guncellendi':(lines.length>1?lines.length+' is kalemi eklendi':'Saha kaydi eklendi'));
+  } finally {
+    _rSaving=false;
+  }
 }
 // Sartname disi (henuz spek olusturulmadan girilmis) saha kaydini,
 // spek hazir oldugunda geriye donuk olarak bir sartname kalemine baglar.
