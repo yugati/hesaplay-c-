@@ -1533,7 +1533,8 @@ async function delSelectedMaterials(){
 function renderMaterialLib(){
   let mats=(DB.proje.materials||[]).filter(m=>!m.is_deleted).slice();
   if(SEARCH){
-    mats=mats.filter(m=>matchText((m.code||'')+' '+(m.name||'')+' '+(m.cat||''),SEARCH));
+    // arama, malzemenin fiilen kullanildigi bolumleri de kapsar (orn. "Kablo" yazinca o bolumde kullanilan krose de bulunur)
+    mats=mats.filter(m=>matchText((m.code||'')+' '+(m.name||'')+' '+(m.cat||'')+' '+materialUsage(m.id).map(s=>s.cat||'').join(' '),SEARCH));
     // aramada en iyi eslesen en ustte: birebir kod/ad eslesmesi > icinde gecen > benzer (subsequence)
     const nq=norm(SEARCH).trim();
     mats.sort((a,b)=>{
@@ -1563,7 +1564,12 @@ function renderMaterialLib(){
         <td class="t-name">${esc(m.name)} ${usageTag}<div style="margin-top:4px">${specs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px">${esc(g)}</span>`).join('')}</div></td>
         <td style="font-family:var(--mono);font-size:12px">${esc(m.code||'-')}</td>
         <td class="t-meta">${m.brand?`<div class="brand-tags">${m.brand.split(/\n|\s\/\s/).map(b=>b.trim()).filter(Boolean).map(b=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text)">${esc(b)}</span>`).join('')}</div>`:'-'}</td>
-        <td><span class="cat-tag" style="background:${ccol}22;color:${ccol}">${esc(m.cat||'-')}</span></td>
+        <td>${(()=>{ // varsayilan kategori + fiilen kullanildigi diger bolumler
+          const useCats=[...new Set(usage.map(s=>s.cat).filter(Boolean))];
+          const allCats=[...new Set([m.cat,...useCats].filter(Boolean))];
+          if(!allCats.length) return '-';
+          return `<div class="brand-tags">${allCats.map(c=>{const cc=catColor(c);return `<span class="cat-tag" style="background:${cc}22;color:${cc}">${esc(c)}</span>`;}).join('')}</div>`;
+        })()}</td>
         <td class="t-meta">${esc(m.unit||'-')}</td>
         <td><div class="row-actions">
           <button class="mini-btn" title="Duzenle" onclick="openMaterialModal('${m.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
@@ -1592,7 +1598,7 @@ function openMaterialModal(id){
     <div class="frow"><label>Malzeme Adi *</label><input id="mt_name" value="${m?esc(m.name):''}" placeholder="orn. Galvaniz Kablo Tavasi 200mm"></div>
     <div class="frow two"><div><label>Urun Kodu</label><input id="mt_code" value="${m?esc(m.code||''):''}" placeholder="orn. 121491"></div><div><label>Marka  <span class="t-meta">(her satir ayri gosterilir)</span></label><textarea id="mt_brand" rows="2" style="min-height:38px" placeholder="orn. Hilti, Schneider">${m?esc(m.brand||''):''}</textarea></div></div>
     <div class="frow"><label>Birim</label><input id="mt_unit" value="${m?esc(m.unit||''):''}" placeholder="metre / adet"></div>
-    <div class="frow"><label>Kategori</label><select id="mt_cat">${cats.map(c=>`<option ${m&&m.cat===c?'selected':''}>${esc(c)}</option>`).join('')}<option value="__new">+ Yeni kategori...</option></select><input id="mt_newcat" class="hidden" style="margin-top:7px" placeholder="Yeni kategori"></div>
+    <div class="frow"><label>Kategori  <span class="t-meta">(varsayilan bolum - malzeme baska bolumlerin sartnamelerinde de kullanilabilir)</span></label><select id="mt_cat">${cats.map(c=>`<option ${m&&m.cat===c?'selected':''}>${esc(c)}</option>`).join('')}<option value="__new">+ Yeni kategori...</option></select><input id="mt_newcat" class="hidden" style="margin-top:7px" placeholder="Yeni kategori"></div>
     <div class="frow"><label>Not</label><textarea id="mt_note" placeholder="Teknik ozellik, tedarikci...">${m?esc(m.note||''):''}</textarea></div>
     <div class="frow"><label>Fotograf</label><div class="drop ${m&&m.img?'has':''}" id="mtImgDrop" onclick="document.getElementById('mtImgInput').click()">${m&&m.img?`<img class="img-prev" src="${m.img}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div><input type="file" id="mtImgInput" accept="image/*" class="hidden" onchange="pickImg(event,'mtImgDrop')"></div>
     ${usage.length?`<p style="font-size:11px;color:var(--dim);font-family:var(--mono)">Bu malzeme ${usage.length} sartnamede kullaniliyor. Degisiklik hepsini etkiler.</p>`:''}
@@ -2200,9 +2206,9 @@ function upsertMaterialsFromRows(rows, report){
     // sablon aciklama satirini atla
     if(/^(REQUIRED|optional|REQ|blank|ZORUNLU|ops)/i.test(code)) continue;
     const action=(iAct>=0?String(row[iAct]??'').trim().toLowerCase():'');
-    // kod varsa mevcut kaydi bul (dosya icindeki onceki satirlarda eklenmis/guncellenmis
-    // olabilir de dahil); kod yoksa essiz eslestirme yapilamaz -> her zaman yeni kayit
-    const existing=code?findMaterial(code,name):null;
+    // mevcut kaydi bul: kod varsa koda gore, kod bos ise ada gore eslestir
+    // (matKey ayni kurali kullanir; aksi halde ayni Excel tekrar yuklendiginde kodsuz satirlar cogalir)
+    const existing=findMaterial(code,name);
     if(action==='delete'){ if(existing && materialUsage(existing.id).length===0){ DB.proje.materials=DB.proje.materials.filter(m=>m.id!==existing.id); report.matDeleted++; } else if(existing){ report.errors.push(`Malzeme satir ${r+1}: "${code}" kullanimda, silinemez`);} continue; }
     const brand=iBrand>=0?String(row[iBrand]??'').trim():'';
     const cat=iCat>=0?String(row[iCat]??'').trim():'';
@@ -2212,7 +2218,8 @@ function upsertMaterialsFromRows(rows, report){
     if(existing){ // UPDATE
       existing.name=name||existing.name; existing.brand=brand; if(cat)existing.cat=cat; if(unit)existing.unit=unit; if(note!=='')existing.note=note; if(img)existing.img=img;
       // bagli spec'leri senkronla
-      materialUsage(existing.id).forEach(sp=>{ sp.name=existing.name; sp.code=existing.code; sp.brand=brand; if(existing.cat)sp.cat=existing.cat; if(existing.unit&&!sp.unit)sp.unit=existing.unit; sp.matId=existing.id; });
+      // sp.cat bilerek dokunulmaz: bolum kalemin ozelligidir, ayni malzeme farkli bolumlerde kullanilabilir
+      materialUsage(existing.id).forEach(sp=>{ sp.name=existing.name; sp.code=existing.code; sp.brand=brand; if(existing.unit&&!sp.unit)sp.unit=existing.unit; sp.matId=existing.id; });
       report.matUpdated++;
     } else { // INSERT
       DB.proje.materials.push({id:uid(),code,name:name||code,brand,unit,cat,note,img:img||null}); report.matCreated++;
@@ -2414,7 +2421,8 @@ async function applySyncPlan(){
   // MALZEME
   plan.mat.insert.forEach(x=>{ DB.proje.materials.push({id:uid(),code:x.code,name:x.name,brand:x.brand,unit:x.unit,cat:x.cat,note:x.note,img:null,is_deleted:false}); rep.matCreated++; });
   plan.mat.update.forEach(({existing,data})=>{ existing.name=data.name; existing.brand=data.brand; if(data.cat)existing.cat=data.cat; if(data.unit)existing.unit=data.unit; existing.note=data.note; existing.is_deleted=false;
-    materialUsage(existing.id).forEach(sp=>{ sp.name=existing.name; sp.code=existing.code; sp.brand=existing.brand; if(existing.cat)sp.cat=existing.cat; }); rep.matUpdated++; });
+    // sp.cat bilerek dokunulmaz: bolum kalemin ozelligidir (spec sayfasindaki section gecerlidir)
+    materialUsage(existing.id).forEach(sp=>{ sp.name=existing.name; sp.code=existing.code; sp.brand=existing.brand; }); rep.matUpdated++; });
   plan.mat.delete.forEach(m=>{ m.is_deleted=true; rep.matDeleted++; });
   // SPEC (FK: malzeme)
   const findMat=(code,name)=>(DB.proje.materials||[]).find(m=>!m.is_deleted && matKey(m.code,m.name)===matKey(code,name));
@@ -3116,8 +3124,8 @@ function specPickMaterial(){
     if(isNew){ box.innerHTML=specMatBoxHtml(); return; }
     window._specMat={matId:it.matId,code:it.code,ad:it.ad,brand:it.brand,cat:it.cat,unit:it.unit,img:it.img};
     modalImg=it.img||null;
-    // malzemenin kategorisi bolume yansisin (varsa)
-    if(it.cat){ const sc=document.getElementById('s_cat'); if(sc && [...sc.options].some(o=>o.value===it.cat)){ sc.value=it.cat; specModalRefresh(); } }
+    // secili Bolum degistirilmez: malzeme (orn. krose) hangi bolumde ekleniyorsa orada kullanilir,
+    // malzemenin kendi kategorisi sadece varsayilan siniflandirmadir
     box.innerHTML=specMatBoxHtml();
   }, false);
 }
@@ -3130,7 +3138,7 @@ function openMaterialModalFromSpec(){
   const target=document.getElementById('s_target')?document.getElementById('s_target').value:'';
   window._afterMatSave=(mt)=>{
     window._specMat={matId:mt.id,code:mt.code,ad:mt.name,brand:mt.brand||'',cat:mt.cat||'',unit:mt.unit||'',img:mt.img||null};
-    openSpecModal(null,{bina,cat:mt.cat||cat,grup});
+    openSpecModal(null,{bina,cat:cat||mt.cat,grup});
     const t=document.getElementById('s_target'); if(t&&target)t.value=target;
   };
   openMaterialModal();
@@ -3150,7 +3158,8 @@ async function saveSpec(id){ if(!guard('editSpec'))return;
   // kutuphane kaydini al/dogrula (matId varsa onu kullan, yoksa kod/ad ile bul/olustur)
   let mt = mat.matId ? getMaterial(mat.matId) : null;
   if(!mt) mt=ensureMaterial({code,name,unit:mat.unit,cat,brand:mat.brand,img:mat.img});
-  const data={cat:mt.cat||cat,name:mt.name,code:mt.code,brand:mt.brand||'',target:Number(target),unit:mt.unit||mat.unit||'',bina,grup,img:mt.img||null,matId:mt.id};
+  // bolum, malzemenin degil kalemin ozelligi: ayni malzeme (orn. krose) farkli bolumlerde kullanilabilir
+  const data={cat,name:mt.name,code:mt.code,brand:mt.brand||'',target:Number(target),unit:mt.unit||mat.unit||'',bina,grup,img:mt.img||null,matId:mt.id};
   let specEntity;
   if(id){
     const sp=DB.proje.specs.find(s=>s.id===id); Object.assign(sp,data); specEntity=sp;
