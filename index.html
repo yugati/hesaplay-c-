@@ -134,6 +134,8 @@ tbody tr:hover{background:var(--panel2)}
 .mini-btn.in:hover{color:var(--green);border-color:var(--green)}
 .mini-btn.out:hover{color:var(--amber);border-color:var(--amber)}
 .cat-tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600;font-family:var(--mono);white-space:nowrap}
+.brand-tags{display:flex;flex-direction:column;align-items:flex-start;gap:3px;max-width:230px}
+.brand-tags .cat-tag{white-space:normal;word-break:break-word;line-height:1.4;text-align:left}
 .chk-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:4px}
 .chk{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text);cursor:pointer;padding:7px 10px;background:var(--bg);border:1px solid var(--line);border-radius:8px}
 .chk input{width:15px;height:15px;accent-color:var(--blue);cursor:pointer}
@@ -1530,8 +1532,18 @@ async function delSelectedMaterials(){
 }
 function renderMaterialLib(){
   let mats=(DB.proje.materials||[]).filter(m=>!m.is_deleted).slice();
-  if(SEARCH) mats=mats.filter(m=>matchText((m.code||'')+' '+(m.name||'')+' '+(m.cat||''),SEARCH));
-  mats.sort((a,b)=>(a.cat||'').localeCompare(b.cat||'','tr')||(a.name||'').localeCompare(b.name||'','tr'));
+  if(SEARCH){
+    mats=mats.filter(m=>matchText((m.code||'')+' '+(m.name||'')+' '+(m.cat||''),SEARCH));
+    // aramada en iyi eslesen en ustte: birebir kod/ad eslesmesi > icinde gecen > benzer (subsequence)
+    const nq=norm(SEARCH).trim();
+    mats.sort((a,b)=>{
+      const sa=acScore(norm((a.code||'')+' '+(a.name||'')+' '+(a.cat||'')),nq);
+      const sb=acScore(norm((b.code||'')+' '+(b.name||'')+' '+(b.cat||'')),nq);
+      return sa-sb||(a.name||'').localeCompare(b.name||'','tr');
+    });
+  } else {
+    mats.sort((a,b)=>(a.cat||'').localeCompare(b.cat||'','tr')||(a.name||'').localeCompare(b.name||'','tr'));
+  }
   const cats=[...new Set((DB.proje.materials||[]).map(m=>m.cat).filter(Boolean))];
   const usedCount=(DB.proje.materials||[]).filter(m=>materialUsage(m.id).length>0).length;
   const multiCount=(DB.proje.materials||[]).filter(m=>materialUsage(m.id).length>1).length;
@@ -1550,7 +1562,7 @@ function renderMaterialLib(){
         <td>${thumb}</td>
         <td class="t-name">${esc(m.name)} ${usageTag}<div style="margin-top:4px">${specs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px">${esc(g)}</span>`).join('')}</div></td>
         <td style="font-family:var(--mono);font-size:12px">${esc(m.code||'-')}</td>
-        <td class="t-meta">${m.brand?`<span class="cat-tag" style="background:var(--dim)33;color:var(--text)">${esc(m.brand)}</span>`:'-'}</td>
+        <td class="t-meta">${m.brand?`<div class="brand-tags">${m.brand.split(/\n|\s\/\s/).map(b=>b.trim()).filter(Boolean).map(b=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text)">${esc(b)}</span>`).join('')}</div>`:'-'}</td>
         <td><span class="cat-tag" style="background:${ccol}22;color:${ccol}">${esc(m.cat||'-')}</span></td>
         <td class="t-meta">${esc(m.unit||'-')}</td>
         <td><div class="row-actions">
@@ -1578,7 +1590,7 @@ function openMaterialModal(id){
   const usage=m?materialUsage(m.id):[];
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>${m?'Malzeme Duzenle':'Yeni Malzeme'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow"><label>Malzeme Adi *</label><input id="mt_name" value="${m?esc(m.name):''}" placeholder="orn. Galvaniz Kablo Tavasi 200mm"></div>
-    <div class="frow two"><div><label>Urun Kodu</label><input id="mt_code" value="${m?esc(m.code||''):''}" placeholder="orn. 121491"></div><div><label>Marka</label><input id="mt_brand" value="${m?esc(m.brand||''):''}" placeholder="orn. Hilti, Schneider"></div></div>
+    <div class="frow two"><div><label>Urun Kodu</label><input id="mt_code" value="${m?esc(m.code||''):''}" placeholder="orn. 121491"></div><div><label>Marka  <span class="t-meta">(her satir ayri gosterilir)</span></label><textarea id="mt_brand" rows="2" style="min-height:38px" placeholder="orn. Hilti, Schneider">${m?esc(m.brand||''):''}</textarea></div></div>
     <div class="frow"><label>Birim</label><input id="mt_unit" value="${m?esc(m.unit||''):''}" placeholder="metre / adet"></div>
     <div class="frow"><label>Kategori</label><select id="mt_cat">${cats.map(c=>`<option ${m&&m.cat===c?'selected':''}>${esc(c)}</option>`).join('')}<option value="__new">+ Yeni kategori...</option></select><input id="mt_newcat" class="hidden" style="margin-top:7px" placeholder="Yeni kategori"></div>
     <div class="frow"><label>Not</label><textarea id="mt_note" placeholder="Teknik ozellik, tedarikci...">${m?esc(m.note||''):''}</textarea></div>
