@@ -224,6 +224,7 @@ export async function sbSetSahaSetting(key, value) {
 export async function sbGetRaporEntries() { return sbGetAll('rapor_entries') }
 export async function sbInsertRaporEntry(e) { return sbInsertEntity('rapor_entries', e) }
 export async function sbInsertRaporEntries(items) { return sbInsertEntities('rapor_entries', items) }
+export async function sbUpdateRaporEntry(id, e) { return sbUpdateEntity('rapor_entries', id, e) }
 export async function sbDeleteRaporEntry(id) { return sbDeleteEntity('rapor_entries', id) }
 export async function sbDeleteRaporEntriesByIds(ids) {
   await Promise.all(ids.map(id => sbDeleteEntity('rapor_entries', id)))

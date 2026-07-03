@@ -50,6 +50,7 @@ import {
   sbGetRaporEntries,
   sbInsertRaporEntry,
   sbInsertRaporEntries,
+  sbUpdateRaporEntry,
   sbDeleteRaporEntry,
   sbDeleteRaporEntriesByIds,
   sbGetRaporEkipler,
@@ -218,6 +219,7 @@ window.sbSetSahaSetting    = guardedSafe('saha', 'update', sbSetSahaSetting)
 window.sbGetRaporEntries          = sbGetRaporEntries
 window.sbInsertRaporEntry         = guardedSafe('rapor', 'create', sbInsertRaporEntry)
 window.sbInsertRaporEntries       = guardedSafe('rapor', 'create', sbInsertRaporEntries)
+window.sbUpdateRaporEntry         = guardedSafe('rapor', 'update', sbUpdateRaporEntry)
 window.sbDeleteRaporEntry         = guardedSafe('rapor', 'delete', sbDeleteRaporEntry)
 window.sbDeleteRaporEntriesByIds  = guardedSafe('rapor', 'delete', sbDeleteRaporEntriesByIds)
 window.sbGetRaporEkipler          = sbGetRaporEkipler
