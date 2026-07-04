@@ -1081,6 +1081,7 @@ function renderBinaSecim(){
       <div class="sel-card-tools">
         ${katSayisi?`<button class="card-tool-btn" title="Kat Gorunumu" onclick="event.stopPropagation();openKatGorseli('${esc(b)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M4 8h16M4 13h16M4 18h16"/></svg>Kat</button>`:''}
         <button class="card-tool-btn ${bm?'has':''}" title="${bm?'3D Bina Modeli':'3D Bina Modeli Ekle'}" onclick="event.stopPropagation();open3DBinaModal('${esc(b)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>${bm?'3D':'+3D'}</button>
+        ${can('define')?`<button class="card-tool-btn" style="color:var(--red);border-color:var(--red)55" title="Binayi Sil" onclick="event.stopPropagation();delBina('${esc(b)}')">${icoTrash()}</button>`:''}
       </div>
       <div class="sel-card-ico" style="background:${col}1f;color:${col}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg></div>
       <div class="sel-card-name">${esc(b)}</div>
@@ -1853,6 +1854,51 @@ function projeFilterBar(){
 async function addBinaPrompt(){ if(!guard('define'))return; const v=prompt("Yeni bina kodu (orn. 00UXX):"); if(!v)return; const b=v.trim(); if(!b)return;
   if(!DB.proje.buildings.includes(b)){ await sbInsertProjeBuilding(b); DB.proje.buildings.push(b); } setPBina(b); }
 async function addCatPrompt(){ const v=prompt("Yeni kategori adi (orn. Kablo Kanali):"); if(!v)return; const c=v.trim(); if(!c)return; setPCat(c); }
+// BINA SILME: bina + o binaya ait TUM veriler (sartname, sartname kalemi, alternatif, alim/hareket, siparis, 3D model) kalici silinir
+async function delBina(bina){
+  if(!guard('define',{bina}))return;
+  const sarts=(DB.proje.sartnames||[]).filter(x=>x.bina===bina);
+  const specs=(DB.proje.specs||[]).filter(s=>s.bina===bina);
+  const specIdSet=new Set(specs.map(s=>s.id));
+  const alts=(DB.proje.alternatives||[]).filter(a=>specIdSet.has(a.specId));
+  const items=(DB.proje.items||[]).filter(i=>i.bina===bina);
+  const orders=(DB.proje.orders||[]).filter(o=>o.bina===bina);
+  const bm=binaModel(bina);
+  const parts=[];
+  if(sarts.length)parts.push(sarts.length+' sartname');
+  if(specs.length)parts.push(specs.length+' sartname kalemi');
+  if(items.length)parts.push(items.length+' alim/hareket kaydi');
+  if(orders.length)parts.push(orders.length+' siparis');
+  if(bm)parts.push('3D model');
+  const detay=parts.length?parts.join(', ')+' de birlikte silinecek.':'Bu binaya ait baska veri yok.';
+  if(!confirm(`"${bina}" binasini kalici olarak silmek istiyor musunuz?\n\n${detay}\n\nBu islem GERI ALINAMAZ.`))return;
+  const typed=prompt(`Onaylamak icin bina kodunu aynen yazin: ${bina}`);
+  if(typed===null)return;
+  if(typed.trim()!==bina){ toast("Bina kodu eslesmedi - islem iptal edildi","err"); return; }
+  if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; }
+  await Promise.all([
+    ...sarts.map(x=>sbDeleteProjeSartname(x.id)),
+    ...alts.map(a=>sbDeleteProjeAlternative(a.id)),
+    specs.length?sbDeleteProjeSpecs(specs.map(s=>s.id)):Promise.resolve(),
+    items.length?sbDeleteProjeItems(items.map(i=>i.id)):Promise.resolve(),
+    ...orders.map(o=>sbDeleteProjeOrder(o.id)),
+    bm?sbDeleteProjeBinaModel(bm.id):Promise.resolve(),
+    bm&&bm.path?sbDeleteBinaModelFile(bm.path):Promise.resolve(),
+    sbDeleteProjeBuilding(bina)
+  ]);
+  const sartIdSet=new Set(sarts.map(x=>x.id)), altIdSet=new Set(alts.map(a=>a.id)), itemIdSet=new Set(items.map(i=>i.id)), orderIdSet=new Set(orders.map(o=>o.id));
+  DB.proje.sartnames=(DB.proje.sartnames||[]).filter(x=>!sartIdSet.has(x.id));
+  DB.proje.specs=(DB.proje.specs||[]).filter(s=>!specIdSet.has(s.id));
+  DB.proje.alternatives=(DB.proje.alternatives||[]).filter(a=>!altIdSet.has(a.id));
+  DB.proje.items=(DB.proje.items||[]).filter(i=>!itemIdSet.has(i.id));
+  DB.proje.orders=(DB.proje.orders||[]).filter(o=>!orderIdSet.has(o.id));
+  DB.proje.binaModelleri=(DB.proje.binaModelleri||[]).filter(x=>x.bina!==bina);
+  DB.proje.buildings=(DB.proje.buildings||[]).filter(b=>b!==bina);
+  if(PBINA===bina){ PBINA=""; PCAT=""; PSPEC=""; }
+  logAction('define',`Bina silindi: ${bina} (${parts.join(', ')||'veri yok'})`);
+  render();
+  toast("Bina ve tum verileri silindi");
+}
 
 /* ============ BINA 3D MODELI (glTF/.glb goruntuleyici) ============ */
 const BINA3D_MAX_MB=50;
@@ -2425,20 +2471,29 @@ function upsertMaterialsFromRows(rows, report){
 }
 
 // SPESIFIKASYON UPSERT (key: spec_external_id, FK: material_code)
-function upsertSpecsFromRows(rows, report, defaultBina=''){
+// opts.strict: bina/bolum/sartname "Bolum & Sartname" ekranindan kayitli olmali (dogrulanir, otomatik olusturulmaz)
+// opts.defaultCat / opts.defaultGrup: satirda bolum/sartname sutunu bos ise kullanilacak varsayilan (mevcut ekran baglami)
+function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
   if(!rows||rows.length<2) return;
+  const strict=!!opts.strict;
+  const defaultCat=opts.defaultCat||'';
+  const defaultGrup=opts.defaultGrup||'';
   const h=_firstDataRow(rows); const pick=_hdrMap(rows[h]);
   const iExt=pick('spec_external_id','specexternalid','spec id','spec_id');
   const iCode=pick('material_code','materialcode','urun kodu','kod','spek no','code');
   const iName=pick('material_name','materialname','malzeme adi','malzeme','ad','name');
   const iBina=pick('building','bina');
-  const iGrup=pick('spec_group','specgroup','spesifikasyon grubu','grup','group');
+  const iSec=pick('section','bolum','category','kategori');
+  const iGrup=pick('sartname','spec_group','specgroup','spesifikasyon grubu','grup','group');
   const iTgt=pick('target_qty','targetqty','hedef miktar','hedef','target');
   const iUnit=pick('unit','birim');
   const iInc=pick('include_in_progress','includeinprogress','ilerlemeye dahil','dahil');
   const iAct=pick('action','islem');
   if(iTgt<0 || (iCode<0&&iName<0)){ report.errors.push('Spesifikasyon sayfasi: en az "material_code"/"malzeme" ve "target_qty"/"hedef" sutunlari gerekli'); return; }
   const useExt=iExt>=0;
+  const validSections=new Set((DB.proje.sections||[]).map(s=>norm(s)));
+  const validBinas=new Set((projBuildings()||[]).map(b=>norm(b)));
+  const sartIndex={}; (DB.proje.sartnames||[]).forEach(sr=>{ sartIndex[norm(sr.bina)+'|'+norm(sr.section)+'|'+norm(sr.code)]=sr; });
   const seen=new Set();
   for(let r=h+1;r<rows.length;r++){
     const row=rows[r]; if(!row || row.every(c=>String(c).trim()==='')) continue;
@@ -2453,15 +2508,29 @@ function upsertSpecsFromRows(rows, report, defaultBina=''){
     // rowBina: Excel'de açık olarak belirtilen bina; insertBina: yoksa context'ten al
     const rowBina=iBina>=0?String(row[iBina]??'').trim():'';
     const insertBina=rowBina||defaultBina;
-    const grup=iGrup>=0?String(row[iGrup]??'').trim():'';
-    // anahtar: spec_external_id varsa o; yoksa kod+bina+grup bilesik
-    const skey=useExt&&ext?('e:'+ext.toLowerCase()):('k:'+matKey(code,name)+'|'+rowBina.toLowerCase()+'|'+grup.toLowerCase());
-    if(seen.has(skey)){ report.errors.push(`Spek satir ${r+1}: dosyada tekrar eden kayit`); continue; }
+    // rowSec/rowGrup: satirda acikca belirtilen bolum/sartname; yoksa ekran baglamindan (defaultCat/defaultGrup) al
+    // - boylece TEK excel ile tum binanin birden fazla bolum+sartnamesi tek seferde dagitilabilir
+    const rowSec=iSec>=0?String(row[iSec]??'').trim():'';
+    const existingMat=findMaterial(code,name);
+    const sec=rowSec||defaultCat||(existingMat&&existingMat.cat)||(strict?'':'Tava');
+    const rowGrup=iGrup>=0?String(row[iGrup]??'').trim():'';
+    const grup=rowGrup||defaultGrup;
+    if(strict){
+      if(!insertBina||!validBinas.has(norm(insertBina))){ report.errors.push(`Spek satir ${r+1}: "${insertBina||'(bos)'}" binasi tanimli degil`); continue; }
+      if(!sec){ report.errors.push(`Spek satir ${r+1}: bolum belirtilmemis (bolum sutunu ekleyin)`); continue; }
+      if(!validSections.has(norm(sec))){ report.errors.push(`Spek satir ${r+1}: "${sec}" bolumu tanimli degil (Bolum & Sartname ekranindan ekleyin)`); continue; }
+      if(!grup){ report.errors.push(`Spek satir ${r+1}: sartname belirtilmemis`); continue; }
+      if(!sartIndex[norm(insertBina)+'|'+norm(sec)+'|'+norm(grup)]){ report.errors.push(`Spek satir ${r+1}: "${grup}" sartnamesi ${insertBina}/${sec} icin tanimli degil - once Bolum & Sartname ekranindan tanimlayin`); continue; }
+    }
+    // anahtar: spec_external_id varsa o; yoksa kod+bina+bolum+sartname bilesik
+    // (bolum anahtara dahil: ayni urun farkli bolumlerde/sartnamelerde tekrar edebilir, sadece AYNI sartnamede tekrar edemez)
+    const skey=useExt&&ext?('e:'+ext.toLowerCase()):('k:'+matKey(code,name)+'|'+insertBina.toLowerCase()+'|'+sec.toLowerCase()+'|'+grup.toLowerCase());
+    if(seen.has(skey)){ report.errors.push(`Spek satir ${r+1}: "${name||code}" bu sartnamede birden fazla olamaz (${insertBina}/${sec}/${grup})`); continue; }
     seen.add(skey);
     // mevcut spec bul
     let existing;
     if(useExt&&ext){ existing=DB.proje.specs.find(s=>(s.extId||'').toLowerCase()===ext.toLowerCase()); }
-    if(!existing){ existing=DB.proje.specs.find(s=>matKey(s.code,s.name)===matKey(code,name) && (s.bina||'')===rowBina && specGroupKey(s)===grup); }
+    if(!existing){ existing=DB.proje.specs.find(s=>matKey(s.code,s.name)===matKey(code,name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup); }
     if(action==='delete'){ if(existing){ DB.proje.specs=DB.proje.specs.filter(s=>s.id!==existing.id); report.specDeleted++; } continue; }
     const tgt=Number(tgtRaw);
     if(!tgtRaw||isNaN(tgt)||tgt<=0){ report.errors.push(`Spek satir ${r+1}: gecersiz hedef miktar`); continue; }
@@ -2470,10 +2539,10 @@ function upsertSpecsFromRows(rows, report, defaultBina=''){
     const unit=(iUnit>=0&&String(row[iUnit]??'').trim())?String(row[iUnit]).trim():(mat.unit||'');
     const inc=iInc>=0?String(row[iInc]??'').trim().toUpperCase():'';
     const exclude=(inc==='HAYIR'||inc==='NO'||inc==='HARIC');
-    const cat=mat.cat||'Tava';
+    const cat=sec||mat.cat||'Tava';
     if(existing){ // UPDATE — bina yalnizca Excel'de acikca belirtilmisse guncellenir
       existing.code=code||existing.code; existing.name=name||existing.name; existing.target=tgt; existing.unit=unit;
-      if(rowBina)existing.bina=rowBina; if(grup)existing.grup=grup; existing.cat=cat; existing.matId=mat.id; existing.brand=mat.brand||'';
+      if(insertBina)existing.bina=insertBina; if(grup)existing.grup=grup; existing.cat=cat; existing.matId=mat.id; existing.brand=mat.brand||'';
       existing.exclude=exclude; if(useExt&&ext)existing.extId=ext;
       report.specUpdated++;
     } else { // INSERT — bina yoksa defaultBina'yi kullan
@@ -2509,7 +2578,10 @@ function importSpecsUpsertExcel(e){ if(!guard('import')){e.target.value='';retur
     const matRows=_sheetRows(wb,['2_Materials','Materials','Malzeme_Kutuphanesi','3.Malzeme_Kutuphanesi']);
     if(matRows) upsertMaterialsFromRows(matRows, report);
     const specRows=_sheetRows(wb,['3_Specifications','Specifications','Spesifikasyonlar','4.Spesifikasyonlar']) || _sheetRows(wb,[wb.SheetNames[0]]);
-    upsertSpecsFromRows(specRows, report, PBINA||'');
+    // strict: bina/bolum/sartname "Bolum & Sartname" ekranindan kayitli olmali; satirda bolum/sartname
+    // sutunu varsa TEK excel ile binanin tum bolum ve sartnamelerine dagitim yapilabilir.
+    // Sutun bos birakilirsa mevcut ekran baglami (PCAT/PSPEC) varsayilan olarak kullanilir.
+    upsertSpecsFromRows(specRows, report, PBINA||'', {strict:true, defaultCat:PCAT||'', defaultGrup:(PSPEC&&PSPEC!=='__all')?PSPEC:''});
     await Promise.all([sbUpsertProjeMaterials(DB.proje.materials),sbUpsertProjeSpecs(DB.proje.specs)]);
     render(); logAction('import','Spesifikasyon: +'+report.specCreated+' yeni, '+report.specUpdated+' guncel'); showImportReport(report,'Spesifikasyon');
   }catch(err){ toast('Excel okunamadi: '+err.message,'err'); } e.target.value=''; };
