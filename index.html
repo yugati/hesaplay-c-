@@ -2232,6 +2232,29 @@ function offSpecItems(){
   });
   return Object.values(map).map(o=>({...o,binas:[...o.binas]})).sort((a,b)=>(a.cat||'').localeCompare(b.cat||'','tr')||a.name.localeCompare(b.name,'tr'));
 }
+// bir "sartname disi alim" grubuna (ad+kategori+birim) ait tum alt alim kayitlarinin id'lerini dondurur
+function offSpecGroupItemIds(name,cat,unit){
+  const specIds=new Set(DB.proje.specs.map(s=>s.id));
+  const specKeys=new Set(DB.proje.specs.map(s=>(s.cat||'')+'|'+s.name.trim().toLowerCase()));
+  const targetKey=(cat||'')+'|'+(name||'').trim().toLowerCase()+'|'+(unit||'');
+  return DB.proje.items.filter(it=>{
+    if(it.specId && specIds.has(it.specId)) return false;
+    const key=(it.cat||'')+'|'+it.name.trim().toLowerCase();
+    if(specKeys.has(key)) return false;
+    return key+'|'+(it.unit||'')===targetKey;
+  }).map(it=>it.id);
+}
+async function delOffSpecGroup(name,cat,unit){
+  if(!guard('delete'))return;
+  const ids=offSpecGroupItemIds(name,cat,unit);
+  if(!ids.length){ toast("Kayit bulunamadi","err"); return; }
+  if(!confirm(`"${name}" icin ${ids.length} sartname disi alim kaydini kalici olarak silmek istiyor musunuz? Bu islem geri alinamaz.`))return;
+  await sbDeleteProjeItems(ids);
+  const idSet=new Set(ids);
+  DB.proje.items=DB.proje.items.filter(it=>!idSet.has(it.id));
+  logAction('delete','Sartname disi alim silindi: '+name+' ('+ids.length+' kayit)');
+  render(); toast("Kayitlar silindi");
+}
 function specGroupKey(sp){ return (sp.grup&&sp.grup.trim())?sp.grup.trim():(sp.cat||'Diger'); }
 // ===== MERKEZI MALZEME KUTUPHANESI =====
 function matKey(code,name){ return (code&&String(code).trim())?('c:'+String(code).trim().toLowerCase()):('n:'+String(name||'').trim().toLowerCase()); }
@@ -2795,7 +2818,7 @@ function renderSpec(){
         <div class="prog-cat"><span class="cat-tag" style="background:${catColor(o.cat)}22;color:${catColor(o.cat)}">${esc(o.cat||'-')}</span> <span class="cat-tag" style="background:var(--red)22;color:var(--red)">SPEK DISI</span></div></div></div>
         <div style="margin:4px 0 8px">${binaTags}</div>
         <div class="prog-nums"><span>Alinan: <b>${fmtNum(o.total)} ${esc(o.unit||'')}</b></span><span style="color:var(--red)">Hedef yok</span></div>
-        <div class="prog-actions"><button class="btn btn-ghost" style="flex:1;padding:7px" onclick="specFromOff(this.dataset.n,this.dataset.c,this.dataset.u)" data-n="${esc(o.name)}" data-c="${esc(o.cat||'')}" data-u="${esc(o.unit||'')}">${icoPlus()} Sartnameye Donustur</button></div></div>`; });
+        <div class="prog-actions"><button class="btn btn-ghost" style="flex:1;padding:7px" onclick="specFromOff(this.dataset.n,this.dataset.c,this.dataset.u)" data-n="${esc(o.name)}" data-c="${esc(o.cat||'')}" data-u="${esc(o.unit||'')}">${icoPlus()} Sartnameye Donustur</button>${canDelete('proje')?`<button class="mini-btn del" title="Sartname disi alim kayitlarini sil" onclick="delOffSpecGroup(this.dataset.n,this.dataset.c,this.dataset.u)" data-n="${esc(o.name)}" data-c="${esc(o.cat||'')}" data-u="${esc(o.unit||'')}">${icoTrash()}</button>`:''}</div></div>`; });
     offHtml=`<div style="margin-top:22px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="width:11px;height:11px;border-radius:3px;background:var(--red);display:inline-block"></span><b style="font-size:14px">Sartname Disi Alimlar</b><span class="t-meta">${off.length} kalem · hedef belirlenmemis</span></div><div class="prog-grid">${offCards}</div></div>`;
   }
   // BIRLESIK URUN OZETI - sadece "Tum Spesifikasyonlar" (PSPEC bos) ve birden fazla grup varken
