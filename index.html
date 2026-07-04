@@ -199,16 +199,25 @@ tbody tr:hover{background:var(--panel2)}
 .sel-card-sub{font-size:12px;color:var(--mute);margin-bottom:12px}
 .sel-card-tags{display:flex;gap:5px;flex-wrap:wrap;min-height:20px}
 .sel-card-bar{display:flex;align-items:center;gap:9px;margin:10px 0 4px}
-/* bina karti - 3D model butonu */
-.bina3d-btn{position:absolute;top:14px;right:14px;z-index:2;display:flex;align-items:center;gap:4px;background:var(--bg);border:1px solid var(--line);color:var(--mute);border-radius:8px;padding:5px 9px;font-size:11px;font-weight:700;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s}
-.bina3d-btn:hover{border-color:var(--cc,#a855f7);color:var(--cc,#a855f7)}
-.bina3d-btn.has{color:var(--cc,#a855f7);border-color:var(--cc,#a855f7)66;background:var(--cc,#a855f7)14}
+/* bina karti - kose arac butonlari (3D model, kat gorseli) */
+.sel-card-tools{position:absolute;top:14px;right:14px;z-index:2;display:flex;gap:6px}
+.card-tool-btn{display:flex;align-items:center;gap:4px;background:var(--bg);border:1px solid var(--line);color:var(--mute);border-radius:8px;padding:5px 9px;font-size:11px;font-weight:700;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s}
+.card-tool-btn:hover{border-color:var(--cc,#a855f7);color:var(--cc,#a855f7)}
+.card-tool-btn.has{color:var(--cc,#a855f7);border-color:var(--cc,#a855f7)66;background:var(--cc,#a855f7)14}
 /* bina 3D goruntuleyici modal */
 .bina3d-toolbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px;font-size:12px}
 .bina3d-rotate{display:flex;align-items:center;gap:6px;color:var(--mute);cursor:pointer;user-select:none}
 .bina3d-canvas{position:relative;width:100%;height:min(60vh,480px);border-radius:12px;overflow:hidden;background:#0b0f16;border:1px solid var(--line)}
 .bina3d-canvas canvas{display:block}
 .bina3d-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--mute);font-size:13px;background:#0b0f16}
+/* kat gorseli - canli montaj isi haritasi */
+.katgor-summary{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.katgor-avg{font-size:30px;font-weight:800;font-family:var(--mono)}
+.katgor-block{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;max-width:420px}
+.katgor-floor{display:flex;align-items:center;justify-content:space-between;padding:0 18px;height:50px;border-bottom:1px solid rgba(0,0,0,.28);color:#fff;font-weight:700;font-family:var(--mono);cursor:default;transition:background .4s;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.katgor-floor:last-child{border-bottom:none}
+.katgor-floor-label{font-size:13px;letter-spacing:.3px}
+.katgor-floor-pct{font-size:16px}
 /* "Tum Sartnameler" ozet bari - grid'deki tekil sartname kartlarindan ayrisan, tam genislikte bir bar */
 .sart-all-bar{display:flex;align-items:center;gap:16px;background:linear-gradient(90deg,color-mix(in srgb,var(--cc,#a855f7) 8%,var(--panel)),var(--panel));border:1px dashed color-mix(in srgb,var(--cc,#a855f7) 45%,var(--line));border-radius:14px;padding:16px 20px;cursor:pointer;transition:border-color .12s,box-shadow .12s,transform .12s;box-shadow:var(--shadow-sm);margin-bottom:18px}
 .sart-all-bar:hover{border-color:var(--cc,#a855f7);border-style:solid;box-shadow:var(--shadow-md);transform:translateY(-2px)}
@@ -868,6 +877,33 @@ function projBuildings(){ const list=(DB.proje&&DB.proje.buildings)?DB.proje.bui
 function buildingColor(b){ const list=projBuildings(); const i=Math.max(0,list.indexOf(b));
   const pal=['#3b82f6','#22c55e','#f0a020','#a855f7','#ec4899','#06b6d4','#ef4444','#eab308','#14b8a6','#f97316']; return pal[i%pal.length]; }
 function binaModel(b){ return (DB.proje.binaModelleri||[]).find(x=>x.bina===b)||null; }
+// Duz blok binalar icin kat sayisi (kat gorseli sadece burada tanimli binalarda gosterilir)
+const BINA_KAT_SAYISI={'00UYB':8};
+function parseKatNo(k){ const m=String(k==null?'':k).match(/-?\d+/); return m?parseInt(m[0],10):null; }
+// bina + kat bazinda montaj ilerlemesi: her katin hedefi, binanin toplam spek hedefinin kat sayisina bolunmus payi kabul edilir (duz blok - katlar ozdes)
+function binaKatIlerleme(bina,katSayisi){
+  const specs=DB.proje.specs.filter(s=>!s.is_deleted && s.bina===bina && !s.exclude && Number(s.target)>0);
+  const floors=Array.from({length:katSayisi},(_,i)=>({kat:katSayisi-i,target:0,installed:0,kotlar:{}}));
+  const floorByNo={}; floors.forEach(f=>floorByNo[f.kat]=f);
+  let unmatched=0;
+  specs.forEach(sp=>{
+    const targetShare=(Number(sp.target)||0)/katSayisi;
+    floors.forEach(f=>f.target+=targetShare);
+    (DB.rapor.entries||[]).filter(e=>!e.is_deleted && e.specId===sp.id).forEach(e=>{
+      const kn=parseKatNo(e.kat);
+      const f=(kn!=null)?floorByNo[kn]:null;
+      if(!f){ unmatched++; return; }
+      const q=Number(e.miktar)||0; f.installed+=q;
+      const kotKey=(e.kot!=null&&e.kot!=='')?String(e.kot):'-';
+      f.kotlar[kotKey]=(f.kotlar[kotKey]||0)+q;
+    });
+  });
+  floors.forEach(f=>{ f.pct=f.target>0?Math.min(100,f.installed/f.target*100):0; });
+  const tt=floors.reduce((s,f)=>s+f.target,0), gg=floors.reduce((s,f)=>s+f.installed,0);
+  const avgPct=tt>0?Math.min(100,gg/tt*100):0;
+  return {floors,avgPct,unmatched};
+}
+function katHeatColor(pct){ const hue=Math.max(0,Math.min(120,pct*1.2)); return `hsl(${hue},62%,42%)`; }
 function tavaSeedSpecs(){ return TAVA_SPEC_SEED.map(s=>({id:uid(),code:s.code,name:s.name,target:s.target,unit:s.unit,cat:s.cat,bina:s.bina,grup:s.grup||''})); }
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const fmtDate=ts=>{ if(ts==null||ts==='')return''; const d=new Date(ts); return isNaN(d)?String(ts):d.toLocaleDateString('tr-TR',{day:'2-digit',month:'2-digit',year:'numeric'}); };
@@ -1038,8 +1074,12 @@ function renderBinaSecim(){
     let tt=0,gg=0; binSpecs.forEach(s=>{ if(s.exclude)return; const{got}=specProgress(s); tt+=Number(s.target)||0; gg+=got; });
     const pct=tt>0?Math.min(100,gg/tt*100):0;
     const bm=binaModel(b);
+    const katSayisi=BINA_KAT_SAYISI[b];
     cards+=`<div class="sel-card" onclick="setPBina('${esc(b)}')" style="--cc:${col}">
-      <button class="bina3d-btn ${bm?'has':''}" title="${bm?'3D Bina Modeli':'3D Bina Modeli Ekle'}" onclick="event.stopPropagation();open3DBinaModal('${esc(b)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>${bm?'3D':'+3D'}</button>
+      <div class="sel-card-tools">
+        ${katSayisi?`<button class="card-tool-btn" title="Kat Gorunumu" onclick="event.stopPropagation();openKatGorseli('${esc(b)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M4 8h16M4 13h16M4 18h16"/></svg>Kat</button>`:''}
+        <button class="card-tool-btn ${bm?'has':''}" title="${bm?'3D Bina Modeli':'3D Bina Modeli Ekle'}" onclick="event.stopPropagation();open3DBinaModal('${esc(b)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>${bm?'3D':'+3D'}</button>
+      </div>
       <div class="sel-card-ico" style="background:${col}1f;color:${col}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg></div>
       <div class="sel-card-name">${esc(b)}</div>
       <div class="sel-card-sub">${cats.length} bolum · ${specCount} sartname kalemi · ${itemCount} hareket</div>
@@ -1887,6 +1927,36 @@ async function del3DBinaModel(bina){
   const slot=document.getElementById('bina3d-slot');
   if(slot) slot.innerHTML=bina3dUploadHtml(bina);
   toast("3D model silindi");
+}
+
+/* ============ KAT GORSELI (canli montaj isi haritasi) ============ */
+// Duz blok bina: her kat, gunluk rapordan gelen kat/kot kayitlarina gore
+// montaj yuzdesine sahip; renk kirmizidan (0%) yesile (100%) gecer.
+function openKatGorseli(bina){
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal bina3d-modal"><div class="modal-head"><h3>${icoLayers()} ${esc(bina)} · Kat Gorunumu</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <div id="katgor-slot">${katGorseliHtml(bina)}</div>
+  </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function icoLayers(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M4 8h16M4 13h16M4 18h16"/></svg>'; }
+function katGorseliHtml(bina){
+  const katSayisi=BINA_KAT_SAYISI[bina]; if(!katSayisi) return '';
+  const {floors,avgPct,unmatched}=binaKatIlerleme(bina,katSayisi);
+  const rows=floors.map(f=>{
+    const col=katHeatColor(f.pct);
+    const kotEntries=Object.entries(f.kotlar).filter(([k])=>k!=='-');
+    const kotTitle=kotEntries.length?('Kotlar: '+kotEntries.map(([k,q])=>`${k} (${fmtNum(q)})`).join(', ')):'Kot kaydi yok';
+    return `<div class="katgor-floor" style="background:${col}" title="${esc(kotTitle)}">
+        <span class="katgor-floor-label">${f.kat}. Kat</span>
+        <span class="katgor-floor-pct">${f.pct.toFixed(0)}%</span>
+      </div>`;
+  }).join('');
+  return `<div class="katgor-summary">
+      <div class="katgor-avg" style="color:${katHeatColor(avgPct)}">${avgPct.toFixed(0)}<span style="font-size:14px;color:var(--mute);font-weight:400">% ortalama montaj</span></div>
+      ${unmatched?`<span class="t-meta">${unmatched} rapor kaydinda kat bilgisi eslesmedi</span>`:''}
+    </div>
+    <div class="katgor-block">${rows}</div>
+    <p style="font-size:11px;color:var(--dim);margin-top:10px">Her katin hedefi, binadaki tum sartname kalemlerinin hedefinin ${katSayisi} kata esit bolunmesiyle hesaplanir (duz blok varsayimi). Yuzde, o kata islenen gunluk rapor (kat/kot) kayitlarindan gelir. Bir kat ustune gelerek o kattaki kot kayitlarini gorebilirsiniz.</p>`;
 }
 
 function groupByMaterial(items){
