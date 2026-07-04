@@ -573,6 +573,62 @@ DROP TRIGGER IF EXISTS proje_alternatives_updated_at ON public.proje_alternative
 CREATE TRIGGER proje_alternatives_updated_at BEFORE UPDATE ON public.proje_alternatives
   FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
 
+-- ─── 22. PROJE_BINA_MODELLERI ───────────────────────────────
+-- Her bina için yüklenen 3D model (glTF/.glb) referansı.
+-- data: {bina, url, fileName, sizeBytes, addedAt}
+-- Dosyanın kendisi Supabase Storage'daki 'bina-modelleri' bucket'ında
+-- tutulur; burada sadece public URL saklanır (JSONB satırı küçük kalır).
+CREATE TABLE IF NOT EXISTS public.proje_bina_modelleri (
+  id          TEXT        NOT NULL PRIMARY KEY,
+  data        JSONB       NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS proje_bina_modelleri_created_at_idx ON public.proje_bina_modelleri (created_at);
+CREATE INDEX IF NOT EXISTS proje_bina_modelleri_bina_idx       ON public.proje_bina_modelleri ((data->>'bina'));
+
+ALTER TABLE public.proje_bina_modelleri ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "proje_bina_modelleri_anon_all"  ON public.proje_bina_modelleri;
+CREATE POLICY "proje_bina_modelleri_anon_all"  ON public.proje_bina_modelleri FOR ALL TO anon        USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "proje_bina_modelleri_auth_all"  ON public.proje_bina_modelleri;
+CREATE POLICY "proje_bina_modelleri_auth_all"  ON public.proje_bina_modelleri FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.proje_bina_modelleri TO anon, authenticated;
+
+DROP TRIGGER IF EXISTS proje_bina_modelleri_updated_at ON public.proje_bina_modelleri;
+CREATE TRIGGER proje_bina_modelleri_updated_at BEFORE UPDATE ON public.proje_bina_modelleri
+  FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+
+-- ─── STORAGE: bina-modelleri bucket ─────────────────────────
+-- 3D model dosyaları (.glb/.gltf) için genel-okunabilir depolama alanı.
+-- Uygulama zaten kendi kullanıcı/rol sistemini (public.users) yönetiyor;
+-- anon key ile açık erişim, diğer tüm tablolardaki desenle tutarlıdır.
+INSERT INTO storage.buckets (id, name, public, file_size_limit)
+VALUES ('bina-modelleri', 'bina-modelleri', true, 52428800)
+ON CONFLICT (id) DO UPDATE SET public = true, file_size_limit = 52428800;
+
+DROP POLICY IF EXISTS "bina_modelleri_public_read" ON storage.objects;
+CREATE POLICY "bina_modelleri_public_read" ON storage.objects
+  FOR SELECT TO anon, authenticated
+  USING (bucket_id = 'bina-modelleri');
+
+DROP POLICY IF EXISTS "bina_modelleri_anon_write" ON storage.objects;
+CREATE POLICY "bina_modelleri_anon_write" ON storage.objects
+  FOR INSERT TO anon, authenticated
+  WITH CHECK (bucket_id = 'bina-modelleri');
+
+DROP POLICY IF EXISTS "bina_modelleri_anon_update" ON storage.objects;
+CREATE POLICY "bina_modelleri_anon_update" ON storage.objects
+  FOR UPDATE TO anon, authenticated
+  USING (bucket_id = 'bina-modelleri') WITH CHECK (bucket_id = 'bina-modelleri');
+
+DROP POLICY IF EXISTS "bina_modelleri_anon_delete" ON storage.objects;
+CREATE POLICY "bina_modelleri_anon_delete" ON storage.objects
+  FOR DELETE TO anon, authenticated
+  USING (bucket_id = 'bina-modelleri');
+
 -- ============================================================
 -- DOĞRULAMA: Tüm tablolar oluştu mu?
 -- Bu sorguyu çalıştırarak kontrol edebilirsiniz:
@@ -582,11 +638,11 @@ CREATE TRIGGER proje_alternatives_updated_at BEFORE UPDATE ON public.proje_alter
 -- WHERE table_schema = 'public'
 -- ORDER BY table_name;
 --
--- Beklenen sonuç (21 tablo):
+-- Beklenen sonuç (22 tablo):
 --   alet_items, app_settings, audit_log, gecici_lib,
 --   gecici_moves, gecici_orders, proje_alternatives,
---   proje_buildings, proje_items, proje_materials,
---   proje_orders, proje_sartnames, proje_sections,
---   proje_specs, rapor_ekipler, rapor_entries, saha_lines,
---   saha_panels, saha_settings, saha_sockets, users
+--   proje_bina_modelleri, proje_buildings, proje_items,
+--   proje_materials, proje_orders, proje_sartnames,
+--   proje_sections, proje_specs, rapor_ekipler, rapor_entries,
+--   saha_lines, saha_panels, saha_settings, saha_sockets, users
 -- ============================================================

@@ -372,6 +372,40 @@ export async function sbUpdateProjeAlternative(id, e) { return sbUpdateEntity('p
 export async function sbDeleteProjeAlternative(id) { return sbDeleteEntity('proje_alternatives', id) }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Bina 3D Modelleri (glTF/.glb) - Supabase Storage + JSONB referans tablosu
+// ─────────────────────────────────────────────────────────────────────────────
+
+const BINA_MODEL_BUCKET = 'bina-modelleri'
+
+export async function sbGetProjeBinaModelleri() { return sbGetAll('proje_bina_modelleri') }
+export async function sbInsertProjeBinaModel(e) { return sbInsertEntity('proje_bina_modelleri', e) }
+export async function sbUpdateProjeBinaModel(id, e) { return sbUpdateEntity('proje_bina_modelleri', id, e) }
+export async function sbDeleteProjeBinaModel(id) { return sbDeleteEntity('proje_bina_modelleri', id) }
+
+// Dosyayı bucket'a yükler ve genel-erişim URL'sini döndürür.
+export async function sbUploadBinaModelFile(bina, file) {
+  const ext = (file.name.split('.').pop() || 'glb').toLowerCase()
+  const path = `${bina}/${Date.now()}_${uid8()}.${ext}`
+  const { error } = await supabase.storage.from(BINA_MODEL_BUCKET).upload(path, file, {
+    cacheControl: '31536000',
+    upsert: false,
+    contentType: file.type || 'model/gltf-binary',
+  })
+  if (error) throw error
+  const { data } = supabase.storage.from(BINA_MODEL_BUCKET).getPublicUrl(path)
+  return { url: data.publicUrl, path }
+}
+
+export async function sbDeleteBinaModelFile(path) {
+  if (!path) return
+  await supabase.storage.from(BINA_MODEL_BUCKET).remove([path])
+}
+
+function uid8() {
+  return Math.random().toString(36).slice(2, 10)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Upsert (import / sync sonrası toplu güncelleme)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -420,7 +454,7 @@ export async function sbLoadAllData() {
     geciciLib, geciciMoves, geciciOrders,
     projeBuildingsRes, projeSectionsRes, projeSartnames,
     projeMaterials, projeSpecs, projeItems, projeOrders,
-    projeAlternatives,
+    projeAlternatives, projeBinaModelleri,
     auditRes, settingsRes,
   ] = await Promise.all([
     sbGetAll('alet_items'),
@@ -441,6 +475,9 @@ export async function sbLoadAllData() {
     sbGetAll('proje_items'),
     sbGetAll('proje_orders'),
     sbGetAll('proje_alternatives'),
+    // proje_bina_modelleri tablosu supabase_schema.sql'in yeni eklenen kısmıyla oluşturulur;
+    // migration henüz çalıştırılmamışsa tüm veri yüklemesini kilitlememesi için hataya toleranslı.
+    sbGetAll('proje_bina_modelleri').catch(() => []),
     supabase.from('audit_log').select('data').order('created_at', { ascending: true }).limit(2000),
     supabase.from('app_settings').select('key, value'),
   ])
@@ -488,6 +525,7 @@ export async function sbLoadAllData() {
       items: projeItems,
       orders: projeOrders,
       alternatives: projeAlternatives,
+      binaModelleri: projeBinaModelleri,
     },
     meta: {
       created: settingsMap.created || Date.now(),
@@ -546,6 +584,8 @@ export async function sbMigrateLocalDB(localDB) {
     ops.push(sbInsertEntities('proje_items', localDB.proje.items))
   if (localDB.proje?.orders?.length)
     ops.push(sbInsertEntities('proje_orders', localDB.proje.orders))
+  if (localDB.proje?.binaModelleri?.length)
+    ops.push(sbInsertEntities('proje_bina_modelleri', localDB.proje.binaModelleri))
   if (localDB.meta?.audit?.length)
     ops.push(
       supabase.from('audit_log').insert(
@@ -571,6 +611,7 @@ export async function sbMigrateLocalDB(localDB) {
 export async function sbWipeAllData() {
   const textIdTables = [
     'proje_materials', 'proje_specs', 'proje_items', 'proje_orders', 'proje_sartnames',
+    'proje_bina_modelleri',
     'alet_items', 'saha_panels', 'saha_lines', 'saha_sockets',
     'rapor_entries', 'gecici_lib', 'gecici_moves', 'gecici_orders',
   ]
@@ -592,6 +633,7 @@ export async function sbWipeProjeData() {
     sbDeleteAll('proje_items'),
     sbDeleteAll('proje_orders'),
     sbDeleteAll('proje_sartnames'),
+    sbDeleteAll('proje_bina_modelleri'),
     supabase.from('proje_buildings').delete().gte('created_at', '2000-01-01T00:00:00Z'),
     supabase.from('proje_sections').delete().gte('created_at', '2000-01-01T00:00:00Z'),
   ])

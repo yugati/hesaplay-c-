@@ -199,6 +199,16 @@ tbody tr:hover{background:var(--panel2)}
 .sel-card-sub{font-size:12px;color:var(--mute);margin-bottom:12px}
 .sel-card-tags{display:flex;gap:5px;flex-wrap:wrap;min-height:20px}
 .sel-card-bar{display:flex;align-items:center;gap:9px;margin:10px 0 4px}
+/* bina karti - 3D model butonu */
+.bina3d-btn{position:absolute;top:14px;right:14px;z-index:2;display:flex;align-items:center;gap:4px;background:var(--bg);border:1px solid var(--line);color:var(--mute);border-radius:8px;padding:5px 9px;font-size:11px;font-weight:700;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s}
+.bina3d-btn:hover{border-color:var(--cc,#a855f7);color:var(--cc,#a855f7)}
+.bina3d-btn.has{color:var(--cc,#a855f7);border-color:var(--cc,#a855f7)66;background:var(--cc,#a855f7)14}
+/* bina 3D goruntuleyici modal */
+.bina3d-toolbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px;font-size:12px}
+.bina3d-rotate{display:flex;align-items:center;gap:6px;color:var(--mute);cursor:pointer;user-select:none}
+.bina3d-canvas{position:relative;width:100%;height:min(60vh,480px);border-radius:12px;overflow:hidden;background:#0b0f16;border:1px solid var(--line)}
+.bina3d-canvas canvas{display:block}
+.bina3d-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--mute);font-size:13px;background:#0b0f16}
 /* "Tum Sartnameler" ozet bari - grid'deki tekil sartname kartlarindan ayrisan, tam genislikte bir bar */
 .sart-all-bar{display:flex;align-items:center;gap:16px;background:linear-gradient(90deg,color-mix(in srgb,var(--cc,#a855f7) 8%,var(--panel)),var(--panel));border:1px dashed color-mix(in srgb,var(--cc,#a855f7) 45%,var(--line));border-radius:14px;padding:16px 20px;cursor:pointer;transition:border-color .12s,box-shadow .12s,transform .12s;box-shadow:var(--shadow-sm);margin-bottom:18px}
 .sart-all-bar:hover{border-color:var(--cc,#a855f7);border-style:solid;box-shadow:var(--shadow-md);transform:translateY(-2px)}
@@ -352,6 +362,7 @@ tr.row-sel{background:color-mix(in srgb,var(--blue) 9%,transparent)}
 .modal-bg{position:fixed;inset:0;background:rgba(3,6,12,.72);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
 .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:100%;max-width:480px;max-height:92vh;overflow:auto;box-shadow:0 40px 100px rgba(0,0,0,.6)}
 .modal.wide{max-width:620px}
+.modal.bina3d-modal{max-width:820px}
 .modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
 .modal-head h3{font-size:15px;font-weight:700}
 .modal-body{padding:20px}
@@ -660,11 +671,11 @@ function blankDB(){
     id:uid(), kod:s.c, ad:s.a, grup:s.g, marka:s.m, unit:s.u||'ADET',
     barkod:s.bc, renk:s.r, bakiye:Number(s.b)||0, parca:Number(s.p)||0, img:null
   }));
-  return { proje:{items:[],specs:[],buildings:DEFAULT_BUILDINGS.slice(),orders:[],materials:[],sections:["Tava","Aydinlatma","Topraklama","Pano","Kablolama"],sartnames:[]}, gecici:{lib:lib, moves:[], orders:[]}, alet:{items:[]}, saha:{bg:SAHA_DEFAULT_BG, bgName:'GP_oll_area-1.pdf', panels:[], lines:[], sockets:[]}, meta:{created:Date.now(),seeded:true,tavaSeed:false,tavaSeedV:4,specWipeV:1,matLibV:1} };
+  return { proje:{items:[],specs:[],buildings:DEFAULT_BUILDINGS.slice(),orders:[],materials:[],sections:["Tava","Aydinlatma","Topraklama","Pano","Kablolama"],sartnames:[],binaModelleri:[]}, gecici:{lib:lib, moves:[], orders:[]}, alet:{items:[]}, saha:{bg:SAHA_DEFAULT_BG, bgName:'GP_oll_area-1.pdf', panels:[], lines:[], sockets:[]}, meta:{created:Date.now(),seeded:true,tavaSeed:false,tavaSeedV:4,specWipeV:1,matLibV:1} };
 }
 // TAMAMEN BOS sistem (seed yok) - test/temiz kurulum icin
 function emptyDB(){
-  return { proje:{items:[],specs:[],buildings:DEFAULT_BUILDINGS.slice(),orders:[],materials:[],sections:["Tava","Aydinlatma","Topraklama","Pano","Kablolama"],sartnames:[]}, gecici:{lib:[],moves:[],orders:[]}, alet:{items:[]}, saha:{bg:null,bgName:'',panels:[],lines:[],sockets:[]}, meta:{created:Date.now(),seeded:true,tavaSeed:false,tavaSeedV:4,specWipeV:1,matLibV:1} };
+  return { proje:{items:[],specs:[],buildings:DEFAULT_BUILDINGS.slice(),orders:[],materials:[],sections:["Tava","Aydinlatma","Topraklama","Pano","Kablolama"],sartnames:[],binaModelleri:[]}, gecici:{lib:[],moves:[],orders:[]}, alet:{items:[]}, saha:{bg:null,bgName:'',panels:[],lines:[],sockets:[]}, meta:{created:Date.now(),seeded:true,tavaSeed:false,tavaSeedV:4,specWipeV:1,matLibV:1} };
 }
 async function saveDB(){
   // Her işlem artık doğrudan Supabase'e yazılıyor; bu fonksiyon yalnızca meta günceller.
@@ -703,6 +714,7 @@ function migrate(){
   // BOLUMLER (global) + SARTNAMELER (bina+bolume ozel)
   if(!DB.proje.sections){ DB.proje.sections=["Tava","Aydinlatma","Topraklama","Pano","Kablolama"]; }
   if(!DB.proje.sartnames){ DB.proje.sartnames=[]; }
+  if(!DB.proje.binaModelleri){ DB.proje.binaModelleri=[]; }
   DB.proje.items.forEach(it=>{ if(!it.type) it.type='in'; });
   // GUNLUK SAHA RAPORU
   if(!DB.rapor){ DB.rapor={ entries:[], ekipler:["SAHA - ELEKTRIK - SEZGIN SURER","SAHA - ELEKTRIK - YILMAZ KABAAGIL"], meta:{} }; }
@@ -855,6 +867,7 @@ function projBuildings(){ const list=(DB.proje&&DB.proje.buildings)?DB.proje.bui
 }
 function buildingColor(b){ const list=projBuildings(); const i=Math.max(0,list.indexOf(b));
   const pal=['#3b82f6','#22c55e','#f0a020','#a855f7','#ec4899','#06b6d4','#ef4444','#eab308','#14b8a6','#f97316']; return pal[i%pal.length]; }
+function binaModel(b){ return (DB.proje.binaModelleri||[]).find(x=>x.bina===b)||null; }
 function tavaSeedSpecs(){ return TAVA_SPEC_SEED.map(s=>({id:uid(),code:s.code,name:s.name,target:s.target,unit:s.unit,cat:s.cat,bina:s.bina,grup:s.grup||''})); }
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const fmtDate=ts=>{ if(ts==null||ts==='')return''; const d=new Date(ts); return isNaN(d)?String(ts):d.toLocaleDateString('tr-TR',{day:'2-digit',month:'2-digit',year:'numeric'}); };
@@ -1024,7 +1037,9 @@ function renderBinaSecim(){
     const cats=[...new Set(binSpecs.map(s=>s.cat).filter(Boolean))];
     let tt=0,gg=0; binSpecs.forEach(s=>{ if(s.exclude)return; const{got}=specProgress(s); tt+=Number(s.target)||0; gg+=got; });
     const pct=tt>0?Math.min(100,gg/tt*100):0;
+    const bm=binaModel(b);
     cards+=`<div class="sel-card" onclick="setPBina('${esc(b)}')" style="--cc:${col}">
+      <button class="bina3d-btn ${bm?'has':''}" title="${bm?'3D Bina Modeli':'3D Bina Modeli Ekle'}" onclick="event.stopPropagation();open3DBinaModal('${esc(b)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>${bm?'3D':'+3D'}</button>
       <div class="sel-card-ico" style="background:${col}1f;color:${col}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg></div>
       <div class="sel-card-name">${esc(b)}</div>
       <div class="sel-card-sub">${cats.length} bolum · ${specCount} sartname kalemi · ${itemCount} hareket</div>
@@ -1797,6 +1812,83 @@ async function addBinaPrompt(){ if(!guard('define'))return; const v=prompt("Yeni
   if(!DB.proje.buildings.includes(b)){ await sbInsertProjeBuilding(b); DB.proje.buildings.push(b); } setPBina(b); }
 async function addCatPrompt(){ const v=prompt("Yeni kategori adi (orn. Kablo Kanali):"); if(!v)return; const c=v.trim(); if(!c)return; setPCat(c); }
 
+/* ============ BINA 3D MODELI (glTF/.glb goruntuleyici) ============ */
+const BINA3D_MAX_MB=50;
+function open3DBinaModal(bina){
+  const bm=binaModel(bina);
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide bina3d-modal"><div class="modal-head"><h3>${icoCube()} ${esc(bina)} · 3D Bina Modeli</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <div id="bina3d-slot">${bm?bina3dViewerHtml(bina,bm):bina3dUploadHtml(bina)}</div>
+  </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  if(bm) mount3DBinaViewer(bina,bm.url);
+}
+function icoCube(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>'; }
+function bina3dUploadHtml(bina){
+  if(!can('define',{bina})) return `<div class="empty" style="padding:40px 20px">${icoCube()}<p style="margin-top:10px">Bu bina icin henuz 3D model eklenmemis</p></div>`;
+  return `<div class="drop" id="bina3dDrop" onclick="document.getElementById('bina3dInput').click()" style="cursor:pointer">
+      ${icoCube()}<div style="margin-top:8px">3D bina modeli yukleyin (.glb / .gltf, maks ${BINA3D_MAX_MB}MB)</div>
+    </div>
+    <input type="file" id="bina3dInput" accept=".glb,.gltf" class="hidden" onchange="upload3DBinaModel('${esc(bina)}',event)">`;
+}
+function bina3dViewerHtml(bina,bm){
+  const editBtns=can('define',{bina})?`<button class="btn btn-ghost" style="padding:7px 12px;font-size:12px" onclick="document.getElementById('bina3dInputR').click()">${icoUp()} Degistir</button>
+      <input type="file" id="bina3dInputR" accept=".glb,.gltf" class="hidden" onchange="upload3DBinaModel('${esc(bina)}',event)">
+      <button class="btn btn-ghost" style="padding:7px 12px;font-size:12px;color:var(--red);border-color:var(--red)55" onclick="del3DBinaModel('${esc(bina)}')">${icoTrash()} Sil</button>`:'';
+  return `<div class="bina3d-toolbar">
+      <label class="bina3d-rotate"><input type="checkbox" checked onchange="window._binaViewer&&window._binaViewer.setAutoRotate(this.checked)"> Otomatik dondur</label>
+      <span class="t-meta">${esc(bm.fileName||'')}</span>
+      <div style="margin-left:auto;display:flex;gap:8px">${editBtns}</div>
+    </div>
+    <div id="bina3dCanvas" class="bina3d-canvas"><div class="bina3d-loading">Model yukleniyor...</div></div>
+    <p style="font-size:11px;color:var(--dim);margin-top:8px">Surukle: dondur · Kaydir: yakinlastir</p>`;
+}
+function mount3DBinaViewer(bina,url){
+  requestAnimationFrame(()=>{
+    const el=document.getElementById('bina3dCanvas'); if(!el||!window.initBinaViewer)return;
+    if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; }
+    window._binaViewer=window.initBinaViewer(el,url,{
+      onLoaded:()=>{ const l=el.querySelector('.bina3d-loading'); if(l)l.remove(); },
+      onError:(err)=>{ console.error('3D model yuklenemedi:',err); el.innerHTML=`<div class="bina3d-loading" style="color:var(--red)">Model yuklenemedi - dosya bozuk olabilir</div>`; }
+    });
+  });
+}
+async function upload3DBinaModel(bina,e){
+  const f=e.target.files[0]; if(!f)return; e.target.value='';
+  if(!guard('define',{bina}))return;
+  if(!/\.(glb|gltf)$/i.test(f.name)){ toast("Sadece .glb veya .gltf dosyasi yuklenebilir","err"); return; }
+  if(f.size>BINA3D_MAX_MB*1024*1024){ toast(`Dosya cok buyuk - maks ${BINA3D_MAX_MB}MB`,"err"); return; }
+  toast("Model yukleniyor...");
+  const old=binaModel(bina);
+  const up=await sbUploadBinaModelFile(bina,f);
+  if(!up)return; // hata zaten toast edildi
+  const entity={id:old?old.id:uid(),bina,url:up.url,path:up.path,fileName:f.name,sizeBytes:f.size,addedAt:Date.now()};
+  if(old){
+    await sbUpdateProjeBinaModel(old.id,entity);
+    Object.assign(old,entity);
+  } else {
+    await sbInsertProjeBinaModel(entity);
+    DB.proje.binaModelleri.push(entity);
+  }
+  if(old && old.path && old.path!==up.path) await sbDeleteBinaModelFile(old.path);
+  logAction('define','3D Model: '+bina+' / '+f.name);
+  const slot=document.getElementById('bina3d-slot');
+  if(slot){ slot.innerHTML=bina3dViewerHtml(bina,entity); mount3DBinaViewer(bina,entity.url); }
+  toast("3D model kaydedildi");
+}
+async function del3DBinaModel(bina){
+  const bm=binaModel(bina); if(!bm)return;
+  if(!guard('define',{bina}))return;
+  if(!confirm(`"${bina}" binasinin 3D modelini silmek istiyor musunuz?`))return;
+  if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; }
+  await sbDeleteProjeBinaModel(bm.id);
+  if(bm.path) await sbDeleteBinaModelFile(bm.path);
+  DB.proje.binaModelleri=DB.proje.binaModelleri.filter(x=>x.id!==bm.id);
+  logAction('define','3D Model silindi: '+bina);
+  const slot=document.getElementById('bina3d-slot');
+  if(slot) slot.innerHTML=bina3dUploadHtml(bina);
+  toast("3D model silindi");
+}
+
 function groupByMaterial(items){
   const map={};
   items.forEach(it=>{
@@ -2528,7 +2620,7 @@ async function confirmWipe(){
     const labels=Object.fromEntries(WIPE_CATS.map(c=>[c.key,c.label]));
     if(sel.includes('proje')){
       await sbWipeProjeData();
-      DB.proje={items:[],specs:[],buildings:DEFAULT_BUILDINGS.slice(),orders:[],materials:[],sections:["Tava","Aydinlatma","Topraklama","Pano","Kablolama"],sartnames:[]};
+      DB.proje={items:[],specs:[],buildings:DEFAULT_BUILDINGS.slice(),orders:[],materials:[],sections:["Tava","Aydinlatma","Topraklama","Pano","Kablolama"],sartnames:[],binaModelleri:[]};
       await Promise.all([sbInsertProjeBuildings(DB.proje.buildings),sbInsertProjeSections(DB.proje.sections)]);
     }
     if(sel.includes('alet')){ await sbWipeAletData(); DB.alet={items:[]}; }
@@ -2947,7 +3039,7 @@ function toast(msg,type){ const w=document.getElementById('toasts'); const t=doc
   t.className='toast'+(type==='err'?' err':''); t.textContent=msg; w.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),300);},2800); }
 function lightbox(src){ const d=document.createElement('div'); d.className='lightbox'; d.onclick=()=>d.remove(); d.innerHTML=`<img src="${src}">`; document.body.appendChild(d); }
-function closeModal(){ document.querySelectorAll('.modal-bg').forEach(m=>m.remove()); modalImg=null; modalPdf=null; }
+function closeModal(){ if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; } document.querySelectorAll('.modal-bg').forEach(m=>m.remove()); modalImg=null; modalPdf=null; }
 
 /* ---------- image/pdf pickers (shared) ---------- */
 let modalImg=null, modalPdf=null;

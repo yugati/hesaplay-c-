@@ -4,6 +4,7 @@
 // HTML'deki inline onclick/kod bloklarının erişebilmesi için gerekli.
 // ═══════════════════════════════════════════════════════════════════════
 import * as XLSX from 'xlsx'
+import { initBinaViewer } from './bina3d.js'
 import {
   // Users
   sbLoginUser,
@@ -114,6 +115,13 @@ import {
   sbInsertProjeAlternative,
   sbUpdateProjeAlternative,
   sbDeleteProjeAlternative,
+  // Bina 3D Modelleri
+  sbGetProjeBinaModelleri,
+  sbInsertProjeBinaModel,
+  sbUpdateProjeBinaModel,
+  sbDeleteProjeBinaModel,
+  sbUploadBinaModelFile,
+  sbDeleteBinaModelFile,
 } from './supabase.js'
 
 // xlsx global
@@ -287,3 +295,12 @@ window.sbGetProjeAlternatives    = sbGetProjeAlternatives
 window.sbInsertProjeAlternative  = guardedSafe('proje', 'create', sbInsertProjeAlternative)
 window.sbUpdateProjeAlternative  = guardedSafe('proje', 'update', sbUpdateProjeAlternative)
 window.sbDeleteProjeAlternative  = guardedSafe('proje', 'delete', sbDeleteProjeAlternative)
+
+// ─── Bina 3D Modelleri ────────────────────────────────────────────────────────
+window.sbGetProjeBinaModelleri  = sbGetProjeBinaModelleri
+window.sbInsertProjeBinaModel   = guardedSafe('tanimlar', 'create', sbInsertProjeBinaModel)
+window.sbUpdateProjeBinaModel   = guardedSafe('tanimlar', 'update', sbUpdateProjeBinaModel)
+window.sbDeleteProjeBinaModel   = guardedSafe('tanimlar', 'delete', sbDeleteProjeBinaModel)
+window.sbUploadBinaModelFile    = guardedSafe('tanimlar', 'create', sbUploadBinaModelFile)
+window.sbDeleteBinaModelFile    = guardedSafe('tanimlar', 'delete', sbDeleteBinaModelFile)
+window.initBinaViewer           = initBinaViewer
