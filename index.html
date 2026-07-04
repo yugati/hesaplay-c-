@@ -806,6 +806,28 @@ function migrate(){
     });
     DB.meta.matLibV=1;
   }
+  // MERKEZI ALANLAR: Poz No (sartname satirina ozel), Standart No, Agirlik, Etiket, Proje (duz metin) + zaman damgalari
+  // sira onemli: once malzemeler yeni alanlara kavusur, sonra specs bu alanlari matId uzerinden malzemeden kopyalar
+  if(!DB.meta.matFieldsV){
+    const now=Date.now();
+    DB.proje.materials.forEach(mt=>{
+      if(mt.tags===undefined) mt.tags=[];
+      if(mt.standart===undefined) mt.standart='';
+      if(mt.weight===undefined) mt.weight=null;
+      if(mt.proje===undefined) mt.proje='';
+      if(!mt.createdAt) mt.createdAt=now;
+      if(!mt.updatedAt) mt.updatedAt=now;
+    });
+    DB.proje.specs.forEach(sp=>{
+      if(sp.poz===undefined) sp.poz='';
+      const mt=sp.matId?getMaterial(sp.matId):null;
+      if(sp.standart===undefined) sp.standart=mt?(mt.standart||''):'';
+      if(sp.weight===undefined) sp.weight=mt?mt.weight:null;
+      if(sp.tags===undefined) sp.tags=mt?(mt.tags||[]).slice():[];
+    });
+    DB.meta.matFieldsV=1;
+    sbSetSetting('matFieldsV',1).catch(e=>console.warn('matFieldsV kaydedilemedi:',e));
+  }
 }
 
 let SEC="proje", TAB="orders", SEARCH="", GFILTER="", LOGVIEW="akis";
@@ -1042,11 +1064,13 @@ function switchSection(s){ if(!canSee(s)){ toast('Bu bolume erisim yetkiniz yok'
   document.querySelectorAll('.sect-tab').forEach(b=>b.classList.toggle('on',b.dataset.sec===s));
   if(s==='saha'){ render(); initSaha(); } else render(); }
 
-// bina bazli sartname Excel ice/disa aktarma dugmeleri: proje modulunde bir bina acikken sayfanin
-// sag altinda daima sabit durur (Bolum Secimi / Sartname Secimi / Ilerleme ekranlarinin hepsinde).
+// sartname bazli Excel ice/disa aktarma dugmeleri: proje modulunde TEK bir sartname acikken
+// (Bolum Secimi / Sartname Secimi / "Tum Sartnameler" ekranlarinda DEGIL) sayfanin sag altinda sabit durur.
+// Tek sartnameye kilitli olmasinin sebebi: yeni sablonda bina/bolum/sartname sutunu yok, ekran
+// baglamindan (PBINA/PCAT/PSPEC) alinir - birden fazla sartname ayni dosyada karisirsa yanlis atama olur.
 function updateBinaExcelFab(){
   const inPanel = (PUSERS&&isAdmin()) || (PAUDIT&&isAdmin()) || PLIB || PDEF || PORD;
-  const show = SEC==='proje' && !!PBINA && !inPanel;
+  const show = SEC==='proje' && !!PBINA && !!PSPEC && PSPEC!=='__all' && !inPanel;
   let imp=document.getElementById('binaExcelFabImport');
   let exp=document.getElementById('binaExcelFabExport');
   if(show){
@@ -1056,7 +1080,7 @@ function updateBinaExcelFab(){
       imp.onclick=()=>document.getElementById('binaExcelFabInput').click();
       document.body.appendChild(imp);
     }
-    imp.title=`Excel'den Ice Aktar - ${PBINA} sartname ilerlemesi`;
+    imp.title=`Excel'den Ice Aktar - ${PBINA}/${PCAT}/${PSPEC}`;
     imp.innerHTML=icoUp();
     imp.style.display='flex';
     if(!exp){
@@ -1065,7 +1089,7 @@ function updateBinaExcelFab(){
       exp.onclick=()=>exportBinaSpecExcel();
       document.body.appendChild(exp);
     }
-    exp.title=`Excel Ciktisi Al - ${PBINA} (mevcut sartname verileri, duzenleyip geri yukleyebilirsiniz)`;
+    exp.title=`Excel Ciktisi Al - ${PBINA}/${PCAT}/${PSPEC} (duzenleyip geri yukleyebilirsiniz)`;
     exp.innerHTML=icoXls();
     exp.style.display='flex';
   } else {
@@ -1073,21 +1097,21 @@ function updateBinaExcelFab(){
     if(exp) exp.style.display='none';
   }
 }
-// bina bazli sartname Excel ciktisi: mevcut binanin TUM bolum/sartname kalemlerini, FAB import'un
-// tanidigi sutun basliklariyla (bina/bolum/sartname/kod/malzeme/hedef/birim/dahil) indirir - boylece
-// duzenlenip ayni FAB'dan geri yuklenebilir (round-trip).
+// TEK sartname Excel ciktisi: bina/bolum/sartname sutunu yok (ekran baglamindan gelir), sutun sirasi
+// FAB import'un tanidigi ile ayni - duzenlenip ayni FAB'dan geri yuklenebilir (round-trip).
 function exportBinaSpecExcel(){
-  if(!PBINA){ toast("Once bir bina secin","err"); return; }
-  const specs=(DB.proje.specs||[]).filter(s=>!s.is_deleted && s.bina===PBINA).slice()
-    .sort((a,b)=>(a.cat||'').localeCompare(b.cat||'','tr')||specGroupKey(a).localeCompare(specGroupKey(b),'tr')||a.name.localeCompare(b.name,'tr'));
-  const rows=[["bina","bolum","sartname","kod","malzeme","hedef","birim","dahil"]];
-  specs.forEach(sp=>{ rows.push([sp.bina||PBINA, sp.cat||'', specGroupKey(sp), sp.code||'', sp.name||'', Number(sp.target)||0, sp.unit||'', sp.exclude?'HAYIR':'EVET']); });
-  if(specs.length===0) rows.push([PBINA,'','','','','','','']);
+  if(!PBINA||!PCAT||!PSPEC||PSPEC==='__all'){ toast("Once tek bir sartname acin","err"); return; }
+  const specs=(DB.proje.specs||[]).filter(s=>!s.is_deleted && s.bina===PBINA && s.cat===PCAT && specGroupKey(s)===PSPEC).slice()
+    .sort((a,b)=>(Number(a.poz)||0)-(Number(b.poz)||0)||(a.poz||'').localeCompare(b.poz||'','tr')||a.name.localeCompare(b.name,'tr'));
+  const rows=[["Poz No","Malzeme Ismi","Standart Numarasi","Urun Kodu","Marka","Miktar","Agirlik (kg)","Not","Etiket"]];
+  specs.forEach(sp=>{ const mt=sp.matId?getMaterial(sp.matId):null;
+    rows.push([sp.poz||'', sp.name||'', sp.standart||'', sp.code||'', sp.brand||'', Number(sp.target)||0, sp.weight!=null?sp.weight:'', (mt?mt.note:'')||'', formatTagsCell(sp.tags)]); });
+  if(specs.length===0) rows.push(['','','','','','','','','']);
   const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:12},{wch:14},{wch:26},{wch:16},{wch:34},{wch:10},{wch:8},{wch:8}];
-  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:7}})};
+  ws['!cols']=[{wch:10},{wch:34},{wch:18},{wch:16},{wch:16},{wch:10},{wch:12},{wch:28},{wch:24}];
+  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:8}})};
   XLSX.utils.book_append_sheet(wb,ws,"Spesifikasyonlar");
-  XLSX.writeFile(wb,`${PBINA}_Sartname_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.writeFile(wb,`${PBINA}_${PCAT}_${PSPEC}_${new Date().toISOString().slice(0,10)}.xlsx`.replace(/[\\/:*?"<>|]/g,'-'));
   toast("Excel ciktisi indirildi");
 }
 function render(){
@@ -1658,11 +1682,26 @@ async function delSartname(id){ if(!guard('define'))return;
   render(); toast("Sartname silindi");
 }
 let _matSel=new Set();
+let _matTagFilter=new Set(); // secili etiket filtreleri (OR - herhangi biri eslesirse gosterilir)
 function toggleMatSel(id){ if(_matSel.has(id))_matSel.delete(id); else _matSel.add(id); render(); }
 function toggleMatSelAll(){ const vis=renderMaterialLibVisibleIds(); const allOn=vis.length>0&&vis.every(id=>_matSel.has(id));
   if(allOn){ vis.forEach(id=>_matSel.delete(id)); } else { vis.forEach(id=>_matSel.add(id)); } render(); }
+function allMaterialTags(){ return [...new Set((DB.proje.materials||[]).flatMap(m=>m.tags||[]))].sort((a,b)=>a.localeCompare(b,'tr')); }
+function tagColor(t){ const list=allMaterialTags(); const i=Math.max(0,list.indexOf(t));
+  const pal=['#3b82f6','#22c55e','#f0a020','#a855f7','#ec4899','#06b6d4','#ef4444','#eab308','#14b8a6','#f97316']; return pal[i%pal.length]; }
+function toggleMatTagFilter(t){ if(_matTagFilter.has(t))_matTagFilter.delete(t); else _matTagFilter.add(t); render(); }
+function clearMatTagFilter(){ _matTagFilter.clear(); render(); }
+// paylasilan arama filtresi: kod+ad+kategori+marka+not+standart+etiket+fiilen kullanildigi bolumler
+// (renderMaterialLib ve renderMaterialLibVisibleIds ayni metni kullanir, aksi halde ikisi farkli satir kumeleri gorebilir)
+function matMatchesLibSearch(m,q){
+  const usageCats=materialUsage(m.id).map(s=>s.cat||'').join(' ');
+  return matchText([m.code,m.name,m.cat,m.brand,m.note,m.standart,(m.tags||[]).join(' '),usageCats].filter(Boolean).join(' '),q);
+}
+function matMatchesTagFilter(m){ if(!_matTagFilter.size) return true; return (m.tags||[]).some(t=>_matTagFilter.has(t)); }
 function renderMaterialLibVisibleIds(){ let mats=(DB.proje.materials||[]).filter(m=>!m.is_deleted);
-  if(SEARCH) mats=mats.filter(m=>matchText((m.code||'')+' '+(m.name||'')+' '+(m.cat||''),SEARCH)); return mats.map(m=>m.id); }
+  if(SEARCH) mats=mats.filter(m=>matMatchesLibSearch(m,SEARCH));
+  mats=mats.filter(matMatchesTagFilter);
+  return mats.map(m=>m.id); }
 async function delSelectedMaterials(){
   const ids=[..._matSel]; if(!ids.length)return;
   // kullanimda olanlari ayikla
@@ -1681,8 +1720,7 @@ async function delSelectedMaterials(){
 function renderMaterialLib(){
   let mats=(DB.proje.materials||[]).filter(m=>!m.is_deleted).slice();
   if(SEARCH){
-    // arama, malzemenin fiilen kullanildigi bolumleri de kapsar (orn. "Kablo" yazinca o bolumde kullanilan krose de bulunur)
-    mats=mats.filter(m=>matchText((m.code||'')+' '+(m.name||'')+' '+(m.cat||'')+' '+materialUsage(m.id).map(s=>s.cat||'').join(' '),SEARCH));
+    mats=mats.filter(m=>matMatchesLibSearch(m,SEARCH));
     // aramada en iyi eslesen en ustte: birebir kod/ad eslesmesi > icinde gecen > benzer (subsequence)
     const nq=norm(SEARCH).trim();
     mats.sort((a,b)=>{
@@ -1693,12 +1731,20 @@ function renderMaterialLib(){
   } else {
     mats.sort((a,b)=>(a.cat||'').localeCompare(b.cat||'','tr')||(a.name||'').localeCompare(b.name||'','tr'));
   }
+  mats=mats.filter(matMatchesTagFilter);
   const cats=[...new Set((DB.proje.materials||[]).map(m=>m.cat).filter(Boolean))];
   const usedCount=(DB.proje.materials||[]).filter(m=>materialUsage(m.id).length>0).length;
   const multiCount=(DB.proje.materials||[]).filter(m=>materialUsage(m.id).length>1).length;
+  const allTags=allMaterialTags();
+  const tagChips=allTags.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px">
+    <span class="t-meta" style="font-size:11px">Etiket filtrele:</span>
+    ${allTags.map(t=>{ const on=_matTagFilter.has(t); const c=tagColor(t);
+      return `<span class="cat-tag" data-tag="${esc(t)}" style="cursor:pointer;background:${on?c:c+'22'};color:${on?'#fff':c};border:1px solid ${c}55" onclick="toggleMatTagFilter(this.dataset.tag)">${esc(t)}</span>`; }).join('')}
+    ${_matTagFilter.size?`<span class="cat-tag" style="cursor:pointer;background:var(--dim)33;color:var(--text)" onclick="clearMatTagFilter()">Temizle (${_matTagFilter.size})</span>`:''}
+  </div>`:'';
   let rows='';
   if(mats.length===0){
-    rows=`<tr><td colspan="8"><div class="empty" style="padding:30px"><p>${SEARCH?'Eslesen malzeme yok':'Kutuphane bos'}</p><span style="font-size:12px">Malzeme ekleyin veya sartnamelerden otomatik dolar</span></div></td></tr>`;
+    rows=`<tr><td colspan="11"><div class="empty" style="padding:30px"><p>${SEARCH||_matTagFilter.size?'Eslesen malzeme yok':'Kutuphane bos'}</p><span style="font-size:12px">Malzeme ekleyin veya sartnamelerden otomatik dolar</span></div></td></tr>`;
   } else {
     mats.forEach(m=>{
       const usage=materialUsage(m.id);
@@ -1712,7 +1758,10 @@ function renderMaterialLib(){
         <td class="t-name">${esc(m.name)} ${usageTag}<div style="margin-top:4px">${specs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px">${esc(g)}</span>`).join('')}</div></td>
         <td style="font-family:var(--mono);font-size:12px">${esc(m.code||'-')}</td>
         <td class="t-meta">${m.brand?`<div class="brand-tags">${m.brand.split(/\n|\s\/\s/).map(b=>b.trim()).filter(Boolean).map(b=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text)">${esc(b)}</span>`).join('')}</div>`:'-'}</td>
-        <td>${(()=>{ // varsayilan kategori + fiilen kullanildigi diger bolumler
+        <td class="t-meta">${esc(m.standart||'-')}</td>
+        <td class="t-meta">${m.weight!=null?fmtNum(m.weight)+' kg':'-'}</td>
+        <td>${(m.tags&&m.tags.length)?`<div class="brand-tags">${m.tags.map(t=>{const c=tagColor(t);return `<span class="cat-tag" style="background:${c}22;color:${c}">${esc(t)}</span>`;}).join('')}</div>`:'-'}</td>
+        <td>${(()=>{ // varsayilan kategori + fiilen kullanildigi diger bolumler (= ortak bolumler)
           const useCats=[...new Set(usage.map(s=>s.cat).filter(Boolean))];
           const allCats=[...new Set([m.cat,...useCats].filter(Boolean))];
           if(!allCats.length) return '-';
@@ -1729,30 +1778,60 @@ function renderMaterialLib(){
     <div class="sel-bc"><button onclick="closeMaterialLib()">${icoArr('left')} Binalara Don</button></div>
     <div class="sel-head"><h2>Malzeme Kutuphanesi</h2><p>Tum sartnamelerin ortak malzeme kaynagi - bir malzeme bir kez tanimlanir, her yerde kullanilir</p></div>
     <div class="stats">${statRow([['Toplam Malzeme',(DB.proje.materials||[]).length,'kayit','var(--blue)'],['Kullanilan',usedCount,'sartnamede','var(--green)'],['Ortak Kullanim',multiCount,'birden fazla spek','#a855f7'],['Kategori',cats.length,'farkli','var(--amber)']])}</div>
-    <div class="toolbar">${searchBox('Malzeme ara (kod, ad, kategori)...')}
+    <div class="toolbar">${searchBox('Malzeme ara (kod, ad, marka, standart, etiket, not)...')}
       <button class="btn btn-ghost" onclick="document.getElementById('matLibXlsx').click()">${icoUp()} Excel'den Ice Aktar</button>
       <input type="file" id="matLibXlsx" accept=".xlsx,.xls" class="hidden" onchange="importLibraryExcel(event)">
       <button class="btn btn-grid" onclick="exportMaterialLib()">${icoXls()} Excel</button>
       <button class="btn btn-add" onclick="openMaterialModal()">${icoPlus()} Malzeme Ekle</button>
       ${_matSel.size>0?`<button class="btn btn-ghost" style="border-color:var(--red)55;color:var(--red)" onclick="delSelectedMaterials()">${icoTrash()} Secilenleri Sil (${_matSel.size})</button>`:''}</div>
-    <div class="tablewrap"><table><thead><tr><th style="width:34px;text-align:center"><input type="checkbox" class="mat-check" ${(()=>{const v=renderMaterialLibVisibleIds();return v.length>0&&v.every(id=>_matSel.has(id))?'checked':'';})()} onclick="toggleMatSelAll()"></th><th></th><th>Malzeme</th><th>Kod</th><th>Marka</th><th>Kategori</th><th>Birim</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${tagChips}
+    <div class="tablewrap"><table><thead><tr><th style="width:34px;text-align:center"><input type="checkbox" class="mat-check" ${(()=>{const v=renderMaterialLibVisibleIds();return v.length>0&&v.every(id=>_matSel.has(id))?'checked':'';})()} onclick="toggleMatSelAll()"></th><th></th><th>Malzeme</th><th>Kod</th><th>Marka</th><th>Standart</th><th>Agirlik</th><th>Etiket</th><th>Kategori</th><th>Birim</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
 function openMaterialModal(id){
   const m=id?getMaterial(id):null; modalImg=m&&m.img?m.img:null;
+  modalTags=(m&&m.tags)?m.tags.slice():[];
   const cats=[...new Set([...(DB.proje.sections||PROJ_CATS),...(DB.proje.materials||[]).map(x=>x.cat).filter(Boolean)])];
+  const allTags=[...new Set((DB.proje.materials||[]).flatMap(x=>x.tags||[]))].sort((a,b)=>a.localeCompare(b,'tr'));
   const usage=m?materialUsage(m.id):[];
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>${m?'Malzeme Duzenle':'Yeni Malzeme'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow"><label>Malzeme Adi *</label><input id="mt_name" value="${m?esc(m.name):''}" placeholder="orn. Galvaniz Kablo Tavasi 200mm"></div>
     <div class="frow two"><div><label>Urun Kodu</label><input id="mt_code" value="${m?esc(m.code||''):''}" placeholder="orn. 121491"></div><div><label>Marka  <span class="t-meta">(her satir ayri gosterilir)</span></label><textarea id="mt_brand" rows="2" style="min-height:38px" placeholder="orn. Hilti, Schneider">${m?esc(m.brand||''):''}</textarea></div></div>
+    <div class="frow two"><div><label>Standart Numarasi</label><input id="mt_standart" value="${m?esc(m.standart||''):''}" placeholder="orn. TS EN 61386"></div><div><label>Agirlik (kg)  <span class="t-meta">(birim agirlik)</span></label><input id="mt_weight" type="number" step="any" min="0" value="${m&&m.weight!=null?m.weight:''}" placeholder="0"></div></div>
     <div class="frow"><label>Birim</label><input id="mt_unit" value="${m?esc(m.unit||''):''}" placeholder="metre / adet"></div>
     <div class="frow"><label>Kategori  <span class="t-meta">(varsayilan bolum - malzeme baska bolumlerin sartnamelerinde de kullanilabilir)</span></label><select id="mt_cat">${cats.map(c=>`<option ${m&&m.cat===c?'selected':''}>${esc(c)}</option>`).join('')}<option value="__new">+ Yeni kategori...</option></select><input id="mt_newcat" class="hidden" style="margin-top:7px" placeholder="Yeni kategori"></div>
+    <div class="frow"><label>Etiket  <span class="t-meta">(Enter veya virgul ile ekleyin - arama/filtrelemede kullanilir)</span></label>
+      <div id="mt_tagsBox" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:24px"></div>
+      <input id="mt_tagInput" list="mt_tagSuggest" placeholder="orn. Yangin, Exproof, HDG, Ic Mekan" oninput="tagInputChange(event,'mt')" onkeydown="tagInputKeydown(event,'mt')">
+      <datalist id="mt_tagSuggest">${allTags.map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
+    </div>
+    <div class="frow"><label>Proje  <span class="t-meta">(bilgi amacli)</span></label><input id="mt_proje" value="${m?esc(m.proje||''):''}" placeholder="orn. X Santiyesi"></div>
     <div class="frow"><label>Not</label><textarea id="mt_note" placeholder="Teknik ozellik, tedarikci...">${m?esc(m.note||''):''}</textarea></div>
     <div class="frow"><label>Fotograf</label><div class="drop ${m&&m.img?'has':''}" id="mtImgDrop" onclick="document.getElementById('mtImgInput').click()">${m&&m.img?`<img class="img-prev" src="${m.img}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div><input type="file" id="mtImgInput" accept="image/*" class="hidden" onchange="pickImg(event,'mtImgDrop')"></div>
     ${usage.length?`<p style="font-size:11px;color:var(--dim);font-family:var(--mono)">Bu malzeme ${usage.length} sartnamede kullaniliyor. Degisiklik hepsini etkiler.</p>`:''}
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveMaterial(${m?`'${m.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   document.getElementById('mt_cat').onchange=function(){document.getElementById('mt_newcat').classList.toggle('hidden',this.value!=='__new');};
+  renderTagsBox('mt');
+}
+// basit etiket-cip girisi: Enter/virgul ile mevcut metni cip olarak onaylar (paylasilan modalTags dizisine yazar)
+function renderTagsBox(prefix){
+  const box=document.getElementById(prefix+'_tagsBox'); if(!box)return;
+  box.innerHTML=modalTags.length?modalTags.map((t,i)=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);display:inline-flex;align-items:center;gap:5px">${esc(t)}<span style="cursor:pointer;opacity:.6" onclick="removeModalTag(${i},'${prefix}')">&times;</span></span>`).join(''):'<span class="t-meta" style="font-size:11px">Henuz etiket yok</span>';
+}
+function removeModalTag(i,prefix){ modalTags.splice(i,1); renderTagsBox(prefix); }
+function tagInputChange(e,prefix){
+  const v=e.target.value;
+  if(!v.includes(','))return;
+  v.split(',').forEach(p=>{ const t=p.trim(); if(t && !modalTags.some(x=>x.toLowerCase()===t.toLowerCase())) modalTags.push(t); });
+  e.target.value=''; renderTagsBox(prefix);
+}
+function tagInputKeydown(e,prefix){
+  if(e.key!=='Enter')return;
+  e.preventDefault();
+  const v=e.target.value.trim();
+  if(v && !modalTags.some(t=>t.toLowerCase()===v.toLowerCase())) modalTags.push(v);
+  e.target.value=''; renderTagsBox(prefix);
 }
 async function saveMaterial(id){ if(!guard('editMaterial'))return;
   const name=document.getElementById('mt_name').value.trim();
@@ -1763,21 +1842,30 @@ async function saveMaterial(id){ if(!guard('editMaterial'))return;
   const brand=document.getElementById('mt_brand').value.trim();
   const unit=document.getElementById('mt_unit').value.trim();
   const note=document.getElementById('mt_note').value.trim();
+  const standart=document.getElementById('mt_standart').value.trim();
+  const weightRaw=document.getElementById('mt_weight').value.trim();
+  if(weightRaw!==''&&isNaN(Number(weightRaw))){toast("Agirlik sayisal olmali","err");return;}
+  const weight=weightRaw!==''?Number(weightRaw):null;
+  const proje=document.getElementById('mt_proje').value.trim();
+  const tagInputLeftover=document.getElementById('mt_tagInput').value.trim();
+  if(tagInputLeftover && !modalTags.some(t=>t.toLowerCase()===tagInputLeftover.toLowerCase())) modalTags.push(tagInputLeftover);
+  const tags=modalTags.slice();
   // ayni kod/ad cakismasi (farkli kayit)
   const dup=(DB.proje.materials||[]).find(x=>x.id!==id && matKey(x.code,x.name)===matKey(code,name));
   if(dup){toast("Bu malzeme kutuphanede zaten var: "+(code||name),"err");return;}
   let savedMt;
   if(id){ const m=getMaterial(id);
-    Object.assign(m,{name,code,brand,unit,cat,note,img:modalImg});
+    Object.assign(m,{name,code,brand,unit,cat,note,standart,weight,tags,proje,img:modalImg,updatedAt:Date.now()});
     const affectedSpecs=materialUsage(id);
-    affectedSpecs.forEach(sp=>{ sp.code=code; sp.name=name; if(unit)sp.unit=unit; sp.cat=cat; sp.brand=brand; sp.matId=id; });
+    affectedSpecs.forEach(sp=>{ sp.code=code; sp.name=name; if(unit)sp.unit=unit; sp.cat=cat; sp.brand=brand; sp.matId=id; sp.standart=standart; sp.weight=weight; sp.tags=tags.slice(); });
     await Promise.all([
       sbUpdateProjeMaterial(id,{...m}),
       ...affectedSpecs.map(sp=>sbUpdateProjeSpec(sp.id,{...sp}))
     ]);
     savedMt=m;
   } else {
-    savedMt={id:uid(),name,code,brand,unit,cat,note,img:modalImg};
+    const now=Date.now();
+    savedMt={id:uid(),name,code,brand,unit,cat,note,standart,weight,tags,proje,img:modalImg,createdAt:now,updatedAt:now};
     await sbInsertProjeMaterial(savedMt);
     DB.proje.materials.push(savedMt);
   }
@@ -1799,15 +1887,15 @@ async function delMaterial(id){ if(!guard('delete'))return;
 function exportMaterialLib(){
   const mats=DB.proje.materials||[]; if(!mats.length){toast("Kutuphane bos","err");return;}
   const wb=XLSX.utils.book_new();
-  const rows=[["material_code","material_name","brand","category","unit","note","image_url","kullanim_spek","spesifikasyonlar"]];
+  const rows=[["material_code","material_name","brand","category","unit","standart","agirlik_kg","etiket","proje","note","image_url","kullanim_spek","spesifikasyonlar"]];
   const sorted=mats.slice().sort((a,b)=>(a.cat||'').localeCompare(b.cat||'','tr')||(a.name||'').localeCompare(b.name||'','tr'));
   sorted.forEach(m=>{
     const usage=materialUsage(m.id); const specs=[...new Set(usage.map(s=>specGroupKey(s)))];
     // base64/veri linkleri (manuel yuklenen fotograflar) hucreye sigmayacagi icin disa aktarilmaz - sadece gercek URL'ler
     const imgUrl=(m.img&&/^https?:\/\//i.test(m.img))?m.img:'';
-    rows.push([m.code||'',m.name,m.brand||'',m.cat||'',m.unit||'',m.note||'',imgUrl,usage.length,specs.join(', ')]);
+    rows.push([m.code||'',m.name,m.brand||'',m.cat||'',m.unit||'',m.standart||'',m.weight!=null?m.weight:'',formatTagsCell(m.tags),m.proje||'',m.note||'',imgUrl,usage.length,specs.join(', ')]);
   });
-  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:18},{wch:42},{wch:16},{wch:14},{wch:8},{wch:24},{wch:40},{wch:11},{wch:30}];
+  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:18},{wch:42},{wch:16},{wch:14},{wch:8},{wch:18},{wch:10},{wch:24},{wch:16},{wch:24},{wch:40},{wch:11},{wch:30}];
   // kategori sutununda acilir filtre - Tava/Aydinlatma vb. tek tikla ayiklanabilsin.
   // Veri satirlarina dokunmuyor, ice aktarma fonksiyonlarini etkilemez.
   ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:rows[0].length-1}})};
@@ -2338,7 +2426,7 @@ function openAltModal(specId, altId){
   if(!canCreate('proje')&&!altId){ toast('Bu işlem için yetkiniz yok','err'); return; }
   const ex=altId?(DB.proje.alternatives||[]).find(a=>a.id===altId):null;
   _altMat=null;
-  if(ex){ _altMat={id:ex.matId||null,name:ex.name,code:ex.code||'',brand:ex.brand||'',unit:ex.unit||'',img:ex.img||null}; }
+  if(ex){ _altMat={id:ex.matId||null,name:ex.name,code:ex.code||'',brand:ex.brand||'',unit:ex.unit||'',img:ex.img||null,standart:ex.standart||'',weight:ex.weight!=null?ex.weight:null,tags:(ex.tags||[]).slice()}; }
   const reasons=[['tedarik','Tedarik Sorunu'],['uretim','Üretim Durdu'],['temin','Uzun Temin Süresi'],['teknik','Teknik Sebep']];
   const statuses=[['oneri','Öneri'],['onaylandi','Onaylandı'],['kullanımda','Kullanımda'],['reddedildi','Reddedildi']];
   const curReason=ex?ex.reason:'tedarik'; const curStatus=ex?ex.status:'oneri';
@@ -2370,8 +2458,8 @@ function openAltModal(specId, altId){
 }
 function acAlt(){ const el=document.getElementById('alt_mat_input'); el.value=''; el.focus();
   acOpen(el, matLibSrc(), (it,isNew)=>{
-    if(isNew){ _altMat={id:null,name:it.ad,code:'',brand:'',unit:'',img:null}; el.value=it.ad; document.getElementById('alt_mat_info').textContent=it.ad; document.getElementById('alt_mat_info').className='lib-match match-found'; return; }
-    _altMat={id:it.matId,name:it.ad,code:it.code||'',brand:it.brand||'',unit:it.unit||'',img:it.img||null};
+    if(isNew){ _altMat={id:null,name:it.ad,code:'',brand:'',unit:'',img:null,standart:'',weight:null,tags:[]}; el.value=it.ad; document.getElementById('alt_mat_info').textContent=it.ad; document.getElementById('alt_mat_info').className='lib-match match-found'; return; }
+    _altMat={id:it.matId,name:it.ad,code:it.code||'',brand:it.brand||'',unit:it.unit||'',img:it.img||null,standart:it.standart||'',weight:it.weight!=null?it.weight:null,tags:(it.tags||[]).slice()};
     el.value=it.ad;
     const info=document.getElementById('alt_mat_info');
     info.textContent=[it.code,it.brand,it.unit].filter(Boolean).join(' · ');
@@ -2387,12 +2475,12 @@ async function saveAlt(specId, altId){
   if(altId){
     const ex=DB.proje.alternatives.find(a=>a.id===altId); if(!ex)return;
     const wasAdmin=isAdmin(); const prevStatus=ex.status;
-    Object.assign(ex,{matId:_altMat.id||null,name:_altMat.name,code:_altMat.code||'',brand:_altMat.brand||'',unit:_altMat.unit||'',img:_altMat.img||null,reason,note,status});
+    Object.assign(ex,{matId:_altMat.id||null,name:_altMat.name,code:_altMat.code||'',brand:_altMat.brand||'',unit:_altMat.unit||'',img:_altMat.img||null,standart:_altMat.standart||'',weight:_altMat.weight!=null?_altMat.weight:null,tags:(_altMat.tags||[]).slice(),reason,note,status});
     if(wasAdmin&&status!==prevStatus&&(status==='onaylandi'||status==='kullanımda')){ ex.approvedBy=CURRENT_USER.username; ex.approvedAt=Date.now(); }
     await sbUpdateProjeAlternative(altId,ex);
     toast('Alternatif güncellendi');
   } else {
-    const alt={id:uid(),specId,matId:_altMat.id||null,name:_altMat.name,code:_altMat.code||'',brand:_altMat.brand||'',unit:_altMat.unit||'',img:_altMat.img||null,reason,note,status,createdBy:CURRENT_USER.username,createdAt:Date.now(),approvedBy:null,approvedAt:null};
+    const alt={id:uid(),specId,matId:_altMat.id||null,name:_altMat.name,code:_altMat.code||'',brand:_altMat.brand||'',unit:_altMat.unit||'',img:_altMat.img||null,standart:_altMat.standart||'',weight:_altMat.weight!=null?_altMat.weight:null,tags:(_altMat.tags||[]).slice(),reason,note,status,createdBy:CURRENT_USER.username,createdAt:Date.now(),approvedBy:null,approvedAt:null};
     DB.proje.alternatives.push(alt);
     await sbInsertProjeAlternative(alt);
     toast('Alternatif eklendi');
@@ -2455,13 +2543,28 @@ async function delOffSpecGroup(name,cat,unit){
 }
 function specGroupKey(sp){ return (sp.grup&&sp.grup.trim())?sp.grup.trim():(sp.cat||'Diger'); }
 // ===== MERKEZI MALZEME KUTUPHANESI =====
+// etiketler virgulle ayrilir; giris kutusu virgul/Enter'i "cip onayla" olarak yorumladigi icin
+// bir etiketin icinde virgul hic olusmaz (round-trip Excel'de bozulmaz)
+function parseTagsCell(v){ return String(v||'').split(',').map(t=>t.trim()).filter(Boolean); }
+function formatTagsCell(tags){ return (tags||[]).join(', '); }
 function matKey(code,name){ return (code&&String(code).trim())?('c:'+String(code).trim().toLowerCase()):('n:'+String(name||'').trim().toLowerCase()); }
 function findMaterial(code,name){ const k=matKey(code,name); return (DB.proje.materials||[]).find(m=>matKey(m.code,m.name)===k); }
 function getMaterial(id){ return (DB.proje.materials||[]).find(m=>m.id===id); }
-function ensureMaterial(o){ // {code,name,unit,cat,brand,img} -> mevcut varsa dondur, yoksa olustur
+function ensureMaterial(o){ // {code,name,unit,cat,brand,note,standart,weight,tags,proje,img} -> mevcut varsa dondur, yoksa olustur
   let mt=findMaterial(o.code,o.name);
-  if(mt){ if(o.img&&!mt.img)mt.img=o.img; if(o.unit&&!mt.unit)mt.unit=o.unit; if(o.brand&&!mt.brand)mt.brand=o.brand; return mt; }
-  mt={id:uid(),code:(o.code||'').trim(),name:(o.name||'').trim(),unit:o.unit||'',cat:o.cat||'',brand:o.brand||'',img:o.img||null,note:o.note||''};
+  if(mt){
+    if(o.img&&!mt.img)mt.img=o.img;
+    if(o.unit&&!mt.unit)mt.unit=o.unit;
+    if(o.brand&&!mt.brand)mt.brand=o.brand;
+    if(o.note&&!mt.note)mt.note=o.note;
+    if(o.standart&&!mt.standart)mt.standart=o.standart;
+    if(o.weight!=null&&mt.weight==null)mt.weight=o.weight;
+    if(o.tags&&o.tags.length&&(!mt.tags||!mt.tags.length))mt.tags=o.tags.slice();
+    return mt;
+  }
+  const now=Date.now();
+  mt={id:uid(),code:(o.code||'').trim(),name:(o.name||'').trim(),unit:o.unit||'',cat:o.cat||'',brand:o.brand||'',img:o.img||null,note:o.note||'',
+      standart:o.standart||'',weight:o.weight!=null?o.weight:null,tags:o.tags?o.tags.slice():[],proje:o.proje||'',createdAt:now,updatedAt:now};
   DB.proje.materials.push(mt); return mt;
 }
 // bir malzemenin kac spesifikasyonda kullanildigi
@@ -2499,7 +2602,7 @@ function _findSheet(wb,kind){
   return null;
 }
 function _firstDataRow(rows){ // baslik satiri: hucrelerden biri TAM olarak bir anahtar sutun adi olan ilk satir
-  const keys=new Set(['material_code','materialcode','spec_external_id','specexternalid','kategori','category','malzeme adi','malzeme','target_qty','hedef miktar','hedef','material_name']);
+  const keys=new Set(['material_code','materialcode','spec_external_id','specexternalid','kategori','category','malzeme adi','malzeme ismi','malzeme','target_qty','hedef miktar','hedef','miktar','material_name','poz no','urun kodu']);
   for(let i=0;i<Math.min(rows.length,8);i++){ const line=rows[i].map(x=>norm(String(x).trim())); if(line.some(c=>keys.has(c))) return i; }
   return 0;
 }
@@ -2513,11 +2616,15 @@ function upsertMaterialsFromRows(rows, report){
   if(!rows||rows.length<2) return;
   const h=_firstDataRow(rows); const pick=_hdrMap(rows[h]);
   const iCode=pick('material_code','materialcode','urun kodu','kod','code');
-  const iName=pick('material_name','materialname','malzeme adi','malzeme','ad','name');
+  const iName=pick('material_name','materialname','malzeme adi','malzeme ismi','malzeme','ad','name');
   const iBrand=pick('brand','marka');
   const iCat=pick('category','kategori');
   const iUnit=pick('unit','birim');
   const iNote=pick('note','aciklama','not');
+  const iStd=pick('standart','standart no','standart numarasi','standard');
+  const iWeight=pick('agirlik','agirlik_kg','agirlik (kg)','agirlik(kg)','weight','weight (kg)','kg');
+  const iTags=pick('etiket','etiketler','tags','tag');
+  const iProje=pick('proje','project');
   const iImg=pick('image_url','imageurl','resim linki','resim_linki','resim url','resim_url','resim','foto linki','foto_linki','fotograf linki','fotograf_linki','fotograf url','fotograf','foto','photo url','photo_url','photo','image','gorsel','gorsel linki','gorsel url');
   const iAct=pick('action','islem');
   if(iCode<0 || iName<0){ return; } // malzeme sayfasi yok/uyumsuz - sessizce gec
@@ -2537,15 +2644,24 @@ function upsertMaterialsFromRows(rows, report){
     const cat=iCat>=0?String(row[iCat]??'').trim():'';
     const unit=iUnit>=0?String(row[iUnit]??'').trim():'';
     const note=iNote>=0?String(row[iNote]??'').trim():'';
+    const standart=iStd>=0?String(row[iStd]??'').trim():'';
+    const weightRaw=iWeight>=0?String(row[iWeight]??'').trim():'';
+    const weight=(weightRaw!==''&&!isNaN(Number(weightRaw)))?Number(weightRaw):null;
+    const tags=iTags>=0?parseTagsCell(row[iTags]):[];
+    const proje=iProje>=0?String(row[iProje]??'').trim():'';
     const img=iImg>=0?String(row[iImg]??'').trim():'';
     if(existing){ // UPDATE
       existing.name=name||existing.name; existing.brand=brand; if(cat)existing.cat=cat; if(unit)existing.unit=unit; if(note!=='')existing.note=note; if(img)existing.img=img;
+      if(standart!=='')existing.standart=standart; if(weight!=null)existing.weight=weight; if(tags.length)existing.tags=tags; if(proje!=='')existing.proje=proje;
+      existing.updatedAt=Date.now();
       // bagli spec'leri senkronla
       // sp.cat bilerek dokunulmaz: bolum kalemin ozelligidir, ayni malzeme farkli bolumlerde kullanilabilir
-      materialUsage(existing.id).forEach(sp=>{ sp.name=existing.name; sp.code=existing.code; sp.brand=brand; if(existing.unit&&!sp.unit)sp.unit=existing.unit; sp.matId=existing.id; });
+      materialUsage(existing.id).forEach(sp=>{ sp.name=existing.name; sp.code=existing.code; sp.brand=brand; if(existing.unit&&!sp.unit)sp.unit=existing.unit; sp.matId=existing.id;
+        sp.standart=existing.standart||''; sp.weight=existing.weight; sp.tags=(existing.tags||[]).slice(); });
       report.matUpdated++;
     } else { // INSERT
-      DB.proje.materials.push({id:uid(),code,name:name||code,brand,unit,cat,note,img:img||null}); report.matCreated++;
+      const now=Date.now();
+      DB.proje.materials.push({id:uid(),code,name:name||code,brand,unit,cat,note,img:img||null,standart,weight,tags,proje,createdAt:now,updatedAt:now}); report.matCreated++;
     }
   }
 }
@@ -2560,13 +2676,19 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
   const defaultGrup=opts.defaultGrup||'';
   const h=_firstDataRow(rows); const pick=_hdrMap(rows[h]);
   const iExt=pick('spec_external_id','specexternalid','spec id','spec_id');
+  const iPoz=pick('poz','poz no','poz_no','pos','pos no');
   const iCode=pick('material_code','materialcode','urun kodu','kod','spek no','code');
-  const iName=pick('material_name','materialname','malzeme adi','malzeme','ad','name');
+  const iName=pick('material_name','materialname','malzeme adi','malzeme ismi','malzeme','ad','name');
   const iBina=pick('building','bina');
   const iSec=pick('section','bolum','category','kategori');
   const iGrup=pick('sartname','spec_group','specgroup','spesifikasyon grubu','grup','group');
-  const iTgt=pick('target_qty','targetqty','hedef miktar','hedef','target');
+  const iTgt=pick('target_qty','targetqty','hedef miktar','hedef','miktar','target');
   const iUnit=pick('unit','birim');
+  const iBrand=pick('brand','marka');
+  const iNote=pick('note','aciklama','not');
+  const iStd=pick('standart','standart no','standart numarasi','standard');
+  const iWeight=pick('agirlik','agirlik_kg','agirlik (kg)','agirlik(kg)','weight','weight (kg)','kg');
+  const iTags=pick('etiket','etiketler','tags','tag');
   const iInc=pick('include_in_progress','includeinprogress','ilerlemeye dahil','dahil');
   const iAct=pick('action','islem');
   if(iTgt<0 || (iCode<0&&iName<0)){ report.errors.push('Spesifikasyon sayfasi: en az "material_code"/"malzeme" ve "target_qty"/"hedef" sutunlari gerekli'); return; }
@@ -2578,6 +2700,7 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
   for(let r=h+1;r<rows.length;r++){
     const row=rows[r]; if(!row || row.every(c=>String(c).trim()==='')) continue;
     const ext=useExt?String(row[iExt]??'').trim():'';
+    const poz=iPoz>=0?String(row[iPoz]??'').trim():'';
     const code=iCode>=0?String(row[iCode]??'').trim():'';
     const name=iName>=0?String(row[iName]??'').trim():'';
     const tgtRaw=String(row[iTgt]??'').trim();
@@ -2604,20 +2727,34 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
       if(!grup){ report.errors.push(`Spek satir ${r+1}: sartname belirtilmemis`); continue; }
       if(!sartIndex[norm(insertBina)+'|'+norm(sec)+'|'+norm(grup)]){ report.errors.push(`Spek satir ${r+1}: "${grup}" sartnamesi ${insertBina}/${sec} icin tanimli degil - once Bolum & Sartname ekranindan tanimlayin`); continue; }
     }
-    // anahtar: spec_external_id varsa o; yoksa kod+bina+bolum+sartname bilesik
-    // (bolum anahtara dahil: ayni urun farkli bolumlerde/sartnamelerde tekrar edebilir, sadece AYNI sartnamede tekrar edemez)
-    const skey=useExt&&ext?('e:'+ext.toLowerCase()):('k:'+matKey(code,name)+'|'+insertBina.toLowerCase()+'|'+sec.toLowerCase()+'|'+grup.toLowerCase());
-    if(seen.has(skey)){ report.errors.push(`Spek satir ${r+1}: "${name||code}" bu sartnamede birden fazla olamaz (${insertBina}/${sec}/${grup})`); continue; }
+    // anahtar: spec_external_id varsa o; yoksa (poz varsa) poz+bina+bolum+sartname; yoksa eski kod+bina+bolum+sartname
+    // poz doluysa malzeme kimligi anahtardan CIKARILIR: ayni malzeme ayni sartnamede FARKLI pozlarda gecerli sekilde tekrar edebilir
+    // (gercek sartname belgelerinde normal - cıvata/boya gibi kalemler birden fazla pozda gecer), asil essizlik birimi poz'dur.
+    const ctxKey=insertBina.toLowerCase()+'|'+sec.toLowerCase()+'|'+grup.toLowerCase();
+    const skey=(useExt&&ext)?('e:'+ext.toLowerCase()):poz?('p:'+ctxKey+'|'+poz.toLowerCase()):('k:'+matKey(code,name)+'|'+ctxKey);
+    if(seen.has(skey)){ report.errors.push(poz?`Spek satir ${r+1}: "${poz}" poz no bu sartnamede birden fazla olamaz (${insertBina}/${sec}/${grup})`:`Spek satir ${r+1}: "${name||code}" bu sartnamede birden fazla olamaz (${insertBina}/${sec}/${grup})`); continue; }
     seen.add(skey);
-    // mevcut spec bul
+    // mevcut spec bul: once extId; sonra (poz varsa) ayni poz; bulunamazsa gecis donemi icin poz'suz eski kaydi
+    // bu malzeme+baglam icin "sahiplen" (ilk poz'lu import mevcut kaydi poz ile gunceller, sonraki farkli poz'lar yeni satir olur);
+    // poz hic verilmemisse (eski sablon, poz sutunu yok) tamamen eski davranis: sadece kod/ad bazli
     let existing;
     if(useExt&&ext){ existing=DB.proje.specs.find(s=>(s.extId||'').toLowerCase()===ext.toLowerCase()); }
-    if(!existing){ existing=DB.proje.specs.find(s=>matKey(s.code,s.name)===matKey(code,name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup); }
+    if(!existing&&poz){
+      existing=DB.proje.specs.find(s=>(s.poz||'').trim().toLowerCase()===poz.toLowerCase() && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup);
+      if(!existing) existing=DB.proje.specs.find(s=>!(s.poz||'').trim() && matKey(s.code,s.name)===matKey(code,name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup);
+    }
+    if(!existing&&!poz){ existing=DB.proje.specs.find(s=>matKey(s.code,s.name)===matKey(code,name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup); }
     if(action==='delete'){ if(existing){ DB.proje.specs=DB.proje.specs.filter(s=>s.id!==existing.id); report.specDeleted++; } continue; }
     const tgt=Number(tgtRaw);
     if(!tgtRaw||isNaN(tgt)||tgt<=0){ report.errors.push(`Spek satir ${r+1}: gecersiz hedef miktar`); continue; }
+    const brand=iBrand>=0?String(row[iBrand]??'').trim():'';
+    const note=iNote>=0?String(row[iNote]??'').trim():'';
+    const standart=iStd>=0?String(row[iStd]??'').trim():'';
+    const weightRaw=iWeight>=0?String(row[iWeight]??'').trim():'';
+    const weight=(weightRaw!==''&&!isNaN(Number(weightRaw)))?Number(weightRaw):null;
+    const tags=iTags>=0?parseTagsCell(row[iTags]):[];
     // FK: malzemeyi kutuphaneden bul/olustur
-    const mat=ensureMaterial({code,name,unit:(iUnit>=0?String(row[iUnit]??'').trim():''),cat:'',brand:''});
+    const mat=ensureMaterial({code,name,unit:(iUnit>=0?String(row[iUnit]??'').trim():''),cat:'',brand,note,standart,weight,tags});
     const unit=(iUnit>=0&&String(row[iUnit]??'').trim())?String(row[iUnit]).trim():(mat.unit||'');
     const inc=iInc>=0?String(row[iInc]??'').trim().toUpperCase():'';
     const exclude=(inc==='HAYIR'||inc==='NO'||inc==='HARIC');
@@ -2625,10 +2762,12 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
     if(existing){ // UPDATE — bina yalnizca Excel'de acikca belirtilmisse guncellenir
       existing.code=code||existing.code; existing.name=name||existing.name; existing.target=tgt; existing.unit=unit;
       if(insertBina)existing.bina=insertBina; if(grup)existing.grup=grup; existing.cat=cat; existing.matId=mat.id; existing.brand=mat.brand||'';
-      existing.exclude=exclude; if(useExt&&ext)existing.extId=ext;
+      existing.exclude=exclude; if(useExt&&ext)existing.extId=ext; if(poz)existing.poz=poz;
+      existing.standart=mat.standart||''; existing.weight=mat.weight!=null?mat.weight:null; existing.tags=(mat.tags||[]).slice();
       report.specUpdated++;
     } else { // INSERT — bina yoksa defaultBina'yi kullan
-      DB.proje.specs.push({id:uid(),extId:(useExt?ext:''),code:code||mat.code,name:name||mat.name,target:tgt,unit,cat,bina:insertBina,grup:grup||(cat+' Spek-1'),matId:mat.id,brand:mat.brand||'',exclude});
+      DB.proje.specs.push({id:uid(),extId:(useExt?ext:''),poz,code:code||mat.code,name:name||mat.name,target:tgt,unit,cat,bina:insertBina,grup:grup||(cat+' Spek-1'),
+        standart:mat.standart||'',weight:mat.weight!=null?mat.weight:null,tags:(mat.tags||[]).slice(),matId:mat.id,brand:mat.brand||'',exclude});
       report.specCreated++;
     }
   }
@@ -3071,7 +3210,6 @@ function renderSpec(){
   }
   return `<div class="stats">${statHtml}</div>
     <div class="toolbar">${searchBox('Spesifikasyon kalemi ara...')}
-      <button class="btn btn-grid" onclick="exportSpecExcel()">${icoXls()} Ilerleme Raporu</button>
       <button class="btn btn-add" onclick="openSpecModalCtx()">${icoPlus()} Kalem Ekle</button></div>
     ${mergedHtml}${sections}${offHtml}`;
 }
@@ -3286,10 +3424,10 @@ function toast(msg,type){ const w=document.getElementById('toasts'); const t=doc
   t.className='toast'+(type==='err'?' err':''); t.textContent=msg; w.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),300);},2800); }
 function lightbox(src){ const d=document.createElement('div'); d.className='lightbox'; d.onclick=()=>d.remove(); d.innerHTML=`<img src="${src}">`; document.body.appendChild(d); }
-function closeModal(){ if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; } document.querySelectorAll('.modal-bg').forEach(m=>m.remove()); modalImg=null; modalPdf=null; }
+function closeModal(){ if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; } document.querySelectorAll('.modal-bg').forEach(m=>m.remove()); modalImg=null; modalPdf=null; modalTags=[]; }
 
 /* ---------- image/pdf pickers (shared) ---------- */
-let modalImg=null, modalPdf=null;
+let modalImg=null, modalPdf=null, modalTags=[];
 function compressImg(file,cb){ const r=new FileReader(); r.onload=()=>{ const img=new Image(); img.onload=()=>{ const max=900; let{width:w,height:h}=img; if(w>max||h>max){const s=Math.min(max/w,max/h);w*=s;h*=s;} const c=document.createElement('canvas'); c.width=w;c.height=h; c.getContext('2d').drawImage(img,0,0,w,h); cb(c.toDataURL('image/jpeg',0.8)); }; img.src=r.result; }; r.readAsDataURL(file); }
 function pickImg(e,dropId){ const f=e.target.files[0]; if(!f)return; compressImg(f,d=>{ modalImg=d; const el=document.getElementById(dropId); el.classList.add('has'); el.innerHTML=`<img class="img-prev" src="${d}">`; }); }
 function pickPdf(e,dropId){ const f=e.target.files[0]; if(!f)return; if(f.size>5*1024*1024){toast("PDF 5MB'tan buyuk","err");return;} const r=new FileReader(); r.onload=()=>{ modalPdf={name:f.name,data:r.result}; const el=document.getElementById(dropId); el.classList.add('has'); el.innerHTML=`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(f.name)}<button onclick="event.stopPropagation();modalPdf=null;render2pdf('${dropId}')">x</button></div>`; }; r.readAsDataURL(f); }
@@ -3427,8 +3565,8 @@ function openSpecModal(idOrNull,prefill){ if(!guard('editSpec',{bina:(prefill&&p
   const curBina=sp?(sp.bina||''):(pf.bina||PBINA||'');
   // secili malzeme (duzenleme veya yeni)
   const curMat=sp&&sp.matId?getMaterial(sp.matId):null;
-  window._specMat = curMat ? {matId:curMat.id,code:curMat.code,ad:curMat.name,brand:curMat.brand||'',cat:curMat.cat||'',unit:curMat.unit||'',img:curMat.img||null}
-                  : (sp ? {matId:sp.matId||null,code:sp.code||'',ad:sp.name||'',brand:sp.brand||'',cat:sp.cat||'',unit:sp.unit||'',img:sp.img||null} : null);
+  window._specMat = curMat ? {matId:curMat.id,code:curMat.code,ad:curMat.name,brand:curMat.brand||'',cat:curMat.cat||'',unit:curMat.unit||'',img:curMat.img||null,standart:curMat.standart||'',weight:curMat.weight!=null?curMat.weight:null,tags:(curMat.tags||[]).slice()}
+                  : (sp ? {matId:sp.matId||null,code:sp.code||'',ad:sp.name||'',brand:sp.brand||'',cat:sp.cat||'',unit:sp.unit||'',img:sp.img||null,standart:sp.standart||'',weight:sp.weight!=null?sp.weight:null,tags:(sp.tags||[]).slice()} : null);
   // sartname listesi: secili bina+bolume TANIMLI sartnameler
   const sartList=(DB.proje.sartnames||[]).filter(x=>x.bina===curBina && x.section===curCat).map(x=>x.code);
   const grps=[...new Set([...sartList, ...(curGrp?[curGrp]:[])])];
@@ -3439,8 +3577,8 @@ function openSpecModal(idOrNull,prefill){ if(!guard('editSpec',{bina:(prefill&&p
     <div class="frow"><label>Malzeme *  <span class="t-meta">(kutuphaneden secin - bilgiler otomatik gelir)</span></label>
       <div id="s_matBox">${specMatBoxHtml()}</div>
     </div>
-    <div class="frow"><label>Hedef Miktar *</label><input id="s_target" type="number" step="any" value="${sp?sp.target:''}" placeholder="0"></div>
-    <p style="font-size:11px;color:var(--dim);font-family:var(--mono)">Malzeme bilgisi (kod, ad, marka, birim, foto) Malzeme Kutuphanesinden gelir. Yeni malzeme icin kutuphaneye ekleyin.</p>
+    <div class="frow two"><div><label>Poz No  <span class="t-meta">(bu sartnamedeki satir no)</span></label><input id="s_poz" value="${sp?esc(sp.poz||''):''}" placeholder="orn. 191"></div><div><label>Hedef Miktar *</label><input id="s_target" type="number" step="any" value="${sp?sp.target:''}" placeholder="0"></div></div>
+    <p style="font-size:11px;color:var(--dim);font-family:var(--mono)">Malzeme bilgisi (kod, ad, marka, birim, standart, agirlik, etiket, foto) Malzeme Kutuphanesinden gelir. Yeni malzeme icin kutuphaneye ekleyin. Ayni malzeme bu sartnamede farkli Poz No'larla birden fazla kez gecebilir.</p>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveSpec(${sp?`'${sp.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
 }
@@ -3449,12 +3587,14 @@ function specMatBoxHtml(){
   const m=window._specMat;
   if(m && (m.code||m.ad)){
     const thumb=m.img?`<img src="${m.img}" style="width:46px;height:46px;border-radius:8px;object-fit:cover;flex-shrink:0">`:`<div style="width:46px;height:46px;border-radius:8px;background:var(--dim)22;display:flex;align-items:center;justify-content:center;flex-shrink:0">${phIcoSm()}</div>`;
+    const metaBits=[m.code||'-',m.brand,m.unit,m.standart,(m.weight!=null?m.weight+' kg':'')].filter(Boolean);
+    const tagsLine=m.tags&&m.tags.length?`<div style="margin-top:4px">${m.tags.map(t=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-size:9px">${esc(t)}</span>`).join(' ')}</div>`:'';
     return `<div class="mat-selected">${thumb}
       <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;line-height:1.25">${esc(m.ad)}</div>
-        <div style="font-size:11px;color:var(--mute);margin-top:3px;font-family:var(--mono)">${esc(m.code||'-')}${m.brand?' · '+esc(m.brand):''}${m.unit?' · '+esc(m.unit):''}</div></div>
+        <div style="font-size:11px;color:var(--mute);margin-top:3px;font-family:var(--mono)">${metaBits.map(esc).join(' · ')}</div>${tagsLine}</div>
       <button class="btn btn-ghost" style="padding:6px 11px;font-size:12px" onclick="specPickMaterial()">Degistir</button></div>`;
   }
-  return `<div class="ac-wrap"><input id="s_matSearch" placeholder="Kutuphaneden malzeme ara (kod, ad, marka)..." autocomplete="off" readonly onclick="specPickMaterial()" style="cursor:pointer">
+  return `<div class="ac-wrap"><input id="s_matSearch" placeholder="Kutuphaneden malzeme ara (kod, ad, marka, standart, etiket)..." autocomplete="off" readonly onclick="specPickMaterial()" style="cursor:pointer">
     </div><button class="btn btn-ghost" style="margin-top:8px;padding:7px 12px;font-size:12px" onclick="openMaterialModalFromSpec()">${icoPlus()} Kutuphaneye Yeni Malzeme Ekle</button>`;
 }
 // modal icindeki bina/bolum degisince sartname listesini ve malzeme kutusunu tazele
@@ -3471,7 +3611,7 @@ function specPickMaterial(){
   const el=document.getElementById('s_matSearch'); el.focus();
   acOpen(el, matLibSrc(), (it,isNew)=>{
     if(isNew){ box.innerHTML=specMatBoxHtml(); return; }
-    window._specMat={matId:it.matId,code:it.code,ad:it.ad,brand:it.brand,cat:it.cat,unit:it.unit,img:it.img};
+    window._specMat={matId:it.matId,code:it.code,ad:it.ad,brand:it.brand,cat:it.cat,unit:it.unit,img:it.img,standart:it.standart||'',weight:it.weight!=null?it.weight:null,tags:(it.tags||[]).slice()};
     modalImg=it.img||null;
     // secili Bolum degistirilmez: malzeme (orn. krose) hangi bolumde ekleniyorsa orada kullanilir,
     // malzemenin kendi kategorisi sadece varsayilan siniflandirmadir
@@ -3498,17 +3638,25 @@ async function saveSpec(id){ if(!guard('editSpec'))return;
   const grup=document.getElementById('s_grup').value;
   const target=document.getElementById('s_target').value;
   const mat=window._specMat;
+  const poz=document.getElementById('s_poz').value.trim();
   if(!mat||(!mat.code&&!mat.ad)){toast("Malzeme secimi zorunlu - kutuphaneden secin","err");return;}
   if(target===''||isNaN(target)){toast("Hedef miktar zorunlu","err");return;}
   if(!grup){toast("Sartname secimi zorunlu - once Bolum & Sartname ekranindan tanimlayin","err");return;}
   const code=mat.code||''; const name=mat.ad||'';
-  const dup=DB.proje.specs.find(s=>s.id!==id && !s.is_deleted && specGroupKey(s)===grup && (s.code||'').trim().toLowerCase()===code.toLowerCase());
-  if(dup){toast("Bu malzeme bu sartnamede zaten var: "+code,"err");return;}
+  // poz doluysa kimlik = poz (ayni malzeme bu sartnamede farkli pozlarda tekrar edebilir);
+  // poz bossa eski davranisa dus (kod bazli, sadece diger poz'suz kalemlerle kiyasla)
+  const dup=DB.proje.specs.find(s=>{
+    if(s.id===id||s.is_deleted||s.bina!==bina||specGroupKey(s)!==grup) return false;
+    if(poz) return (s.poz||'').trim().toLowerCase()===poz.toLowerCase();
+    return !(s.poz||'').trim() && (s.code||'').trim().toLowerCase()===code.toLowerCase();
+  });
+  if(dup){toast(poz?`Bu poz ("${poz}") bu sartnamede zaten var`:"Bu malzeme bu sartnamede zaten var: "+code,"err");return;}
   // kutuphane kaydini al/dogrula (matId varsa onu kullan, yoksa kod/ad ile bul/olustur)
   let mt = mat.matId ? getMaterial(mat.matId) : null;
-  if(!mt) mt=ensureMaterial({code,name,unit:mat.unit,cat,brand:mat.brand,img:mat.img});
+  if(!mt) mt=ensureMaterial({code,name,unit:mat.unit,cat,brand:mat.brand,img:mat.img,standart:mat.standart,weight:mat.weight,tags:mat.tags});
   // bolum, malzemenin degil kalemin ozelligi: ayni malzeme (orn. krose) farkli bolumlerde kullanilabilir
-  const data={cat,name:mt.name,code:mt.code,brand:mt.brand||'',target:Number(target),unit:mt.unit||mat.unit||'',bina,grup,img:mt.img||null,matId:mt.id};
+  const data={cat,name:mt.name,code:mt.code,brand:mt.brand||'',target:Number(target),unit:mt.unit||mat.unit||'',bina,grup,poz,
+    standart:mt.standart||'',weight:mt.weight!=null?mt.weight:null,tags:(mt.tags||[]).slice(),img:mt.img||null,matId:mt.id};
   let specEntity;
   if(id){
     const sp=DB.proje.specs.find(s=>s.id===id); Object.assign(sp,data); specEntity=sp;
@@ -3782,145 +3930,6 @@ function exportLibExcel(){
     const ws2=XLSX.utils.aoa_to_sheet(mv); ws2['!cols']=[{wch:12},{wch:34},{wch:8},{wch:10},{wch:8},{wch:24}]; XLSX.utils.book_append_sheet(wb,ws2,"Hareketler"); }
   XLSX.writeFile(wb,`Gecici_Ambar_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel raporu indirildi");
 }
-function exportSpecExcel(){
-  const specs=DB.proje.specs.filter(s=>!s.is_deleted); const off=offSpecItems();
-  if(specs.length===0 && off.length===0){toast("Spesifikasyon yok","err");return;}
-  const esc2=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const COL=16; // toplam sutun sayisi
-  let tr='';
-  // BAŞLIK SATIRI
-  const heads=["Şartname Grubu","Şartname No","Bölüm (Kat)","Bölüm (Kod)","Malzeme","Malzeme Kodu","Hedef","Tedarik","Tedarik %","Montaj","Montaj %","Kalan","Birim","Alternatif","Durum","Bina(lar)"];
-  const thStyle="background:#1F2937;color:#fff;border:1px solid #555;padding:6px 8px;font-weight:bold;font-size:11px;white-space:nowrap";
-  tr+='<tr>'+heads.map(h=>`<th style="${thStyle}">${esc2(h)}</th>`).join('')+'</tr>';
-
-  // kategoriye göre grupla
-  const sorted=specs.slice().sort((a,b)=>(a.cat||'').localeCompare(b.cat||'','tr')||specGroupKey(a).localeCompare(specGroupKey(b),'tr')||a.name.localeCompare(b.name,'tr'));
-  let lastCat=''; let lastGrup='';
-  sorted.forEach(sp=>{
-    const{got,pct}=specProgress(sp);
-    const{installed:montaj,pct:montajPct}=specMontajProgress(sp);
-    const alts=specAlts(sp.id);
-    const altActive=alts.filter(a=>a.status==='kullanımda').length;
-    const altApproved=alts.filter(a=>a.status==='onaylandi').length;
-    const altStr=alts.length?alts.length+(altActive?' ('+altActive+' kull.)':altApproved?' ('+altApproved+' onay)':''):'';
-    const matCode=(sp.matId&&getMaterial(sp.matId)?.code)||sp.code||'';
-    const sartname=(DB.proje.sartnames||[]).find(x=>x.bina===sp.bina && x.code===specGroupKey(sp));
-    const binas=[...new Set(DB.proje.items.filter(it=>it.specId===sp.id||((!it.specId)&&it.cat===sp.cat&&it.name.trim().toLowerCase()===sp.name.trim().toLowerCase())).map(it=>it.bina).filter(Boolean))];
-    const done=pct>=100; const montajDone=montajPct>=100;
-    const bg=sp.exclude?'#FFF3CD':done&&montajDone?'#D1FAE5':done?'#ECFDF5':altActive?'#EFF6FF':'#FFFFFF';
-    const statusLabel=sp.exclude?'HARIC (onay bekliyor)':done?'Tedarik Tamam':pct>0?'Devam Ediyor':'Başlamadı';
-
-    // Kategori başlık satırı
-    if(sp.cat!==lastCat){
-      tr+=`<tr><td colspan="${COL}" style="background:#374151;color:#fff;font-weight:bold;padding:6px 8px;font-size:12px">${esc2(sp.cat)}</td></tr>`;
-      lastCat=sp.cat; lastGrup='';
-    }
-    // Şartname grup başlık satırı
-    if(specGroupKey(sp)!==lastGrup){
-      const g=specGroupKey(sp); const gName=sartname&&sartname.name&&sartname.name!==g?` — ${sartname.name}`:'';
-      tr+=`<tr><td colspan="${COL}" style="background:#1e293b;color:#94a3b8;padding:4px 8px 4px 20px;font-size:10px;font-style:italic">${esc2(g)}${esc2(gName)}</td></tr>`;
-      lastGrup=g;
-    }
-
-    const tdBase=`background:${bg};border:1px solid #ddd;padding:4px 6px;font-size:12px`;
-    const cells=[
-      specGroupKey(sp), sp.code||'', sp.cat, sp.bina||'', sp.name, matCode,
-      Number(sp.target)||0, got, Math.round(pct*10)/10+'%',
-      montaj, Math.round(montajPct*10)/10+'%',
-      Math.max(0,(Number(sp.target)||0)-got), sp.unit||'',
-      altStr, statusLabel, binas.join(', ')
-    ];
-    tr+=`<tr>`+cells.map((c,i)=>{
-      let extra='';
-      if(i===8){ extra=`color:${done?'#166534':'#92400e'};font-weight:600`; } // tedarik %
-      if(i===10){ extra=`color:${montajDone?'#166534':'#c2410c'};font-weight:600`; } // montaj %
-      if(i===13 && altActive){ extra=`color:#1d4ed8;font-weight:600`; } // alternatif
-      return `<td style="${tdBase}${extra?';'+extra:''}">${esc2(c)}</td>`;
-    }).join('')+'</tr>';
-  });
-
-  // SPEK DISI - kırmızı
-  if(off.length){
-    tr+=`<tr><td colspan="${COL}" style="background:#991B1B;color:#fff;font-weight:bold;padding:6px 8px">ŞARTNAME DIŞI ALINLAR (${off.length} kalem)</td></tr>`;
-    off.forEach(o=>{
-      const cells=['-','-',o.cat||'','',o.name,'','(spek yok)',o.total,'','','','','','','ŞARTNAME DIŞI',o.binas.join(', ')];
-      tr+=`<tr>`+cells.map(c=>`<td style="background:#FEF2F2;color:#991B1B;border:1px solid #FECACA;padding:4px 6px;font-size:12px">${esc2(c)}</td>`).join('')+'</tr>';
-    });
-  }
-
-  // ÖZET — bölüm bazında
-  tr+=`<tr><td colspan="${COL}" style="padding:4px"></td></tr>`;
-  tr+=`<tr><td colspan="${COL}" style="background:#0f172a;color:#e2e8f0;font-weight:bold;padding:8px;font-size:13px">BÖLÜM BAZINDA ÖZET</td></tr>`;
-  const cm={};
-  specs.forEach(sp=>{
-    if(sp.exclude)return;
-    const{got}=specProgress(sp); const{installed:m}=specMontajProgress(sp);
-    if(!cm[sp.cat])cm[sp.cat]={t:0,g:0,m:0,n:0,altN:0};
-    cm[sp.cat].t+=Number(sp.target)||0; cm[sp.cat].g+=got; cm[sp.cat].m+=m; cm[sp.cat].n++;
-    cm[sp.cat].altN+=specAlts(sp.id).length;
-  });
-  Object.entries(cm).forEach(([c,v])=>{
-    const tp=v.t>0?Math.round(v.g/v.t*1000)/10:0; const mp=v.t>0?Math.round(v.m/v.t*1000)/10:0;
-    tr+=`<tr>
-      <td style="border:1px solid #ccc;padding:5px 8px;font-weight:bold;background:#f8fafc">${esc2(c)}</td>
-      <td colspan="5" style="border:1px solid #ccc;padding:5px 8px;color:#475569;font-size:11px">Hedef: ${v.t} · ${v.n} kalem · ${v.altN} alternatif</td>
-      <td style="border:1px solid #ccc;padding:5px;text-align:right">${v.t}</td>
-      <td style="border:1px solid #ccc;padding:5px;text-align:right;color:#0369a1">${v.g}</td>
-      <td style="border:1px solid #ccc;padding:5px;font-weight:bold;color:${tp>=100?'#166534':'#92400e'}">${tp}%</td>
-      <td style="border:1px solid #ccc;padding:5px;text-align:right;color:#c2410c">${v.m}</td>
-      <td style="border:1px solid #ccc;padding:5px;font-weight:bold;color:${mp>=100?'#166534':'#c2410c'}">${mp}%</td>
-      <td colspan="5" style="border:1px solid #ccc;padding:5px"></td>
-    </tr>`;
-  });
-  const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"><style>td,th{font-family:Calibri,Arial,sans-serif}</style></head><body><table border="1" cellspacing="0">${tr}</table></body></html>`;
-  const blob=new Blob([html],{type:'application/vnd.ms-excel;charset=UTF-8'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`Proje_Ilerleme_${new Date().toISOString().slice(0,10)}.xls`; a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  toast(off.length?`Rapor indirildi · ${off.length} şartname dışı kalem kırmızı`:"İlerleme raporu indirildi");
-}
-function importSpecExcel(e){ const f=e.target.files[0]; if(!f)return;
-  const grup=prompt("Bu Excel hangi şartname grubuna (dosyasına) ait?\nÖrnek: Tava Spek-2\n(Excel'de 'Grup' sütunu varsa o önceliklidir)", "Tava Spek-2");
-  if(grup===null){ e.target.value=''; return; }
-  const grupDefault=grup.trim()||'Diğer';
-  const binaDefault=PBINA||'';
-  const r=new FileReader();
-  r.onload=async ev=>{ try{
-    const wb=XLSX.read(ev.target.result,{type:'binary'}); const ws=wb.Sheets[wb.SheetNames[0]];
-    const rows=XLSX.utils.sheet_to_json(ws,{header:1}); let added=0; let auto=1;
-    const newSpecs=[];
-    // Beklenen sütun düzeni: Kategori | Malzeme | Hedef | Birim | [Şartname No] | [Bina] | [Grup]
-    rows.forEach((row,i)=>{ if(i===0)return;
-      const[cat,name,target,unit,code,binaCol,grupCol]=row;
-      if(!cat||!name||target==null||isNaN(Number(target)))return;
-      let c=code?String(code).trim():'';
-      if(!c){ c='KODSUZ-'+String(auto++).padStart(2,'0'); }
-      while(DB.proje.specs.some(s=>(s.code||'').toLowerCase()===c.toLowerCase()))
-        c=c+'-'+Math.random().toString(36).slice(2,4);
-      const specCat=String(cat).trim();
-      const specBina=(binaCol?String(binaCol).trim():'')||binaDefault;
-      const specGrup=(grupCol?String(grupCol).trim():'')||grupDefault;
-      // Malzeme kütüphanesinde eşleşme: önce koda göre, sonra isme göre
-      const matLib=DB.proje.materials||[];
-      const cLow=c.toLowerCase(); const nLow=String(name).trim().toLowerCase();
-      const mat=matLib.find(m=>cLow&&(m.code||'').toLowerCase()===cLow)
-             ||matLib.find(m=>nLow&&(m.name||'').trim().toLowerCase()===nLow);
-      newSpecs.push({
-        id:uid(), cat:specCat, name:String(name).trim(),
-        target:Number(target), unit:unit?String(unit).trim():'',
-        code:c, grup:specGrup, bina:specBina,
-        matId:mat?mat.id:null, brand:mat?mat.brand||'':'', img:mat?mat.img||null:null
-      }); added++;
-    });
-    if(newSpecs.length){ await sbInsertProjeSpecs(newSpecs); newSpecs.forEach(s=>DB.proje.specs.push(s)); }
-    const linked=newSpecs.filter(s=>s.matId).length;
-    render();
-    if(added>0) toast(`${added} kalem eklendi${binaDefault?' · '+binaDefault:''}${linked?' · '+linked+' kütüphane eşleşmesi':''}`);
-    else toast("Uygun satır yok — beklenen: Kategori | Malzeme | Hedef | Birim | [Şartname No] | [Bina] | [Grup]","err");
-  }catch(err){toast("Excel okunamadı: "+err.message,"err");} e.target.value=''; };
-  r.readAsBinaryString(f);
-}
-
-
 /* ===================================================================
    EL ALETLERI MODULU
    =================================================================== */
@@ -4858,13 +4867,14 @@ function specLibSrc(){
   // spesifikasyon kutuphanesi - spek no'ya gore aranabilir
   return DB.proje.specs.map(s=>({ad:s.name, alt:(s.code||'')+' '+(s.cat||''), sub:[s.code,s.cat,s.unit].filter(Boolean).join(' · '), obj:{specId:s.id,code:s.code||'',ad:s.name,cat:s.cat||'',unit:s.unit||''}}));
 }
-// MERKEZI MALZEME KUTUPHANESI arama kaynagi - tum bilgi (kod, ad, marka, birim, FOTO)
+// MERKEZI MALZEME KUTUPHANESI arama kaynagi - tum bilgi (kod, ad, marka, birim, standart, etiket, FOTO)
 function matLibSrc(){
   return (DB.proje.materials||[]).filter(m=>!m.is_deleted).map(m=>({
-    ad:m.name, alt:(m.code||'')+' '+(m.brand||'')+' '+(m.cat||''),
+    ad:m.name, alt:(m.code||'')+' '+(m.brand||'')+' '+(m.cat||'')+' '+(m.standart||'')+' '+(m.tags||[]).join(' '),
     sub:[m.code,m.brand,m.cat,m.unit].filter(Boolean).join(' · '),
     img:m.img||null,
-    obj:{matId:m.id,code:m.code||'',ad:m.name,brand:m.brand||'',cat:m.cat||'',unit:m.unit||'',img:m.img||null}
+    obj:{matId:m.id,code:m.code||'',ad:m.name,brand:m.brand||'',cat:m.cat||'',unit:m.unit||'',img:m.img||null,
+         standart:m.standart||'',weight:m.weight!=null?m.weight:null,tags:(m.tags||[]).slice()}
   }));
 }
 function openProjeOrderModal(){ modalPdf=null; pOrderLines=[{specId:'',code:'',ad:'',cat:'',unit:'',grup:'',qty:''}]; window._poGrup=(PSPEC&&PSPEC!=='__all')?PSPEC:'';

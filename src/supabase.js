@@ -528,6 +528,7 @@ export async function sbLoadAllData() {
       binaModelleri: projeBinaModelleri,
     },
     meta: {
+      ...settingsMap,
       created: settingsMap.created || Date.now(),
       updated: Date.now(),
       seeded: true,
