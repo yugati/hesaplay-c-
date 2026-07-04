@@ -204,12 +204,20 @@ tbody tr:hover{background:var(--panel2)}
 .card-tool-btn{display:flex;align-items:center;gap:4px;background:var(--bg);border:1px solid var(--line);color:var(--mute);border-radius:8px;padding:5px 9px;font-size:11px;font-weight:700;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s}
 .card-tool-btn:hover{border-color:var(--cc,#a855f7);color:var(--cc,#a855f7)}
 .card-tool-btn.has{color:var(--cc,#a855f7);border-color:var(--cc,#a855f7)66;background:var(--cc,#a855f7)14}
-/* bina 3D goruntuleyici modal */
+/* bina 3D goruntuleyici */
 .bina3d-toolbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px;font-size:12px}
 .bina3d-rotate{display:flex;align-items:center;gap:6px;color:var(--mute);cursor:pointer;user-select:none}
-.bina3d-canvas{position:relative;width:100%;height:min(60vh,480px);border-radius:12px;overflow:hidden;background:#0b0f16;border:1px solid var(--line)}
+.bina3d-canvas{position:relative;width:100%;height:min(62vh,560px);border-radius:12px;overflow:hidden;background:#0b0f16;border:1px solid var(--line)}
 .bina3d-canvas canvas{display:block}
 .bina3d-loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--mute);font-size:13px;background:#0b0f16}
+/* Bina 3D Genel Bakis sayfasi */
+.binaov-wrap{max-width:1300px;margin:0 auto}
+.binaov-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.binaov-head h2{font-size:22px;font-weight:800;display:flex;align-items:center;gap:9px;margin-bottom:4px}
+.binaov-head p{font-size:13px;color:var(--mute)}
+.binaov-3d{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:var(--shadow-sm);margin-bottom:28px}
+.binaov-progress-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.binaov-progress-head h3{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
 /* kat gorseli - canli montaj isi haritasi */
 .katgor-summary{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:14px}
 .katgor-avg{font-size:30px;font-weight:800;font-family:var(--mono)}
@@ -371,7 +379,6 @@ tr.row-sel{background:color-mix(in srgb,var(--blue) 9%,transparent)}
 .modal-bg{position:fixed;inset:0;background:rgba(3,6,12,.72);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
 .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:100%;max-width:480px;max-height:92vh;overflow:auto;box-shadow:0 40px 100px rgba(0,0,0,.6)}
 .modal.wide{max-width:620px}
-.modal.bina3d-modal{max-width:820px}
 .modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
 .modal-head h3{font-size:15px;font-weight:700}
 .modal-body{padding:20px}
@@ -777,7 +784,7 @@ function migrate(){
 }
 
 let SEC="proje", TAB="orders", SEARCH="", GFILTER="", LOGVIEW="akis";
-let PBINA="", PCAT="", PSPEC="", PLIB=false, PDEF=false, PORD=false, ORDBINA="";  // proje filtreleri + kutuphane + tanimlar + tum siparisler gorunumu
+let PBINA="", PCAT="", PSPEC="", PLIB=false, PDEF=false, PORD=false, ORDBINA="", PBINA3D=false;  // proje filtreleri + kutuphane + tanimlar + tum siparisler gorunumu + bina 3D genel bakis
 let CURRENT_USER=null;   // giris yapan kullanici
 let SB_USERS=[];         // Supabase kullanici onbellek
 let PUSERS=false;        // admin kullanici yonetim ekrani gorunumu
@@ -963,7 +970,7 @@ document.addEventListener('DOMContentLoaded', async function(){
       if(nav){
         sessionStorage.removeItem('navState');
         if(nav.SEC&&canSee(nav.SEC)) SEC=nav.SEC;
-        PBINA=nav.PBINA||''; PCAT=nav.PCAT||''; PSPEC=nav.PSPEC||'';
+        PBINA=nav.PBINA||''; PCAT=nav.PCAT||''; PSPEC=nav.PSPEC||''; PBINA3D=!!nav.PBINA3D;
         TAB=nav.TAB||'orders';
         PUSERS=isAdmin()&&!!nav.PUSERS; PAUDIT=isAdmin()&&!!nav.PAUDIT;
         PLIB=!!nav.PLIB; PDEF=!!nav.PDEF; PORD=!!nav.PORD;
@@ -993,7 +1000,7 @@ window.addEventListener('beforeunload', function(){
   if(!CURRENT_USER) return;
   try {
     sessionStorage.setItem('navState', JSON.stringify({
-      SEC:SEC, PBINA:PBINA, PCAT:PCAT, PSPEC:PSPEC, TAB:TAB,
+      SEC:SEC, PBINA:PBINA, PCAT:PCAT, PSPEC:PSPEC, TAB:TAB, PBINA3D:PBINA3D,
       PUSERS:PUSERS, PAUDIT:PAUDIT, PLIB:PLIB, PDEF:PDEF, PORD:PORD
     }));
   } catch(e){}
@@ -1015,6 +1022,10 @@ function render(){
   const inPanel = (PUSERS&&isAdmin()) || (PAUDIT&&isAdmin()) || PLIB || PDEF || PORD;
   // genel panel acikken hicbir bolum sekmesi aktif gorunmesin; degilse aktif olan SEC
   document.querySelectorAll('.sect-tab').forEach(b=>b.classList.toggle('on', !inPanel && b.dataset.sec===SEC));
+  // Bina 3D Genel Bakis ekranindan baska bir yere gidiliyorsa aktif Three.js goruntuleyiciyi kapat
+  // (canvas DOM'dan kalksa bile requestAnimationFrame dongusu surer - bellek/CPU sizintisini onler)
+  const onBinaOverview = SEC==='proje' && !!PBINA && PBINA3D;
+  if(window._binaViewer && !onBinaOverview){ window._binaViewer.dispose(); window._binaViewer=null; window._binaViewerUrl=null; }
   // GENEL paneller: hangi bolumde olursak olalim acilabilir (SEC'ten bagimsiz)
   if(PUSERS && isAdmin()){ m.innerHTML=renderUsers(); wireToolbar&&wireToolbar(); return; }
   if(PAUDIT && isAdmin()){ m.innerHTML=renderAudit(); wireToolbar&&wireToolbar(); return; }
@@ -1023,6 +1034,7 @@ function render(){
   if(PORD){ m.innerHTML=renderAllOrders(); wireToolbar(); return; }
   if(SEC==='proje'){
     if(!PBINA){ m.innerHTML=renderBinaSecim(); wireToolbar(); return; }
+    if(PBINA3D){ m.innerHTML=renderBinaOverview(); wireToolbar(); return; }
     if(!PCAT){ m.innerHTML=renderKategoriSecim(); wireToolbar(); return; }
     if(!PSPEC){ m.innerHTML=renderSpekSecim(); wireToolbar(); return; }
     m.innerHTML=projeFilterBar()+projeSubnav()+(TAB==='spec'?renderSpec():TAB==='log'?renderProjeLog():renderProjeOrders());
@@ -1055,10 +1067,13 @@ function projeSubnav(){
 }
 function setTab(t){ TAB=t; SEARCH=""; render(); }
 function catColor(c){ return {Tava:'#3b82f6','Aydinlatma':'#f0a020','Topraklama':'#22c55e'}[c]||'#8b97a7'; }
-function setPBina(b){ PBINA=b; PCAT=""; PSPEC=""; TAB="orders"; SEARCH=""; render(); }
+function setPBina(b){ PBINA=b; PCAT=""; PSPEC=""; TAB="orders"; SEARCH=""; PBINA3D=true; render(); }
 function setPCat(c){ PCAT=c; PSPEC=""; TAB="orders"; SEARCH=""; render(); }
 function setPSpec(g){ PSPEC=g; TAB="orders"; SEARCH=""; render(); }
-function resetPSel(){ PBINA=""; PCAT=""; PSPEC=""; render(); }
+function resetPSel(){ PBINA=""; PCAT=""; PSPEC=""; PBINA3D=false; render(); }
+// Bina 3D Genel Bakis ekranindan bolum/sartname secimine devam et
+function goBinaCats(){ PBINA3D=false; render(); }
+function gotoBinaCat(c){ PBINA3D=false; setPCat(c); }
 function backToCat(){ PCAT=""; PSPEC=""; render(); }
 function backToSpec(){ PSPEC=""; render(); }
 function projeCats(){ return [...new Set([...(DB.proje.sections||PROJ_CATS), ...DB.proje.specs.map(s=>s.cat), ...DB.proje.items.map(i=>i.cat)].filter(Boolean))]; }
@@ -1078,7 +1093,7 @@ function renderBinaSecim(){
     cards+=`<div class="sel-card" onclick="setPBina('${esc(b)}')" style="--cc:${col}">
       <div class="sel-card-tools">
         ${katSayisi?`<button class="card-tool-btn" title="Kat Gorunumu" onclick="event.stopPropagation();openKatGorseli('${esc(b)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M4 8h16M4 13h16M4 18h16"/></svg>Kat</button>`:''}
-        <button class="card-tool-btn ${bm?'has':''}" title="${bm?'3D Bina Modeli':'3D Bina Modeli Ekle'}" onclick="event.stopPropagation();open3DBinaModal('${esc(b)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>${bm?'3D':'+3D'}</button>
+        ${bm?`<span class="card-tool-btn has" style="cursor:default" title="3D model yuklu - binaya girince goruntulenir"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>3D</span>`:''}
       </div>
       <div class="sel-card-ico" style="background:${col}1f;color:${col}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg></div>
       <div class="sel-card-name">${esc(b)}</div>
@@ -1852,15 +1867,49 @@ async function addBinaPrompt(){ if(!guard('define'))return; const v=prompt("Yeni
   if(!DB.proje.buildings.includes(b)){ await sbInsertProjeBuilding(b); DB.proje.buildings.push(b); } setPBina(b); }
 async function addCatPrompt(){ const v=prompt("Yeni kategori adi (orn. Kablo Kanali):"); if(!v)return; const c=v.trim(); if(!c)return; setPCat(c); }
 
-/* ============ BINA 3D MODELI (glTF/.glb goruntuleyici) ============ */
+/* ============ BINA 3D GENEL BAKIS (3D model + sartname ilerlemesi) ============ */
 const BINA3D_MAX_MB=50;
-function open3DBinaModal(bina){
+// Bina secildiginde ilk gorulen ekran: buyuk 3D goruntuleyici + altinda tum bolumlerin
+// tedarik/montaj ilerlemesi. "Bolumlere Gec" ile klasik bolum/sartname akisina devam edilir.
+function renderBinaOverview(){
+  const bina=PBINA; const col=buildingColor(bina);
   const bm=binaModel(bina);
-  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide bina3d-modal"><div class="modal-head"><h3>${icoCube()} ${esc(bina)} · 3D Bina Modeli</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
-    <div id="bina3d-slot">${bm?bina3dViewerHtml(bina,bm):bina3dUploadHtml(bina)}</div>
-  </div></div></div>`;
-  document.body.insertAdjacentHTML('beforeend',html);
+  const binSpecs=DB.proje.specs.filter(s=>!s.is_deleted && s.bina===bina);
+  const cats=projeCats();
+  let ttA=0,ggA=0,montajA=0;
+  const catCards=cats.map(c=>{
+    const cc=catColor(c);
+    const catSpecs=binSpecs.filter(s=>s.cat===c);
+    if(!catSpecs.length) return '';
+    let tt=0,gg=0,montaj=0; catSpecs.forEach(s=>{ if(s.exclude)return; const{got}=specProgress(s); const{installed}=specMontajProgress(s); tt+=Number(s.target)||0; gg+=got; montaj+=installed; });
+    ttA+=tt; ggA+=gg; montajA+=montaj;
+    const pct=tt>0?Math.min(100,gg/tt*100):0; const montajPct=tt>0?Math.min(100,montaj/tt*100):0;
+    const itemCount=DB.proje.items.filter(i=>!i.is_deleted && i.bina===bina && i.cat===c).length;
+    return `<div class="sel-card" onclick="gotoBinaCat('${esc(c)}')" style="--cc:${cc}">
+      <div class="sel-card-ico" style="background:${cc}1f;color:${cc}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg></div>
+      <div class="sel-card-name">${esc(c)}</div>
+      <div class="sel-card-sub">${catSpecs.length} sartname kalemi · ${itemCount} hareket</div>
+      <div class="sel-card-bar"><div class="scb-track"><i style="width:${pct}%;background:${cc}"></i></div><span class="scb-pct" style="color:${cc}">${pct.toFixed(0)}% tedarik</span></div>
+      <div class="sel-card-bar" style="margin-top:3px"><div class="scb-track"><i style="width:${montajPct}%;background:${montajPct>=100?'var(--green)':'var(--amber)'}"></i></div><span class="scb-pct" style="color:${montajPct>=100?'var(--green)':'var(--amber)'}">${montajPct.toFixed(0)}% montaj</span></div>
+    </div>`;
+  }).join('');
+  const pctA=ttA>0?Math.min(100,ggA/ttA*100):0; const montajPctA=ttA>0?Math.min(100,montajA/ttA*100):0;
+  const progressBody=catCards
+    ? `${statRow([['Tedarik',pctA.toFixed(0)+'%','genel ortalama',col],['Montaj',montajPctA.toFixed(0)+'%','genel ortalama',montajPctA>=100?'var(--green)':'var(--amber)'],['Şartname Kalemi',binSpecs.length,'toplam','var(--blue)'],['Bölüm',cats.filter(c=>binSpecs.some(s=>s.cat===c)).length,'aktif','#a855f7']])}<div class="sel-grid">${catCards}</div>`
+    : `<div class="empty" style="padding:40px 20px"><p>Bu binada henuz sartname kalemi yok</p><span style="font-size:12px">Bolumlere gecip sartname tanimlayin</span></div>`;
   if(bm) mount3DBinaViewer(bina,bm.url);
+  return `<div class="binaov-wrap">
+    <div class="sel-bc"><button onclick="resetPSel()">Binalar</button> ${icoChevron()} <b style="color:${col}">${esc(bina)}</b></div>
+    <div class="binaov-head">
+      <div><h2>${icoCube()} ${esc(bina)}</h2><p>3 boyutlu bina modeli ve genel sartname ilerlemesi</p></div>
+      <button class="btn btn-add" onclick="goBinaCats()">Bolumlere Gec ${icoArr('right')}</button>
+    </div>
+    <div class="binaov-3d" id="bina3d-slot">${bm?bina3dViewerHtml(bina,bm):bina3dUploadHtml(bina)}</div>
+    <div class="binaov-progress">
+      <div class="binaov-progress-head"><h3>${icoDoc()} Sartname Ilerlemesi</h3></div>
+      ${progressBody}
+    </div>
+  </div>`;
 }
 function icoCube(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>'; }
 function bina3dUploadHtml(bina){
@@ -1885,7 +1934,11 @@ function bina3dViewerHtml(bina,bm){
 function mount3DBinaViewer(bina,url){
   requestAnimationFrame(()=>{
     const el=document.getElementById('bina3dCanvas'); if(!el||!window.initBinaViewer)return;
+    // Genel Bakis ekraninda her render() cagrisinda sahne sifirdan kurulmasin diye,
+    // ayni URL zaten yuklenmisse (canvas hazirsa) tekrar mount edilmez.
+    if(window._binaViewer && window._binaViewerUrl===url && el.querySelector('canvas')) return;
     if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; }
+    window._binaViewerUrl=url;
     window._binaViewer=window.initBinaViewer(el,url,{
       onLoaded:()=>{ const l=el.querySelector('.bina3d-loading'); if(l)l.remove(); },
       onError:(err)=>{ console.error('3D model yuklenemedi:',err); el.innerHTML=`<div class="bina3d-loading" style="color:var(--red)">Model yuklenemedi - dosya bozuk olabilir</div>`; }
@@ -1919,7 +1972,7 @@ async function del3DBinaModel(bina){
   const bm=binaModel(bina); if(!bm)return;
   if(!guard('define',{bina}))return;
   if(!confirm(`"${bina}" binasinin 3D modelini silmek istiyor musunuz?`))return;
-  if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; }
+  if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; window._binaViewerUrl=null; }
   await sbDeleteProjeBinaModel(bm.id);
   if(bm.path) await sbDeleteBinaModelFile(bm.path);
   DB.proje.binaModelleri=DB.proje.binaModelleri.filter(x=>x.id!==bm.id);
@@ -2095,17 +2148,17 @@ function specMontajProgress(spec){
    sartname entity'sinde tutulur. Teslimat = sartnamenin tum kalemleri %100
    montaj oldugunda otomatik gerceklesmis sayilir. Teslimattan once hak edis
    0 TL'dir (kismi montaj hak edis dogurmaz); %100'de tam bedel kazanilir. */
-function hakedisRows(binaFilter){
+function hakedisRows(binaFilter,includeHidden=false){
   const binas=binaFilter?[binaFilter]:projBuildings();
   const rows=[];
   binas.forEach(bina=>{
-    (DB.proje.sartnames||[]).filter(sr=>sr.bina===bina && sr.hakedisGoster!==false).forEach(sr=>{
+    (DB.proje.sartnames||[]).filter(sr=>sr.bina===bina && (includeHidden||sr.hakedisGoster!==false)).forEach(sr=>{
       const specs=DB.proje.specs.filter(s=>!s.is_deleted && s.bina===bina && s.cat===sr.section && specGroupKey(s)===sr.code);
       let tt=0,montaj=0; specs.forEach(s=>{ if(s.exclude)return; const{installed}=specMontajProgress(s); tt+=Number(s.target)||0; montaj+=installed; });
       const pct=tt>0?Math.min(100,montaj/tt*100):0;
       const delivered=tt>0 && pct>=100;
       const fee=Number(sr.montajBedeli)||0;
-      rows.push({bina,section:sr.section,code:sr.code,name:sr.name,pct,fee,delivered,tutar:delivered?fee:0,itemCount:specs.length});
+      rows.push({id:sr.id,bina,section:sr.section,code:sr.code,name:sr.name,pct,fee,delivered,tutar:delivered?fee:0,itemCount:specs.length,hakedisGoster:sr.hakedisGoster!==false});
     });
   });
   rows.sort((a,b)=>a.bina.localeCompare(b.bina,'tr')||a.section.localeCompare(b.section,'tr')||a.code.localeCompare(b.code,'tr'));
@@ -2138,20 +2191,67 @@ function renderHakedis(){
     <div class="sel-head"><h2>Hakedis</h2><p>Bir sartnamenin tum kalemleri %100 montaj oldugunda teslimat gerceklesmis sayilir ve tam bedel hak edilir. Kismi montaj hak edis dogurmaz. Sadece "Hakediste goster" isaretli sartnameler listelenir.</p></div>
     <div class="stats">${statRow([['Toplam Sartname Bedeli','₺'+fmtNum(grandFee),'tanimli','var(--blue)'],['Hak Edilen Tutar','₺'+fmtNum(grandTotal),'toplam','var(--green)'],['Teslim Edilen',deliveredCount+' / '+rows.length,'sartname','var(--amber)']])}</div>
     <div class="toolbar"><select class="selbox" onchange="setHkBina(this.value)">${binaOpts}</select>
+      <button class="btn btn-ghost" onclick="document.getElementById('hakedisXlsx').click()">${icoUp()} Excel'den Ice Aktar</button>
+      <input type="file" id="hakedisXlsx" accept=".xlsx,.xls" class="hidden" onchange="importHakedisExcel(event)">
       <button class="btn btn-grid" onclick="exportHakedis()">${icoXls()} Excel</button></div>
     <div class="tablewrap"><table><thead><tr><th>Bina</th><th>Bolum</th><th>Sartname</th><th>Kalem</th><th>Montaj</th><th>Durum</th><th>Bedel</th><th>Hak Edilen</th></tr></thead><tbody>${trs}</tbody></table></div>
   </div>`;
 }
+// sartname_id: gizli anahtar sutun. montaj_bedeli ve hakediste_goster duzenlenip
+// ayni dosya "Excel'den Ice Aktar" ile geri yuklenince ilgili sartname guncellenir.
+// Diger sutunlar (montaj_yuzde, durum, hak_edilen_tutar) hesaplanmis degerlerdir, ice aktarmada yok sayilir.
 function exportHakedis(){
-  const rows=hakedisRows(null);
+  const rows=hakedisRows(null,true);
   if(!rows.length){ toast("Aktarilacak veri yok","err"); return; }
-  const aoa=[["bina","bolum","sartname_kodu","montaj_yuzde","durum","montaj_bedeli","hak_edilen_tutar"]];
-  rows.forEach(r=>aoa.push([r.bina,r.section,r.code,Number(r.pct.toFixed(1)),r.delivered?'Teslim Edildi':'Bekliyor',r.fee,Number(r.tutar.toFixed(2))]));
-  const grand=rows.reduce((s,r)=>s+r.tutar,0);
-  aoa.push(['','','','','','TOPLAM',Number(grand.toFixed(2))]);
-  const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:12},{wch:14},{wch:38},{wch:13},{wch:14},{wch:14},{wch:16}];
+  const aoa=[["sartname_id","bina","bolum","sartname_kodu","montaj_yuzde","durum","montaj_bedeli","hakediste_goster","hak_edilen_tutar"]];
+  rows.forEach(r=>aoa.push([r.id,r.bina,r.section,r.code,Number(r.pct.toFixed(1)),r.delivered?'Teslim Edildi':'Bekliyor',r.fee,r.hakedisGoster?'EVET':'HAYIR',Number(r.tutar.toFixed(2))]));
+  const grand=rows.filter(r=>r.hakedisGoster).reduce((s,r)=>s+r.tutar,0);
+  aoa.push(['','','','','','','TOPLAM (gorunur)','',Number(grand.toFixed(2))]);
+  const ws=XLSX.utils.aoa_to_sheet(aoa); ws['!cols']=[{wch:14},{wch:12},{wch:14},{wch:38},{wch:13},{wch:14},{wch:14},{wch:15},{wch:16}];
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Hakedis");
-  XLSX.writeFile(wb,`Hakedis_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel indirildi");
+  XLSX.writeFile(wb,`Hakedis_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast("Excel indirildi - montaj_bedeli/hakediste_goster duzenleyip geri yukleyebilirsiniz");
+}
+async function importHakedisExcel(e){ if(!isAdmin()){toast('Bu islem icin yetkiniz yok','err');e.target.value='';return;} const f=e.target.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=async ev=>{ try{
+    const wb=XLSX.read(ev.target.result,{type:'binary'});
+    const rows=_sheetRows(wb,['Hakedis']) || _sheetRows(wb,[wb.SheetNames[0]]);
+    if(!rows||rows.length<2){ toast("Excel bos veya okunamadi","err"); e.target.value=''; return; }
+    const pick=_hdrMap(rows[0]);
+    const iId=pick('sartname_id'); const iFee=pick('montaj_bedeli'); const iShow=pick('hakediste_goster');
+    if(iId<0){ toast('Excel "sartname_id" sutunu icermiyor - bu dosya Hakedis ekranindan indirilmis olmali','err'); e.target.value=''; return; }
+    let updated=0; const errors=[]; const ops=[];
+    for(let i=1;i<rows.length;i++){
+      const row=rows[i]; if(!row||row.every(c=>String(c).trim()==='')) continue;
+      const id=String(row[iId]??'').trim(); if(!id) continue; // toplam satiri (ID yok) sessizce atlanir
+      const sr=(DB.proje.sartnames||[]).find(x=>x.id===id);
+      if(!sr){ errors.push(`Satir ${i+1}: "${id}" ID'li sartname bulunamadi (silinmis olabilir)`); continue; }
+      let changed=false;
+      if(iFee>=0){ const feeRaw=String(row[iFee]??'').trim();
+        if(feeRaw!==''){ const fee=Number(feeRaw); if(isNaN(fee)) errors.push(`Satir ${i+1}: gecersiz montaj_bedeli "${feeRaw}"`);
+          else if(fee!==Number(sr.montajBedeli||0)){ sr.montajBedeli=fee; changed=true; } } }
+      if(iShow>=0){ const showRaw=String(row[iShow]??'').trim().toUpperCase();
+        if(showRaw){ const show=!(showRaw==='HAYIR'||showRaw==='NO'||showRaw==='FALSE');
+          if(show!==(sr.hakedisGoster!==false)){ sr.hakedisGoster=show; changed=true; } } }
+      if(changed){ updated++; ops.push(sbUpdateProjeSartname(id,{...sr})); }
+    }
+    await Promise.all(ops);
+    if(updated) logAction('define','Hakedis Excel guncelleme: '+updated+' sartname');
+    render();
+    showHakedisImportReport(updated,errors);
+  }catch(err){ toast('Excel okunamadi: '+err.message,'err'); } e.target.value=''; };
+  r.readAsBinaryString(f);
+}
+function showHakedisImportReport(updated,errors){
+  const ok=errors.length===0;
+  const errHtml=errors.length?`<div style="margin-top:14px"><b style="color:var(--red);font-size:13px">${errors.length} hata</b><div style="max-height:200px;overflow:auto;margin-top:8px;font-size:12px;font-family:var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px">${errors.slice(0,50).map(e=>`<div style="color:var(--amber);padding:2px 0">• ${esc(e)}</div>`).join('')}${errors.length>50?`<div style="color:var(--mute)">... +${errors.length-50} daha</div>`:''}</div></div>`:'';
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>Hakedis - Ice Aktarma Sonucu</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <div style="text-align:center;padding:10px 0 16px"><div style="font-size:34px">${ok?'✓':'⚠'}</div><div style="color:${ok?'var(--green)':'var(--amber)'};font-weight:700;margin-top:4px">${updated} sartname guncellendi${ok?'':' ('+errors.length+' uyari)'}</div></div>
+    ${!updated&&!errors.length?'<p style="color:var(--mute);text-align:center;font-size:13px">Guncellenecek satir bulunamadi.</p>':''}
+    ${errHtml}
+  </div><div class="modal-foot"><button class="btn btn-add" onclick="closeModal()">Tamam</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
 }
 /* ─── Alternatif Ürün yardımcıları ─────────────────────────────────────── */
 function altStatusLabel(s){ return {oneri:'Öneri',onaylandi:'Onaylandı','kullanımda':'Kullanımda',reddedildi:'Reddedildi'}[s]||s; }
@@ -2503,15 +2603,52 @@ function importSpecsUpsertExcel(e){ if(!guard('import')){e.target.value='';retur
   r.onload=async ev=>{ try{
     const wb=XLSX.read(ev.target.result,{type:'binary'});
     const report={matCreated:0,matUpdated:0,matDeleted:0,specCreated:0,specUpdated:0,specDeleted:0,errors:[]};
-    // once malzeme sayfasi (FK cozumu icin)
-    const matRows=_sheetRows(wb,['2_Materials','Materials','Malzeme_Kutuphanesi','3.Malzeme_Kutuphanesi']);
-    if(matRows) upsertMaterialsFromRows(matRows, report);
-    const specRows=_sheetRows(wb,['3_Specifications','Specifications','Spesifikasyonlar','4.Spesifikasyonlar']) || _sheetRows(wb,[wb.SheetNames[0]]);
-    upsertSpecsFromRows(specRows, report, PBINA||'');
+    // "Ilerleme Raporu" (exportSpecExcel) geri yuklemesi: "Spec ID" sutunu iceren sayfa varsa
+    // bu, indirilip duzenlenmis bir ilerleme raporudur - kod/isim eslesmesi yerine ID ile
+    // dogrudan ilgili kalemin Hedef/Birim degerini gunceller (yeni kayit olusturmaz).
+    const prog=_findSpecIdSheet(wb);
+    if(prog){ updateSpecsFromProgressRows(prog.rows, prog.h, report); }
+    else {
+      // once malzeme sayfasi (FK cozumu icin)
+      const matRows=_sheetRows(wb,['2_Materials','Materials','Malzeme_Kutuphanesi','3.Malzeme_Kutuphanesi']);
+      if(matRows) upsertMaterialsFromRows(matRows, report);
+      const specRows=_sheetRows(wb,['3_Specifications','Specifications','Spesifikasyonlar','4.Spesifikasyonlar']) || _sheetRows(wb,[wb.SheetNames[0]]);
+      upsertSpecsFromRows(specRows, report, PBINA||'');
+    }
     await Promise.all([sbUpsertProjeMaterials(DB.proje.materials),sbUpsertProjeSpecs(DB.proje.specs)]);
     render(); logAction('import','Spesifikasyon: +'+report.specCreated+' yeni, '+report.specUpdated+' guncel'); showImportReport(report,'Spesifikasyon');
   }catch(err){ toast('Excel okunamadi: '+err.message,'err'); } e.target.value=''; };
   r.readAsBinaryString(f);
+}
+// Excel'de "Spec ID" basligi olan ilk sayfayi bulur (Ilerleme Raporu round-trip tespiti)
+function _findSpecIdSheet(wb){
+  for(const sheetName of wb.SheetNames){
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,blankrows:false,defval:''});
+    if(!rows||!rows.length) continue;
+    for(let i=0;i<Math.min(rows.length,5);i++){
+      const line=rows[i].map(x=>norm(String(x).trim()));
+      if(line.includes('spec id')) return {rows,h:i};
+    }
+  }
+  return null;
+}
+// Ilerleme Raporu satirlarindan Hedef/Birim guncellemesi (ID ile birebir eslesme)
+function updateSpecsFromProgressRows(rows,h,report){
+  const pick=_hdrMap(rows[h]);
+  const iId=pick('spec id'); const iTgt=pick('hedef'); const iUnit=pick('birim');
+  if(iId<0||iTgt<0){ report.errors.push('Ilerleme raporu: "Spec ID" veya "Hedef" sutunu bulunamadi'); return; }
+  for(let r=h+1;r<rows.length;r++){
+    const row=rows[r]; if(!row||row.every(c=>String(c).trim()==='')) continue;
+    const id=String(row[iId]??'').trim();
+    if(!id) continue; // baslik/ozet/sartname disi satirlari (ID yok) sessizce atlanir
+    const sp=DB.proje.specs.find(s=>s.id===id && !s.is_deleted);
+    if(!sp){ report.errors.push(`Satir ${r+1}: "${id}" ID'li sartname kalemi bulunamadi (silinmis olabilir)`); continue; }
+    let changed=false;
+    const tgtRaw=String(row[iTgt]??'').trim();
+    if(tgtRaw!==''){ const tgt=Number(tgtRaw); if(!isNaN(tgt)&&tgt>=0&&tgt!==Number(sp.target)){ sp.target=tgt; changed=true; } else if(isNaN(tgt)){ report.errors.push(`Satir ${r+1}: gecersiz Hedef degeri "${tgtRaw}"`); } }
+    if(iUnit>=0){ const u=String(row[iUnit]??'').trim(); if(u&&u!==sp.unit){ sp.unit=u; changed=true; } }
+    if(changed) report.specUpdated++;
+  }
 }
 // TEMIZ KURULUM (FABRIKA ICE AKTARMA): once tum sistemi sifirla, sonra Excel'den yukle
 // ============ FULL SYNC (Excel = tek kaynak) ============
@@ -3132,7 +3269,7 @@ function toast(msg,type){ const w=document.getElementById('toasts'); const t=doc
   t.className='toast'+(type==='err'?' err':''); t.textContent=msg; w.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),300);},2800); }
 function lightbox(src){ const d=document.createElement('div'); d.className='lightbox'; d.onclick=()=>d.remove(); d.innerHTML=`<img src="${src}">`; document.body.appendChild(d); }
-function closeModal(){ if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; } document.querySelectorAll('.modal-bg').forEach(m=>m.remove()); modalImg=null; modalPdf=null; }
+function closeModal(){ document.querySelectorAll('.modal-bg').forEach(m=>m.remove()); modalImg=null; modalPdf=null; }
 
 /* ---------- image/pdf pickers (shared) ---------- */
 let modalImg=null, modalPdf=null;
@@ -3632,10 +3769,15 @@ function exportSpecExcel(){
   const specs=DB.proje.specs.filter(s=>!s.is_deleted); const off=offSpecItems();
   if(specs.length===0 && off.length===0){toast("Spesifikasyon yok","err");return;}
   const esc2=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const COL=16; // toplam sutun sayisi
+  const COL=17; // toplam sutun sayisi
   let tr='';
   // BAŞLIK SATIRI
-  const heads=["Şartname Grubu","Şartname No","Bölüm (Kat)","Bölüm (Kod)","Malzeme","Malzeme Kodu","Hedef","Tedarik","Tedarik %","Montaj","Montaj %","Kalan","Birim","Alternatif","Durum","Bina(lar)"];
+  // Spec ID: gizli anahtar sutun - silinmemeli, EN SONA eklenir (kategori/grup/ozet
+  // baslik satirlari HTML'de colspan ile tek hucre oldugundan, bu sutun onlarda hep bos
+  // kalir ve ice aktarmada "veri satiri degil" olarak dogru sekilde atlanir). "Hedef"i
+  // duzenleyip ayni dosyayi "Excel'den Ice Aktar" ile geri yukleyince bu ID'ye gore
+  // ilgili kalem guncellenir.
+  const heads=["Şartname Grubu","Şartname No","Bölüm (Kat)","Bölüm (Kod)","Malzeme","Malzeme Kodu","Hedef","Tedarik","Tedarik %","Montaj","Montaj %","Kalan","Birim","Alternatif","Durum","Bina(lar)","Spec ID"];
   const thStyle="background:#1F2937;color:#fff;border:1px solid #555;padding:6px 8px;font-weight:bold;font-size:11px;white-space:nowrap";
   tr+='<tr>'+heads.map(h=>`<th style="${thStyle}">${esc2(h)}</th>`).join('')+'</tr>';
 
@@ -3674,22 +3816,23 @@ function exportSpecExcel(){
       Number(sp.target)||0, got, Math.round(pct*10)/10+'%',
       montaj, Math.round(montajPct*10)/10+'%',
       Math.max(0,(Number(sp.target)||0)-got), sp.unit||'',
-      altStr, statusLabel, binas.join(', ')
+      altStr, statusLabel, binas.join(', '), sp.id
     ];
     tr+=`<tr>`+cells.map((c,i)=>{
       let extra='';
       if(i===8){ extra=`color:${done?'#166534':'#92400e'};font-weight:600`; } // tedarik %
       if(i===10){ extra=`color:${montajDone?'#166534':'#c2410c'};font-weight:600`; } // montaj %
       if(i===13 && altActive){ extra=`color:#1d4ed8;font-weight:600`; } // alternatif
+      if(i===16){ extra='font-size:9px;color:#94a3b8'; } // spec id - teknik anahtar
       return `<td style="${tdBase}${extra?';'+extra:''}">${esc2(c)}</td>`;
     }).join('')+'</tr>';
   });
 
-  // SPEK DISI - kırmızı
+  // SPEK DISI - kırmızı (spec kaydi yok, Spec ID bos - ice aktarmada atlanir)
   if(off.length){
     tr+=`<tr><td colspan="${COL}" style="background:#991B1B;color:#fff;font-weight:bold;padding:6px 8px">ŞARTNAME DIŞI ALINLAR (${off.length} kalem)</td></tr>`;
     off.forEach(o=>{
-      const cells=['-','-',o.cat||'','',o.name,'','(spek yok)',o.total,'','','','','','','ŞARTNAME DIŞI',o.binas.join(', ')];
+      const cells=['-','-',o.cat||'','',o.name,'','(spek yok)',o.total,'','','','','','','ŞARTNAME DIŞI',o.binas.join(', '),''];
       tr+=`<tr>`+cells.map(c=>`<td style="background:#FEF2F2;color:#991B1B;border:1px solid #FECACA;padding:4px 6px;font-size:12px">${esc2(c)}</td>`).join('')+'</tr>';
     });
   }
@@ -3715,14 +3858,14 @@ function exportSpecExcel(){
       <td style="border:1px solid #ccc;padding:5px;font-weight:bold;color:${tp>=100?'#166534':'#92400e'}">${tp}%</td>
       <td style="border:1px solid #ccc;padding:5px;text-align:right;color:#c2410c">${v.m}</td>
       <td style="border:1px solid #ccc;padding:5px;font-weight:bold;color:${mp>=100?'#166534':'#c2410c'}">${mp}%</td>
-      <td colspan="5" style="border:1px solid #ccc;padding:5px"></td>
+      <td colspan="6" style="border:1px solid #ccc;padding:5px"></td>
     </tr>`;
   });
   const html=`<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"><style>td,th{font-family:Calibri,Arial,sans-serif}</style></head><body><table border="1" cellspacing="0">${tr}</table></body></html>`;
   const blob=new Blob([html],{type:'application/vnd.ms-excel;charset=UTF-8'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`Proje_Ilerleme_${new Date().toISOString().slice(0,10)}.xls`; a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  toast(off.length?`Rapor indirildi · ${off.length} şartname dışı kalem kırmızı`:"İlerleme raporu indirildi");
+  toast((off.length?`Rapor indirildi · ${off.length} şartname dışı kalem kırmızı. `:"İlerleme raporu indirildi. ")+"Hedef/Birim'i düzenleyip aynı dosyayı 'Excel'den İçe Aktar' ile geri yükleyebilirsiniz.");
 }
 function importSpecExcel(e){ const f=e.target.files[0]; if(!f)return;
   const grup=prompt("Bu Excel hangi şartname grubuna (dosyasına) ait?\nÖrnek: Tava Spek-2\n(Excel'de 'Grup' sütunu varsa o önceliklidir)", "Tava Spek-2");
