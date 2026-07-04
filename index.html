@@ -207,6 +207,20 @@ tbody tr:hover{background:var(--panel2)}
 .card-tool-btn:hover{border-color:var(--cc,#a855f7);color:var(--cc,#a855f7)}
 .card-tool-btn.has{color:var(--cc,#a855f7);border-color:var(--cc,#a855f7)66;background:var(--cc,#a855f7)14}
 .sel-card-del{position:absolute;bottom:8px;right:8px;z-index:2}
+/* bina bazli sartname Excel ice/disa aktarma - sayfanin sag altinda daima sabit duran ikili buton */
+.bina-excel-fab{position:fixed;right:22px;z-index:60;width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:none;cursor:pointer;transition:transform .12s,box-shadow .15s;box-shadow:0 6px 20px rgba(0,180,166,.3)}
+.bina-excel-fab:hover{transform:translateY(-2px) scale(1.04)}
+.bina-excel-fab svg{width:22px;height:22px}
+#binaExcelFabImport{bottom:22px;background:linear-gradient(135deg,var(--grid-d),var(--grid));color:#022}
+#binaExcelFabImport:hover{box-shadow:0 10px 26px rgba(0,180,166,.45)}
+#binaExcelFabExport{bottom:84px;background:var(--panel);color:var(--grid);border:2px solid var(--grid)66}
+#binaExcelFabExport:hover{box-shadow:0 10px 26px rgba(0,180,166,.25)}
+@media (max-width:600px){
+  .bina-excel-fab{right:16px;width:46px;height:46px}
+  .bina-excel-fab svg{width:19px;height:19px}
+  #binaExcelFabImport{bottom:16px}
+  #binaExcelFabExport{bottom:70px}
+}
 /* bina 3D goruntuleyici modal */
 .bina3d-toolbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px;font-size:12px}
 .bina3d-rotate{display:flex;align-items:center;gap:6px;color:var(--mute);cursor:pointer;user-select:none}
@@ -668,6 +682,7 @@ datalist{display:none}
   </header>
   <main id="mainArea"></main>
 </div>
+<input type="file" id="binaExcelFabInput" accept=".xlsx,.xls,.csv" class="hidden" onchange="importSpecsUpsertExcel(event)">
 <div class="toast-wrap" id="toasts"></div>
 
 <script>
@@ -1025,9 +1040,58 @@ function switchSection(s){ if(!canSee(s)){ toast('Bu bolume erisim yetkiniz yok'
   document.querySelectorAll('.sect-tab').forEach(b=>b.classList.toggle('on',b.dataset.sec===s));
   if(s==='saha'){ render(); initSaha(); } else render(); }
 
+// bina bazli sartname Excel ice/disa aktarma dugmeleri: proje modulunde bir bina acikken sayfanin
+// sag altinda daima sabit durur (Bolum Secimi / Sartname Secimi / Ilerleme ekranlarinin hepsinde).
+function updateBinaExcelFab(){
+  const inPanel = (PUSERS&&isAdmin()) || (PAUDIT&&isAdmin()) || PLIB || PDEF || PORD;
+  const show = SEC==='proje' && !!PBINA && !inPanel;
+  let imp=document.getElementById('binaExcelFabImport');
+  let exp=document.getElementById('binaExcelFabExport');
+  if(show){
+    if(!imp){
+      imp=document.createElement('button');
+      imp.id='binaExcelFabImport'; imp.className='bina-excel-fab';
+      imp.onclick=()=>document.getElementById('binaExcelFabInput').click();
+      document.body.appendChild(imp);
+    }
+    imp.title=`Excel'den Ice Aktar - ${PBINA} sartname ilerlemesi`;
+    imp.innerHTML=icoUp();
+    imp.style.display='flex';
+    if(!exp){
+      exp=document.createElement('button');
+      exp.id='binaExcelFabExport'; exp.className='bina-excel-fab';
+      exp.onclick=()=>exportBinaSpecExcel();
+      document.body.appendChild(exp);
+    }
+    exp.title=`Excel Ciktisi Al - ${PBINA} (mevcut sartname verileri, duzenleyip geri yukleyebilirsiniz)`;
+    exp.innerHTML=icoXls();
+    exp.style.display='flex';
+  } else {
+    if(imp) imp.style.display='none';
+    if(exp) exp.style.display='none';
+  }
+}
+// bina bazli sartname Excel ciktisi: mevcut binanin TUM bolum/sartname kalemlerini, FAB import'un
+// tanidigi sutun basliklariyla (bina/bolum/sartname/kod/malzeme/hedef/birim/dahil) indirir - boylece
+// duzenlenip ayni FAB'dan geri yuklenebilir (round-trip).
+function exportBinaSpecExcel(){
+  if(!PBINA){ toast("Once bir bina secin","err"); return; }
+  const specs=(DB.proje.specs||[]).filter(s=>!s.is_deleted && s.bina===PBINA).slice()
+    .sort((a,b)=>(a.cat||'').localeCompare(b.cat||'','tr')||specGroupKey(a).localeCompare(specGroupKey(b),'tr')||a.name.localeCompare(b.name,'tr'));
+  const rows=[["bina","bolum","sartname","kod","malzeme","hedef","birim","dahil"]];
+  specs.forEach(sp=>{ rows.push([sp.bina||PBINA, sp.cat||'', specGroupKey(sp), sp.code||'', sp.name||'', Number(sp.target)||0, sp.unit||'', sp.exclude?'HAYIR':'EVET']); });
+  if(specs.length===0) rows.push([PBINA,'','','','','','','']);
+  const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:12},{wch:14},{wch:26},{wch:16},{wch:34},{wch:10},{wch:8},{wch:8}];
+  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:7}})};
+  XLSX.utils.book_append_sheet(wb,ws,"Spesifikasyonlar");
+  XLSX.writeFile(wb,`${PBINA}_Sartname_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast("Excel ciktisi indirildi");
+}
 function render(){
   const m=document.getElementById('mainArea');
   const inPanel = (PUSERS&&isAdmin()) || (PAUDIT&&isAdmin()) || PLIB || PDEF || PORD;
+  updateBinaExcelFab();
   // genel panel acikken hicbir bolum sekmesi aktif gorunmesin; degilse aktif olan SEC
   document.querySelectorAll('.sect-tab').forEach(b=>b.classList.toggle('on', !inPanel && b.dataset.sec===SEC));
   // GENEL paneller: hangi bolumde olursak olalim acilabilir (SEC'ten bagimsiz)
@@ -2520,8 +2584,10 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
     if(/^(REQUIRED|optional|REQ|blank|FK|ZORUNLU|ops)/i.test(ext)||/^(REQUIRED|optional|REQ|FK|ZORUNLU|ops)/i.test(code)) continue;
     const action=(iAct>=0?String(row[iAct]??'').trim().toLowerCase():'');
     // rowBina: Excel'de açık olarak belirtilen bina; insertBina: yoksa context'ten al
+    // strict + defaultBina modunda (bina bazli buton/ekran) satirdaki bina sutunu YOK SAYILIR:
+    // bu Excel HER ZAMAN sadece o an acik olan binayi etkiler, baska binaya veri sizmaz.
     const rowBina=iBina>=0?String(row[iBina]??'').trim():'';
-    const insertBina=rowBina||defaultBina;
+    const insertBina=(strict&&defaultBina)?defaultBina:(rowBina||defaultBina);
     // rowSec/rowGrup: satirda acikca belirtilen bolum/sartname; yoksa ekran baglamindan (defaultCat/defaultGrup) al
     // - boylece TEK excel ile tum binanin birden fazla bolum+sartnamesi tek seferde dagitilabilir
     const rowSec=iSec>=0?String(row[iSec]??'').trim():'';
@@ -3003,8 +3069,6 @@ function renderSpec(){
   }
   return `<div class="stats">${statHtml}</div>
     <div class="toolbar">${searchBox('Spesifikasyon kalemi ara...')}
-      <button class="btn btn-ghost" onclick="document.getElementById('specXlsx').click()">${icoUp()} Excel'den Ice Aktar</button>
-      <input type="file" id="specXlsx" accept=".xlsx,.xls,.csv" class="hidden" onchange="importSpecsUpsertExcel(event)">
       <button class="btn btn-grid" onclick="exportSpecExcel()">${icoXls()} Ilerleme Raporu</button>
       <button class="btn btn-add" onclick="openSpecModalCtx()">${icoPlus()} Kalem Ekle</button></div>
     ${mergedHtml}${sections}${offHtml}`;
