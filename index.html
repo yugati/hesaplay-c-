@@ -865,7 +865,7 @@ function migrate(){
   }
 }
 
-let SEC="proje", TAB="orders", SEARCH="", GFILTER="", LOGVIEW="akis";
+let SEC="proje", TAB="spec", SEARCH="", GFILTER="", LOGVIEW="akis";
 let PBINA="", PCAT="", PSPEC="", PLIB=false, PDEF=false, PORD=false, ORDBINA="";  // proje filtreleri + kutuphane + tanimlar + tum siparisler gorunumu
 let CURRENT_USER=null;   // giris yapan kullanici
 let SB_USERS=[];         // Supabase kullanici onbellek
@@ -1094,7 +1094,7 @@ function startClock(){
   document.getElementById('dbInfo').textContent="Supabase - otomatik kaydedilir";
 }
 
-function switchSection(s){ if(!canSee(s)){ toast('Bu bolume erisim yetkiniz yok','err'); return; } SEC=s; TAB=(s==='proje'?'orders':'stok'); SEARCH=""; GFILTER="";
+function switchSection(s){ if(!canSee(s)){ toast('Bu bolume erisim yetkiniz yok','err'); return; } SEC=s; TAB=(s==='proje'?'spec':'stok'); SEARCH=""; GFILTER="";
   PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; // acik panelleri kapat
   document.querySelectorAll('.sect-tab').forEach(b=>b.classList.toggle('on',b.dataset.sec===s));
   if(s==='saha'){ render(); initSaha(); } else render(); }
@@ -1196,9 +1196,9 @@ function projeSubnav(){
 }
 function setTab(t){ TAB=t; SEARCH=""; render(); }
 function catColor(c){ return {Tava:'#3b82f6','Aydinlatma':'#f0a020','Topraklama':'#22c55e'}[c]||'#8b97a7'; }
-function setPBina(b){ PBINA=b; PCAT=""; PSPEC=""; TAB="orders"; SEARCH=""; render(); }
-function setPCat(c){ PCAT=c; PSPEC=""; TAB="orders"; SEARCH=""; render(); }
-function setPSpec(g){ PSPEC=g; TAB="orders"; SEARCH=""; render(); }
+function setPBina(b){ PBINA=b; PCAT=""; PSPEC=""; TAB="spec"; SEARCH=""; render(); }
+function setPCat(c){ PCAT=c; PSPEC=""; TAB="spec"; SEARCH=""; render(); }
+function setPSpec(g){ PSPEC=g; TAB="spec"; SEARCH=""; render(); }
 function resetPSel(){ PBINA=""; PCAT=""; PSPEC=""; render(); }
 function backToCat(){ PCAT=""; PSPEC=""; render(); }
 function backToSpec(){ PSPEC=""; render(); }
@@ -2621,9 +2621,20 @@ function specImgOf(sp){ const mt=specMaterial(sp); return (mt&&mt.img)||sp.img||
 // esnek baslik eslestirme: bir satirdaki sutun adlarini normalize edip index haritasi dondurur
 function _hdrMap(headerRow){
   const map={};
-  headerRow.forEach((h,i)=>{ const n=norm(String(h||'').trim()); if(n)map[n]=i; });
-  // alias -> index
-  const pick=(...aliases)=>{ for(const a of aliases){ const n=norm(a); if(map[n]!=null) return map[n]; } return -1; };
+  const keys=[];
+  headerRow.forEach((h,i)=>{ const n=norm(String(h||'').trim()); if(n){ map[n]=i; keys.push(n); } });
+  // alias -> index: once BIREBIR eslesme denenir; hicbiri tutmazsa, gercek dunyada sik gorulen
+  // ek kelime/ek durumlarini (orn. "Miktari" [iyelik eki], "Toplam Miktar", "Hedef Miktari") yakalamak
+  // icin baslikta alias GECIYOR mu diye bakilir (yeterince ayirt edici - 4+ karakter - alias'larla,
+  // yanlis eslesmeyi azaltmak icin) - boylece kullanicinin dosyasindaki basligi birebir tahmin etmek zorunda kalinmaz.
+  const pick=(...aliases)=>{
+    for(const a of aliases){ const n=norm(a); if(map[n]!=null) return map[n]; }
+    for(const a of aliases){ const n=norm(a); if(n.length<4) continue;
+      const hit=keys.find(k=>k.includes(n));
+      if(hit!==undefined) return map[hit];
+    }
+    return -1;
+  };
   return pick;
 }
 function _sheetRows(wb,names){
@@ -2661,14 +2672,14 @@ function _firstDataRow(rows){ // baslik satiri: hucrelerden biri TAM olarak bir 
 function upsertMaterialsFromRows(rows, report){
   if(!rows||rows.length<2) return;
   const h=_firstDataRow(rows); const pick=_hdrMap(rows[h]);
-  const iCode=pick('material_code','materialcode','urun kodu','kod','code');
+  const iCode=pick('material_code','materialcode','urun kodu','kod','kodu','code');
   const iName=pick('material_name','materialname','malzeme adi','malzeme ismi','malzeme','ad','name');
   const iBrand=pick('brand','marka');
   const iCat=pick('category','kategori');
   const iUnit=pick('unit','birim');
-  const iNote=pick('note','aciklama','not');
-  const iStd=pick('standart','standart no','standart numarasi','standard');
-  const iWeight=pick('agirlik','agirlik_kg','agirlik (kg)','agirlik(kg)','weight','weight (kg)','kg');
+  const iNote=pick('note','aciklama','not','notu');
+  const iStd=pick('standart','standart no','standart numarasi','standardi','standart numarasi','standard');
+  const iWeight=pick('agirlik','agirligi','agirlik_kg','agirlik (kg)','agirlik(kg)','weight','weight (kg)','kg');
   const iTags=pick('etiket','etiketler','tags','tag');
   const iProje=pick('proje','project');
   const iImg=pick('image_url','imageurl','resim linki','resim_linki','resim url','resim_url','resim','foto linki','foto_linki','fotograf linki','fotograf_linki','fotograf url','fotograf','foto','photo url','photo_url','photo','image','gorsel','gorsel linki','gorsel url');
@@ -2723,7 +2734,7 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
   const h=_firstDataRow(rows); const pick=_hdrMap(rows[h]);
   const iExt=pick('spec_external_id','specexternalid','spec id','spec_id');
   const iPoz=pick('poz','poz no','poz_no','pos','pos no');
-  const iCode=pick('material_code','materialcode','urun kodu','kod','spek no','code');
+  const iCode=pick('material_code','materialcode','urun kodu','kod','kodu','spek no','code');
   const iName=pick('material_name','materialname','malzeme adi','malzeme ismi','malzeme','ad','name');
   const iBina=pick('building','bina');
   const iSec=pick('section','bolum','category','kategori');
@@ -2731,9 +2742,9 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
   const iTgt=pick('target_qty','targetqty','hedef miktar','hedef','miktar','target');
   const iUnit=pick('unit','birim');
   const iBrand=pick('brand','marka');
-  const iNote=pick('note','aciklama','not');
-  const iStd=pick('standart','standart no','standart numarasi','standard');
-  const iWeight=pick('agirlik','agirlik_kg','agirlik (kg)','agirlik(kg)','weight','weight (kg)','kg');
+  const iNote=pick('note','aciklama','not','notu');
+  const iStd=pick('standart','standart no','standart numarasi','standardi','standart numarasi','standard');
+  const iWeight=pick('agirlik','agirligi','agirlik_kg','agirlik (kg)','agirlik(kg)','weight','weight (kg)','kg');
   const iTags=pick('etiket','etiketler','tags','tag');
   const iImg=pick('image_url','imageurl','resim linki','resim_linki','resim url','resim_url','resim','foto linki','foto_linki','fotograf linki','fotograf_linki','fotograf url','fotograf','foto','photo url','photo_url','photo','image','gorsel','gorsel linki','gorsel url');
   const iInc=pick('include_in_progress','includeinprogress','ilerlemeye dahil','dahil');
@@ -2889,7 +2900,7 @@ function buildSyncPlan(matRows, specRows){
   const matSeen={}; // matKey -> {code,name,brand,cat,unit,note}
   if(matRows&&matRows.length>1){
     const h=_firstDataRow(matRows); const pick=_hdrMap(matRows[h]);
-    const iCode=pick('material_code','materialcode','urun kodu','kod','code');
+    const iCode=pick('material_code','materialcode','urun kodu','kod','kodu','code');
     const iName=pick('material_name','materialname','malzeme adi','malzeme ismi','malzeme','ad','name');
     const iBrand=pick('brand','marka'); const iCat=pick('category','kategori','bolum','section');
     const iUnit=pick('unit','birim'); const iNote=pick('note','aciklama','not');
@@ -2910,7 +2921,7 @@ function buildSyncPlan(matRows, specRows){
   if(specRows&&specRows.length>1){
     const h=_firstDataRow(specRows); const pick=_hdrMap(specRows[h]);
     const iExt=pick('spec_external_id','specexternalid','spec id','spec_id');
-    const iCode=pick('material_code','materialcode','urun kodu','kod','code');
+    const iCode=pick('material_code','materialcode','urun kodu','kod','kodu','code');
     const iName=pick('material_name','materialname','malzeme adi','malzeme ismi','malzeme','ad','name');
     const iBina=pick('building','bina');
     const iSec=pick('section','bolum','category','kategori');
@@ -3068,7 +3079,7 @@ async function confirmWipe(){
     if(sel.includes('rapor')){ await sbWipeRaporData(); DB.rapor={entries:[],ekipler:["SAHA - ELEKTRIK - SEZGIN SURER","SAHA - ELEKTRIK - YILMAZ KABAAGIL"],meta:{}}; }
     const silinenler=sel.map(k=>labels[k]).join(', ');
     logAction('wipe', silinenler+' verileri temizlendi');
-    PBINA="";PCAT="";PSPEC="";PLIB=false;PDEF=false;SEC="proje";TAB="orders";SEARCH="";
+    PBINA="";PCAT="";PSPEC="";PLIB=false;PDEF=false;SEC="proje";TAB="spec";SEARCH="";
     closeModal(); render();
     toast(silinenler+' temizlendi');
   }catch(e){
@@ -3101,7 +3112,7 @@ function factoryImportExcel(e){ if(!guard('import')){e.target.value='';return;} 
     // 2) SISTEMI SIFIRLA (her sey)
     DB=emptyDB();
     // secimleri de sifirla
-    PBINA=""; PCAT=""; PSPEC=""; PLIB=false; SEC="proje"; TAB="orders"; SEARCH="";
+    PBINA=""; PCAT=""; PSPEC=""; PLIB=false; SEC="proje"; TAB="spec"; SEARCH="";
     // 3) Excel'den yukle (once malzemeler -> FK, sonra spec'ler)
     const report={matCreated:0,matUpdated:0,matDeleted:0,specCreated:0,specUpdated:0,specDeleted:0,errors:[]};
     const matRows=matRowsChk;
