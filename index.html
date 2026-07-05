@@ -1103,13 +1103,14 @@ function exportBinaSpecExcel(){
   if(!PBINA||!PCAT||!PSPEC||PSPEC==='__all'){ toast("Once tek bir sartname acin","err"); return; }
   const specs=(DB.proje.specs||[]).filter(s=>!s.is_deleted && s.bina===PBINA && s.cat===PCAT && specGroupKey(s)===PSPEC).slice()
     .sort((a,b)=>(Number(a.poz)||0)-(Number(b.poz)||0)||(a.poz||'').localeCompare(b.poz||'','tr')||a.name.localeCompare(b.name,'tr'));
-  const rows=[["Poz No","Malzeme Ismi","Standart Numarasi","Urun Kodu","Marka","Miktar","Agirlik (kg)","Not","Etiket"]];
+  const rows=[["Poz No","Malzeme Ismi","Standart Numarasi","Urun Kodu","Marka","Miktar","Agirlik (kg)","Not","Etiket","Resim Linki"]];
   specs.forEach(sp=>{ const mt=sp.matId?getMaterial(sp.matId):null;
-    rows.push([sp.poz||'', sp.name||'', sp.standart||'', sp.code||'', sp.brand||'', Number(sp.target)||0, sp.weight!=null?sp.weight:'', (mt?mt.note:'')||'', formatTagsCell(sp.tags)]); });
-  if(specs.length===0) rows.push(['','','','','','','','','']);
+    const img=(mt&&mt.img&&/^https?:\/\//i.test(mt.img))?mt.img:'';
+    rows.push([sp.poz||'', sp.name||'', sp.standart||'', sp.code||'', sp.brand||'', Number(sp.target)||0, sp.weight!=null?sp.weight:'', (mt?mt.note:'')||'', formatTagsCell(sp.tags), img]); });
+  if(specs.length===0) rows.push(['','','','','','','','','','']);
   const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:10},{wch:34},{wch:18},{wch:16},{wch:16},{wch:10},{wch:12},{wch:28},{wch:24}];
-  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:8}})};
+  ws['!cols']=[{wch:10},{wch:34},{wch:18},{wch:16},{wch:16},{wch:10},{wch:12},{wch:28},{wch:24},{wch:40}];
+  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:9}})};
   XLSX.utils.book_append_sheet(wb,ws,"Spesifikasyonlar");
   XLSX.writeFile(wb,`${PBINA}_${PCAT}_${PSPEC}_${new Date().toISOString().slice(0,10)}.xlsx`.replace(/[\\/:*?"<>|]/g,'-'));
   toast("Excel ciktisi indirildi");
@@ -1857,7 +1858,7 @@ async function saveMaterial(id){ if(!guard('editMaterial'))return;
   if(id){ const m=getMaterial(id);
     Object.assign(m,{name,code,brand,unit,cat,note,standart,weight,tags,proje,img:modalImg,updatedAt:Date.now()});
     const affectedSpecs=materialUsage(id);
-    affectedSpecs.forEach(sp=>{ sp.code=code; sp.name=name; if(unit)sp.unit=unit; sp.cat=cat; sp.brand=brand; sp.matId=id; sp.standart=standart; sp.weight=weight; sp.tags=tags.slice(); });
+    affectedSpecs.forEach(sp=>{ sp.code=code; sp.name=name; if(unit)sp.unit=unit; sp.cat=cat; sp.brand=brand; sp.matId=id; sp.standart=standart; sp.weight=weight; sp.tags=tags.slice(); sp.img=modalImg||null; });
     await Promise.all([
       sbUpdateProjeMaterial(id,{...m}),
       ...affectedSpecs.map(sp=>sbUpdateProjeSpec(sp.id,{...sp}))
@@ -2657,7 +2658,7 @@ function upsertMaterialsFromRows(rows, report){
       // bagli spec'leri senkronla
       // sp.cat bilerek dokunulmaz: bolum kalemin ozelligidir, ayni malzeme farkli bolumlerde kullanilabilir
       materialUsage(existing.id).forEach(sp=>{ sp.name=existing.name; sp.code=existing.code; sp.brand=brand; if(existing.unit&&!sp.unit)sp.unit=existing.unit; sp.matId=existing.id;
-        sp.standart=existing.standart||''; sp.weight=existing.weight; sp.tags=(existing.tags||[]).slice(); });
+        sp.standart=existing.standart||''; sp.weight=existing.weight; sp.tags=(existing.tags||[]).slice(); sp.img=existing.img||null; });
       report.matUpdated++;
     } else { // INSERT
       const now=Date.now();
@@ -2689,6 +2690,7 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
   const iStd=pick('standart','standart no','standart numarasi','standard');
   const iWeight=pick('agirlik','agirlik_kg','agirlik (kg)','agirlik(kg)','weight','weight (kg)','kg');
   const iTags=pick('etiket','etiketler','tags','tag');
+  const iImg=pick('image_url','imageurl','resim linki','resim_linki','resim url','resim_url','resim','foto linki','foto_linki','fotograf linki','fotograf_linki','fotograf url','fotograf','foto','photo url','photo_url','photo','image','gorsel','gorsel linki','gorsel url');
   const iInc=pick('include_in_progress','includeinprogress','ilerlemeye dahil','dahil');
   const iAct=pick('action','islem');
   if(iTgt<0 || (iCode<0&&iName<0)){ report.errors.push('Spesifikasyon sayfasi: en az "material_code"/"malzeme" ve "target_qty"/"hedef" sutunlari gerekli'); return; }
@@ -2753,8 +2755,9 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
     const weightRaw=iWeight>=0?String(row[iWeight]??'').trim():'';
     const weight=(weightRaw!==''&&!isNaN(Number(weightRaw)))?Number(weightRaw):null;
     const tags=iTags>=0?parseTagsCell(row[iTags]):[];
-    // FK: malzemeyi kutuphaneden bul/olustur
-    const mat=ensureMaterial({code,name,unit:(iUnit>=0?String(row[iUnit]??'').trim():''),cat:'',brand,note,standart,weight,tags});
+    const img=iImg>=0?String(row[iImg]??'').trim():'';
+    // FK: malzemeyi kutuphaneden bul/olustur - resim de merkezi kutuphaneye baglanir (bossa doldurulur, Malzeme Kutuphanesindeki resmin yerini alir)
+    const mat=ensureMaterial({code,name,unit:(iUnit>=0?String(row[iUnit]??'').trim():''),cat:'',brand,note,standart,weight,tags,img});
     const unit=(iUnit>=0&&String(row[iUnit]??'').trim())?String(row[iUnit]).trim():(mat.unit||'');
     const inc=iInc>=0?String(row[iInc]??'').trim().toUpperCase():'';
     const exclude=(inc==='HAYIR'||inc==='NO'||inc==='HARIC');
@@ -2763,11 +2766,11 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
       existing.code=code||existing.code; existing.name=name||existing.name; existing.target=tgt; existing.unit=unit;
       if(insertBina)existing.bina=insertBina; if(grup)existing.grup=grup; existing.cat=cat; existing.matId=mat.id; existing.brand=mat.brand||'';
       existing.exclude=exclude; if(useExt&&ext)existing.extId=ext; if(poz)existing.poz=poz;
-      existing.standart=mat.standart||''; existing.weight=mat.weight!=null?mat.weight:null; existing.tags=(mat.tags||[]).slice();
+      existing.standart=mat.standart||''; existing.weight=mat.weight!=null?mat.weight:null; existing.tags=(mat.tags||[]).slice(); existing.img=mat.img||null;
       report.specUpdated++;
     } else { // INSERT — bina yoksa defaultBina'yi kullan
       DB.proje.specs.push({id:uid(),extId:(useExt?ext:''),poz,code:code||mat.code,name:name||mat.name,target:tgt,unit,cat,bina:insertBina,grup:grup||(cat+' Spek-1'),
-        standart:mat.standart||'',weight:mat.weight!=null?mat.weight:null,tags:(mat.tags||[]).slice(),matId:mat.id,brand:mat.brand||'',exclude});
+        standart:mat.standart||'',weight:mat.weight!=null?mat.weight:null,tags:(mat.tags||[]).slice(),img:mat.img||null,matId:mat.id,brand:mat.brand||'',exclude});
       report.specCreated++;
     }
   }
@@ -3690,7 +3693,10 @@ function openSpecDetail(id){
   } else {
     alimRows=`<tr><td colspan="4" style="text-align:center;color:var(--mute);padding:16px">Henuz bu spesifikasyona alim girilmemis</td></tr>`;
   }
-  const img=sp.img?`<img src="${sp.img}" class="spec-detail-img" onclick="lightbox('${sp.img}')">`:`<div class="spec-detail-img spec-detail-ph">${phIco()}<div style="margin-top:8px;font-size:12px;color:var(--mute)">Fotograf yok</div></div>`;
+  // sp.img denormalize kopyadir; eksik/eski kalmis olabilecegi ihtimaline karsi merkezi kutuphanedeki
+  // malzeme resmine de bakilir (asil kaynak orasidir) - boylece resim her zaman guncel gosterilir
+  const specImg=sp.img||(sp.matId&&getMaterial(sp.matId)&&getMaterial(sp.matId).img)||null;
+  const img=specImg?`<img src="${specImg}" class="spec-detail-img" onclick="lightbox('${specImg}')">`:`<div class="spec-detail-img spec-detail-ph">${phIco()}<div style="margin-top:8px;font-size:12px;color:var(--mute)">Fotograf yok</div></div>`;
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide">
     <div class="modal-head"><h3>Spesifikasyon Detayi</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">
