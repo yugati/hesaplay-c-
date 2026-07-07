@@ -351,11 +351,10 @@ tr.row-sel{background:color-mix(in srgb,var(--blue) 9%,transparent)}
 .spec-thumb-ph{display:flex;align-items:center;justify-content:center;color:var(--dim)}
 .spec-thumb-ph svg{width:18px;height:18px}
 /* spec detay gorunumu */
-.spec-detail{display:flex;gap:20px;margin-bottom:8px;flex-wrap:wrap}
-.spec-detail-left{flex-shrink:0}
-.spec-detail-img{width:200px;height:200px;border-radius:12px;object-fit:cover;background:var(--bg);border:1px solid var(--line);cursor:pointer}
-.spec-detail-ph{display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--dim);cursor:default}
-.spec-detail-right{flex:1;min-width:240px}
+.spec-detail{display:flex;flex-direction:column;gap:16px;margin-bottom:8px}
+.spec-detail-img{width:100%;height:260px;border-radius:12px;object-fit:contain;background:#fff;border:1px solid var(--line);cursor:pointer}
+.spec-detail-ph{display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--dim);cursor:default;background:var(--bg)}
+.spec-detail-right{width:100%}
 .spec-detail-name{font-size:19px;font-weight:700;line-height:1.3;margin-bottom:10px}
 .spec-detail-tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .spec-detail-grup{font-size:12px;color:var(--mute);font-family:var(--mono);display:flex;align-items:center;gap:6px;margin-bottom:16px}
@@ -628,8 +627,7 @@ datalist{display:none}
   .prog-row-bar{flex:1 1 130px}
   .prog-row .prog-actions{flex:1 1 100%;order:4}
   .log-date{width:auto;margin-left:auto}
-  .spec-detail{flex-direction:column}
-  .spec-detail-img,.spec-detail-ph{width:100%;height:220px}
+  .spec-detail-img,.spec-detail-ph{height:220px}
 
   .sel-card,.order-card,.prog-card,.ozet-card{padding:14px}
 
@@ -2775,6 +2773,7 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
   const validBinas=new Set((projBuildings()||[]).map(b=>norm(b)));
   const sartIndex={}; (DB.proje.sartnames||[]).forEach(sr=>{ sartIndex[norm(sr.bina)+'|'+norm(sr.section)+'|'+norm(sr.code)]=sr; });
   const seen=new Set();
+  const touched=new Set(); // replaceScope: bu import'ta Excel'de gorulen spec id'leri
   for(let r=h+1;r<rows.length;r++){
     const row=rows[r]; if(!row || row.every(c=>String(c).trim()==='')) continue;
     const ext=useExt?String(row[iExt]??'').trim():'';
@@ -2819,7 +2818,7 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
       existing=DB.proje.specs.find(s=>(s.poz||'').trim().toLowerCase()===poz.toLowerCase() && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup);
     }
     if(!existing){ existing=DB.proje.specs.find(s=>matKey(s.code,s.name)===matKey(code,name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup); }
-    if(action==='delete'){ if(existing){ DB.proje.specs=DB.proje.specs.filter(s=>s.id!==existing.id); report.specDeleted++; } continue; }
+    if(action==='delete'){ if(existing){ DB.proje.specs=DB.proje.specs.filter(s=>s.id!==existing.id); report.specDeleted++; (report.deletedSpecIds=report.deletedSpecIds||[]).push(existing.id); } continue; }
     const tgt=Number(tgtRaw);
     if(!tgtRaw||isNaN(tgt)||tgt<=0){ report.errors.push(`Spek satir ${r+1}: gecersiz hedef miktar`); continue; }
     const brand=iBrand>=0?String(row[iBrand]??'').trim():'';
@@ -2843,11 +2842,23 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
       if(insertBina)existing.bina=insertBina; if(grup)existing.grup=grup; existing.cat=cat; existing.matId=mat.id; existing.brand=mat.brand||'';
       existing.exclude=exclude; if(useExt&&ext)existing.extId=ext; if(poz)existing.poz=poz;
       existing.standart=mat.standart||''; existing.weight=mat.weight!=null?mat.weight:null; existing.tags=(mat.tags||[]).slice(); existing.img=mat.img||null;
-      report.specUpdated++;
+      report.specUpdated++; touched.add(existing.id);
     } else { // INSERT — bina yoksa defaultBina'yi kullan
-      DB.proje.specs.push({id:uid(),extId:(useExt?ext:''),poz,code:code||mat.code,name:name||mat.name,target:tgt,unit,cat,bina:insertBina,grup:grup||(cat+' Spek-1'),
+      const newId=uid();
+      DB.proje.specs.push({id:newId,extId:(useExt?ext:''),poz,code:code||mat.code,name:name||mat.name,target:tgt,unit,cat,bina:insertBina,grup:grup||(cat+' Spek-1'),
         standart:mat.standart||'',weight:mat.weight!=null?mat.weight:null,tags:(mat.tags||[]).slice(),img:mat.img||null,matId:mat.id,brand:mat.brand||'',exclude});
-      report.specCreated++;
+      report.specCreated++; touched.add(newId);
+    }
+  }
+  // replaceScope: Excel bu sartnamenin TEK kaynagidir - dosyada gorulmeyen (silinmis/cikarilmis)
+  // urunler otomatik silinir, boylece "excel'e ne yuklendiyse mevcut liste onunla degisir".
+  if(opts.replaceScope && defaultBina && defaultCat && defaultGrup){
+    const stale=DB.proje.specs.filter(s=>s.bina===defaultBina && s.cat===defaultCat && specGroupKey(s)===defaultGrup && !touched.has(s.id));
+    if(stale.length){
+      const staleIds=stale.map(s=>s.id);
+      DB.proje.specs=DB.proje.specs.filter(s=>!staleIds.includes(s.id));
+      report.specDeleted+=stale.length;
+      (report.deletedSpecIds=report.deletedSpecIds||[]).push(...staleIds);
     }
   }
 }
@@ -2881,9 +2892,11 @@ function importSpecsUpsertExcel(e){ if(!guard('import')){e.target.value='';retur
     // strict: bina/bolum/sartname "Bolum & Sartname" ekranindan kayitli olmali; satirda bolum/sartname
     // sutunu varsa TEK excel ile binanin tum bolum ve sartnamelerine dagitim yapilabilir.
     // Sutun bos birakilirsa mevcut ekran baglami (PCAT/PSPEC) varsayilan olarak kullanilir.
-    upsertSpecsFromRows(specRows, report, PBINA||'', {strict:true, defaultCat:PCAT||'', defaultGrup:(PSPEC&&PSPEC!=='__all')?PSPEC:''});
+    // replaceScope: bu Excel o sartnamenin TEK kaynagidir - dosyada olmayan eski urunler silinir.
+    upsertSpecsFromRows(specRows, report, PBINA||'', {strict:true, defaultCat:PCAT||'', defaultGrup:(PSPEC&&PSPEC!=='__all')?PSPEC:'', replaceScope:true});
     await Promise.all([sbUpsertProjeMaterials(DB.proje.materials),sbUpsertProjeSpecs(DB.proje.specs)]);
-    render(); logAction('import','Spesifikasyon: +'+report.specCreated+' yeni, '+report.specUpdated+' guncel'); showImportReport(report,'Spesifikasyon');
+    if(report.deletedSpecIds&&report.deletedSpecIds.length) await sbDeleteProjeSpecs(report.deletedSpecIds);
+    render(); logAction('import','Spesifikasyon: +'+report.specCreated+' yeni, '+report.specUpdated+' guncel, -'+report.specDeleted+' silinen'); showImportReport(report,'Spesifikasyon');
   }catch(err){ toast('Excel okunamadi: '+err.message,'err'); } e.target.value=''; };
   r.readAsBinaryString(f);
 }
