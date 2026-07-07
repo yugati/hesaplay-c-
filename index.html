@@ -2805,23 +2805,20 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
       if(!grup){ report.errors.push(`Spek satir ${r+1}: sartname belirtilmemis`); continue; }
       if(!sartIndex[norm(insertBina)+'|'+norm(sec)+'|'+norm(grup)]){ report.errors.push(`Spek satir ${r+1}: "${grup}" sartnamesi ${insertBina}/${sec} icin tanimli degil - once Bolum & Sartname ekranindan tanimlayin`); continue; }
     }
-    // anahtar: spec_external_id varsa o; yoksa (poz varsa) poz+bina+bolum+sartname; yoksa eski kod+bina+bolum+sartname
-    // poz doluysa malzeme kimligi anahtardan CIKARILIR: ayni malzeme ayni sartnamede FARKLI pozlarda gecerli sekilde tekrar edebilir
-    // (gercek sartname belgelerinde normal - cıvata/boya gibi kalemler birden fazla pozda gecer), asil essizlik birimi poz'dur.
+    // anahtar: spec_external_id varsa o; yoksa URUN KODU (asil essizlik birimi); kod yoksa poz; o da yoksa ad
+    // essizlik SADECE urun kodu uzerinden kontrol edilir: ayni sartnamede ayni urun kodu tekrar edemez.
+    // Poz No genelde bir tender pozisyonunu (birden fazla urun/varyant barindirabilir) temsil eder - tek basina essizligi bozmaz.
     const ctxKey=insertBina.toLowerCase()+'|'+sec.toLowerCase()+'|'+grup.toLowerCase();
-    const skey=(useExt&&ext)?('e:'+ext.toLowerCase()):poz?('p:'+ctxKey+'|'+poz.toLowerCase()):('k:'+matKey(code,name)+'|'+ctxKey);
-    if(seen.has(skey)){ report.errors.push(poz?`Spek satir ${r+1}: "${poz}" poz no bu sartnamede birden fazla olamaz (${insertBina}/${sec}/${grup})`:`Spek satir ${r+1}: "${name||code}" bu sartnamede birden fazla olamaz (${insertBina}/${sec}/${grup})`); continue; }
+    const skey=(useExt&&ext)?('e:'+ext.toLowerCase()):(!code&&poz)?('p:'+ctxKey+'|'+poz.toLowerCase()):('m:'+ctxKey+'|'+matKey(code,name));
+    if(seen.has(skey)){ const dupLbl=code?`"${code}" urun kodu`:(poz?`"${poz}" poz no`:`"${name}"`); report.errors.push(`Spek satir ${r+1}: ${dupLbl} bu sartnamede birden fazla olamaz (${insertBina}/${sec}/${grup})`); continue; }
     seen.add(skey);
-    // mevcut spec bul: once extId; sonra (poz varsa) ayni poz; bulunamazsa gecis donemi icin poz'suz eski kaydi
-    // bu malzeme+baglam icin "sahiplen" (ilk poz'lu import mevcut kaydi poz ile gunceller, sonraki farkli poz'lar yeni satir olur);
-    // poz hic verilmemisse (eski sablon, poz sutunu yok) tamamen eski davranis: sadece kod/ad bazli
+    // mevcut spec bul: once extId; sonra urun kodu (varsa) / ad uyumu (matKey); kod hic verilmemisse poz'a bak
     let existing;
     if(useExt&&ext){ existing=DB.proje.specs.find(s=>(s.extId||'').toLowerCase()===ext.toLowerCase()); }
-    if(!existing&&poz){
+    if(!existing&&!code&&poz){
       existing=DB.proje.specs.find(s=>(s.poz||'').trim().toLowerCase()===poz.toLowerCase() && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup);
-      if(!existing) existing=DB.proje.specs.find(s=>!(s.poz||'').trim() && matKey(s.code,s.name)===matKey(code,name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup);
     }
-    if(!existing&&!poz){ existing=DB.proje.specs.find(s=>matKey(s.code,s.name)===matKey(code,name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup); }
+    if(!existing){ existing=DB.proje.specs.find(s=>matKey(s.code,s.name)===matKey(code,name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup); }
     if(action==='delete'){ if(existing){ DB.proje.specs=DB.proje.specs.filter(s=>s.id!==existing.id); report.specDeleted++; } continue; }
     const tgt=Number(tgtRaw);
     if(!tgtRaw||isNaN(tgt)||tgt<=0){ report.errors.push(`Spek satir ${r+1}: gecersiz hedef miktar`); continue; }
@@ -3048,7 +3045,7 @@ function cancelSync(){ _syncPlan=null; closeModal(); toast("Sync iptal edildi - 
 
 // TEMIZLE: girilen tum verileri sil (onayli, geri alinamaz)
 const WIPE_CATS=[
-  {key:'proje',  label:'Proje',                    detail:'Bina, Sartname, Malzeme Kutuphanesi, Siparis, Hareket'},
+  {key:'proje',  label:'Proje',                    detail:'Bina ve Bolum listesi varsayilana sifirlanir; Sartname (Bolum & Sartname) tanimlari, Spesifikasyon kalemleri, Malzeme Kutuphanesi, Siparis ve Hareket kayitlari tamamen silinir'},
   {key:'alet',   label:'El Aletleri',               detail:'Alet zimmet/depo kayitlari'},
   {key:'saha',   label:'Santiye Sahasi',            detail:'Pano, hat, priz ve saha ayarlari'},
   {key:'gecici', label:'Gecici Elektrik Ambari',    detail:'Kutuphane, hareket ve siparisler'},
