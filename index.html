@@ -160,8 +160,21 @@ tbody tr:hover{background:var(--panel2)}
 .spec-clickable:hover{border-color:#a855f7;transform:translateY(-2px);box-shadow:var(--shadow-md)}
 .spec-excluded{opacity:.62;border-style:dashed!important;border-color:var(--amber)55!important;background:repeating-linear-gradient(135deg,transparent,transparent 9px,rgba(240,160,32,.05) 9px,rgba(240,160,32,.05) 18px)}
 .spec-excluded:hover{opacity:.85;border-color:var(--amber)!important}
-.spec-excluded .prog-name{text-decoration:line-through;text-decoration-color:var(--amber)88;text-decoration-thickness:1.5px}
+.spec-excluded .prog-name,.spec-excluded .prog-row-name{text-decoration:line-through;text-decoration-color:var(--amber)88;text-decoration-thickness:1.5px}
 .ex-badge{display:inline-flex;align-items:center;gap:3px}
+/* satir (liste) gorunumu */
+.prog-list{display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
+.prog-row{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 16px;display:flex;align-items:center;gap:16px;transition:border-color .15s,box-shadow .15s;box-shadow:var(--shadow-sm)}
+.prog-row.offspec{border:1px solid var(--red)66;background:linear-gradient(180deg,rgba(239,68,68,.07),transparent)}
+.prog-row .spec-thumb{flex-shrink:0}
+.prog-row-main{flex:1 1 220px;min-width:0}
+.prog-row-name{font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prog-row-nums{display:flex;gap:14px;font-family:var(--mono);font-size:12px;color:var(--mute);flex:0 0 auto;white-space:nowrap}
+.prog-row-nums b{color:var(--ink)}
+.prog-row-bar{flex:0 0 120px}
+.prog-row-bar-top{display:flex;justify-content:space-between;font-size:10px;color:var(--mute);margin-bottom:3px}
+.prog-row-bar-top b{font-family:var(--mono);font-size:11px}
+.prog-row .prog-actions{margin-top:0;flex:0 0 auto}
 /* hareket log */
 .log-list{display:flex;flex-direction:column;gap:8px}
 .logview-tabs{display:flex;gap:6px;margin:0 0 14px}
@@ -610,6 +623,10 @@ datalist{display:none}
 
   /* Yigin/kart satirlari sarilabilsin */
   .log-row,.rap-row{flex-wrap:wrap}
+  .prog-row{flex-wrap:wrap;gap:10px 16px}
+  .prog-row-nums{flex:1 1 100%;order:3;flex-wrap:wrap;row-gap:4px}
+  .prog-row-bar{flex:1 1 130px}
+  .prog-row .prog-actions{flex:1 1 100%;order:4}
   .log-date{width:auto;margin-left:auto}
   .spec-detail{flex-direction:column}
   .spec-detail-img,.spec-detail-ph{width:100%;height:220px}
@@ -869,6 +886,7 @@ function migrate(){
 
 let SEC="proje", TAB="spec", SEARCH="", GFILTER="", LOGVIEW="akis";
 let PBINA="", PCAT="", PSPEC="", PLIB=false, PDEF=false, PORD=false, ORDBINA="";  // proje filtreleri + kutuphane + tanimlar + tum siparisler gorunumu
+let SPECVIEW="grid";     // sartname kalemleri gorunumu: 'grid' (kart) | 'list' (satir)
 let CURRENT_USER=null;   // giris yapan kullanici
 let SB_USERS=[];         // Supabase kullanici onbellek
 let PUSERS=false;        // admin kullanici yonetim ekrani gorunumu
@@ -3213,16 +3231,27 @@ function renderSpec(){
       const thumb=simg?`<img src="${simg}" class="spec-thumb" onclick="event.stopPropagation();lightbox('${simg}')">`:`<div class="spec-thumb spec-thumb-ph">${phIcoSm()}</div>`;
       const exBadge=ex?`<span class="cat-tag ex-badge" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)66">${icoExclude()} ILERLEMEYE DAHIL DEGIL</span>`:'';
       const altBadge=altCount?`<span class="spec-alt-badge" style="background:${altActive?'var(--green)':altApproved?'var(--blue)':'var(--amber)'}22;color:${altActive?'var(--green)':altApproved?'var(--blue)':'var(--amber)'};border:1px solid ${altActive?'var(--green)':altApproved?'var(--blue)':'var(--amber)'}44" title="${altActive?altActive+' kullanımda':altApproved?altApproved+' onaylı':altCount+' öneri'}">${altCount} alt.</span>`:'';
+      const actions=`<div class="prog-actions">${canEdit('proje')?`<button class="btn ${ex?'btn-add':'btn-ghost'}" style="flex:1;padding:7px" onclick="event.stopPropagation();toggleSpecExclude('${sp.id}')" title="${ex?'Ilerleme yuzdesine dahil et':'Ilerleme yuzdesinden cikar'}">${ex?icoInclude()+' Dahil Et':icoExclude()+' Yuzdeden Cikar'}</button>
+        <button class="mini-btn" title="Duzenle" onclick="event.stopPropagation();openSpecModal(this.dataset.id)" data-id="${sp.id}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
+        ${canDelete('proje')?`<button class="mini-btn del" onclick="event.stopPropagation();delSpec('${sp.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>`:''}`  :''}</div>`;
+      const catBadges=`<span class="cat-tag" style="background:${c2}22;color:${c2}">${esc(sp.cat)}</span>${sp.code?` <span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(sp.code)}</span>`:''}${sp.bina?` <span class="bina-tag" style="background:${buildingColor(sp.bina)}22;color:${buildingColor(sp.bina)};border:1px solid ${buildingColor(sp.bina)}55">${esc(sp.bina)}</span>`:''}${exBadge}`;
+      if(SPECVIEW==='list'){
+        cards+=`<div class="prog-row spec-clickable${ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')">${thumb}
+          <div class="prog-row-main"><div class="prog-row-name" title="${esc(sp.name)}">${esc(sp.name)}${altBadge}</div><div class="prog-cat">${catBadges}</div></div>
+          <div class="prog-row-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(sp.unit||'')}</b></span><span>Hedef: <b>${fmtNum(sp.target)} ${esc(sp.unit||'')}</b></span><span>Kalan: <b style="color:${done?'var(--green)':'var(--amber)'}">${done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(sp.unit||'')}</b></span></div>
+          <div class="prog-row-bar"><div class="prog-row-bar-top"><span>Alim</span><b style="color:${ex?'var(--mute)':done?'var(--green)':c2}">${pct.toFixed(0)}%</b></div><div class="bar"><i style="width:${pct}%;background:${ex?'var(--dim)':done?'var(--green)':c2}"></i></div></div>
+          ${Number(sp.target)>0?`<div class="prog-row-bar"><div class="prog-row-bar-top"><span>Montaj</span><b style="color:${montajDone?'var(--green)':'var(--amber)'}">${montajPct.toFixed(0)}%</b></div><div class="bar"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div></div>`:'<div class="prog-row-bar"></div>'}
+          ${actions}</div>`;
+      } else {
       cards+=`<div class="prog-card spec-clickable${ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')"><div class="prog-head"><div style="display:flex;gap:11px;align-items:flex-start;flex:1;min-width:0">${thumb}<div style="min-width:0"><div class="prog-name">${esc(sp.name)}${altBadge}</div>
-        <div class="prog-cat"><span class="cat-tag" style="background:${c2}22;color:${c2}">${esc(sp.cat)}</span>${sp.code?` <span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(sp.code)}</span>`:''}${sp.bina?` <span class="bina-tag" style="background:${buildingColor(sp.bina)}22;color:${buildingColor(sp.bina)};border:1px solid ${buildingColor(sp.bina)}55">${esc(sp.bina)}</span>`:''}${exBadge}</div></div></div>
+        <div class="prog-cat">${catBadges}</div></div></div>
         <div class="prog-pct" style="color:${ex?'var(--mute)':done?'var(--green)':c2}">${pct.toFixed(0)}%</div></div>
         <div class="bar"><i style="width:${pct}%;background:${ex?'var(--dim)':done?'var(--green)':c2}"></i></div>
         <div class="prog-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(sp.unit||'')}</b></span><span>Hedef: <b>${fmtNum(sp.target)} ${esc(sp.unit||'')}</b></span></div>
         <div class="prog-nums" style="margin-top:3px"><span>Kalan: <b style="color:${done?'var(--green)':'var(--amber)'}">${done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(sp.unit||'')}</b></span></div>
         ${Number(sp.target)>0?`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:7px;white-space:nowrap"><span style="font-size:11px;color:var(--mute);flex:0 0 auto">Montaj</span><span style="font-size:11px;font-weight:600;color:${montajDone?'var(--green)':'var(--amber)'};overflow:hidden;text-overflow:ellipsis">${fmtNum(montajGot)} ${esc(sp.unit||'')} <span style="font-weight:400;color:var(--mute)">· ${montajPct.toFixed(0)}%</span></span></div><div class="bar" style="height:4px;margin-top:3px"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div>`:''}
-        <div class="prog-actions">${canEdit('proje')?`<button class="btn ${ex?'btn-add':'btn-ghost'}" style="flex:1;padding:7px" onclick="event.stopPropagation();toggleSpecExclude('${sp.id}')" title="${ex?'Ilerleme yuzdesine dahil et':'Ilerleme yuzdesinden cikar'}">${ex?icoInclude()+' Dahil Et':icoExclude()+' Yuzdeden Cikar'}</button>
-        <button class="mini-btn" title="Duzenle" onclick="event.stopPropagation();openSpecModal(this.dataset.id)" data-id="${sp.id}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
-        ${canDelete('proje')?`<button class="mini-btn del" onclick="event.stopPropagation();delSpec('${sp.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>`:''}`  :''}</div></div>`; });
+        ${actions}</div>`;
+      } });
     sections+=`<div class="spec-group">
       <div class="spec-group-head">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -3235,7 +3264,7 @@ function renderSpec(){
         <div class="spec-group-pct" style="color:${gdone?'var(--green)':col}">${p.toFixed(0)}%</div>
       </div>
       <div class="bar" style="margin:0 0 12px"><i style="width:${p}%;background:${gdone?'var(--green)':col}"></i></div>
-      <div class="prog-grid">${cards}</div></div>`;
+      <div class="${SPECVIEW==='list'?'prog-list':'prog-grid'}">${cards}</div></div>`;
   });
   if(!sections) sections=`<div class="empty"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><p>${q?'Eslesen kalem yok':'Sartname kalemi yok'}</p><span style="font-size:12px">Kalem ekleyin; alimlar otomatik eslesip yuzde hesaplanir</span></div>`;
 
@@ -3244,12 +3273,20 @@ function renderSpec(){
   if(off.length){
     let offCards='';
     off.forEach(o=>{ const binaTags=o.binas.map(b=>`<span class="bina-tag" style="background:${buildingColor(b)}22;color:${buildingColor(b)};border:1px solid ${buildingColor(b)}55">${esc(b)}</span>`).join('');
+      const offActions=`<div class="prog-actions"><button class="btn btn-ghost" style="flex:1;padding:7px" onclick="specFromOff(this.dataset.n,this.dataset.c,this.dataset.u)" data-n="${esc(o.name)}" data-c="${esc(o.cat||'')}" data-u="${esc(o.unit||'')}">${icoPlus()} Sartnameye Donustur</button>${canDelete('proje')?`<button class="mini-btn del" title="Sartname disi alim kayitlarini sil" onclick="delOffSpecGroup(this.dataset.n,this.dataset.c,this.dataset.u)" data-n="${esc(o.name)}" data-c="${esc(o.cat||'')}" data-u="${esc(o.unit||'')}">${icoTrash()}</button>`:''}</div>`;
+      if(SPECVIEW==='list'){
+        offCards+=`<div class="prog-row offspec">
+          <div class="prog-row-main"><div class="prog-row-name" title="${esc(o.name)}">${esc(o.name)}</div><div class="prog-cat"><span class="cat-tag" style="background:${catColor(o.cat)}22;color:${catColor(o.cat)}">${esc(o.cat||'-')}</span> <span class="cat-tag" style="background:var(--red)22;color:var(--red)">SPEK DISI</span> ${binaTags}</div></div>
+          <div class="prog-row-nums" style="flex:1"><span>Alinan: <b>${fmtNum(o.total)} ${esc(o.unit||'')}</b></span><span style="color:var(--red)">Hedef yok</span></div>
+          ${offActions}</div>`;
+      } else {
       offCards+=`<div class="prog-card offspec"><div class="prog-head"><div><div class="prog-name">${esc(o.name)}</div>
         <div class="prog-cat"><span class="cat-tag" style="background:${catColor(o.cat)}22;color:${catColor(o.cat)}">${esc(o.cat||'-')}</span> <span class="cat-tag" style="background:var(--red)22;color:var(--red)">SPEK DISI</span></div></div></div>
         <div style="margin:4px 0 8px">${binaTags}</div>
         <div class="prog-nums"><span>Alinan: <b>${fmtNum(o.total)} ${esc(o.unit||'')}</b></span><span style="color:var(--red)">Hedef yok</span></div>
-        <div class="prog-actions"><button class="btn btn-ghost" style="flex:1;padding:7px" onclick="specFromOff(this.dataset.n,this.dataset.c,this.dataset.u)" data-n="${esc(o.name)}" data-c="${esc(o.cat||'')}" data-u="${esc(o.unit||'')}">${icoPlus()} Sartnameye Donustur</button>${canDelete('proje')?`<button class="mini-btn del" title="Sartname disi alim kayitlarini sil" onclick="delOffSpecGroup(this.dataset.n,this.dataset.c,this.dataset.u)" data-n="${esc(o.name)}" data-c="${esc(o.cat||'')}" data-u="${esc(o.unit||'')}">${icoTrash()}</button>`:''}</div></div>`; });
-    offHtml=`<div style="margin-top:22px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="width:11px;height:11px;border-radius:3px;background:var(--red);display:inline-block"></span><b style="font-size:14px">Sartname Disi Alimlar</b><span class="t-meta">${off.length} kalem · hedef belirlenmemis</span></div><div class="prog-grid">${offCards}</div></div>`;
+        ${offActions}</div>`;
+      } });
+    offHtml=`<div style="margin-top:22px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="width:11px;height:11px;border-radius:3px;background:var(--red);display:inline-block"></span><b style="font-size:14px">Sartname Disi Alimlar</b><span class="t-meta">${off.length} kalem · hedef belirlenmemis</span></div><div class="${SPECVIEW==='list'?'prog-list':'prog-grid'}">${offCards}</div></div>`;
   }
   // BIRLESIK URUN OZETI - sadece "Tum Spesifikasyonlar" (PSPEC bos) ve birden fazla grup varken
   let mergedHtml='';
@@ -3262,6 +3299,12 @@ function renderSpec(){
       merged.forEach(m=>{ const c2=catColor(m.cat); const pct=m.target>0?Math.min(100,m.got/m.target*100):0; const done=pct>=100;
         const grupTags=m.grups.map(g=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px">${esc(g)}</span>`).join('');
         const thumb=m.img?`<img src="${m.img}" class="spec-thumb" onclick="event.stopPropagation();lightbox('${m.img}')">`:`<div class="spec-thumb spec-thumb-ph">${phIcoSm()}</div>`;
+        if(SPECVIEW==='list'){
+          mcards+=`<div class="prog-row merged-card">${thumb}
+            <div class="prog-row-main"><div class="prog-row-name" title="${esc(m.name)}">${esc(m.name)}</div><div class="prog-cat"><span class="cat-tag" style="background:${c2}22;color:${c2}">${esc(m.cat)}</span>${m.code?` <span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(m.code)}</span>`:''} <span class="merged-badge">${m.items.length} spek'te</span> ${grupTags}</div></div>
+            <div class="prog-row-nums"><span>Alinan: <b>${fmtNum(m.got)} ${esc(m.unit||'')}</b></span><span>Hedef: <b>${fmtNum(m.target)} ${esc(m.unit||'')}</b></span><span>Kalan: <b style="color:${done?'var(--green)':'var(--amber)'}">${done?'Tamamlandi':fmtNum(m.target-m.got)+' '+esc(m.unit||'')}</b></span></div>
+            <div class="prog-row-bar"><div class="prog-row-bar-top"><span>Alim</span><b style="color:${done?'var(--green)':c2}">${pct.toFixed(0)}%</b></div><div class="bar"><i style="width:${pct}%;background:${done?'var(--green)':c2}"></i></div></div></div>`;
+        } else {
         mcards+=`<div class="prog-card merged-card"><div class="prog-head"><div style="display:flex;gap:11px;align-items:flex-start;flex:1;min-width:0">${thumb}<div style="min-width:0"><div class="prog-name">${esc(m.name)}</div>
           <div class="prog-cat"><span class="cat-tag" style="background:${c2}22;color:${c2}">${esc(m.cat)}</span>${m.code?` <span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(m.code)}</span>`:''} <span class="merged-badge">${m.items.length} spek'te</span></div></div></div>
           <div class="prog-pct" style="color:${done?'var(--green)':c2}">${pct.toFixed(0)}%</div></div>
@@ -3269,12 +3312,14 @@ function renderSpec(){
           <div class="prog-nums"><span>Toplam Alinan: <b>${fmtNum(m.got)} ${esc(m.unit||'')}</b></span><span>Toplam Hedef: <b>${fmtNum(m.target)} ${esc(m.unit||'')}</b></span></div>
           <div class="prog-nums" style="margin-top:3px"><span>Kalan: <b style="color:${done?'var(--green)':'var(--amber)'}">${done?'Tamamlandi':fmtNum(m.target-m.got)+' '+esc(m.unit||'')}</b></span></div>
           <div class="merged-grups">${grupTags}</div></div>`;
+        }
       });
-      mergedHtml=`<div class="merged-section"><div class="merged-head"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h10v10M7 17L17 7"/></svg><b>Birlesik Urun Ozeti</b><span class="t-meta">Birden fazla sartnamede kullanilan ${merged.length} urun · hedef ve alimlar toplanmis</span></div><div class="prog-grid">${mcards}</div></div>`;
+      mergedHtml=`<div class="merged-section"><div class="merged-head"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h10v10M7 17L17 7"/></svg><b>Birlesik Urun Ozeti</b><span class="t-meta">Birden fazla sartnamede kullanilan ${merged.length} urun · hedef ve alimlar toplanmis</span></div><div class="${SPECVIEW==='list'?'prog-list':'prog-grid'}">${mcards}</div></div>`;
     }
   }
   return `<div class="stats">${statHtml}</div>
     <div class="toolbar">${searchBox('Spesifikasyon kalemi ara...')}
+      <div class="seg"><button class="${SPECVIEW==='grid'?'on':''}" onclick="SPECVIEW='grid';render()" title="Kart gorunumu">${icoGridSm()} Kart</button><button class="${SPECVIEW==='list'?'on':''}" onclick="SPECVIEW='list';render()" title="Satir gorunumu">${icoListSm()} Satir</button></div>
       <button class="btn btn-add" onclick="openSpecModalCtx()">${icoPlus()} Kalem Ekle</button></div>
     ${mergedHtml}${sections}${offHtml}`;
 }
@@ -3392,6 +3437,8 @@ function exportOrdersExcel(){
   XLSX.utils.book_append_sheet(wb,ws,"Siparisler"); XLSX.writeFile(wb,`Proje_Siparisler_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Siparis raporu indirildi");
 }
 function icoChevron(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M9 18l6-6-6-6"/></svg>'; }
+function icoGridSm(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>'; }
+function icoListSm(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/></svg>'; }
 function setLogView(v){ LOGVIEW=v; SEARCH=""; render(); }
 function renderProjeLog(){
   const _all=pItems();
