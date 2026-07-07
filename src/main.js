@@ -18,6 +18,11 @@ import {
   sbMigrateLocalDB,
   sbWipeAllData,
   sbWipeProjeData,
+  sbWipeProjeBinaData,
+  sbWipeProjeSartnameData,
+  sbWipeProjeSpecData,
+  sbWipeProjeMalzemeData,
+  sbWipeProjeSiparisData,
   sbWipeAletData,
   sbWipeSahaData,
   sbWipeGeciciData,
@@ -190,6 +195,11 @@ window.sbLoadAllData       = sbLoadAllData
 window.sbMigrateLocalDB    = sbMigrateLocalDB
 window.sbWipeAllData       = sbWipeAllData
 window.sbWipeProjeData     = sbWipeProjeData
+window.sbWipeProjeBinaData      = sbWipeProjeBinaData
+window.sbWipeProjeSartnameData  = sbWipeProjeSartnameData
+window.sbWipeProjeSpecData      = sbWipeProjeSpecData
+window.sbWipeProjeMalzemeData   = sbWipeProjeMalzemeData
+window.sbWipeProjeSiparisData   = sbWipeProjeSiparisData
 window.sbWipeAletData      = sbWipeAletData
 window.sbWipeSahaData      = sbWipeSahaData
 window.sbWipeGeciciData    = sbWipeGeciciData

@@ -640,6 +640,40 @@ export async function sbWipeProjeData() {
   ])
 }
 
+// Proje verisinin her basligini ayri ayri temizleyebilmek icin ince kirinim ─
+
+// Sadece bina ve bolum listesini (3D bina modelleri dahil) varsayilana sifirla
+export async function sbWipeProjeBinaData() {
+  await Promise.allSettled([
+    sbDeleteAll('proje_bina_modelleri'),
+    supabase.from('proje_buildings').delete().gte('created_at', '2000-01-01T00:00:00Z'),
+    supabase.from('proje_sections').delete().gte('created_at', '2000-01-01T00:00:00Z'),
+  ])
+}
+
+// Sadece sartname (Bolum & Sartname) tanimlarini sil
+export async function sbWipeProjeSartnameData() {
+  await sbDeleteAll('proje_sartnames')
+}
+
+// Sadece spesifikasyon kalemlerini sil
+export async function sbWipeProjeSpecData() {
+  await sbDeleteAll('proje_specs')
+}
+
+// Sadece malzeme kutuphanesini sil
+export async function sbWipeProjeMalzemeData() {
+  await sbDeleteAll('proje_materials')
+}
+
+// Sadece siparis ve hareket (stok giris/cikis) kayitlarini sil
+export async function sbWipeProjeSiparisData() {
+  await Promise.allSettled([
+    sbDeleteAll('proje_items'),
+    sbDeleteAll('proje_orders'),
+  ])
+}
+
 // Sadece el aletleri verisini sil
 export async function sbWipeAletData() {
   await sbDeleteAll('alet_items')

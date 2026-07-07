@@ -3045,17 +3045,26 @@ function cancelSync(){ _syncPlan=null; closeModal(); toast("Sync iptal edildi - 
 
 // TEMIZLE: girilen tum verileri sil (onayli, geri alinamaz)
 const WIPE_CATS=[
-  {key:'proje',  label:'Proje',                    detail:'Bina ve Bolum listesi varsayilana sifirlanir; Sartname (Bolum & Sartname) tanimlari, Spesifikasyon kalemleri, Malzeme Kutuphanesi, Siparis ve Hareket kayitlari tamamen silinir'},
+  {key:'proje_bina',     label:'Bina ve Bolum Listesi',        detail:'Bina ve bolum listesi (3D bina modelleri dahil) varsayilana sifirlanir', group:'Proje'},
+  {key:'proje_sartname', label:'Sartname Tanimlari',           detail:'Bolum & Sartname tanimlari tamamen silinir', group:'Proje'},
+  {key:'proje_spec',     label:'Spesifikasyon Kalemleri',      detail:'Spesifikasyon kalemleri tamamen silinir', group:'Proje'},
+  {key:'proje_malzeme',  label:'Malzeme Kutuphanesi',          detail:'Malzeme kutuphanesi kayitlari tamamen silinir', group:'Proje'},
+  {key:'proje_siparis',  label:'Siparis ve Hareket Kayitlari', detail:'Siparis ve hareket (stok giris/cikis) kayitlari tamamen silinir', group:'Proje'},
   {key:'alet',   label:'El Aletleri',               detail:'Alet zimmet/depo kayitlari'},
   {key:'saha',   label:'Santiye Sahasi',            detail:'Pano, hat, priz ve saha ayarlari'},
   {key:'gecici', label:'Gecici Elektrik Ambari',    detail:'Kutuphane, hareket ve siparisler'},
   {key:'rapor',  label:'Saha Raporu',               detail:'Gunluk saha rapor kayitlari'},
 ];
 function wipeAllData(){ if(!guard('wipe'))return;
-  const rows=WIPE_CATS.map(c=>`<label class="chk" style="display:flex;align-items:flex-start;gap:8px;padding:7px 0">
+  let lastGroup;
+  const rows=WIPE_CATS.map(c=>{
+    let header='';
+    if(c.group!==lastGroup){ lastGroup=c.group; if(c.group) header=`<div style="font-size:11px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.5px;margin:10px 0 2px">${esc(c.group)}</div>`; }
+    return header+`<label class="chk" style="display:flex;align-items:flex-start;gap:8px;padding:7px 0 7px${c.group?' 10px':' 0'}">
     <input type="checkbox" class="wipe-cat" value="${c.key}" style="margin-top:3px">
     <span><b>${esc(c.label)}</b><br><span class="t-meta" style="font-size:12px">${esc(c.detail)}</span></span>
-  </label>`).join('');
+  </label>`;
+  }).join('');
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">
     <div class="modal-head"><h3>Veri Temizle</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">
@@ -3085,11 +3094,17 @@ async function confirmWipe(){
     if(!verified||verified.id!==CURRENT_USER.id){ errEl.textContent='Sifre yanlis.'; btn.disabled=false; return; }
     errEl.textContent='Siliniyor...';
     const labels=Object.fromEntries(WIPE_CATS.map(c=>[c.key,c.label]));
-    if(sel.includes('proje')){
-      await sbWipeProjeData();
-      DB.proje={items:[],specs:[],buildings:DEFAULT_BUILDINGS.slice(),orders:[],materials:[],sections:["Tava","Aydinlatma","Topraklama","Pano","Kablolama"],sartnames:[],binaModelleri:[]};
+    if(sel.includes('proje_bina')){
+      await sbWipeProjeBinaData();
+      DB.proje.buildings=DEFAULT_BUILDINGS.slice();
+      DB.proje.sections=["Tava","Aydinlatma","Topraklama","Pano","Kablolama"];
+      DB.proje.binaModelleri=[];
       await Promise.all([sbInsertProjeBuildings(DB.proje.buildings),sbInsertProjeSections(DB.proje.sections)]);
     }
+    if(sel.includes('proje_sartname')){ await sbWipeProjeSartnameData(); DB.proje.sartnames=[]; }
+    if(sel.includes('proje_spec')){ await sbWipeProjeSpecData(); DB.proje.specs=[]; }
+    if(sel.includes('proje_malzeme')){ await sbWipeProjeMalzemeData(); DB.proje.materials=[]; }
+    if(sel.includes('proje_siparis')){ await sbWipeProjeSiparisData(); DB.proje.items=[]; DB.proje.orders=[]; }
     if(sel.includes('alet')){ await sbWipeAletData(); DB.alet={items:[]}; }
     if(sel.includes('saha')){ await sbWipeSahaData(); DB.saha={bg:null,bgName:'',panels:[],lines:[],sockets:[]}; }
     if(sel.includes('gecici')){ await sbWipeGeciciData(); DB.gecici={lib:[],moves:[],orders:[]}; }
