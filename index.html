@@ -354,6 +354,29 @@ header .hsub{font-size:10.5px;color:var(--dim);font-family:var(--mono);letter-sp
 .icon-btn{background:transparent;border:none;color:var(--mute);width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s}
 .icon-btn:hover{color:var(--ink);background:var(--hover)}
 .icon-btn.danger:hover{color:var(--red);background:rgba(239,68,68,.1)}
+/* yedek hatirlatici: hic yedek alinmamis ya da 7 gunden eskiyse amber nokta */
+#backupBtn{position:relative}
+#backupBtn.overdue::after{content:'';position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--amber);box-shadow:0 0 0 2px var(--panel)}
+/* -- yedekleme modallari -- */
+.bk-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px 10px}
+.bk-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 10px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;font-size:12.5px;color:var(--mute)}
+.bk-row b{color:var(--ink);font-family:var(--mono)}
+.bk-meta{display:flex;gap:8px;margin-top:12px}
+.bk-meta>div{flex:1;display:flex;flex-direction:column;gap:2px;padding:9px 11px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;min-width:0}
+.bk-meta span{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px}
+.bk-meta b{font-size:12.5px;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-file{display:flex;align-items:center;gap:11px;padding:10px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;margin-bottom:10px;color:var(--mute)}
+.bk-file>div{min-width:0}
+.bk-file b{font-size:13px;display:block;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-file span{font-size:11px;color:var(--dim);font-family:var(--mono)}
+.bk-warn{padding:9px 12px;border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.08);color:var(--red);border-radius:9px;font-size:12.5px;font-weight:600;margin-bottom:12px}
+.bk-cmp-head,.bk-cmp{display:grid;grid-template-columns:1fr 76px 76px;gap:8px;align-items:center;padding:5px 10px;font-size:12.5px}
+.bk-cmp-head{color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.4px;padding-bottom:2px}
+.bk-cmp-head b,.bk-cmp-head i{font-style:normal;text-align:right;font-weight:700}
+.bk-cmp{border-top:1px solid var(--line);color:var(--mute)}
+.bk-cmp b{text-align:right;font-family:var(--mono);color:var(--ink);font-weight:600}
+.bk-cmp i{text-align:right;font-family:var(--mono);font-style:normal;color:var(--dim)}
+@media(max-width:480px){.bk-grid{grid-template-columns:1fr}.bk-meta{flex-direction:column}}
 main{flex:1;padding:clamp(16px,2vw,28px);max-width:1600px;width:100%;margin:0 auto}
 @media(min-width:1900px){ main{max-width:1800px} }
 #mainArea.sec-transition{animation:secFadeIn .32s cubic-bezier(.16,.8,.3,1)}
@@ -1351,6 +1374,7 @@ function applyUserChrome(){
   const aub=document.getElementById('auditBtn'); if(aub)aub.style.display=isAdmin()?'':'none';
   const bb=document.getElementById('backupBtn'); if(bb)bb.style.display=can('backup')?'':'none';
   const rb=document.getElementById('restoreBtn'); if(rb)rb.style.display=can('restore')?'':'none';
+  updateBackupBadge();
 }
 const PROJ_CATS=["Tava","Aydinlatma","Topraklama"];
 // ANA BASLIKLAR (yetkilendirme icin) - key + etiket
@@ -5752,14 +5776,163 @@ async function saveAletOrder(){
 }
 
 /* ---------- BACKUP ---------- */
-function exportBackup(){ if(!guard('backup'))return; logAction('backup','Yedek indirildi'); saveDB(); const blob=new Blob([JSON.stringify(DB)],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`malzeme_yedek_${new Date().toISOString().slice(0,10)}.json`; a.click(); toast("Yedek indirildi"); }
-function importBackup(e){ if(!guard('restore')){e.target.value='';return;} const f=e.target.files[0]; if(!f)return; if(!confirm("Mevcut tum veriler bu yedekle degisecek. Devam?")){e.target.value='';return;}
-  const r=new FileReader(); r.onload=async ev=>{ try{
-    const backup=JSON.parse(ev.target.result);
+/* ==================================================================
+   YEDEKLEME SISTEMI
+   - Yedek Al: veri ozeti + boyut + son yedek tarihi gosteren modal;
+     dosya, dogrulanabilir zarf (envelope) formatinda indirilir
+   - Geri Yukle: dosya once dogrulanir, yedek/mevcut kayit sayilari
+     yan yana gosterilir, sifre onayi istenir; silmeden once otomatik
+     guvenlik yedegi indirilir, hata olursa eski veri geri yazilir
+   ================================================================== */
+const BACKUP_APP_ID='saha-malzeme-takip';
+const BACKUP_OVERDUE_MS=7*86400000; // 7 gun
+function fmtBytes(n){ if(n>=1048576)return (n/1048576).toFixed(1)+' MB'; if(n>=1024)return Math.round(n/1024)+' KB'; return n+' B'; }
+function backupCounts(db){
+  const p=db&&db.proje||{}, g=db&&db.gecici||{}, a=db&&db.alet||{}, s=db&&db.saha||{}, r=db&&db.rapor||{};
+  return [
+    {label:'Proje malzemesi',n:(p.items||[]).length},
+    {label:'Spesifikasyon',n:(p.specs||[]).length},
+    {label:'Siparis',n:(p.orders||[]).length},
+    {label:'Malzeme kutuphanesi',n:(p.materials||[]).length},
+    {label:'Gecici elektrik urunu',n:(g.lib||[]).length},
+    {label:'Gecici elektrik hareketi',n:(g.moves||[]).length},
+    {label:'El aleti',n:(a.items||[]).length},
+    {label:'Saha plani ogesi',n:(s.panels||[]).length+(s.lines||[]).length+(s.sockets||[]).length},
+    {label:'Gunluk rapor kaydi',n:(r.entries||[]).length}
+  ];
+}
+function makeBackupEnvelope(){
+  saveDB();
+  return { app:BACKUP_APP_ID, format:2, createdAt:new Date().toISOString(),
+    user:CURRENT_USER?CURRENT_USER.username:'',
+    counts:Object.fromEntries(backupCounts(DB).map(c=>[c.label,c.n])), data:DB };
+}
+function downloadJSON(obj,fname){
+  const blob=new Blob([JSON.stringify(obj)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=fname; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  return blob.size;
+}
+function backupFname(suffix){
+  const d=new Date(), p=x=>String(x).padStart(2,'0');
+  return `saha-yedek_${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}-${p(d.getMinutes())}${suffix||''}.json`;
+}
+// Yedek Al butonundaki amber uyari noktasi: hic yedek yok ya da 7 gunden eski
+function updateBackupBadge(){
+  const b=document.getElementById('backupBtn'); if(!b)return;
+  const last=Number(localStorage.getItem('lastBackupAt')||0);
+  b.classList.toggle('overdue', !last||(Date.now()-last)>BACKUP_OVERDUE_MS);
+}
+function exportBackup(){
+  if(!guard('backup'))return;
+  const counts=backupCounts(DB);
+  const total=counts.reduce((s,c)=>s+c.n,0);
+  const size=new Blob([JSON.stringify(DB)]).size;
+  const last=Number(localStorage.getItem('lastBackupAt')||0);
+  const lastTxt=last?new Date(last).toLocaleString('tr-TR',{dateStyle:'medium',timeStyle:'short'}):'Hic alinmadi';
+  const rows=counts.map(c=>`<div class="bk-row"><span>${c.label}</span><b>${c.n.toLocaleString('tr-TR')}</b></div>`).join('');
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:470px">
+    <div class="modal-head"><h3>Yedek Al</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body">
+      <p class="t-meta" style="margin-bottom:10px">Tum veriler tek bir JSON dosyasina aktarilir. Dosyayi guvenli bir yerde saklayin.</p>
+      <div class="bk-grid">${rows}</div>
+      <div class="bk-meta">
+        <div><span>Toplam Kayit</span><b>${total.toLocaleString('tr-TR')}</b></div>
+        <div><span>Tahmini Boyut</span><b>${fmtBytes(size)}</b></div>
+        <div><span>Son Yedek</span><b>${lastTxt}</b></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Vazgec</button>
+      <button class="btn btn-add" onclick="doExportBackup()">${icoDown()} Yedegi Indir</button></div>
+  </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function doExportBackup(){
+  const size=downloadJSON(makeBackupEnvelope(),backupFname());
+  localStorage.setItem('lastBackupAt',String(Date.now()));
+  logAction('backup',`Yedek indirildi (${fmtBytes(size)})`);
+  updateBackupBadge();
+  closeModal();
+  toast('Yedek indirildi · '+fmtBytes(size));
+}
+let _pendingRestore=null;
+function importBackup(e){
+  if(!guard('restore')){e.target.value='';return;}
+  const f=e.target.files[0]; e.target.value=''; if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    let env=null;
+    try{ env=JSON.parse(ev.target.result); }catch(_){ toast('Dosya okunamadi: gecerli bir JSON degil','err'); return; }
+    // Yeni zarf formati (format 2) veya eski ham DB dosyasi kabul edilir
+    const data=(env&&env.app===BACKUP_APP_ID&&env.data)?env.data:env;
+    if(!data||typeof data!=='object'||!data.proje||!data.gecici){ toast('Gecersiz yedek dosyasi: veri yapisi taninamadi','err'); return; }
+    openRestoreModal({file:f, env:(env&&env.app===BACKUP_APP_ID)?env:null, data});
+  };
+  r.readAsText(f);
+}
+function openRestoreModal(pr){
+  _pendingRestore=pr;
+  const bC=backupCounts(pr.data), cC=backupCounts(DB);
+  const rows=bC.map((c,i)=>{
+    const diff=c.n!==cC[i].n?' style="color:var(--amber)"':'';
+    return `<div class="bk-cmp"><span>${c.label}</span><b${diff}>${c.n.toLocaleString('tr-TR')}</b><i>${cC[i].n.toLocaleString('tr-TR')}</i></div>`;
+  }).join('');
+  const created=pr.env&&pr.env.createdAt?new Date(pr.env.createdAt).toLocaleString('tr-TR',{dateStyle:'medium',timeStyle:'short'}):null;
+  const metaTxt=fmtBytes(pr.file.size)+(created?' · '+created:'')+(pr.env&&pr.env.user?' · '+esc(pr.env.user):'');
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:500px">
+    <div class="modal-head"><h3>Yedekten Geri Yukle</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body">
+      <div class="bk-file">${icoDown()}<div><b>${esc(pr.file.name)}</b><span>${metaTxt}</span></div></div>
+      <div class="bk-warn">Mevcut TUM veriler silinip yedektekiyle degistirilecek. Bu islem geri alinamaz.</div>
+      <div class="bk-cmp-head"><span></span><b>Yedekte</b><i>Su An</i></div>
+      ${rows}
+      <label class="chk" style="display:flex;align-items:center;gap:8px;margin-top:12px">
+        <input type="checkbox" id="rst-safety" checked> Once mevcut verinin guvenlik yedegini indir
+      </label>
+      <div class="frow" style="margin-top:10px"><label>Sifreniz *</label><input type="password" id="rst-pass" placeholder="Onay icin sifrenizi girin" onkeydown="if(event.key==='Enter')confirmRestore()"></div>
+      <p id="rst-err" style="color:var(--red);font-size:12px;min-height:16px;margin-top:6px"></p>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button>
+      <button class="btn btn-add" id="rst-go" style="background:var(--red);border-color:var(--red)" onclick="confirmRestore()">Geri Yukle</button></div>
+  </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function confirmRestore(){
+  const pr=_pendingRestore; if(!pr)return;
+  const errEl=document.getElementById('rst-err');
+  const pass=document.getElementById('rst-pass').value;
+  if(!pass){ errEl.textContent='Onay icin sifreniz gerekli.'; return; }
+  const btn=document.getElementById('rst-go'); btn.disabled=true;
+  try{
+    errEl.textContent='Sifre dogrulaniyor...';
+    const verified=await sbLoginUser(CURRENT_USER.username,pass);
+    if(!verified||verified.id!==CURRENT_USER.id){ errEl.textContent='Sifre yanlis.'; btn.disabled=false; return; }
+    const prevDB=DB;
+    if(document.getElementById('rst-safety').checked){
+      errEl.textContent='Guvenlik yedegi indiriliyor...';
+      downloadJSON(makeBackupEnvelope(),backupFname('_guvenlik'));
+    }
+    errEl.textContent='Mevcut veri temizleniyor...';
     await sbWipeAllData();
-    await sbMigrateLocalDB(backup);
-    DB=backup; render(); toast("Yedek yuklendi");
-  }catch(err){toast("Gecersiz yedek","err");} e.target.value=''; }; r.readAsText(f); }
+    errEl.textContent='Yedek yukleniyor...';
+    try{
+      await sbMigrateLocalDB(pr.data);
+      DB=pr.data; migrate();
+    }catch(err){
+      // Yukleme yarim kaldi: eski veriyi geri yazip durumu geri sar
+      errEl.textContent='Hata olustu, eski veri geri yukleniyor...';
+      try{ await sbMigrateLocalDB(prevDB); DB=prevDB; }catch(_){ /* guvenlik yedegi dosyasi kullanicida */ }
+      throw err;
+    }
+    _pendingRestore=null;
+    logAction('restore',`Yedek geri yuklendi (${pr.file.name})`);
+    closeModal(); render(); toast('Yedek basariyla geri yuklendi');
+  }catch(err){
+    console.error('Geri yukleme hatasi:',err);
+    errEl.textContent='Geri yukleme basarisiz: '+(err&&err.message?err.message:'bilinmeyen hata');
+    btn.disabled=false;
+  }
+}
 
 /* ==================================================================
    TABLO DISA AKTARMA — ekranda gorunen tabloyu Excel / CSV / Yazdir
