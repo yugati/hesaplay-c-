@@ -1150,27 +1150,57 @@ async function saveDB(){
   DB.meta.updated=Date.now();
 }
 async function loadDB(){
-  try{
-    // 1) Supabase'den yükle
-    const sbData=await sbLoadAllData();
-    if(sbData) return sbData;
-    // 2) Supabase boş → localStorage'dan migrate et
-    let localJson=null;
+  // ONEMLI: yukleme hatasi ASLA bos veritabanina dusurulmez. Acilista ~23 sorgu
+  // paralel atilir; biri bile gecici olarak basarisiz olursa eskiden sessizce
+  // blankDB() donuyordu - kullanici "tum veriler silindi" saniyordu ve bos gorunum
+  // uzerinde yapilan import'lar mukerrer kayit uretebiliyordu. Simdi: 3 deneme,
+  // hepsi basarisizsa acik bir hata firlatilir (cagiran taraf hata ekrani gosterir).
+  let lastErr=null;
+  for(let attempt=1;attempt<=3;attempt++){
     try{
-      if(window.storage){ const r=await window.storage.get(KEY); if(r&&r.value) localJson=r.value; }
-      else { localJson=localStorage.getItem(KEY); }
-    }catch(_){}
-    if(localJson){
-      const localDB=JSON.parse(localJson);
-      toast("Veriler buluta aktarılıyor...");
-      sbMigrateLocalDB(localDB).then(()=>{
-        try{ localStorage.removeItem(KEY); if(window.storage) window.storage.remove?.(KEY); }catch(_){}
-        toast("Veriler Supabase'e aktarıldı ✓");
-      }).catch(e=>console.warn('Migration failed:',e));
-      return localDB;
+      // 1) Supabase'den yükle
+      const sbData=await sbLoadAllData();
+      if(sbData) return sbData;
+      // 2) Supabase GERCEKTEN bos (baglanti var, hic veri yok) → localStorage'dan migrate et
+      let localJson=null;
+      try{
+        if(window.storage){ const r=await window.storage.get(KEY); if(r&&r.value) localJson=r.value; }
+        else { localJson=localStorage.getItem(KEY); }
+      }catch(_){}
+      if(localJson){
+        const localDB=JSON.parse(localJson);
+        toast("Veriler buluta aktarılıyor...");
+        sbMigrateLocalDB(localDB).then(()=>{
+          try{ localStorage.removeItem(KEY); if(window.storage) window.storage.remove?.(KEY); }catch(_){}
+          toast("Veriler Supabase'e aktarıldı ✓");
+        }).catch(e=>console.warn('Migration failed:',e));
+        return localDB;
+      }
+      return blankDB(); // ilk kurulum: bulut bos, yerelde de veri yok
+    }catch(e){
+      lastErr=e; console.warn('Supabase load failed ('+attempt+'/3):',e);
+      if(attempt<3) await new Promise(r=>setTimeout(r,700*attempt));
     }
-  }catch(e){ console.warn('Supabase load failed:',e); }
-  return blankDB();
+  }
+  const err=new Error('Veriler yuklenemedi: '+((lastErr&&lastErr.message)||'baglanti hatasi'));
+  err.loadFail=true;
+  throw err;
+}
+// Yukleme hatasi ekrani: kullaniciyi bos uygulamayla bas basa birakmak yerine
+// verilerin guvende oldugunu soyler ve tek tikla yeniden deneme sunar.
+function showLoadError(e){
+  document.documentElement.classList.remove('booting');
+  const ld=document.getElementById('loading'); if(ld) ld.classList.remove('active');
+  const d=document.createElement('div');
+  d.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:var(--bg)';
+  d.innerHTML=`<div style="max-width:440px;text-align:center;padding:32px">
+    <div style="font-size:38px;margin-bottom:12px">⚠️</div>
+    <h2 style="margin-bottom:10px">Veriler yuklenemedi</h2>
+    <p style="color:var(--mute);font-size:13.5px;line-height:1.6;margin-bottom:8px">Sunucuya ulasilamadi veya yanit alinamadi. <b>Verileriniz guvende</b> — hicbir kayit silinmedi, bu yalnizca gecici bir baglanti sorunudur.</p>
+    <p style="color:var(--mute);font-size:11.5px;font-family:var(--mono);margin-bottom:20px">${esc((e&&e.message)||'')}</p>
+    <button class="btn btn-add" onclick="location.reload()">Tekrar Dene</button>
+  </div>`;
+  document.body.appendChild(d);
 }
 function migrate(){
   if(!DB.companies) DB.companies=[];
@@ -1526,6 +1556,8 @@ document.addEventListener('DOMContentLoaded', async function(){
     })();
   } catch(e){
     console.warn('Oturum hatasi:',e);
+    // Veri yukleme hatasi: oturumu DUSURME, bos ekran gosterme - hata ekrani + tekrar dene
+    if(e&&e.loadFail){ hideLoading(); showLoadError(e); return; }
     localStorage.removeItem('authSession'); hideLoading(); showLogin();
   }
 });
@@ -2963,7 +2995,7 @@ function renderProjeStock(){
     return matchText(it.name+' '+(it.order||''), SEARCH); });
   const groups=groupByMaterial(items);
   const totalQty=items.reduce((s,i)=>s+(Number(i.qty)||0),0);
-  const withImg=items.filter(i=>i.img).length, withPdf=items.filter(i=>i.pdf).length;
+  const withImg=items.filter(i=>i.img).length, withPdf=items.filter(i=>itemPdf(i)).length;
   let rows='';
   if(groups.length===0) rows=emptyRow(7,SEARCH?'Eslesen malzeme yok':'Henuz malzeme eklenmedi','"Malzeme Ekle" ile ilk girisi yapin');
   else groups.forEach(g=>{
@@ -4232,7 +4264,7 @@ function renderProjeLog(){
     // MALZEME BAZINDA STOK OZETI (eski stok girisleri)
     const items=pItems().filter(it=>{ if(!SEARCH)return true; return matchText(it.name+' '+(it.order||''), SEARCH); });
     const groups=groupByMaterial(items);
-    const withImg=items.filter(i=>i.img).length, withPdf=items.filter(i=>i.pdf).length;
+    const withImg=items.filter(i=>i.img).length, withPdf=items.filter(i=>itemPdf(i)).length;
     let rows='';
     if(groups.length===0) rows=emptyRow(7,SEARCH?'Eslesen malzeme yok':'Henuz malzeme yok','Siparis girince veya malzeme ekleyince burada ozetlenir');
     else groups.forEach(g=>{
@@ -4410,7 +4442,7 @@ function showProjeHistory(name,unit,cat){
   unit=unit||''; cat=cat||'';
   const entries=DB.proje.items.filter(it=>it.name===name&&(it.unit||'')===unit&&(it.cat||'')===cat).sort((a,b)=>b.date-a.date);
   const total=entries.reduce((s,e)=>s+(e.type==='out'?-(Number(e.qty)||0):(Number(e.qty)||0)),0);
-  let rows=''; entries.forEach(e=>{ const out=e.type==='out'; const bt=e.bina?`<span class="bina-tag" style="background:${buildingColor(e.bina)}22;color:${buildingColor(e.bina)};border:1px solid ${buildingColor(e.bina)}55">${esc(e.bina)}</span>`:''; const tip=out?`<span class="cat-tag" style="background:var(--red)22;color:var(--red)">CIKIS</span>`:`<span class="cat-tag" style="background:var(--green)22;color:var(--green)">GIRIS</span>`; rows+=`<div class="hist-row"><span class="hist-date">${fmtDate(e.date)}</span><span style="width:60px">${tip}</span><span style="width:60px">${bt}</span><span class="t-qty" style="width:90px;color:${out?'var(--red)':'var(--green)'}">${out?'-':'+'}${fmtNum(e.qty)} ${esc(e.unit||'')}</span><span class="hist-ord">${e.order?esc(e.order):'-'}</span><span style="display:flex;gap:6px">${e.pdf?`<button class="pdf-pill" onclick='openProjePdf("${e.id}")'>PDF</button>`:''}${e.img?`<button class="mini-btn" onclick="lightbox('${e.img}')">${phIcoSm()}</button>`:''}${admin?`<button class="mini-btn" title="Duzenle" onclick='openProjeItemEdit("${e.id}")'><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="mini-btn del" onclick='delProjeItem("${e.id}")'>${icoTrash()}</button>`:''}</span></div>`; });
+  let rows=''; entries.forEach(e=>{ const out=e.type==='out'; const bt=e.bina?`<span class="bina-tag" style="background:${buildingColor(e.bina)}22;color:${buildingColor(e.bina)};border:1px solid ${buildingColor(e.bina)}55">${esc(e.bina)}</span>`:''; const tip=out?`<span class="cat-tag" style="background:var(--red)22;color:var(--red)">CIKIS</span>`:`<span class="cat-tag" style="background:var(--green)22;color:var(--green)">GIRIS</span>`; rows+=`<div class="hist-row"><span class="hist-date">${fmtDate(e.date)}</span><span style="width:60px">${tip}</span><span style="width:60px">${bt}</span><span class="t-qty" style="width:90px;color:${out?'var(--red)':'var(--green)'}">${out?'-':'+'}${fmtNum(e.qty)} ${esc(e.unit||'')}</span><span class="hist-ord">${e.order?esc(e.order):'-'}</span><span style="display:flex;gap:6px">${itemPdf(e)?`<button class="pdf-pill" onclick='openProjePdf("${e.id}")'>PDF</button>`:''}${e.img?`<button class="mini-btn" onclick="lightbox('${e.img}')">${phIcoSm()}</button>`:''}${admin?`<button class="mini-btn" title="Duzenle" onclick='openProjeItemEdit("${e.id}")'><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="mini-btn del" onclick='delProjeItem("${e.id}")'>${icoTrash()}</button>`:''}</span></div>`; });
   const html=`<div class="modal-bg drawer-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide drawer"><div class="modal-head"><h3>${esc(name)} ${cat?`<span class="cat-tag" style="background:${catColor(cat)}22;color:${catColor(cat)}">${esc(cat)}</span>`:''}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body"><div class="stat" style="margin-bottom:16px"><div class="strip" style="background:var(--amber)"></div><div class="lbl">Toplam Mevcut</div><div class="val">${fmtNum(total)} <span style="font-size:15px;color:var(--mute)">${esc(unit||'')}</span></div><div class="sub">${entries.length} ayri alim</div></div><div style="font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:8px">Alim Gecmisi</div>${rows}</div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
 }
@@ -4448,7 +4480,13 @@ async function saveProjeItemEdit(id){
   await sbUpdateProjeItem(id,{...it});
   closeModal(); render(); toast("Alim kaydi guncellendi");
 }
-function openProjePdf(id){ const it=DB.proje.items.find(i=>i.id===id); if(!it||!it.pdf)return; const w=window.open(); w.document.write(`<title>${esc(it.pdf.name)}</title><iframe src="${it.pdf.data}" style="width:100%;height:100%;border:0"></iframe>`); }
+// Bir hareketin PDF'i: kayittaki kopya YOKSA bagli siparisin PDF'i kullanilir.
+// (PDF'ler artik her stok satirina kopyalanmiyor - 82 satirin 28MB'a sismesi
+// acilis sorgusunu statement timeout'a sokuyordu; tek kopya sipariste durur.)
+function itemPdf(it){ if(!it) return null; if(it.pdf) return it.pdf;
+  if(it.orderId){ const o=(DB.proje.orders||[]).find(x=>x.id===it.orderId); if(o&&o.pdf) return o.pdf; }
+  return null; }
+function openProjePdf(id){ const it=DB.proje.items.find(i=>i.id===id); const pdf=itemPdf(it); if(!pdf)return; const w=window.open(); w.document.write(`<title>${esc(pdf.name)}</title><iframe src="${pdf.data}" style="width:100%;height:100%;border:0"></iframe>`); }
 
 /* ---------- SPEC modal ---------- */
 function openSpecModalCtx(){ openSpecModal(null,{bina:PBINA,cat:PCAT,grup:PSPEC&&PSPEC!=='__all'?PSPEC:''}); }
@@ -4809,7 +4847,7 @@ function exportProjeExcel(){
   const ws1=XLSX.utils.aoa_to_sheet(sum); ws1['!cols']=[{wch:34},{wch:14},{wch:18},{wch:10},{wch:10},{wch:10},{wch:10},{wch:9},{wch:30},{wch:24}];
   XLSX.utils.book_append_sheet(wb,ws1,"Ozet");
   const det=[["Tarih","Tip","Bina","Malzeme","Kategori","Miktar","Birim","Siparis/Sevk No","Not","Foto","PDF"]];
-  items.slice().sort((a,b)=>b.date-a.date).forEach(it=>det.push([fmtDate(it.date),it.type==='out'?'CIKIS':'GIRIS',it.bina||'',it.name,it.cat||'',(it.type==='out'?-1:1)*Number(it.qty),it.unit||'',it.order||'',it.note||'',it.img?'Var':'-',it.pdf?it.pdf.name:'-']));
+  items.slice().sort((a,b)=>b.date-a.date).forEach(it=>det.push([fmtDate(it.date),it.type==='out'?'CIKIS':'GIRIS',it.bina||'',it.name,it.cat||'',(it.type==='out'?-1:1)*Number(it.qty),it.unit||'',it.order||'',it.note||'',it.img?'Var':'-',(itemPdf(it)||{}).name||'-']));
   const ws2=XLSX.utils.aoa_to_sheet(det); ws2['!cols']=[{wch:12},{wch:8},{wch:10},{wch:34},{wch:14},{wch:10},{wch:8},{wch:18},{wch:26},{wch:7},{wch:18}];
   XLSX.utils.book_append_sheet(wb,ws2,"Tum Hareketler");
   XLSX.writeFile(wb,`Proje_Malzeme_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel raporu indirildi");
@@ -5864,7 +5902,8 @@ async function saveProjeOrder(){
   const orderId=uid();
   const lines=[], newItems=[];
   valid.forEach(l=>{ const itemId=uid(); const lgrup=l.grup||defGrup||'';
-    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,grup:lgrup,bina,img:l.img||null,brand:l.brand||'',pdf:modalPdf};
+    // pdf:null bilincli - PDF tek kopya olarak siparis kaydinda durur, hareketler itemPdf() ile oradan okur
+    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,grup:lgrup,bina,img:l.img||null,brand:l.brand||'',pdf:null};
     newItems.push(item); DB.proje.items.push(item);
     lines.push({code:l.code||'',ad:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),specId:l.specId,grup:lgrup});
   });
@@ -6180,7 +6219,8 @@ async function saveNewOrder(){
   const orderId=editId||uid();
   const lines=[], newItems=[];
   valid.forEach(l=>{ const itemId=uid();
-    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,grup:l.grup||'',bina,img:l.img||null,brand:l.brand||'',pdf:NORD.pdf};
+    // pdf:null bilincli - PDF tek kopya olarak siparis kaydinda durur, hareketler itemPdf() ile oradan okur
+    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,grup:l.grup||'',bina,img:l.img||null,brand:l.brand||'',pdf:null};
     newItems.push(item); lines.push({code:l.code||'',ad:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),specId:l.specId,grup:l.grup||''});
   });
   const orderGrups=[...new Set(lines.map(l=>l.grup).filter(Boolean))];
