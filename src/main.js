@@ -112,6 +112,7 @@ import {
   sbGetProjeOrders,
   sbInsertProjeOrder,
   sbInsertProjeOrders,
+  sbUpdateProjeOrder,
   sbDeleteProjeOrder,
   sbUpsertProjeMaterials,
   sbUpsertProjeSpecs,
@@ -127,6 +128,11 @@ import {
   sbDeleteProjeBinaModel,
   sbUploadBinaModelFile,
   sbDeleteBinaModelFile,
+  // Sirketler
+  sbGetCompanies,
+  sbInsertCompany,
+  sbUpdateCompany,
+  sbDeleteCompany,
 } from './supabase.js'
 
 // xlsx global
@@ -295,6 +301,7 @@ window.sbDeleteProjeItems      = guardedSafe('proje', 'delete', sbDeleteProjeIte
 window.sbGetProjeOrders        = sbGetProjeOrders
 window.sbInsertProjeOrder      = guardedSafe('proje', 'create', sbInsertProjeOrder)
 window.sbInsertProjeOrders     = guardedSafe('proje', 'create', sbInsertProjeOrders)
+window.sbUpdateProjeOrder      = guardedSafe('proje', 'update', sbUpdateProjeOrder)
 window.sbDeleteProjeOrder      = guardedSafe('proje', 'delete', sbDeleteProjeOrder)
 window.sbUpsertProjeMaterials  = guardedSafe('kutuphane', 'update', sbUpsertProjeMaterials)
 window.sbUpsertProjeSpecs      = guardedSafe('proje', 'update', sbUpsertProjeSpecs)
@@ -314,3 +321,9 @@ window.sbDeleteProjeBinaModel   = guardedSafe('tanimlar', 'delete', sbDeleteProj
 window.sbUploadBinaModelFile    = guardedSafe('tanimlar', 'create', sbUploadBinaModelFile)
 window.sbDeleteBinaModelFile    = guardedSafe('tanimlar', 'delete', sbDeleteBinaModelFile)
 window.initBinaViewer           = initBinaViewer
+
+// ─── Sirketler ───────────────────────────────────────────────────────────────
+window.sbGetCompanies      = sbGetCompanies
+window.sbInsertCompany     = guardedSafe('tanimlar', 'create', sbInsertCompany)
+window.sbUpdateCompany     = guardedSafe('tanimlar', 'update', sbUpdateCompany)
+window.sbDeleteCompany     = guardedSafe('tanimlar', 'delete', sbDeleteCompany)

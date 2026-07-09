@@ -601,6 +601,31 @@ DROP TRIGGER IF EXISTS proje_bina_modelleri_updated_at ON public.proje_bina_mode
 CREATE TRIGGER proje_bina_modelleri_updated_at BEFORE UPDATE ON public.proje_bina_modelleri
   FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
 
+-- ─── 23. COMPANIES (Şirketler) ──────────────────────────────
+-- Proje sipariş/fatura girişinde seçilen şirket listesi.
+-- data: {ad}
+CREATE TABLE IF NOT EXISTS public.companies (
+  id          TEXT        NOT NULL PRIMARY KEY,
+  data        JSONB       NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS companies_created_at_idx ON public.companies (created_at);
+
+ALTER TABLE public.companies ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "companies_anon_all"  ON public.companies;
+CREATE POLICY "companies_anon_all"  ON public.companies FOR ALL TO anon        USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "companies_auth_all"  ON public.companies;
+CREATE POLICY "companies_auth_all"  ON public.companies FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.companies TO anon, authenticated;
+
+DROP TRIGGER IF EXISTS companies_updated_at ON public.companies;
+CREATE TRIGGER companies_updated_at BEFORE UPDATE ON public.companies
+  FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+
 -- ─── STORAGE: bina-modelleri bucket ─────────────────────────
 -- 3D model dosyaları (.glb/.gltf) için genel-okunabilir depolama alanı.
 -- Uygulama zaten kendi kullanıcı/rol sistemini (public.users) yönetiyor;
@@ -638,8 +663,8 @@ CREATE POLICY "bina_modelleri_anon_delete" ON storage.objects
 -- WHERE table_schema = 'public'
 -- ORDER BY table_name;
 --
--- Beklenen sonuç (22 tablo):
---   alet_items, app_settings, audit_log, gecici_lib,
+-- Beklenen sonuç (23 tablo):
+--   alet_items, app_settings, audit_log, companies, gecici_lib,
 --   gecici_moves, gecici_orders, proje_alternatives,
 --   proje_bina_modelleri, proje_buildings, proje_items,
 --   proje_materials, proje_orders, proje_sartnames,
