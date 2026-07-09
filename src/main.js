@@ -112,6 +112,7 @@ import {
   sbGetProjeOrders,
   sbInsertProjeOrder,
   sbInsertProjeOrders,
+  sbUpdateProjeOrder,
   sbDeleteProjeOrder,
   sbUpsertProjeMaterials,
   sbUpsertProjeSpecs,
@@ -300,6 +301,7 @@ window.sbDeleteProjeItems      = guardedSafe('proje', 'delete', sbDeleteProjeIte
 window.sbGetProjeOrders        = sbGetProjeOrders
 window.sbInsertProjeOrder      = guardedSafe('proje', 'create', sbInsertProjeOrder)
 window.sbInsertProjeOrders     = guardedSafe('proje', 'create', sbInsertProjeOrders)
+window.sbUpdateProjeOrder      = guardedSafe('proje', 'update', sbUpdateProjeOrder)
 window.sbDeleteProjeOrder      = guardedSafe('proje', 'delete', sbDeleteProjeOrder)
 window.sbUpsertProjeMaterials  = guardedSafe('kutuphane', 'update', sbUpsertProjeMaterials)
 window.sbUpsertProjeSpecs      = guardedSafe('proje', 'update', sbUpsertProjeSpecs)

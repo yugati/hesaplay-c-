@@ -360,6 +360,7 @@ export async function sbDeleteProjeItems(ids) {
 export async function sbGetProjeOrders() { return sbGetAll('proje_orders') }
 export async function sbInsertProjeOrder(e) { return sbInsertEntity('proje_orders', e) }
 export async function sbInsertProjeOrders(items) { return sbInsertEntities('proje_orders', items) }
+export async function sbUpdateProjeOrder(id, e) { return sbUpdateEntity('proje_orders', id, e) }
 export async function sbDeleteProjeOrder(id) { return sbDeleteEntity('proje_orders', id) }
 
 // ─────────────────────────────────────────────────────────────────────────────
