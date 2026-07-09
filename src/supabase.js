@@ -471,90 +471,106 @@ export async function sbUpsertProjeItems(items) {
 // Tüm veriyi Supabase'den yükle (loadDB yerine)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function sbLoadAllData() {
-  const [
-    aletItems,
-    sahaPanels, sahaLines, sahaSockets, sahaSettings,
-    raporEntries, raporEkiplerRes,
-    geciciLib, geciciMoves, geciciOrders,
-    projeBuildingsRes, projeSectionsRes, projeSartnames,
-    projeMaterials, projeSpecs, projeItems, projeOrders,
-    projeAlternatives, projeBinaModelleri,
-    companies,
-    auditRes, settingsRes,
-  ] = await Promise.all([
-    sbGetAll('alet_items'),
-    sbGetAll('saha_panels'),
-    sbGetAll('saha_lines'),
-    sbGetAll('saha_sockets'),
-    sbGetAllSahaSettings(),
-    sbGetAll('rapor_entries'),
-    supabase.from('rapor_ekipler').select('name').order('created_at', { ascending: true }),
-    sbGetAll('gecici_lib'),
-    sbGetAll('gecici_moves'),
-    sbGetAll('gecici_orders'),
-    supabase.from('proje_buildings').select('code').order('sort_order, created_at', { ascending: true }),
-    supabase.from('proje_sections').select('name').order('sort_order, created_at', { ascending: true }),
-    sbGetAll('proje_sartnames'),
-    sbGetAll('proje_materials'),
-    sbGetAll('proje_specs'),
-    sbGetAll('proje_items'),
-    sbGetAll('proje_orders'),
-    sbGetAll('proje_alternatives'),
+// scope: kullanicinin gorebildigi modul listesi (CURRENT_USER.sections), ornegin ['rapor'].
+// Verilirse yalnizca o modullerin (+ onlarin bagimli olduğu proje temel verisinin) sorgulari
+// atilir - digerleri (el aletleri, santiye sahasi, gecici elektrik, siparis/hareket, denetim
+// kaydi vb.) atlanir. scope verilmezse (admin / eski cagirim) tum veri onceki gibi yuklenir.
+export async function sbLoadAllData(scope) {
+  const need = name => !scope || scope.includes(name)
+  // rapor/tanimlar/kutuphane ekranlari da proje temel verisine (bina, bolum, sartname,
+  // sartname kalemi, malzeme kutuphanesi) ihtiyac duyar - bunlar 'proje' modulunden ayrı sayılır.
+  const needProjeCore = need('proje') || need('rapor') || need('tanimlar') || need('kutuphane')
+  const needProjeFull = need('proje')
+  const needCompanies = need('proje') || need('tanimlar')
+
+  const tasks = { settingsRes: supabase.from('app_settings').select('key, value') }
+  if (need('alet')) tasks.aletItems = sbGetAll('alet_items')
+  if (need('saha')) {
+    tasks.sahaPanels = sbGetAll('saha_panels')
+    tasks.sahaLines = sbGetAll('saha_lines')
+    tasks.sahaSockets = sbGetAll('saha_sockets')
+    tasks.sahaSettings = sbGetAllSahaSettings()
+  }
+  if (need('gecici')) {
+    tasks.geciciLib = sbGetAll('gecici_lib')
+    tasks.geciciMoves = sbGetAll('gecici_moves')
+    tasks.geciciOrders = sbGetAll('gecici_orders')
+  }
+  if (need('rapor')) {
+    tasks.raporEntries = sbGetAll('rapor_entries')
+    tasks.raporEkiplerRes = supabase.from('rapor_ekipler').select('name').order('created_at', { ascending: true })
+  }
+  if (needProjeCore) {
+    tasks.projeBuildingsRes = supabase.from('proje_buildings').select('code').order('sort_order, created_at', { ascending: true })
+    tasks.projeSectionsRes = supabase.from('proje_sections').select('name').order('sort_order, created_at', { ascending: true })
+    tasks.projeSartnames = sbGetAll('proje_sartnames')
+    tasks.projeMaterials = sbGetAll('proje_materials')
+    tasks.projeSpecs = sbGetAll('proje_specs')
+  }
+  if (needProjeFull) {
+    tasks.projeItems = sbGetAll('proje_items')
+    tasks.projeOrders = sbGetAll('proje_orders')
+    tasks.projeAlternatives = sbGetAll('proje_alternatives')
     // proje_bina_modelleri tablosu supabase_schema.sql'in yeni eklenen kısmıyla oluşturulur;
     // migration henüz çalıştırılmamışsa tüm veri yüklemesini kilitlememesi için hataya toleranslı.
-    sbGetAll('proje_bina_modelleri').catch(() => []),
-    // companies tablosu da yeni eklendi; migration henüz çalıştırılmamışsa toleranslı ol.
-    sbGetAll('companies').catch(() => []),
-    supabase.from('audit_log').select('data').order('created_at', { ascending: true }).limit(2000),
-    supabase.from('app_settings').select('key, value'),
-  ])
+    tasks.projeBinaModelleri = sbGetAll('proje_bina_modelleri').catch(() => [])
+  }
+  if (needCompanies) tasks.companies = sbGetAll('companies').catch(() => [])
+  if (!scope) tasks.auditRes = supabase.from('audit_log').select('data').order('created_at', { ascending: true }).limit(2000)
 
-  const ekipler = (raporEkiplerRes.data || []).map(r => r.name)
-  const buildings = (projeBuildingsRes.data || []).map(r => r.code)
-  const sections = (projeSectionsRes.data || []).map(r => r.name)
-  const auditEntries = (auditRes.data || []).map(r => r.data)
+  const keys = Object.keys(tasks)
+  const results = await Promise.all(keys.map(k => tasks[k]))
+  const r = {}
+  keys.forEach((k, i) => { r[k] = results[i] })
+
+  const ekipler = r.raporEkiplerRes ? (r.raporEkiplerRes.data || []).map(x => x.name) : []
+  const buildings = r.projeBuildingsRes ? (r.projeBuildingsRes.data || []).map(x => x.code) : []
+  const sections = r.projeSectionsRes ? (r.projeSectionsRes.data || []).map(x => x.name) : []
+  const auditEntries = r.auditRes ? (r.auditRes.data || []).map(x => x.data) : []
   const settingsMap = {}
-  ;(settingsRes.data || []).forEach(s => { settingsMap[s.key] = s.value })
+  ;(r.settingsRes.data || []).forEach(s => { settingsMap[s.key] = s.value })
 
-  // Supabase boşsa null döndür → localStorage migration tetiklenecek
-  const hasData = !!(
-    aletItems.length || sahaPanels.length || geciciLib.length ||
-    projeItems.length || projeSpecs.length || projeMaterials.length ||
-    raporEntries.length || projeOrders.length
-  )
-  if (!hasData && !buildings.length && !sections.length) return null
+  if (!scope) {
+    // Supabase boşsa null döndür → localStorage migration tetiklenecek. Kismi (scope'lu)
+    // yuklemede bu kontrol atlanir - o kullanicilar zaten migration'dan sorumlu degil.
+    const hasData = !!(
+      (r.aletItems || []).length || (r.sahaPanels || []).length || (r.geciciLib || []).length ||
+      (r.projeItems || []).length || (r.projeSpecs || []).length || (r.projeMaterials || []).length ||
+      (r.raporEntries || []).length || (r.projeOrders || []).length
+    )
+    if (!hasData && !buildings.length && !sections.length) return null
+  }
 
   return {
-    companies,
-    alet: { items: aletItems },
+    companies: r.companies || [],
+    alet: { items: r.aletItems || [] },
     saha: {
-      bg: sahaSettings.bg || null,
-      bgName: sahaSettings.bgName || '',
-      panels: sahaPanels,
-      lines: sahaLines,
-      sockets: sahaSockets,
+      bg: (r.sahaSettings && r.sahaSettings.bg) || null,
+      bgName: (r.sahaSettings && r.sahaSettings.bgName) || '',
+      panels: r.sahaPanels || [],
+      lines: r.sahaLines || [],
+      sockets: r.sahaSockets || [],
     },
     rapor: {
-      entries: raporEntries,
+      entries: r.raporEntries || [],
       ekipler,
       meta: {},
     },
     gecici: {
-      lib: geciciLib,
-      moves: geciciMoves,
-      orders: geciciOrders,
+      lib: r.geciciLib || [],
+      moves: r.geciciMoves || [],
+      orders: r.geciciOrders || [],
     },
     proje: {
       buildings,
       sections: sections.length ? sections : ['Tava', 'Aydinlatma', 'Topraklama', 'Pano', 'Kablolama'],
-      sartnames: projeSartnames,
-      materials: projeMaterials,
-      specs: projeSpecs,
-      items: projeItems,
-      orders: projeOrders,
-      alternatives: projeAlternatives,
-      binaModelleri: projeBinaModelleri,
+      sartnames: r.projeSartnames || [],
+      materials: r.projeMaterials || [],
+      specs: r.projeSpecs || [],
+      items: r.projeItems || [],
+      orders: r.projeOrders || [],
+      alternatives: r.projeAlternatives || [],
+      binaModelleri: r.projeBinaModelleri || [],
     },
     meta: {
       ...settingsMap,
