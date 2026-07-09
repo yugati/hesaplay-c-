@@ -107,12 +107,36 @@ async function sbRun(builder) {
   return data
 }
 
-// Tablodaki tüm satırları entity dizisi olarak döndürür
+// Tablodaki tüm satırları entity dizisi olarak döndürür.
+// Sayfalı (chunked) okunur: bazı satırlar (ör. PDF gömülü eski kayıtlar) çok
+// büyük olabiliyor; tek seferde SELECT * atmak Postgres statement_timeout'una
+// takılıp TÜM girişi kilitleyebiliyordu ("canceling statement due to statement
+// timeout"). Sayfa başına zaman aşımı olursa sayfa küçültülüp aynı aralık
+// tekrar denenir - toplam veri boyutundan bağımsız olarak yükleme tamamlanır.
+const SB_TIMEOUT_CODES = new Set(['57014', '54000'])
 async function sbGetAll(table) {
-  const rows = await sbRun(
-    supabase.from(table).select('id, data').order('created_at', { ascending: true })
-  )
-  return (rows || []).map(r => ({ ...r.data, id: r.id }))
+  const all = []
+  let from = 0
+  let pageSize = 25
+  while (true) {
+    let rows
+    try {
+      rows = await sbRun(
+        supabase.from(table).select('id, data').order('created_at', { ascending: true }).range(from, from + pageSize - 1)
+      )
+    } catch (e) {
+      if (pageSize > 1 && e && SB_TIMEOUT_CODES.has(e.code)) {
+        pageSize = Math.max(1, Math.floor(pageSize / 5))
+        continue
+      }
+      throw e
+    }
+    if (!rows || !rows.length) break
+    all.push(...rows)
+    if (rows.length < pageSize) break
+    from += pageSize
+  }
+  return all.map(r => ({ ...r.data, id: r.id }))
 }
 
 async function sbInsertEntity(table, entity) {
