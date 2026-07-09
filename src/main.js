@@ -62,6 +62,7 @@ import {
   sbGetRaporEkipler,
   sbInsertRaporEkip,
   sbInsertRaporEkipler,
+  sbDeleteRaporEkip,
   // Gecici
   sbGetGeciciLib,
   sbInsertGeciciLibItem,
@@ -249,6 +250,7 @@ window.sbDeleteRaporEntriesByIds  = guardedSafe('rapor', 'delete', sbDeleteRapor
 window.sbGetRaporEkipler          = sbGetRaporEkipler
 window.sbInsertRaporEkip          = guardedSafe('rapor', 'create', sbInsertRaporEkip)
 window.sbInsertRaporEkipler       = guardedSafe('rapor', 'create', sbInsertRaporEkipler)
+window.sbDeleteRaporEkip          = guardedSafe('rapor', 'delete', sbDeleteRaporEkip)
 
 // ─── Gecici ──────────────────────────────────────────────────────────────────
 window.sbGetGeciciLib          = sbGetGeciciLib
