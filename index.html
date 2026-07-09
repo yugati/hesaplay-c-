@@ -1388,7 +1388,7 @@ function migrate(){
 }
 
 let SEC="proje", TAB="spec", SEARCH="", GFILTER="", LOGVIEW="akis";
-let PBINA="", PCAT="", PSPEC="", PLIB=false, PDEF=false, PORD=false, PCOMP=false, PNEWORD=false, ORDBINA="";  // proje filtreleri + kutuphane + tanimlar + tum siparisler + sirketler + siparis ekleme sayfasi
+let PBINA="", PCAT="", PSPEC="", PLIB=false, PDEF=false, PORD=false, PCOMP=false, PEKIP=false, PNEWORD=false, ORDBINA="";  // proje filtreleri + kutuphane + tanimlar + tum siparisler + sirketler + ekipler + siparis ekleme sayfasi
 let SPECVIEW=localStorage.getItem('specview')==='list'?'list':'grid';     // sartname kalemleri gorunumu: 'grid' (kart) | 'list' (satir) - kullanicinin son secimi hatirlanir
 function setSpecView(v){ SPECVIEW=v; try{localStorage.setItem('specview',v);}catch(e){} render(); }
 let CURRENT_USER=null;   // giris yapan kullanici
@@ -1651,7 +1651,7 @@ function startClock(){
 }
 
 function switchSection(s){ if(!canSee(s)){ toast('Bu bolume erisim yetkiniz yok','err'); return; } SEC=s; TAB=(s==='proje'?'spec':'stok'); SEARCH=""; GFILTER="";
-  PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PNEWORD=false; // acik panelleri kapat
+  PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PNEWORD=false; // acik panelleri kapat
   document.querySelectorAll('.sect-tab').forEach(b=>b.classList.toggle('on',b.dataset.sec===s));
   if(s==='saha'){ render(); initSaha(); } else render();
   playSectionTransition(); }
@@ -1715,7 +1715,7 @@ function exportBinaSpecExcel(){
 }
 function render(){
   const m=document.getElementById('mainArea');
-  const inPanel = (PUSERS&&isAdmin()) || (PAUDIT&&isAdmin()) || PLIB || PDEF || PORD || PCOMP || PNEWORD;
+  const inPanel = (PUSERS&&isAdmin()) || (PAUDIT&&isAdmin()) || PLIB || PDEF || PORD || PCOMP || PEKIP || PNEWORD;
   updateBinaExcelFab();
   // genel panel acikken hicbir bolum sekmesi aktif gorunmesin; degilse aktif olan SEC
   document.querySelectorAll('.sect-tab').forEach(b=>b.classList.toggle('on', !inPanel && b.dataset.sec===SEC));
@@ -1727,6 +1727,7 @@ function render(){
   if(PNEWORD){ m.innerHTML=renderNewOrderPage(); wireNewOrderPage(); return; }
   if(PORD){ m.innerHTML=renderAllOrders(); wireToolbar(); return; }
   if(PCOMP){ m.innerHTML=renderCompanies(); wireToolbar(); return; }
+  if(PEKIP){ m.innerHTML=renderEkipler(); wireToolbar(); return; }
   if(SEC==='proje'){
     if(!PBINA){ m.innerHTML=renderBinaSecim(); wireToolbar(); return; }
     if(!PCAT){ m.innerHTML=renderKategoriSecim(); wireToolbar(); return; }
@@ -1883,23 +1884,24 @@ function binaSecimButtons(){
   rest+=`<button class="btn btn-ghost" onclick="openAllOrders()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg> Tum Siparisler</button>`;
   if(canSee('tanimlar')) rest+=`<button class="btn btn-ghost" onclick="openDefinitions()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2M8 7h8M8 12h8M8 17h5"/></svg> Bolum & Sartname</button>`;
   if(canSee('tanimlar')) rest+=`<button class="btn btn-ghost" onclick="openCompanies()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg> Sirketler</button>`;
+  if(canSee('tanimlar')) rest+=`<button class="btn btn-ghost" onclick="openEkipler()"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg> Ekipler</button>`;
   if(can('sync')) rest+=`<button class="btn btn-ghost" onclick="document.getElementById('syncXlsx').click()" title="Excel ile tam senkronizasyon (tek kaynak)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16"/></svg> Full Sync (Excel)</button>`;
   if(isAdmin()) rest+=`<button class="btn btn-ghost" onclick="dedupeProjeSpecs()" title="Ayni urun+sartname icin birden fazla kayit varsa fazlalarini siler"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M20 6L9 17l-5-5"/></svg> Mukerrer Kayitlari Temizle</button>`;
   if(can('wipe')) danger+=`<button class="btn btn-ghost" style="border-color:var(--red)55;color:var(--red)" onclick="wipeAllData()" title="Girilen tum verileri sil"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg> Temizle</button>`;
   return `${top}${rest?`<div class="bina-side-sep"></div>${rest}`:''}${danger?`<div class="bina-side-sep"></div>${danger}`:''}<input type="file" id="syncXlsx" accept=".xlsx,.xls" class="hidden" onchange="fullSyncExcel(event)">`;
 }
-function openMaterialLib(){ PLIB=true; PUSERS=false; PAUDIT=false; PDEF=false; PORD=false; PCOMP=false; PNEWORD=false; SEARCH=""; render(); }
+function openMaterialLib(){ PLIB=true; PUSERS=false; PAUDIT=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PNEWORD=false; SEARCH=""; render(); }
 function closeMaterialLib(){ PLIB=false; _matSel.clear(); render(); }
 
 /* ============ KULLANICI YONETIMI (admin) ============ */
 async function openUsers(){
   if(!isAdmin()){toast('Yetkiniz yok','err');return;}
   try { SB_USERS=await sbGetAllUsers(); } catch(e){ toast('Kullanicilar yuklenemedi: '+(e.message||'Hata'),'err'); SB_USERS=[]; }
-  PUSERS=true; PAUDIT=false; PLIB=false; PDEF=false; PCOMP=false; SEARCH=""; render();
+  PUSERS=true; PAUDIT=false; PLIB=false; PDEF=false; PCOMP=false; PEKIP=false; SEARCH=""; render();
 }
 function closeUsers(){ PUSERS=false; render(); }
 let AUDIT_FU="", AUDIT_FA="";  // filtre: kullanici, islem
-function openAudit(){ if(!isAdmin()){toast('Yetkiniz yok','err');return;} PAUDIT=true; PUSERS=false; PLIB=false; PDEF=false; PCOMP=false; AUDIT_FU=""; AUDIT_FA=""; SEARCH=""; render(); }
+function openAudit(){ if(!isAdmin()){toast('Yetkiniz yok','err');return;} PAUDIT=true; PUSERS=false; PLIB=false; PDEF=false; PCOMP=false; PEKIP=false; AUDIT_FU=""; AUDIT_FA=""; SEARCH=""; render(); }
 function closeAudit(){ PAUDIT=false; render(); }
 function setAuditFU(v){ AUDIT_FU=v; render(); }
 function setAuditFA(v){ AUDIT_FA=v; render(); }
@@ -2087,16 +2089,16 @@ async function delUser(id){
 
 /* ============ BOLUM & SARTNAME TANIMLAMA EKRANI ============ */
 let DEF_SEC=""; // tanimlar ekraninda secili bolum
-function openDefinitions(){ PDEF=true; PUSERS=false; PAUDIT=false; PLIB=false; PORD=false; PCOMP=false; PNEWORD=false; DEF_SEC=(DB.proje.sections||[])[0]||""; SEARCH=""; render(); }
+function openDefinitions(){ PDEF=true; PUSERS=false; PAUDIT=false; PLIB=false; PORD=false; PCOMP=false; PEKIP=false; PNEWORD=false; DEF_SEC=(DB.proje.sections||[])[0]||""; SEARCH=""; render(); }
 function closeDefinitions(){ PDEF=false; render(); }
 
 /* ============ TUM SIPARISLER (bina filtreli) ============ */
-function openAllOrders(){ PORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PCOMP=false; PNEWORD=false; ORDBINA=""; SEARCH=""; render(); }
+function openAllOrders(){ PORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PCOMP=false; PEKIP=false; PNEWORD=false; ORDBINA=""; SEARCH=""; render(); }
 function closeAllOrders(){ PORD=false; render(); }
 
 /* ============ SIRKETLER (proje siparis/fatura girisinde secilir) ============ */
-function openCompanies(){ PCOMP=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PNEWORD=false; SEARCH=""; render(); }
-function closeCompanies(){ PCOMP=false; render(); }
+function openCompanies(){ PCOMP=true; PEKIP=false; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PNEWORD=false; SEARCH=""; render(); }
+function closeCompanies(){ PCOMP=false; PEKIP=false; render(); }
 function renderCompanies(){
   const list=(DB.companies||[]).slice().sort((a,b)=>(a.ad||'').localeCompare(b.ad||'','tr'));
   let rows='';
@@ -2147,6 +2149,45 @@ async function delCompany(id){ if(!guard('delete'))return;
   await sbDeleteCompany(id);
   DB.companies=(DB.companies||[]).filter(c=>c.id!==id);
   render(); toast("Sirket silindi");
+}
+/* ============ EKIPLER (gunluk saha raporunda secilir) ============ */
+function openEkipler(){ PEKIP=true; PCOMP=false; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PNEWORD=false; SEARCH=""; render(); }
+function closeEkipler(){ PEKIP=false; render(); }
+function renderEkipler(){
+  const list=(DB.rapor.ekipler||[]).slice().sort((a,b)=>a.localeCompare(b,'tr'));
+  let rows='';
+  if(list.length===0) rows=emptyRow(3,'Henuz ekip eklenmedi','"Ekip Ekle" ile baslayin');
+  else list.forEach(ek=>{
+    const cnt=(DB.rapor.entries||[]).filter(e=>!e.is_deleted && e.ekip===ek).length;
+    rows+=`<tr><td><div class="t-name">${esc(ek)}</div></td><td class="t-meta">${cnt} kayit</td>
+      <td><div class="row-actions">
+        ${can('delete')?`<button class="mini-btn del" title="Sil" onclick="delEkip('${esc(ek)}')">${icoTrash()}</button>`:''}
+      </div></td></tr>`;
+  });
+  return `<div class="sel-wrap" style="max-width:900px">
+    <div class="sel-bc"><button onclick="closeEkipler()">${icoArr('left')} Binalara Don</button></div>
+    <div class="sel-head"><h2>Ekipler</h2><p>Gunluk saha raporunda secilecek ekip/vardiya listesi.</p></div>
+    <div class="def-sec-bar"><div class="def-sec-chips"></div>
+      ${can('define')?`<button class="btn btn-add" onclick="addEkipPrompt()">${icoPlus()} Ekip Ekle</button>`:''}</div>
+    <div class="tablewrap"><table><thead><tr><th>Ekip Adi</th><th>Kullanim</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+  </div>`;
+}
+async function addEkipPrompt(){ if(!guard('define'))return;
+  const v=prompt("Yeni ekip adi (orn. SAHA - ELEKTRIK - AD SOYAD):"); if(!v)return;
+  const name=v.trim(); if(!name)return;
+  if((DB.rapor.ekipler||[]).some(e=>norm(e)===norm(name))){ toast("Bu ekip zaten var","err"); return; }
+  await sbInsertRaporEkip(name);
+  if(!DB.rapor.ekipler)DB.rapor.ekipler=[];
+  DB.rapor.ekipler.push(name);
+  render(); toast("Ekip eklendi");
+}
+async function delEkip(name){ if(!guard('delete'))return;
+  const used=(DB.rapor.entries||[]).filter(e=>!e.is_deleted && e.ekip===name).length;
+  if(used>0){ toast(`Bu ekip ${used} rapor kaydinda kullaniliyor, once o kayitlari guncelleyin`,"err"); return; }
+  if(!confirm("Bu ekibi silmek istiyor musunuz?"))return;
+  await sbDeleteRaporEkip(name);
+  DB.rapor.ekipler=(DB.rapor.ekipler||[]).filter(e=>e!==name);
+  render(); toast("Ekip silindi");
 }
 function setOrdBina(b){ ORDBINA=b; render(); }
 function renderAllOrders(){
@@ -3872,7 +3913,7 @@ async function applySyncPlan(){
   _syncPlan=null;
   logAction('sync','Full sync: malzeme +'+rep.matCreated+'/~'+rep.matUpdated+'/-'+rep.matDeleted+', spec +'+rep.specCreated+'/~'+rep.specUpdated+'/-'+rep.specDeleted);
   await Promise.all([sbUpsertProjeMaterials(DB.proje.materials),sbUpsertProjeSpecs(DB.proje.specs)]);
-  PBINA="";PCAT="";PSPEC="";PLIB=false;PDEF=false;PCOMP=false;
+  PBINA="";PCAT="";PSPEC="";PLIB=false;PDEF=false;PCOMP=false; PEKIP=false;
   closeModal();
   render();
   showImportReport(rep,'Full Sync (tamamlandi)');
@@ -3980,7 +4021,7 @@ async function confirmWipe(){
     if(sel.includes('rapor')){ await sbWipeRaporData(); DB.rapor={entries:[],ekipler:["SAHA - ELEKTRIK - SEZGIN SURER","SAHA - ELEKTRIK - YILMAZ KABAAGIL"],meta:{}}; }
     const silinenler=sel.map(k=>labels[k]).join(', ');
     logAction('wipe', silinenler+' verileri temizlendi');
-    PBINA="";PCAT="";PSPEC="";PLIB=false;PDEF=false;PCOMP=false;SEC="proje";TAB="spec";SEARCH="";
+    PBINA="";PCAT="";PSPEC="";PLIB=false;PDEF=false;PCOMP=false; PEKIP=false;SEC="proje";TAB="spec";SEARCH="";
     closeModal(); render();
     toast(silinenler+' temizlendi');
   }catch(e){
@@ -5993,7 +6034,7 @@ function openNewOrderPage(){
   if(DB.proje.specs.filter(s=>!s.is_deleted).length===0){ toast("Once sartname kalemleri tanimlanmali","err"); return; }
   const bins=projBuildings().filter(b=>canSeeBuilding(b));
   NORD={no:'',date:new Date().toISOString().slice(0,10),bina:bins[0]||'',companyId:'',newCompany:'',pdf:null,lines:[_nordEmptyLine()],editId:null};
-  PNEWORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; SEARCH="";
+  PNEWORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; SEARCH="";
   render();
 }
 // ── SIPARIS DUZENLEME (yonetici sifresiyle) ──
@@ -6049,7 +6090,7 @@ function openEditOrderPage(orderId){
   });
   NORD={no:o.no||'',date:o.date?new Date(o.date).toISOString().slice(0,10):new Date().toISOString().slice(0,10),
     bina:o.bina||'',companyId,newCompany,pdf:o.pdf||null,lines:lines.length?lines:[_nordEmptyLine()],editId:orderId};
-  PNEWORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; SEARCH="";
+  PNEWORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; SEARCH="";
   render();
 }
 function closeNewOrderPage(){

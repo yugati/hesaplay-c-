@@ -264,6 +264,10 @@ export async function sbInsertRaporEkipler(names) {
   }
 }
 
+export async function sbDeleteRaporEkip(name) {
+  await sbRun(supabase.from('rapor_ekipler').delete().eq('name', name))
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Geçici modülü
 // ─────────────────────────────────────────────────────────────────────────────
