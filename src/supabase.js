@@ -363,6 +363,15 @@ export async function sbInsertProjeOrders(items) { return sbInsertEntities('proj
 export async function sbDeleteProjeOrder(id) { return sbDeleteEntity('proje_orders', id) }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Şirketler (sipariş/fatura girişinde seçilen firma listesi)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function sbGetCompanies() { return sbGetAll('companies') }
+export async function sbInsertCompany(e) { return sbInsertEntity('companies', e) }
+export async function sbUpdateCompany(id, e) { return sbUpdateEntity('companies', id, e) }
+export async function sbDeleteCompany(id) { return sbDeleteEntity('companies', id) }
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Alternatif Ürün modülü
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -455,6 +464,7 @@ export async function sbLoadAllData() {
     projeBuildingsRes, projeSectionsRes, projeSartnames,
     projeMaterials, projeSpecs, projeItems, projeOrders,
     projeAlternatives, projeBinaModelleri,
+    companies,
     auditRes, settingsRes,
   ] = await Promise.all([
     sbGetAll('alet_items'),
@@ -478,6 +488,8 @@ export async function sbLoadAllData() {
     // proje_bina_modelleri tablosu supabase_schema.sql'in yeni eklenen kısmıyla oluşturulur;
     // migration henüz çalıştırılmamışsa tüm veri yüklemesini kilitlememesi için hataya toleranslı.
     sbGetAll('proje_bina_modelleri').catch(() => []),
+    // companies tablosu da yeni eklendi; migration henüz çalıştırılmamışsa toleranslı ol.
+    sbGetAll('companies').catch(() => []),
     supabase.from('audit_log').select('data').order('created_at', { ascending: true }).limit(2000),
     supabase.from('app_settings').select('key, value'),
   ])
@@ -498,6 +510,7 @@ export async function sbLoadAllData() {
   if (!hasData && !buildings.length && !sections.length) return null
 
   return {
+    companies,
     alet: { items: aletItems },
     saha: {
       bg: sahaSettings.bg || null,

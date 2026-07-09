@@ -127,6 +127,11 @@ import {
   sbDeleteProjeBinaModel,
   sbUploadBinaModelFile,
   sbDeleteBinaModelFile,
+  // Sirketler
+  sbGetCompanies,
+  sbInsertCompany,
+  sbUpdateCompany,
+  sbDeleteCompany,
 } from './supabase.js'
 
 // xlsx global
@@ -314,3 +319,9 @@ window.sbDeleteProjeBinaModel   = guardedSafe('tanimlar', 'delete', sbDeleteProj
 window.sbUploadBinaModelFile    = guardedSafe('tanimlar', 'create', sbUploadBinaModelFile)
 window.sbDeleteBinaModelFile    = guardedSafe('tanimlar', 'delete', sbDeleteBinaModelFile)
 window.initBinaViewer           = initBinaViewer
+
+// ─── Sirketler ───────────────────────────────────────────────────────────────
+window.sbGetCompanies      = sbGetCompanies
+window.sbInsertCompany     = guardedSafe('tanimlar', 'create', sbInsertCompany)
+window.sbUpdateCompany     = guardedSafe('tanimlar', 'update', sbUpdateCompany)
+window.sbDeleteCompany     = guardedSafe('tanimlar', 'delete', sbDeleteCompany)
