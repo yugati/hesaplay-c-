@@ -1509,20 +1509,24 @@ async function doLogin(){
   const uname=(userInput.value||'').trim();
   const pass=pwInput.value||'';
   if(!uname){ loginFail("Kullanici adi girin."); return; }
+  if(!pass){ loginFail("Sifre girin."); return; }
   const btn=document.getElementById('loginBtn');
   btn.disabled=true; btn.textContent='Giriş yapılıyor...';
   try {
-    const user=await sbLoginUser(uname,pass);
+    const remEl=document.getElementById('rememberMe');
+    const remember=!!(remEl&&remEl.checked);
+    const user=await sbLoginUser(uname,pass,remember);
     if(!user){ loginFail("Kullanici adi veya sifre hatali."); return; }
+    const token=user.__token; delete user.__token;
+    window.AUTH_TOKEN=token;
     CURRENT_USER=user; window.CURRENT_USER=user;
     if(!DB){ DB=await loadDB(); migrate(); }
     logAction('login','Giris yapildi'); await saveDB();
     SEC=firstAllowedSection();
     // "Beni Hatirla" isaretliyse oturum 30 gun, degilse 1 saat yasar; ttl oturumla
     // birlikte saklanir ki sayfa yenilemede uzatma ayni sureyle yapilsin
-    const remEl=document.getElementById('rememberMe');
-    const ttl=(remEl&&remEl.checked)?SESSION_TTL_REMEMBER:SESSION_TTL_DEFAULT;
-    localStorage.setItem('authSession', JSON.stringify({user:user, expiresAt:Date.now()+ttl, ttl:ttl}));
+    const ttl=remember?SESSION_TTL_REMEMBER:SESSION_TTL_DEFAULT;
+    localStorage.setItem('authSession', JSON.stringify({user:user, token:token, expiresAt:Date.now()+ttl, ttl:ttl}));
     const lg=document.getElementById('login');
     lg.classList.add('fade-out');
     showAppFade();
@@ -1538,7 +1542,7 @@ async function doLogin(){
 function loginFail(msg){ document.getElementById('loginErr').textContent=msg; pwInput.value=''; (userInput.value?pwInput:userInput).focus(); }
 // Sifre sifirlama backend akisi olmadigi icin kullaniciyi dogru kanala yonlendiririz
 function forgotPw(){ toast('Şifre sıfırlama için yöneticinizle iletişime geçin'); }
-function logout(){ localStorage.removeItem('authSession'); CURRENT_USER=null; window.CURRENT_USER=null; location.reload(); }
+function logout(){ localStorage.removeItem('authSession'); window.AUTH_TOKEN=null; CURRENT_USER=null; window.CURRENT_USER=null; location.reload(); }
 // giris/oturum acildiginda #app'i yumusak fade-in ile gosterir (login/loading ekranlariyla capraz gecis)
 function showAppFade(){
   const ap=document.getElementById('app');
@@ -1560,15 +1564,18 @@ document.addEventListener('DOMContentLoaded', async function(){
     },230);
   }
   function showLogin(){ document.documentElement.classList.remove('booting'); lg.classList.remove('hidden'); }
-  function saveSession(u,ttl){ ttl=ttl||SESSION_TTL_DEFAULT; localStorage.setItem('authSession', JSON.stringify({user:u, expiresAt:Date.now()+ttl, ttl:ttl})); }
+  function saveSession(u,ttl,token){ ttl=ttl||SESSION_TTL_DEFAULT; localStorage.setItem('authSession', JSON.stringify({user:u, token:token, expiresAt:Date.now()+ttl, ttl:ttl})); }
   try {
     const sess=JSON.parse(raw);
-    if(!sess.user||!sess.expiresAt||sess.expiresAt<Date.now()){
+    // token yoksa eski (guvenlik guncellemesinden onceki) oturumdur - artik
+    // hicbir korumali API cagrisi yapamaz, yeniden giris istenir
+    if(!sess.user||!sess.token||!sess.expiresAt||sess.expiresAt<Date.now()){
       localStorage.removeItem('authSession'); hideLoading(); showLogin(); return;
     }
+    window.AUTH_TOKEN=sess.token;
     // Önbellekten kullanıcıyı anında yükle — Supabase çağrısı BEKLENMEZ
     CURRENT_USER=sess.user; window.CURRENT_USER=sess.user;
-    saveSession(sess.user, sess.ttl); // oturumu kendi suresiyle uzat (1 saat / Beni Hatirla: 30 gun)
+    saveSession(sess.user, sess.ttl, sess.token); // oturumu kendi suresiyle uzat (1 saat / Beni Hatirla: 30 gun)
     if(!DB){ DB=await loadDB(); migrate(); }
     SEC=firstAllowedSection();
     // Sayfa yenilemeden önceki gezinti durumunu geri yükle
@@ -1590,10 +1597,10 @@ document.addEventListener('DOMContentLoaded', async function(){
     // Arka planda kullanıcıyı Supabase'den tazele (UI'ı engellemez)
     (async()=>{
       try {
-        const fresh=await sbGetUserByUsername(sess.user.username);
+        const fresh=await sbGetUserByUsername();
         if(!fresh){ localStorage.removeItem('authSession'); logout(); return; }
         CURRENT_USER=fresh; window.CURRENT_USER=fresh;
-        saveSession(fresh, sess.ttl);
+        saveSession(fresh, sess.ttl, sess.token);
         applyUserChrome();
       } catch(e){ /* ağ hatası: önbellekten devam et */ }
     })();
@@ -1955,7 +1962,7 @@ function openUserModal(id){
   const permMatrix=ALL_SECTIONS.map(s=>{ const mp=existingPerms[s]||{}; return `<tr><td style="font-weight:600;padding:4px 8px;min-width:140px;font-size:12px">${esc(SECTION_LABELS[s]||s)}</td><td style="text-align:center;padding:4px 8px"><input type="checkbox" class="uperm" data-mod="${s}" data-act="read" ${mp.read?'checked':''}></td><td style="text-align:center;padding:4px 8px"><input type="checkbox" class="uperm" data-mod="${s}" data-act="create" ${mp.create?'checked':''}></td><td style="text-align:center;padding:4px 8px"><input type="checkbox" class="uperm" data-mod="${s}" data-act="update" ${mp.update?'checked':''}></td><td style="text-align:center;padding:4px 8px"><input type="checkbox" class="uperm" data-mod="${s}" data-act="delete" ${mp.delete?'checked':''}></td></tr>`; }).join('');
   const roleOpts=Object.keys(ROLES).map(r=>`<option value="${r}" ${u&&u.role===r?'selected':''}>${esc(ROLES[r])}</option>`).join('');
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${u?'Kullanici Duzenle':'Yeni Kullanici'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
-    <div class="frow two"><div><label>Kullanici Adi *</label><input id="u_name" value="${u?esc(u.username):''}" placeholder="orn. ahmet" ${u?'readonly style="opacity:.6"':''}></div><div><label>Sifre *</label><input type="password" id="u_pass" value="${u?esc(u.password):''}" placeholder="sifre" autocomplete="new-password"></div></div>
+    <div class="frow two"><div><label>Kullanici Adi *</label><input id="u_name" value="${u?esc(u.username):''}" placeholder="orn. ahmet" ${u?'readonly style="opacity:.6"':''}></div><div><label>Sifre ${u?'':'*'}</label><input type="password" id="u_pass" value="" placeholder="${u?'Degistirmek icin yeni sifre girin':'sifre'}" autocomplete="new-password"></div></div>
     <div class="frow"><label>Rol</label><select id="u_role" onchange="_userRoleChange()">${roleOpts}</select>
       <p class="t-meta" id="u_roleHint" style="font-size:11px;margin-top:6px"></p></div>
     <div id="u_perms_izleyici" style="display:none">
@@ -1994,7 +2001,7 @@ async function saveUser(id){
   const pass=(document.getElementById('u_pass').value||'').trim();
   const role=document.getElementById('u_role').value;
   if(!name){toast('Kullanici adi zorunlu','err');return;}
-  if(!pass){toast('Sifre zorunlu','err');return;}
+  if(!id && !pass){toast('Sifre zorunlu','err');return;}
   let sections=[], buildings=[], permissions={};
   if(role==='admin'){
     sections=ALL_SECTIONS.slice(); buildings=[];
@@ -2021,7 +2028,9 @@ async function saveUser(id){
   try {
     let updated;
     if(id){
-      updated=await sbUpdateUser(id,{password:pass,role,sections,buildings,permissions});
+      const payload={role,sections,buildings,permissions};
+      if(pass) payload.password=pass; // bos birakilirsa mevcut sifre degismez
+      updated=await sbUpdateUser(id,payload);
       if(CURRENT_USER&&CURRENT_USER.id===id){ CURRENT_USER=updated; window.CURRENT_USER=updated; }
     } else {
       updated=await sbCreateUser({username:name,password:pass,role,sections,buildings,permissions});

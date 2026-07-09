@@ -61,12 +61,14 @@ CREATE INDEX IF NOT EXISTS users_created_at_idx ON public.users (created_at);
 
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 
+-- GUVENLIK: users tablosu anon/authenticated icin KASITLI olarak kapali
+-- birakilir - sifre alani var ve tarayicida gomulu anon anahtarla herkes
+-- okuyabilirdi. Giris/kullanici yonetimi artik /api/login, /api/me,
+-- /api/users* sunucu fonksiyonlari uzerinden service_role anahtariyla
+-- yapiliyor (service_role RLS'i zaten atlar, ayrica policy gerekmez).
 DROP POLICY IF EXISTS "users_anon_all"  ON public.users;
-CREATE POLICY "users_anon_all"  ON public.users FOR ALL TO anon        USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "users_auth_all"  ON public.users;
-CREATE POLICY "users_auth_all"  ON public.users FOR ALL TO authenticated USING (true) WITH CHECK (true);
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON public.users TO anon, authenticated;
+REVOKE SELECT, INSERT, UPDATE, DELETE ON public.users FROM anon, authenticated;
 
 DROP TRIGGER IF EXISTS users_updated_at ON public.users;
 CREATE TRIGGER users_updated_at BEFORE UPDATE ON public.users

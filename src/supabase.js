@@ -12,88 +12,79 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Users (mevcut fonksiyonlar – değişmedi)
+// Users — artik dogrudan Supabase'e degil, /api/* sunucu fonksiyonlarina gider.
+// 'users' tablosu anon anahtarla erisilemez hale getirildi (bkz. supabase_schema.sql);
+// sifre dogrulama ve kullanici yonetimi service_role anahtariyla sunucuda yapilir.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function normalizeUsersError(error) {
-  if (!error) return null
-  if (error.code === 'PGRST205') {
-    return new Error(
-      [
-        "Supabase Data API cannot see 'public.users'.",
-        'The client URL/key are reaching Supabase successfully, but PostgREST schema cache does not contain that table.',
-        'This is a Supabase-side issue, not a frontend query bug.'
-      ].join(' ')
-    )
+async function authFetch(path, opts = {}) {
+  const token = (typeof window !== 'undefined' && window.AUTH_TOKEN) || null
+  const headers = { ...(opts.headers || {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) }
+  const res = await fetch(path, { ...opts, headers })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const err = new Error(body.error || `Istek basarisiz (${res.status})`)
+    err.status = res.status
+    err.code = body.code
+    throw err
   }
-  return error
+  return body
 }
 
-async function usersQuery(builder) {
-  const { data, error } = await builder
-  const normalizedError = normalizeUsersError(error)
-  if (normalizedError) throw normalizedError
-  return data
+// Basarili girişte donen kullanici nesnesine __token alani eklenir; cagiran
+// taraf (index.html doLogin) bunu cikarip ayri saklar. Diger cagiranlar
+// (sifre yeniden dogrulama akislari) bu alani yok sayar.
+export async function sbLoginUser(username, password, rememberMe) {
+  try {
+    const { user, token } = await authFetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password, rememberMe: !!rememberMe }),
+    })
+    return { ...user, __token: token }
+  } catch (e) {
+    if (e.status === 401) return null
+    throw e
+  }
 }
 
-export async function sbLoginUser(username, password) {
-  return (
-    (await usersQuery(
-      supabase
-        .from('users')
-        .select('*')
-        .ilike('username', username)
-        .eq('password', password)
-        .maybeSingle()
-    )) || null
-  )
-}
-
-export async function sbGetUserByUsername(username) {
-  return (
-    (await usersQuery(
-      supabase
-        .from('users')
-        .select('*')
-        .ilike('username', username)
-        .maybeSingle()
-    )) || null
-  )
+// Aktif oturum tokeniyle (window.AUTH_TOKEN) kendi kaydini tazeler (arka plan
+// yenileme icin - cagirandan once token atanmis olmali).
+export async function sbGetUserByUsername() {
+  try {
+    const { user } = await authFetch('/api/me')
+    return user || null
+  } catch (e) {
+    // Token gecersiz/suresi dolmus ya da kullanici silinmis: gercekten
+    // cikis yaptirilmali. Diger tum hatalar (ag, 5xx) yukari firlatilir ki
+    // cagiran taraf gecici sorunlarda onbellekten sessizce devam etsin.
+    if (e.status === 401 || e.status === 404) return null
+    throw e
+  }
 }
 
 export async function sbGetAllUsers() {
-  return (
-    (await usersQuery(
-      supabase.from('users').select('*').order('created_at', { ascending: true })
-    )) || []
-  )
+  return authFetch('/api/users')
 }
 
 export async function sbCreateUser({ username, password, role, sections, buildings, permissions }) {
-  return usersQuery(
-    supabase
-      .from('users')
-      .insert([{ username, password, role, sections, buildings, permissions: permissions || {} }])
-      .select()
-      .single()
-  )
+  return authFetch('/api/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password, role, sections, buildings, permissions: permissions || {} }),
+  })
 }
 
 export async function sbUpdateUser(id, { password, role, sections, buildings, permissions }) {
-  const update = { password, role, sections, buildings }
-  if (permissions !== undefined) update.permissions = permissions
-  return usersQuery(
-    supabase
-      .from('users')
-      .update(update)
-      .eq('id', id)
-      .select()
-      .single()
-  )
+  return authFetch(`/api/users/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password, role, sections, buildings, permissions }),
+  })
 }
 
 export async function sbDeleteUser(id) {
-  await usersQuery(supabase.from('users').delete().eq('id', id))
+  await authFetch(`/api/users/${encodeURIComponent(id)}`, { method: 'DELETE' })
   return true
 }
 
