@@ -2706,13 +2706,22 @@ function renderMaterialLib(){
     <div class="tablewrap"><table><thead><tr><th style="width:34px;text-align:center"><input type="checkbox" class="mat-check" ${(()=>{const v=renderMaterialLibVisibleIds();return v.length>0&&v.every(id=>_matSel.has(id))?'checked':'';})()} onclick="toggleMatSelAll()"></th><th></th><th>Malzeme</th><th>Kod</th><th>Marka</th><th>Standart</th><th>Agirlik</th><th>Etiket</th><th>Kategori</th><th>Birim</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
+// modal disina (bos alana) tiklandiginda: alanlardan biri doldurulmussa modali kapatma,
+// veri kaybini onlemek icin kullanici Iptal/X ile bilerek kapatmali
+function matModalBgClick(ev){
+  if(ev.target!==ev.currentTarget) return;
+  const ids=['mt_name','mt_code','mt_brand','mt_standart','mt_weight','mt_unit','mt_proje','mt_note'];
+  const hasData = ids.some(id=>{ const el=document.getElementById(id); return el&&String(el.value||'').trim(); })
+    || (modalTags&&modalTags.length) || modalImg;
+  if(!hasData) closeModal();
+}
 function openMaterialModal(id){
   const m=id?getMaterial(id):null; modalImg=m&&m.img?m.img:null;
   modalTags=(m&&m.tags)?m.tags.slice():[];
   const cats=[...new Set([...(DB.proje.sections||PROJ_CATS),...(DB.proje.materials||[]).map(x=>x.cat).filter(Boolean)])];
   const allTags=[...new Set((DB.proje.materials||[]).flatMap(x=>x.tags||[]))].sort((a,b)=>a.localeCompare(b,'tr'));
   const usage=m?materialUsage(m.id):[];
-  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>${m?'Malzeme Duzenle':'Yeni Malzeme'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+  const html=`<div class="modal-bg" onclick="matModalBgClick(event)"><div class="modal"><div class="modal-head"><h3>${m?'Malzeme Duzenle':'Yeni Malzeme'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow"><label>Malzeme Adi *</label><input id="mt_name" value="${m?esc(m.name):''}" placeholder="orn. Galvaniz Kablo Tavasi 200mm"></div>
     <div class="frow two"><div><label>Urun Kodu</label><input id="mt_code" value="${m?esc(m.code||''):''}" placeholder="orn. 121491"></div><div><label>Marka  <span class="t-meta">(her satir ayri gosterilir)</span></label><textarea id="mt_brand" rows="2" style="min-height:38px" placeholder="orn. Hilti, Schneider">${m?esc(m.brand||''):''}</textarea></div></div>
     <div class="frow two"><div><label>Standart Numarasi</label><input id="mt_standart" value="${m?esc(m.standart||''):''}" placeholder="orn. TS EN 61386"></div><div><label>Agirlik (kg)  <span class="t-meta">(birim agirlik)</span></label><input id="mt_weight" type="number" step="any" min="0" value="${m&&m.weight!=null?m.weight:''}" placeholder="0"></div></div>
@@ -3352,7 +3361,7 @@ function openAltModal(specId, altId){
   const statuses=[['oneri','Öneri'],['onaylandi','Onaylandı'],['kullanımda','Kullanımda'],['reddedildi','Reddedildi']];
   const curReason=ex?ex.reason:'tedarik'; const curStatus=ex?ex.status:'oneri';
   const matInfo=_altMat?esc([_altMat.code,_altMat.brand,_altMat.unit].filter(Boolean).join(' · ')):'Malzeme kütüphanesinden seçin';
-  const html=`<div class="alt-modal-bg" onclick="if(event.target===this)closeAltModal()"><div class="modal">
+  const html=`<div class="alt-modal-bg" onclick="altModalBgClick(event)"><div class="modal">
     <div class="modal-head"><h3>${ex?'Alternatif Düzenle':'Alternatif Ürün Ekle'}</h3><button class="mini-btn" onclick="closeAltModal()">x</button></div>
     <div class="modal-body">
       <div class="frow"><label>Alternatif Ürün *</label>
@@ -3424,6 +3433,15 @@ async function changeAltStatus(id, newStatus, specId){
   refreshSpecDetailAlts(specId); toast('Durum: '+altStatusLabel(newStatus));
 }
 function closeAltModal(){ document.querySelectorAll('.alt-modal-bg').forEach(m=>m.remove()); }
+// modal disina (bos alana) tiklandiginda: secilmis alternatif urun veya yazilmis not varsa
+// modali kapatma - veri kaybini onlemek icin kullanici Iptal/X ile bilerek kapatmali
+function altModalBgClick(ev){
+  if(ev.target!==ev.currentTarget) return;
+  const note=document.getElementById('alt_note');
+  const hasMat=_altMat && (_altMat.code||_altMat.name);
+  const hasData = hasMat || (note&&note.value.trim());
+  if(!hasData) closeAltModal();
+}
 // spesifikasyonda hedefi olmayan ama alinmis urunler (cat+name eslesmeyen)
 function offSpecItems(){
   const specIds=new Set(DB.proje.specs.map(s=>s.id));
@@ -3666,25 +3684,25 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
       if(!grup){ report.errors.push(`Spek satir ${r+1}: sartname belirtilmemis`); continue; }
       if(!sartIndex[norm(insertBina)+'|'+norm(sec)+'|'+norm(grup)]){ report.errors.push(`Spek satir ${r+1}: "${grup}" sartnamesi ${insertBina}/${sec} icin tanimli degil - once Bolum & Sartname ekranindan tanimlayin`); continue; }
     }
-    // anahtar: spec_external_id varsa o; yoksa URUN KODU (asil essizlik birimi); kod yoksa ad
-    // essizlik SADECE urun kodu (kod yoksa ad) uzerinden kontrol edilir: ayni sartnamede ayni urun kodu tekrar edemez.
-    // Poz No essizligi BOZMAZ - bir tender pozisyonu altinda birden fazla urun/varyant olabilir.
+    // anahtar: spec_external_id varsa o; yoksa URUN KODU (asil essizlik birimi) + POZ NO; kod yoksa ad + poz
+    // essizlik urun kodu/adi VE Poz No birlikte kontrol edilir: ayni sartnamede ayni urun (ayni poz'da) tekrar edemez,
+    // ama ayni urun FARKLI Poz No'larla birden fazla kez gecebilir (bkz. Sartname Kalemi modal aciklamasi).
     const ctxKey=insertBina.toLowerCase()+'|'+sec.toLowerCase()+'|'+grup.toLowerCase();
-    const skey=(useExt&&ext)?('e:'+ext.toLowerCase()):('m:'+ctxKey+'|'+matKey(code,name));
-    if(seen.has(skey)){ const dupLbl=code?`"${code}" urun kodu`:`"${name}" urun adi`; report.errors.push(`Spek satir ${r+1}: ${dupLbl} bu sartnamede birden fazla olamaz (${insertBina}/${sec}/${grup})`); continue; }
+    const pozKey=(poz||'').toLowerCase();
+    const skey=(useExt&&ext)?('e:'+ext.toLowerCase()):('m:'+ctxKey+'|'+matKey(code,name)+'|p:'+pozKey);
+    if(seen.has(skey)){ const dupLbl=code?`"${code}" urun kodu`:`"${name}" urun adi`; report.errors.push(`Spek satir ${r+1}: ${dupLbl}${poz?` (Poz ${poz})`:''} bu sartnamede birden fazla olamaz (${insertBina}/${sec}/${grup})`); continue; }
     seen.add(skey);
-    // mevcut spec bul: once extId; sonra urun kodu (varsa) / ad uyumu (matKey); kod hic verilmemisse poz'a bak
+    // mevcut spec bul: once extId; sonra urun kodu (varsa) / ad uyumu (matKey) + poz.
+    // ONEMLI: sadece Poz No'ya bakip urun adini/kodunu yok sayan bir eslesme YAPILMAZ -
+    // aksi halde ayni poz'u paylasan FARKLI (kodsuz) urunler birbirinin kaydini/kodunu ezer.
     let existing;
     if(useExt&&ext){ existing=DB.proje.specs.find(s=>(s.extId||'').toLowerCase()===ext.toLowerCase()); }
-    if(!existing&&!code&&poz){
-      existing=DB.proje.specs.find(s=>(s.poz||'').trim().toLowerCase()===poz.toLowerCase() && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup);
-    }
-    if(!existing){ existing=DB.proje.specs.find(s=>matKey(s.code,s.name)===matKey(code,name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup); }
+    if(!existing){ existing=DB.proje.specs.find(s=>matKey(s.code,s.name)===matKey(code,name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup && (s.poz||'').trim().toLowerCase()===pozKey); }
     // ONARIM: onceki bir hatali import/coklu sekme yuzunden ayni urun+kapsam icin birden
     // fazla kayit olusmus olabilir (bkz dedupeProjeSpecs). Ilkini "existing" olarak kullan,
     // geri kalanini mukerrer sayip sil - boylece her import kendi kapsamini kendiliginden onarir.
     if(existing){
-      const dupMatch=DB.proje.specs.filter(s=>s.id!==existing.id && matKey(s.code,s.name)===matKey(existing.code,existing.name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup);
+      const dupMatch=DB.proje.specs.filter(s=>s.id!==existing.id && matKey(s.code,s.name)===matKey(existing.code,existing.name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup && (s.poz||'').trim().toLowerCase()===pozKey);
       if(dupMatch.length){
         const dupIds=dupMatch.map(s=>s.id);
         DB.proje.specs=DB.proje.specs.filter(s=>!dupIds.includes(s.id));
@@ -3743,7 +3761,7 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
 function findDuplicateSpecs(){
   const groups={};
   DB.proje.specs.filter(s=>!s.is_deleted).forEach(s=>{
-    const key=(s.matId||matKey(s.code,s.name))+'|'+(s.bina||'')+'|'+(s.cat||'')+'|'+specGroupKey(s);
+    const key=(s.matId||matKey(s.code,s.name))+'|'+(s.bina||'')+'|'+(s.cat||'')+'|'+specGroupKey(s)+'|'+(s.poz||'').trim().toLowerCase();
     (groups[key]=groups[key]||[]).push(s);
   });
   return Object.values(groups).filter(g=>g.length>1);
@@ -4148,7 +4166,14 @@ function renderSpec(){
   groupKeys.forEach(k=>{ const g=groups[k];
     let list=g.specs.filter(sp=>!q||matchText(sp.name+' '+(sp.code||''), q));
     if(list.length===0) return;
-    list.sort((a,b)=>a.name.localeCompare(b.name,'tr'));
+    // arama aktifken en alakali sonuc (birebir alt dize) en ustte gelsin;
+    // sadece harf-sirasi (fuzzy) eslesenler alfabetik siralamada geriye dusmesin diye en sona atilir
+    if(q){ const nq=norm(q).trim();
+      list.sort((a,b)=>{ const sa=acScore(norm(a.name+' '+(a.code||'')),nq), sb=acScore(norm(b.name+' '+(b.code||'')),nq);
+        return sa!==sb ? sa-sb : a.name.localeCompare(b.name,'tr'); });
+    } else {
+      list.sort((a,b)=>a.name.localeCompare(b.name,'tr'));
+    }
     const p=g.target>0?Math.min(100,(g.got/g.target)*100):0; const col=catColor(g.cat); const gdone=p>=100;
     let cards='';
     list.forEach(sp=>{ const{got,pct}=specProgress(sp); const{installed:montajGot,pct:montajPct}=specMontajProgress(sp); const c2=catColor(sp.cat); const done=pct>=100; const ex=!!sp.exclude; const montajDone=montajPct>=100; const spAlts=specAlts(sp.id); const altCount=spAlts.length; const altActive=spAlts.filter(a=>a.status==='kullanımda').length; const altApproved=spAlts.filter(a=>a.status==='onaylandi').length;
@@ -4306,10 +4331,14 @@ function openOrderDetail(id){
   const o=(DB.proje.orders||[]).find(x=>x.id===id); if(!o)return;
   const col=buildingColor(o.bina);
   let rows='';
-  o.lines.forEach((l,i)=>{ rows+=`<tr>
+  o.lines.forEach((l,i)=>{
+    // alternatif urunle alim: ana urun bilgisi satirin altinda gosterilir
+    const altSp=l.altId?DB.proje.specs.find(s=>s.id===l.specId):null;
+    const altNote=l.altId?`<div style="margin-top:2px"><span class="cat-tag" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)55">ALTERNATIF${altSp?' → '+esc(altSp.name):''}</span></div>`:'';
+    rows+=`<tr>
     <td style="text-align:center;color:var(--mute)">${i+1}</td>
     <td style="font-family:var(--mono);font-size:12px">${esc(l.code||'-')}</td>
-    <td>${esc(l.ad)}</td>
+    <td>${esc(l.ad)}${altNote}</td>
     <td style="text-align:right;font-weight:700">${fmtNum(l.qty)}</td>
     <td style="color:var(--mute)">${esc(l.unit||'')}</td></tr>`; });
   const qty=o.lines.reduce((x,l)=>x+(Number(l.qty)||0),0);
@@ -4618,7 +4647,7 @@ function openSpecModal(idOrNull,prefill){ if(!guard('editSpec',{bina:(prefill&&p
   // sartname listesi: secili bina+bolume TANIMLI sartnameler
   const sartList=(DB.proje.sartnames||[]).filter(x=>x.bina===curBina && x.section===curCat).map(x=>x.code);
   const grps=[...new Set([...sartList, ...(curGrp?[curGrp]:[])])];
-  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>${sp?'Sartname Kalemi Duzenle':'Sartname Kalemi'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+  const html=`<div class="modal-bg" onclick="specModalBgClick(event)"><div class="modal"><div class="modal-head"><h3>${sp?'Sartname Kalemi Duzenle':'Sartname Kalemi'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow"><label>Bina</label><select id="s_bina" onchange="specModalRefresh()"><option value="">- secilmedi -</option>${projBuildings().map(b=>`<option ${curBina===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div>
     <div class="frow"><label>Bolum</label><select id="s_cat" onchange="specModalRefresh()">${(DB.proje.sections||PROJ_CATS).map(c=>`<option ${curCat===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
     <div class="frow"><label>Sartname *</label><select id="s_grup">${grps.length?grps.map(g=>`<option ${curGrp===g?'selected':''}>${esc(g)}</option>`).join(''):'<option value="">- once Bolum & Sartname ekranindan tanimlayin -</option>'}</select></div>
@@ -4630,6 +4659,15 @@ function openSpecModal(idOrNull,prefill){ if(!guard('editSpec',{bina:(prefill&&p
     <p style="font-size:11px;color:var(--dim);font-family:var(--mono)">Malzeme bilgisi (kod, ad, marka, standart, agirlik, etiket, foto) Malzeme Kutuphanesinden gelir. Yeni malzeme icin kutuphaneye ekleyin. Ayni malzeme bu sartnamede farkli Poz No'larla birden fazla kez gecebilir.</p>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveSpec(${sp?`'${sp.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
+}
+// modal disina (bos alana) tiklandiginda: kutularda girilmis bir deger varsa modali kapatma,
+// veri kaybini onlemek icin kullanici Iptal/X ile bilerek kapatmali
+function specModalBgClick(ev){
+  if(ev.target!==ev.currentTarget) return;
+  const poz=document.getElementById('s_poz'), target=document.getElementById('s_target'), unit=document.getElementById('s_unit');
+  const hasMat=window._specMat && (window._specMat.code||window._specMat.ad);
+  const hasData = hasMat || (poz&&poz.value.trim()) || (target&&target.value.trim()) || (unit&&unit.value.trim());
+  if(!hasData) closeModal();
 }
 // secili malzeme kutusu (secilmemis veya secilmis kart)
 function specMatBoxHtml(){
@@ -4693,14 +4731,14 @@ async function saveSpec(id){ if(!guard('editSpec'))return;
   if(target===''||isNaN(target)){toast("Hedef miktar zorunlu","err");return;}
   if(!grup){toast("Sartname secimi zorunlu - once Bolum & Sartname ekranindan tanimlayin","err");return;}
   const code=mat.code||''; const name=mat.ad||'';
-  // poz doluysa kimlik = poz (ayni malzeme bu sartnamede farkli pozlarda tekrar edebilir);
-  // poz bossa eski davranisa dus (kod bazli, sadece diger poz'suz kalemlerle kiyasla)
+  // kimlik = poz + urun (matKey: kod varsa kod, yoksa ad). Ayni poz + ayni ad ama FARKLI kod
+  // farkli urun sayilir (izin verilir); ayni poz'da ayni urun (ayni kod, veya kodsuzsa ayni ad) tekrar edemez.
   const dup=DB.proje.specs.find(s=>{
     if(s.id===id||s.is_deleted||s.bina!==bina||specGroupKey(s)!==grup) return false;
-    if(poz) return (s.poz||'').trim().toLowerCase()===poz.toLowerCase();
-    return !(s.poz||'').trim() && (s.code||'').trim().toLowerCase()===code.toLowerCase();
+    if((s.poz||'').trim().toLowerCase()!==poz.toLowerCase()) return false;
+    return matKey(s.code,s.name)===matKey(code,name);
   });
-  if(dup){toast(poz?`Bu poz ("${poz}") bu sartnamede zaten var`:"Bu malzeme bu sartnamede zaten var: "+code,"err");return;}
+  if(dup){toast(poz?`Bu urun bu pozda ("${poz}") zaten var`:"Bu malzeme bu sartnamede zaten var: "+code,"err");return;}
   // kutuphane kaydini al/dogrula (matId varsa onu kullan, yoksa kod/ad ile bul/olustur)
   let mt = mat.matId ? getMaterial(mat.matId) : null;
   if(!mt) mt=ensureMaterial({code,name,unit:mat.unit,cat,brand:mat.brand,img:mat.img,standart:mat.standart,weight:mat.weight,tags:mat.tags});
@@ -4736,7 +4774,9 @@ function openSpecDetail(id){
   let alimRows='';
   if(alimlar.length){
     alimlar.forEach(e=>{ const bt=e.bina?`<span class="bina-tag" style="background:${buildingColor(e.bina)}22;color:${buildingColor(e.bina)};border:1px solid ${buildingColor(e.bina)}55">${esc(e.bina)}</span>`:'-';
-      alimRows+=`<tr><td>${fmtDate(e.date)}</td><td>${bt}</td><td style="text-align:right;font-weight:700">${fmtNum(e.qty)} <span style="color:var(--mute);font-weight:400">${esc(e.unit||'')}</span></td><td style="font-family:var(--mono);font-size:12px">${esc(e.order||'-')}</td></tr>`; });
+      // alternatif urunle yapilan alim: hangi urunle alindigi acikca gosterilir
+      const altTag=e.altId?`<div style="margin-top:3px"><span class="cat-tag" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)55" title="Bu alim alternatif urunle yapildi">ALT: ${esc(e.name||'')}</span></div>`:'';
+      alimRows+=`<tr><td>${fmtDate(e.date)}</td><td>${bt}</td><td style="text-align:right;font-weight:700">${fmtNum(e.qty)} <span style="color:var(--mute);font-weight:400">${esc(e.unit||'')}</span></td><td style="font-family:var(--mono);font-size:12px">${esc(e.order||'-')}${altTag}</td></tr>`; });
   } else {
     alimRows=`<tr><td colspan="4" style="text-align:center;color:var(--mute);padding:16px">Henuz bu spesifikasyona alim girilmemis</td></tr>`;
   }
@@ -5967,13 +6007,22 @@ function renderPLines(){ const c=document.getElementById('polines'); if(!c)retur
 }
 function specLibSrcGroup(grup){ return DB.proje.specs.filter(s=>specGroupKey(s)===grup).map(s=>({ad:s.name, alt:(s.code||'')+' '+(s.cat||''), sub:[s.code,s.cat,s.unit].filter(Boolean).join(' \u00b7 '), obj:{specId:s.id,code:s.code||'',ad:s.name,cat:s.cat||'',unit:s.unit||''}})); }
 function specLibSrcAll(){
-  return DB.proje.specs.filter(s=>!s.is_deleted && (s.bina||'')===PBINA && (s.cat||'')===PCAT)
+  const specs=DB.proje.specs.filter(s=>!s.is_deleted && (s.bina||'')===PBINA && (s.cat||'')===PCAT)
     .map(s=>{ const mt=specMaterial(s); const img=specImgOf(s); const brand=(mt&&mt.brand)||s.brand||'';
     return {ad:s.name, alt:(s.code||'')+' '+(s.cat||'')+' '+specGroupKey(s), sub:[s.code,brand,specGroupKey(s),s.unit].filter(Boolean).join(' \u00b7 '), img, obj:{specId:s.id,code:s.code||'',ad:s.name,cat:s.cat||'',unit:s.unit||'',grup:specGroupKey(s),img,brand}};});
+  // satin alinabilir alternatifler (bkz. activeAltsFor): secilirse alim ana urune sayilir
+  const alts=activeAltsFor(PBINA).filter(({sp})=>(sp.cat||'')===PCAT).map(({alt:a,sp})=>({
+    ad:a.name||a.code||'?',
+    alt:(a.code||'')+' '+(sp.code||'')+' '+(sp.name||'')+' '+specGroupKey(sp)+' alternatif',
+    sub:'ALTERNATIF \u2192 '+(sp.name||sp.code||'')+' \u00b7 '+[a.code,a.brand,a.unit||sp.unit].filter(Boolean).join(' \u00b7 '),
+    img:a.img||null,
+    obj:{specId:sp.id,altId:a.id,code:a.code||'',ad:a.name,cat:sp.cat||'',unit:a.unit||sp.unit||'',grup:specGroupKey(sp),img:a.img||null,brand:a.brand||''}
+  }));
+  return specs.concat(alts);
 }
 function acProje(i){ const el=document.getElementById('pl_ad_'+i); el.removeAttribute('readonly'); el.value=''; el.focus();
   acOpen(el, specLibSrcAll(), (it,isNew)=>{ if(isNew){ el.setAttribute('readonly',''); renderPLines(); return; }
-    pOrderLines[i]={specId:it.specId,code:it.code,ad:it.ad,cat:it.cat,unit:it.unit,grup:it.grup||'',img:it.img||null,brand:it.brand||'',qty:pOrderLines[i].qty||''};
+    pOrderLines[i]={specId:it.specId,altId:it.altId||'',code:it.code,ad:it.ad,cat:it.cat,unit:it.unit,grup:it.grup||'',img:it.img||null,brand:it.brand||'',qty:pOrderLines[i].qty||''};
     renderPLines();
     setTimeout(()=>{ const rows=document.querySelectorAll('#polines .oline'); const n=rows[i]?rows[i].querySelector('input[type=number]'):null; if(n)n.focus(); },0);
   }, false);
@@ -6010,9 +6059,9 @@ async function saveProjeOrder(){
   const lines=[], newItems=[];
   valid.forEach(l=>{ const itemId=uid(); const lgrup=l.grup||defGrup||'';
     // pdf:null bilincli - PDF tek kopya olarak siparis kaydinda durur, hareketler itemPdf() ile oradan okur
-    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,grup:lgrup,bina,img:l.img||null,brand:l.brand||'',pdf:null};
+    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,altId:l.altId||'',grup:lgrup,bina,img:l.img||null,brand:l.brand||'',pdf:null};
     newItems.push(item); DB.proje.items.push(item);
-    lines.push({code:l.code||'',ad:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),specId:l.specId,grup:lgrup});
+    lines.push({code:l.code||'',ad:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),specId:l.specId,altId:l.altId||'',grup:lgrup});
   });
   // siparis kaydinda gruplar: satirlardaki essiz gruplar
   const orderGrups=[...new Set(lines.map(l=>l.grup).filter(Boolean))];
@@ -6031,7 +6080,7 @@ async function saveProjeOrder(){
      secili binanin sartname kalemleriyle eslestirilir
    =================================================================== */
 let NORD=null; // aktif siparis taslagi: {no,date,bina,companyId,newCompany,pdf,lines[],editId}
-function _nordEmptyLine(){ return {specId:'',code:'',ad:'',cat:'',unit:'',grup:'',img:null,brand:'',qty:'',raw:''}; }
+function _nordEmptyLine(){ return {specId:'',altId:'',code:'',ad:'',cat:'',unit:'',grup:'',img:null,brand:'',qty:'',raw:''}; }
 function openNewOrderPage(){
   if(!guard('order'))return;
   if(DB.proje.specs.filter(s=>!s.is_deleted).length===0){ toast("Once sartname kalemleri tanimlanmali","err"); return; }
@@ -6089,7 +6138,7 @@ function openEditOrderPage(orderId){
   const lines=(o.lines||[]).map(l=>{
     const sp=DB.proje.specs.find(s=>s.id===l.specId);
     if(sp) return nordSpecToLine(sp, Number(l.qty), '');
-    return {specId:l.specId||'',code:l.code||'',ad:l.ad||'',cat:'',unit:l.unit||'',grup:l.grup||'',img:null,brand:'',qty:Number(l.qty)||'',raw:l.specId?'':((l.code?l.code+' ':'')+(l.ad||''))};
+    return {specId:l.specId||'',altId:l.altId||'',code:l.code||'',ad:l.ad||'',cat:'',unit:l.unit||'',grup:l.grup||'',img:null,brand:'',qty:Number(l.qty)||'',raw:l.specId?'':((l.code?l.code+' ':'')+(l.ad||''))};
   });
   NORD={no:o.no||'',date:o.date?new Date(o.date).toISOString().slice(0,10):new Date().toISOString().slice(0,10),
     bina:o.bina||'',companyId,newCompany,pdf:o.pdf||null,lines:lines.length?lines:[_nordEmptyLine()],editId:orderId};
@@ -6101,13 +6150,39 @@ function closeNewOrderPage(){
   if(filled && !confirm('Girilen satirlar kaydedilmeden silinecek. Cikmak istediginize emin misiniz?')) return;
   PNEWORD=false; NORD=null; render();
 }
+// bir binadaki SATIN ALINABILIR alternatifler: durumu "kullanımda" veya "onaylandi" olan,
+// ana sartnamesi o binada olan alternatif urunler (ana spec ile birlikte doner).
+// Siparis girisinde alternatif secilirse satir ana spec'in specId'sine baglanir -
+// boylece alim miktari ANA urunun hedef/ilerlemesine sayilir, faturada ise gercekte
+// alinan (alternatif) urunun adi/kodu gorunur.
+function activeAltsFor(bina){
+  const out=[];
+  (DB.proje.alternatives||[]).forEach(a=>{
+    if(a.status!=='kullanımda'&&a.status!=='onaylandi') return;
+    const sp=DB.proje.specs.find(s=>s.id===a.specId&&!s.is_deleted&&(s.bina||'')===(bina||''));
+    if(sp) out.push({alt:a,sp});
+  });
+  return out;
+}
+function nordAltToLine(a,sp,qty,raw){
+  return {specId:sp.id,altId:a.id,code:a.code||'',ad:a.name,cat:sp.cat||'',unit:a.unit||sp.unit||'',grup:specGroupKey(sp),img:a.img||null,brand:a.brand||'',qty:qty!=null&&!isNaN(qty)?qty:'',raw:raw||''};
+}
 // secili binadaki TUM bolumlerin sartname kalemleri (autocomplete kaynagi)
+// + satin alinabilir alternatif urunler (ana urunle iliskisi gorunur sekilde)
 function nordSpecSrc(){
-  return DB.proje.specs.filter(s=>!s.is_deleted && (s.bina||'')===(NORD.bina||''))
+  const specs=DB.proje.specs.filter(s=>!s.is_deleted && (s.bina||'')===(NORD.bina||''))
     .map(s=>{ const mt=specMaterial(s); const img=specImgOf(s); const brand=(mt&&mt.brand)||s.brand||'';
       return {ad:s.name||s.code||'?', alt:(s.code||'')+' '+(s.cat||'')+' '+specGroupKey(s),
         sub:[s.code,brand,s.cat,specGroupKey(s),s.unit].filter(Boolean).join(' · '), img,
         obj:{specId:s.id,code:s.code||'',ad:s.name,cat:s.cat||'',unit:s.unit||'',grup:specGroupKey(s),img,brand}};});
+  const alts=activeAltsFor(NORD.bina).map(({alt:a,sp})=>({
+    ad:a.name||a.code||'?',
+    alt:(a.code||'')+' '+(sp.code||'')+' '+(sp.name||'')+' '+specGroupKey(sp)+' alternatif',
+    sub:'ALTERNATIF → '+(sp.name||sp.code||'')+' · '+[a.code,a.brand,a.unit||sp.unit].filter(Boolean).join(' · '),
+    img:a.img||null,
+    obj:{specId:sp.id,altId:a.id,code:a.code||'',ad:a.name,cat:sp.cat||'',unit:a.unit||sp.unit||'',grup:specGroupKey(sp),img:a.img||null,brand:a.brand||''}
+  }));
+  return specs.concat(alts);
 }
 // Turkce/Excel sayi bicimini cozer: "1.234,56" -> 1234.56 ; "5" -> 5 ; gecersiz -> NaN
 function nordParseQty(s){
@@ -6137,8 +6212,26 @@ function nordMatchSpec(cells){
     return texts.some(t=>t.length>=3 && hay.indexOf(t)>=0); }));
   return sp||null;
 }
+// sartname eslesmezse: satin alinabilir alternatif urunlerle eslestir (kod > ad > icerik)
+function nordMatchAlt(cells){
+  const pairs=activeAltsFor(NORD.bina);
+  const texts=cells.map(c=>norm(c).trim()).filter(Boolean);
+  for(const t of texts){ const hit=pairs.filter(p=>norm(p.alt.code||'').trim()===t); if(hit.length===1) return hit[0]; }
+  for(const t of texts){ const hit=pairs.filter(p=>norm(p.alt.name||'').trim()===t); if(hit.length===1) return hit[0]; }
+  const hit=pairs.filter(p=>{ const hay=norm((p.alt.code||'')+' '+(p.alt.name||''));
+    return texts.some(t=>t.length>=3 && hay.indexOf(t)>=0); });
+  return hit.length===1?hit[0]:null;
+}
+// eslestirmeyi satira cevir: once sartname, o yoksa alternatif; hicbiri yoksa null
+function nordMatchToLine(cells,qty,raw){
+  const sp=nordMatchSpec(cells);
+  if(sp) return nordSpecToLine(sp,qty,raw);
+  const pa=nordMatchAlt(cells);
+  if(pa) return nordAltToLine(pa.alt,pa.sp,qty,raw);
+  return null;
+}
 function nordSpecToLine(s,qty,raw){ const mt=specMaterial(s); const img=specImgOf(s);
-  return {specId:s.id,code:s.code||'',ad:s.name,cat:s.cat||'',unit:s.unit||'',grup:specGroupKey(s),img,brand:(mt&&mt.brand)||s.brand||'',qty:qty!=null&&!isNaN(qty)?qty:'',raw:raw||''}; }
+  return {specId:s.id,altId:'',code:s.code||'',ad:s.name,cat:s.cat||'',unit:s.unit||'',grup:specGroupKey(s),img,brand:(mt&&mt.brand)||s.brand||'',qty:qty!=null&&!isNaN(qty)?qty:'',raw:raw||''}; }
 // panodan gelen metni ayristir: her satir TAB'li hucreler; son sayisal hucre=miktar, kalani urun metni
 function nordPaste(text){
   const rows=String(text||'').replace(/\r/g,'').split('\n').map(r=>r.split('\t').map(c=>c.trim())).filter(r=>r.some(c=>c));
@@ -6154,9 +6247,9 @@ function nordPaste(text){
     for(let k=cells.length-1;k>=0;k--){ const v=nordParseQty(cells[k]); if(!isNaN(v)&&v>0){ qty=v; qtyIdx=k; break; } }
     const textCells=cells.filter((c,k)=>k!==qtyIdx&&c);
     if(!textCells.length) continue;
-    const sp=nordMatchSpec(textCells);
     const rawText=textCells.join(' | ');
-    if(sp){ NORD.lines.push(nordSpecToLine(sp,qty,rawText)); matched++; }
+    const ml=nordMatchToLine(textCells,qty,rawText);
+    if(ml){ NORD.lines.push(ml); matched++; }
     else { const l=_nordEmptyLine(); l.raw=rawText; l.qty=!isNaN(qty)?qty:''; NORD.lines.push(l); }
     added++;
   }
@@ -6181,8 +6274,8 @@ function nordSetBina(b){
     const src=l.specId?((l.code?l.code+' ':'')+(l.ad||'')):l.raw;
     if(!src) return _nordEmptyLine();
     const cells=l.specId?[l.code,l.ad].filter(Boolean):l.raw.split(' | ');
-    const sp=nordMatchSpec(cells);
-    if(sp) return nordSpecToLine(sp,l.qty!==''?Number(l.qty):NaN,l.raw);
+    const ml=nordMatchToLine(cells,l.qty!==''?Number(l.qty):NaN,l.raw);
+    if(ml) return ml;
     const nl=_nordEmptyLine(); nl.raw=l.raw||src; nl.qty=l.qty; return nl;
   });
   nordRenderLines();
@@ -6198,7 +6291,7 @@ function nordAc(i){
   acOpen(el, nordSpecSrc(), (it,isNew)=>{
     if(isNew){ nordRenderLines(); return; }
     const keepQty=NORD.lines[i].qty;
-    NORD.lines[i]={specId:it.specId,code:it.code,ad:it.ad,cat:it.cat,unit:it.unit,grup:it.grup||'',img:it.img||null,brand:it.brand||'',qty:keepQty,raw:''};
+    NORD.lines[i]={specId:it.specId,altId:it.altId||'',code:it.code,ad:it.ad,cat:it.cat,unit:it.unit,grup:it.grup||'',img:it.img||null,brand:it.brand||'',qty:keepQty,raw:''};
     nordRenderLines();
     setTimeout(()=>{ const rows=document.querySelectorAll('#nordLinesWrap .nord-row:not(.nord-row-head)'); const n=rows[i]&&rows[i].querySelector('input[type=number]'); if(n)n.focus(); },0);
   }, false);
@@ -6213,8 +6306,12 @@ function nordLinesHtml(){
   const rows=NORD.lines.map((l,i)=>{
     const ok=!!l.specId;
     const status=ok?`<span class="nord-pill ok">eslesti</span>`:(l.raw?`<span class="nord-pill err">secim bekliyor</span>`:`<span class="nord-pill">bos</span>`);
+    // alternatif urunle alim: ana urun adi rozette gosterilir - alim ana urunun ilerlemesine sayilir
+    const altSp=l.altId?DB.proje.specs.find(s=>s.id===l.specId):null;
+    const altBadge=l.altId?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)55" title="Alternatif urun - alim ana urunun (${esc(altSp?altSp.name:'')}) ilerlemesine sayilir">ALTERNATIF → ${esc(altSp?altSp.name:'ana urun')}</span>`:'';
     // sartname/bolum/durum artik ayri sutun degil: urun hucresinin altinda kucuk etiketler
     const tags=ok?`<div class="nord-tags">
+        ${altBadge}
         ${l.grup?`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(l.grup)}</span>`:''}
         ${l.cat?`<span class="cat-tag" style="background:var(--dim)33;color:var(--mute)">${esc(l.cat)}</span>`:''}
         ${status}</div>`:'';
@@ -6327,8 +6424,10 @@ async function saveNewOrder(){
   const lines=[], newItems=[];
   valid.forEach(l=>{ const itemId=uid();
     // pdf:null bilincli - PDF tek kopya olarak siparis kaydinda durur, hareketler itemPdf() ile oradan okur
-    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,grup:l.grup||'',bina,img:l.img||null,brand:l.brand||'',pdf:null};
-    newItems.push(item); lines.push({code:l.code||'',ad:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),specId:l.specId,grup:l.grup||''});
+    // altId: alternatif urunle yapilan alim - specId ana urunu gosterir (ilerleme ona sayilir),
+    // ad/kod ise gercekte alinan alternatif urunundur (fatura gercegi yansitir)
+    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,altId:l.altId||'',grup:l.grup||'',bina,img:l.img||null,brand:l.brand||'',pdf:null};
+    newItems.push(item); lines.push({code:l.code||'',ad:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),specId:l.specId,altId:l.altId||'',grup:l.grup||''});
   });
   const orderGrups=[...new Set(lines.map(l=>l.grup).filter(Boolean))];
   const orderGrup=orderGrups.length===1?orderGrups[0]:(orderGrups.length>1?'Karma ('+orderGrups.length+' spek)':'');
