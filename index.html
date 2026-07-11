@@ -2884,7 +2884,10 @@ function openMaterialModal(id){
     </div>
     <div class="frow"><label>Proje  <span class="t-meta">(bilgi amacli)</span></label><input id="mt_proje" value="${m?esc(m.proje||''):''}" placeholder="orn. X Santiyesi"></div>
     <div class="frow"><label>Not</label><textarea id="mt_note" placeholder="Teknik ozellik, tedarikci...">${m?esc(m.note||''):''}</textarea></div>
-    <div class="frow"><label>Fotograf</label><div class="drop ${m&&m.img?'has':''}" id="mtImgDrop" onclick="document.getElementById('mtImgInput').click()">${m&&m.img?`<img class="img-prev" src="${m.img}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div><input type="file" id="mtImgInput" accept="image/*" class="hidden" onchange="pickImg(event,'mtImgDrop')"></div>
+    <div class="frow"><label>Fotograf  <span class="t-meta">(dosya secin veya internetten resim linki yapistirin)</span></label>
+      <div class="drop ${m&&m.img?'has':''}" id="mtImgDrop" onclick="document.getElementById('mtImgInput').click()">${m&&m.img?`<img class="img-prev" src="${m.img}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div>
+      <input type="file" id="mtImgInput" accept="image/*" class="hidden" onchange="pickImg(event,'mtImgDrop')">
+      <input id="mt_imgUrl" style="margin-top:7px" placeholder="veya resim linki: https://..." value="${m&&m.img&&/^https?:/i.test(m.img)?esc(m.img):''}" onchange="setMatImgUrl(this.value)"></div>
     ${usage.length?`<p style="font-size:11px;color:var(--dim);font-family:var(--mono)">Bu malzeme ${usage.length} sartnamede kullaniliyor. Degisiklik hepsini etkiler.</p>`:''}
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveMaterial(${m?`'${m.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
@@ -4672,6 +4675,16 @@ function closeModal(){ if(window._binaViewer){ window._binaViewer.dispose(); win
 let modalImg=null, modalPdf=null, modalTags=[];
 function compressImg(file,cb){ const r=new FileReader(); r.onload=()=>{ const img=new Image(); img.onload=()=>{ const max=900; let{width:w,height:h}=img; if(w>max||h>max){const s=Math.min(max/w,max/h);w*=s;h*=s;} const c=document.createElement('canvas'); c.width=w;c.height=h; c.getContext('2d').drawImage(img,0,0,w,h); cb(c.toDataURL('image/jpeg',0.8)); }; img.src=r.result; }; r.readAsDataURL(file); }
 function pickImg(e,dropId){ const f=e.target.files[0]; if(!f)return; compressImg(f,d=>{ modalImg=d; const el=document.getElementById(dropId); el.classList.add('has'); el.innerHTML=`<img class="img-prev" src="${d}">`; }); }
+// malzeme modalinda internetten resim linki yapistirma (Excel'deki "Resim Linki" sutununun
+// program ici karsiligi). Link once denenerek yuklenir: bozuk/erisilemez linkte kayit KIRLETILMEZ.
+function setMatImgUrl(v){ v=String(v||'').trim();
+  if(!v){ return; }
+  if(!/^https?:\/\//i.test(v)){ toast('Gecerli bir link girin (https:// ile baslamali)','err'); return; }
+  const test=new Image();
+  test.onload=()=>{ modalImg=v; const el=document.getElementById('mtImgDrop'); if(el){ el.classList.add('has'); el.innerHTML=`<img class="img-prev" src="${v}">`; } toast('Resim linki eklendi'); };
+  test.onerror=()=>{ toast('Resim linkten yuklenemedi - linki kontrol edin (dogrudan resim dosyasina isaret etmeli)','err'); };
+  test.src=v;
+}
 function pickPdf(e,dropId){ const f=e.target.files[0]; if(!f)return; if(f.size>5*1024*1024){toast("PDF 5MB'tan buyuk","err");return;} const r=new FileReader(); r.onload=()=>{ modalPdf={name:f.name,data:r.result}; const el=document.getElementById(dropId); el.classList.add('has'); el.innerHTML=`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(f.name)}<button onclick="event.stopPropagation();modalPdf=null;render2pdf('${dropId}')">x</button></div>`; }; r.readAsDataURL(f); }
 function render2pdf(dropId){ const el=document.getElementById(dropId); el.classList.remove('has'); el.innerHTML=`${icoDoc()}<div style="margin-top:6px">PDF ekleyin</div>`; }
 
