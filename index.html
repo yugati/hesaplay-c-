@@ -807,17 +807,32 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .order-foot{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text);border-top:1px solid var(--line);padding-top:9px}
 .order-open{color:#a855f7;font-weight:600;display:flex;align-items:center;gap:2px}
 /* fatura gorunumu */
-.invoice{background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:20px}
-.invoice-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--line);padding-bottom:14px;margin-bottom:14px;gap:14px}
-.invoice-no{font-size:20px;font-weight:800;display:flex;align-items:center;gap:8px}
-.invoice-no svg{width:18px;height:18px;color:#a855f7}
-.invoice-sub{font-size:12px;color:var(--mute);margin-top:5px}
-.invoice-date{font-size:12px;color:var(--mute);font-family:var(--mono);margin-top:6px}
+/* Fatura / Siparis Detayi - profesyonel yerlesim: bilgiler etiketli hucre gridinde,
+   kalem tablosu SABIT sutun genislikli (table-layout:fixed) - uzun malzeme adi/spek kodu
+   sutunlari itip kaydiramaz, her satir ayni hizada kalir */
+.modal.drawer.inv-drawer{max-width:780px}
+.invoice{background:var(--bg);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.inv-top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.inv-id{display:flex;align-items:center;gap:10px;min-width:0}
+.inv-id svg{width:20px;height:20px;color:#a855f7;flex-shrink:0}
+.inv-id span{display:block;font-size:9.5px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.5px}
+.inv-id b{font-size:16px;font-weight:800;line-height:1.25;word-break:break-all}
+.inv-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.inv-cell{background:var(--bg);padding:9px 16px;min-width:0}
+.inv-cell label{display:block;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);margin-bottom:2px}
+.inv-cell b{font-size:13px;font-weight:600;overflow-wrap:break-word}
+@media(max-width:560px){.inv-grid{grid-template-columns:repeat(2,1fr)}}
+.inv-body{padding:4px 12px 0}
 .invoice-table{width:100%;border-collapse:collapse;font-size:13px}
 .invoice-table th{text-align:left;padding:8px 10px;border-bottom:2px solid var(--line);color:var(--mute);font-size:11px;text-transform:uppercase;letter-spacing:.3px}
 .invoice-table td{padding:8px 10px;border-bottom:1px solid var(--line)}
 .invoice-table tfoot td{border-top:2px solid var(--line);border-bottom:none;font-size:14px;padding-top:11px}
-.invoice-footer{margin-top:14px;font-size:12px;color:var(--mute);text-align:center;font-family:var(--mono)}
+.invoice-table.inv-lines{table-layout:fixed;min-width:0}
+.inv-lines th,.inv-lines td{overflow-wrap:break-word;vertical-align:top}
+.inv-lines .inv-code{font-family:var(--mono);font-size:11.5px;word-break:break-all}
+.inv-lines .num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.inv-lines tbody tr:nth-child(even) td{background:var(--panel2)}
+.invoice-footer{padding:10px 16px;font-size:11.5px;color:var(--mute);text-align:center;font-family:var(--mono);border-top:1px solid var(--line);margin-top:8px}
 .prog-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
 .prog-name{font-weight:700;font-size:14px}
 .prog-cat{font-size:11px;color:var(--mute);font-family:var(--mono);margin-top:4px;white-space:nowrap;overflow-x:auto;scrollbar-width:none}
@@ -2555,12 +2570,12 @@ function matLibFilteredSorted(){
   if(SEARCH){
     mats=mats.filter(m=>matMatchesLibSearch(m,SEARCH));
     // aramada en iyi eslesen en ustte: birebir kod/ad eslesmesi > icinde gecen > benzer (subsequence)
+    // > sadece diger alanlardan (marka/not/standart/etiket) eslesenler.
+    // ONEMLI: acScore eslesmeyene -1 doner; -1 kucuk oldugu icin "en iyi" sanilip
+    // liste basina cikiyordu (aranan urun en alta dusuyordu) - eslesmeyen EN SONA atilir.
     const nq=norm(SEARCH).trim();
-    mats.sort((a,b)=>{
-      const sa=acScore(norm((a.code||'')+' '+(a.name||'')+' '+(a.cat||'')),nq);
-      const sb=acScore(norm((b.code||'')+' '+(b.name||'')+' '+(b.cat||'')),nq);
-      return sa-sb||(a.name||'').localeCompare(b.name||'','tr');
-    });
+    const rank=m=>{ const s=acScore(norm((m.code||'')+' '+(m.name||'')+' '+(m.cat||'')),nq); return s<0?1e9:s; };
+    mats.sort((a,b)=>rank(a)-rank(b)||(a.name||'').localeCompare(b.name||'','tr'));
   } else {
     mats.sort((a,b)=>(a.cat||'').localeCompare(b.cat||'','tr')||(a.name||'').localeCompare(b.name||'','tr'));
   }
@@ -2594,8 +2609,12 @@ function clearMatTagFilter(){ _matTagFilter.clear(); render(); }
 // paylasilan arama filtresi: kod+ad+kategori+marka+not+standart+etiket+fiilen kullanildigi bolumler
 // (renderMaterialLib ve renderMaterialLibVisibleIds ayni metni kullanir, aksi halde ikisi farkli satir kumeleri gorebilir)
 function matMatchesLibSearch(m,q){
+  // alanlar TEK TEK denenir: eskiden tum alanlar tek metne birlestirilip harf-sirasi
+  // (subsequence) aranıyordu - aranan kelimenin harfleri farkli alanlara dagilmis
+  // tamamen alakasiz kayitlar da eslesiyordu (orn. "Коробка" aramasinda Щиток satirlari)
   const usageCats=materialUsage(m.id).map(s=>s.cat||'').join(' ');
-  return matchText([m.code,m.name,m.cat,m.brand,m.note,m.standart,(m.tags||[]).join(' '),usageCats].filter(Boolean).join(' '),q);
+  return [m.code,m.name,m.cat,m.brand,m.note,m.standart,(m.tags||[]).join(' '),usageCats]
+    .some(f=>f && matchText(f,q));
 }
 function matMatchesTagFilter(m){ if(!_matTagFilter.size) return true; return (m.tags||[]).some(t=>_matTagFilter.has(t)); }
 function toggleMatCatFilter(c){ if(_matCatFilter.has(c))_matCatFilter.delete(c); else _matCatFilter.add(c); render(); }
@@ -2847,7 +2866,7 @@ function openMaterialModal(id){
   const cats=[...new Set([...(DB.proje.sections||PROJ_CATS),...(DB.proje.materials||[]).map(x=>x.cat).filter(Boolean)])];
   const allTags=[...new Set((DB.proje.materials||[]).flatMap(x=>x.tags||[]))].sort((a,b)=>a.localeCompare(b,'tr'));
   const usage=m?materialUsage(m.id):[];
-  const html=`<div class="modal-bg" onclick="matModalBgClick(event)"><div class="modal"><div class="modal-head"><h3>${m?'Malzeme Duzenle':'Yeni Malzeme'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+  const html=`<div class="modal-bg" onclick="matModalBgClick(event)"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${m?'Malzeme Duzenle':'Yeni Malzeme'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow"><label>Malzeme Adi *</label><input id="mt_name" value="${m?esc(m.name):''}" placeholder="orn. Galvaniz Kablo Tavasi 200mm"></div>
     <div class="frow two"><div><label>Urun Kodu</label><input id="mt_code" value="${m?esc(m.code||''):''}" placeholder="orn. 121491"></div><div><label>Marka  <span class="t-meta">(her satir ayri gosterilir)</span></label><textarea id="mt_brand" rows="2" style="min-height:38px" placeholder="orn. Hilti, Schneider">${m?esc(m.brand||''):''}</textarea></div></div>
     <div class="frow two"><div><label>Standart Numarasi</label><input id="mt_standart" value="${m?esc(m.standart||''):''}" placeholder="orn. TS EN 61386"></div><div><label>Agirlik (kg)  <span class="t-meta">(birim agirlik)</span></label><input id="mt_weight" type="number" step="any" min="0" value="${m&&m.weight!=null?m.weight:''}" placeholder="0"></div></div>
@@ -4484,30 +4503,35 @@ function openOrderDetail(id){
     const altNote=l.altId?`<div style="margin-top:2px"><span class="cat-tag" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)55">ALTERNATIF${altSp?' → '+esc(altSp.name):''}</span></div>`:'';
     rows+=`<tr>
     <td style="text-align:center;color:var(--mute)">${i+1}</td>
-    <td style="font-family:var(--mono);font-size:12px">${esc(l.code||'-')}</td>
+    <td class="inv-code">${esc(l.code||'-')}</td>
     <td>${esc(l.ad)}${altNote}</td>
-    <td style="text-align:right;font-weight:700">${fmtNum(l.qty)}</td>
+    <td class="num" style="font-weight:700">${fmtNum(l.qty)}</td>
     <td style="color:var(--mute)">${esc(l.unit||'')}</td></tr>`; });
   const qty=o.lines.reduce((x,l)=>x+(Number(l.qty)||0),0);
-  const html=`<div class="modal-bg drawer-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide drawer">
+  const html=`<div class="modal-bg drawer-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide drawer inv-drawer">
     <div class="modal-head"><h3>Fatura / Siparis Detayi</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">
       <div class="invoice">
-        <div class="invoice-head">
-          <div>
-            <div class="invoice-no">${icoDoc()} ${esc(o.no)}</div>
-            <div class="invoice-sub">Spesifikasyon: <b>${esc(o.grup||'-')}</b>${o.company?` · Sirket: <b>${esc(o.company)}</b>`:''}</div>
-          </div>
-          <div style="text-align:right">
-            <div><span class="bina-tag" style="background:${col}22;color:${col};border:1px solid ${col}55;font-size:12px">${esc(o.bina||'-')}</span></div>
-            <div class="invoice-date">${fmtDate(o.date)}</div>
-          </div>
+        <div class="inv-top">
+          <div class="inv-id">${icoDoc()}<div><span>Fatura / Siparis No</span><b>${esc(o.no)}</b></div></div>
+          <span class="bina-tag" style="background:${col}22;color:${col};border:1px solid ${col}55;font-size:12px">${esc(o.bina||'-')}</span>
         </div>
-        <table class="invoice-table">
-          <thead><tr><th style="width:34px">#</th><th>Spek No</th><th>Malzeme</th><th style="text-align:right">Miktar</th><th>Birim</th></tr></thead>
+        <div class="inv-grid">
+          <div class="inv-cell"><label>Tarih</label><b>${fmtDate(o.date)}</b></div>
+          <div class="inv-cell"><label>Sirket</label><b>${esc(o.company||'-')}</b></div>
+          <div class="inv-cell"><label>Sartname</label><b>${esc(o.grup||'-')}</b></div>
+          <div class="inv-cell"><label>Kalem</label><b>${o.lines.length} satir</b></div>
+          <div class="inv-cell"><label>Toplam Birim</label><b>${fmtNum(qty)}</b></div>
+          <div class="inv-cell"><label>Fatura PDF</label><b>${o.pdf?esc(o.pdf.name||'Ekli'):'-'}</b></div>
+        </div>
+        <div class="inv-body">
+        <table class="invoice-table inv-lines">
+          <colgroup><col style="width:32px"><col style="width:118px"><col><col style="width:84px"><col style="width:62px"></colgroup>
+          <thead><tr><th>#</th><th>Spek No</th><th>Malzeme</th><th class="num">Miktar</th><th>Birim</th></tr></thead>
           <tbody>${rows}</tbody>
-          <tfoot><tr><td colspan="3" style="text-align:right;font-weight:700">TOPLAM</td><td style="text-align:right;font-weight:800">${fmtNum(qty)}</td><td>kalem birimi</td></tr></tfoot>
+          <tfoot><tr><td colspan="3" style="text-align:right;font-weight:700">TOPLAM</td><td class="num" style="font-weight:800">${fmtNum(qty)}</td><td style="color:var(--mute)">birim</td></tr></tfoot>
         </table>
+        </div>
         <div class="invoice-footer">${o.lines.length} kalem · ${fmtNum(qty)} toplam birim · ${esc(o.bina||'')} binasi${o.company?' · '+esc(o.company):''}</div>
       </div>
     </div>
