@@ -3386,8 +3386,9 @@ function altReasonLabel(r){ return {tedarik:'Tedarik Sorunu',uretim:'Üretim Dur
 function specAlts(specId){ return (DB.proje.alternatives||[]).filter(a=>a.specId===specId); }
 function buildAltCardHtml(a, specId){
   const sc=altStatusColor(a.status);
-  const icon=a.img?`<img src="${a.img}" class="alt-img" onclick="event.stopPropagation();lightbox('${a.img}')" title="Büyüt">`:`<div class="alt-img-ph">${phIcoSm()}</div>`;
-  const metaParts=[a.code,a.brand,a.unit].filter(Boolean);
+  const la=altLive(a); // kod/marka/birim/foto kutuphaneden canli (bkz. altLive)
+  const icon=la.img?`<img src="${la.img}" class="alt-img" onclick="event.stopPropagation();lightbox('${la.img}')" title="Büyüt">`:`<div class="alt-img-ph">${phIcoSm()}</div>`;
+  const metaParts=[la.code,la.brand,la.unit].filter(Boolean);
   const adminBtns=isAdmin()?`
     ${a.status==='oneri'?`<button class="mini-btn in" title="Onayla" onclick="changeAltStatus('${a.id}','onaylandi','${specId}')"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg></button>
     <button class="mini-btn del" title="Reddet" onclick="changeAltStatus('${a.id}','reddedildi','${specId}')"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg></button>`:''}
@@ -3399,7 +3400,7 @@ function buildAltCardHtml(a, specId){
     ${icon}
     <div class="alt-info">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
-        <span class="alt-name">${esc(a.name)}</span>
+        <span class="alt-name">${esc(la.name)}</span>
         <span class="alt-status" style="background:${sc}22;color:${sc};border:1px solid ${sc}55">${altStatusLabel(a.status)}</span>
       </div>
       ${metaParts.length?`<div class="alt-meta">${esc(metaParts.join(' · '))}</div>`:''}
@@ -3436,7 +3437,9 @@ function openAltModal(specId, altId){
   if(!canCreate('proje')&&!altId){ toast('Bu işlem için yetkiniz yok','err'); return; }
   const ex=altId?(DB.proje.alternatives||[]).find(a=>a.id===altId):null;
   _altMat=null;
-  if(ex){ _altMat={id:ex.matId||null,name:ex.name,code:ex.code||'',brand:ex.brand||'',unit:ex.unit||'',img:ex.img||null,standart:ex.standart||'',weight:ex.weight!=null?ex.weight:null,tags:(ex.tags||[]).slice()}; }
+  // duzenlemede kopyalar degil kutuphanedeki GUNCEL degerler on-dolgu yapilir; boylece
+  // Kaydet'e basmak alt kaydindaki bayat kopyalari da kendiliginden tazeler (kendi kendini onarim)
+  if(ex){ const la=altLive(ex); _altMat={id:ex.matId||null,name:la.name,code:la.code,brand:la.brand,unit:la.unit,img:la.img,standart:la.standart,weight:la.weight,tags:la.tags}; }
   const reasons=[['tedarik','Tedarik Sorunu'],['uretim','Üretim Durdu'],['temin','Uzun Temin Süresi'],['teknik','Teknik Sebep']];
   const statuses=[['oneri','Öneri'],['onaylandi','Onaylandı'],['kullanımda','Kullanımda'],['reddedildi','Reddedildi']];
   const curReason=ex?ex.reason:'tedarik'; const curStatus=ex?ex.status:'oneri';
@@ -3459,7 +3462,7 @@ function openAltModal(specId, altId){
       </div>`:''}
     </div>
     <div class="modal-foot">
-      ${ex&&isAdmin()?`<button class="mini-btn del" style="margin-right:auto" onclick="delAlt('${ex.id}','${specId}')">${icoTrash()} Sil</button>`:''}
+      ${ex&&isAdmin()?`<button class="btn btn-ghost" style="margin-right:auto;border-color:var(--red)55;color:var(--red)" onclick="delAlt('${ex.id}','${specId}')">${icoTrash()} Sil</button>`:''}
       <button class="btn btn-ghost" onclick="closeAltModal()">İptal</button>
       <button class="btn btn-add" onclick="saveAlt('${specId}','${altId||''}')">Kaydet</button>
     </div>
@@ -3594,6 +3597,15 @@ function materialUsage(matId){ const mt=getMaterial(matId); if(!mt)return[]; con
 // HER ZAMAN buradan okunmali; sp uzerindeki kopyalar sadece acil yedektir (kopya bayatlasa bile ekran dogru kalir).
 function specMaterial(sp){ if(!sp)return null; return (sp.matId?getMaterial(sp.matId):null)||findMaterial(sp.code,sp.name)||null; }
 function specImgOf(sp){ const mt=specMaterial(sp); return (mt&&mt.img)||sp.img||null; }
+// TEK KAYNAK OKUMA (alternatifler): alternatifin bagli oldugu kutuphane malzemesi - specMaterial'in esi.
+// Alternatif kaydi olusturuldugu anki bilgileri kopya olarak tasir; kutuphanede sonradan yapilan
+// duzenleme (orn. birim m -> adet) bu kopyalara YANSIMAZ. Ekranlar ve siparis akisi bilgiyi
+// HER ZAMAN altLive() ile okumali; kopyalar sadece acil yedektir (malzeme silinse bile ekran dogru kalir).
+function altMaterial(a){ if(!a)return null; return (a.matId?getMaterial(a.matId):null)||findMaterial(a.code,a.name)||null; }
+function altLive(a){ const mt=altMaterial(a); return {
+  name:(mt&&mt.name)||a.name||'', code:(mt&&mt.code)||a.code||'', brand:(mt&&mt.brand)||a.brand||'',
+  unit:(mt&&mt.unit)||a.unit||'', img:(mt&&mt.img)||a.img||null, standart:(mt&&mt.standart)||a.standart||'',
+  weight:(mt&&mt.weight!=null)?mt.weight:(a.weight!=null?a.weight:null), tags:((mt&&mt.tags)||a.tags||[]).slice() }; }
 
 /* ============ EXCEL UPSERT IMPORT SISTEMI ============ */
 // esnek baslik eslestirme: bir satirdaki sutun adlarini normalize edip index haritasi dondurur
@@ -4448,7 +4460,7 @@ function openOrderDetail(id){
     </div>
     <div class="modal-foot">
       ${o.pdf?`<button class="btn btn-ghost" onclick="openProjeOrderPdf('${o.id}')">${icoDoc()} Fatura PDF (${esc(o.pdf.name||'belge')})</button>`:''}
-      <button class="mini-btn del" style="margin-right:auto" onclick="delProjeOrder('${o.id}')">${icoTrash()} Siparisi Sil</button>
+      <button class="btn btn-ghost" style="margin-right:auto;border-color:var(--red)55;color:var(--red)" onclick="delProjeOrder('${o.id}')">${icoTrash()} Siparisi Sil</button>
       ${isAdmin()?`<button class="btn btn-ghost" style="border-color:var(--blue)55;color:var(--blue)" onclick="editOrderWithPass('${o.id}')" title="Yonetici sifresi dogrulanarak siparis duzenlenir; degisiklik bagli stok girislerine ve ilerlemeye otomatik yansir">✎ Duzenle (Yonetici)</button>`:''}
       <button class="btn btn-ghost" onclick="closeModal()">Kapat</button></div>
   </div></div>`;
@@ -4689,7 +4701,7 @@ function openProjeItemEdit(id){
     <div class="frow"><label>Not</label><textarea id="ei_note">${esc(it.note||'')}</textarea></div>
     <div class="frow"><label>Malzeme Fotografi</label><div class="drop ${it.img?'has':''}" id="eiImgDrop" onclick="document.getElementById('eiImgInput').click()">${it.img?`<img class="img-prev" src="${it.img}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div><input type="file" id="eiImgInput" accept="image/*" class="hidden" onchange="pickImg(event,'eiImgDrop')"></div>
     <div class="frow"><label>Siparis PDF'i</label><div class="drop ${it.pdf?'has':''}" id="eiPdfDrop" onclick="document.getElementById('eiPdfInput').click()">${icoDoc()}<div style="margin-top:6px">${it.pdf?esc(it.pdf.name):'PDF ekleyin'}</div></div><input type="file" id="eiPdfInput" accept="application/pdf" class="hidden" onchange="pickPdf(event,'eiPdfDrop')"></div>
-  </div><div class="modal-foot"><button class="mini-btn del" style="margin-right:auto" onclick="delProjeItem('${it.id}')">${icoTrash()} Sil</button><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveProjeItemEdit('${it.id}')">Kaydet</button></div></div></div>`;
+  </div><div class="modal-foot"><button class="btn btn-ghost" style="margin-right:auto;border-color:var(--red)55;color:var(--red)" onclick="delProjeItem('${it.id}')">${icoTrash()} Sil</button><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveProjeItemEdit('${it.id}')">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
 }
 async function saveProjeItemEdit(id){
@@ -6097,13 +6109,13 @@ function specLibSrcAll(){
     .map(s=>{ const mt=specMaterial(s); const img=specImgOf(s); const brand=(mt&&mt.brand)||s.brand||'';
     return {ad:s.name, alt:(s.code||'')+' '+(s.cat||'')+' '+specGroupKey(s), sub:[s.code,brand,specGroupKey(s),s.unit].filter(Boolean).join(' \u00b7 '), img, obj:{specId:s.id,code:s.code||'',ad:s.name,cat:s.cat||'',unit:s.unit||'',grup:specGroupKey(s),img,brand}};});
   // satin alinabilir alternatifler (bkz. activeAltsFor): secilirse alim ana urune sayilir
-  const alts=activeAltsFor(PBINA).filter(({sp})=>(sp.cat||'')===PCAT).map(({alt:a,sp})=>({
-    ad:a.name||a.code||'?',
-    alt:(a.code||'')+' '+(sp.code||'')+' '+(sp.name||'')+' '+specGroupKey(sp)+' alternatif',
-    sub:'ALTERNATIF \u2192 '+(sp.name||sp.code||'')+' \u00b7 '+[a.code,a.brand,a.unit||sp.unit].filter(Boolean).join(' \u00b7 '),
-    img:a.img||null,
-    obj:{specId:sp.id,altId:a.id,code:a.code||'',ad:a.name,cat:sp.cat||'',unit:a.unit||sp.unit||'',grup:specGroupKey(sp),img:a.img||null,brand:a.brand||''}
-  }));
+  const alts=activeAltsFor(PBINA).filter(({sp})=>(sp.cat||'')===PCAT).map(({alt:a,sp})=>{ const la=altLive(a); return {
+    ad:la.name||la.code||'?',
+    alt:(la.code||'')+' '+(a.code||'')+' '+(a.name||'')+' '+(sp.code||'')+' '+(sp.name||'')+' '+specGroupKey(sp)+' alternatif',
+    sub:'ALTERNATIF \u2192 '+(sp.name||sp.code||'')+' \u00b7 '+[la.code,la.brand,la.unit||sp.unit].filter(Boolean).join(' \u00b7 '),
+    img:la.img,
+    obj:{specId:sp.id,altId:a.id,code:la.code,ad:la.name,cat:sp.cat||'',unit:la.unit||sp.unit||'',grup:specGroupKey(sp),img:la.img,brand:la.brand}
+  };});
   return specs.concat(alts);
 }
 function acProje(i){ const el=document.getElementById('pl_ad_'+i); el.removeAttribute('readonly'); el.value=''; el.focus();
@@ -6251,7 +6263,8 @@ function activeAltsFor(bina){
   return out;
 }
 function nordAltToLine(a,sp,qty,raw){
-  return {specId:sp.id,altId:a.id,code:a.code||'',ad:a.name,cat:sp.cat||'',unit:a.unit||sp.unit||'',grup:specGroupKey(sp),img:a.img||null,brand:a.brand||'',qty:qty!=null&&!isNaN(qty)?qty:'',raw:raw||''};
+  const la=altLive(a); // birim/marka/foto kutuphaneden CANLI okunur - alt kaydindaki bayat kopya degil
+  return {specId:sp.id,altId:a.id,code:la.code,ad:la.name,cat:sp.cat||'',unit:la.unit||sp.unit||'',grup:specGroupKey(sp),img:la.img,brand:la.brand,qty:qty!=null&&!isNaN(qty)?qty:'',raw:raw||''};
 }
 // secili binadaki TUM bolumlerin sartname kalemleri (autocomplete kaynagi)
 // + satin alinabilir alternatif urunler (ana urunle iliskisi gorunur sekilde)
@@ -6261,13 +6274,13 @@ function nordSpecSrc(){
       return {ad:s.name||s.code||'?', alt:(s.code||'')+' '+(s.cat||'')+' '+specGroupKey(s),
         sub:[s.code,brand,s.cat,specGroupKey(s),s.unit].filter(Boolean).join(' · '), img,
         obj:{specId:s.id,code:s.code||'',ad:s.name,cat:s.cat||'',unit:s.unit||'',grup:specGroupKey(s),img,brand}};});
-  const alts=activeAltsFor(NORD.bina).map(({alt:a,sp})=>({
-    ad:a.name||a.code||'?',
-    alt:(a.code||'')+' '+(sp.code||'')+' '+(sp.name||'')+' '+specGroupKey(sp)+' alternatif',
-    sub:'ALTERNATIF → '+(sp.name||sp.code||'')+' · '+[a.code,a.brand,a.unit||sp.unit].filter(Boolean).join(' · '),
-    img:a.img||null,
-    obj:{specId:sp.id,altId:a.id,code:a.code||'',ad:a.name,cat:sp.cat||'',unit:a.unit||sp.unit||'',grup:specGroupKey(sp),img:a.img||null,brand:a.brand||''}
-  }));
+  const alts=activeAltsFor(NORD.bina).map(({alt:a,sp})=>{ const la=altLive(a); return {
+    ad:la.name||la.code||'?',
+    alt:(la.code||'')+' '+(a.code||'')+' '+(a.name||'')+' '+(sp.code||'')+' '+(sp.name||'')+' '+specGroupKey(sp)+' alternatif',
+    sub:'ALTERNATIF → '+(sp.name||sp.code||'')+' · '+[la.code,la.brand,la.unit||sp.unit].filter(Boolean).join(' · '),
+    img:la.img,
+    obj:{specId:sp.id,altId:a.id,code:la.code,ad:la.name,cat:sp.cat||'',unit:la.unit||sp.unit||'',grup:specGroupKey(sp),img:la.img,brand:la.brand}
+  };});
   return specs.concat(alts);
 }
 // Turkce/Excel sayi bicimini cozer: "1.234,56" -> 1234.56 ; "5" -> 5 ; gecersiz -> NaN
