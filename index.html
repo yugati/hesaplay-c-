@@ -404,6 +404,18 @@ main{flex:1;padding:clamp(16px,2vw,28px);max-width:1600px;width:100%;margin:0 au
 .matlib-filterbar{position:sticky;top:56px;z-index:30;background:var(--bg);padding:10px 0;margin:0 0 14px;border-bottom:1px solid var(--line)}
 .matlib-filterbar .toolbar{margin-bottom:10px}
 @media(max-width:720px){ .matlib-filterbar{position:static} }
+/* Tum Siparisler yapisal filtre paneli: bina/bolum/sartname/malzeme/kod/sirket/tarih/pdf
+   alanlari tek panelde - metin alanlari Enter veya alan disina tiklayinca uygulanir */
+.ord-filterbar{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:flex-end;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px;box-shadow:var(--shadow-sm)}
+.ord-f{display:flex;flex-direction:column;gap:5px;min-width:150px;flex:1}
+.ord-f label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute)}
+.ord-f select,.ord-f input{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--ink);padding:8px 10px;border-radius:8px;font-size:13px;outline:none;transition:border .15s}
+.ord-f select:focus,.ord-f input:focus{border-color:var(--amber)}
+.ord-f-dates{display:flex;align-items:center;gap:6px}
+.ord-f-dates input{min-width:0}
+.ord-sumline{font-size:13px;color:var(--mute);margin-bottom:12px}
+.ord-sumline b{color:var(--ink)}
+@media(max-width:720px){ .ord-f{min-width:calc(50% - 14px)} }
 /* kutuphane sayfalama cubugu: kayit sayisi solda, sayfa boyutu + onceki/sonraki sagda */
 .matlib-pgbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
 .matlib-pgbar .t-meta b{color:var(--ink)}
@@ -1419,6 +1431,7 @@ function migrate(){
 
 let SEC="proje", TAB="spec", SEARCH="", GFILTER="", LOGVIEW="akis";
 let PBINA="", PCAT="", PSPEC="", PLIB=false, PDEF=false, PORD=false, PCOMP=false, PEKIP=false, PNEWORD=false, ORDBINA="";  // proje filtreleri + kutuphane + tanimlar + tum siparisler + sirketler + ekipler + siparis ekleme sayfasi
+let ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:''}; // Tum Siparisler yapisal filtreleri (bolum/sartname/malzeme/kod/sirket/tarih/pdf) - ORDBINA ile birlikte calisir
 let SPECVIEW=localStorage.getItem('specview')==='list'?'list':'grid';     // sartname kalemleri gorunumu: 'grid' (kart) | 'list' (satir) - kullanicinin son secimi hatirlanir
 function setSpecView(v){ SPECVIEW=v; try{localStorage.setItem('specview',v);}catch(e){} render(); }
 let CURRENT_USER=null;   // giris yapan kullanici
@@ -2123,7 +2136,7 @@ function openDefinitions(){ PDEF=true; PUSERS=false; PAUDIT=false; PLIB=false; P
 function closeDefinitions(){ PDEF=false; render(); }
 
 /* ============ TUM SIPARISLER (bina filtreli) ============ */
-function openAllOrders(){ PORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PCOMP=false; PEKIP=false; PNEWORD=false; ORDBINA=""; SEARCH=""; render(); }
+function openAllOrders(){ PORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PCOMP=false; PEKIP=false; PNEWORD=false; ORDBINA=""; ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:''}; SEARCH=""; render(); }
 function closeAllOrders(){ PORD=false; render(); }
 
 /* ============ SIRKETLER (proje siparis/fatura girisinde secilir) ============ */
@@ -2220,27 +2233,56 @@ async function delEkip(name){ if(!guard('delete'))return;
   render(); toast("Ekip silindi");
 }
 function setOrdBina(b){ ORDBINA=b; render(); }
-function renderAllOrders(){
+function setOrdF(k,v){ ORDF[k]=v; render(); }
+function clearOrdF(){ ORDBINA=''; ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:''}; SEARCH=''; render(); }
+// bir siparis satirinin bagli oldugu sartname kalemi (bolum filtresi specId uzerinden cozer)
+function orderLineSpec(l){ return l&&l.specId?DB.proje.specs.find(s=>s.id===l.specId):null; }
+// TEK KAYNAK: Tum Siparisler listesi + Excel disa aktarma AYNI filtreden gecer
+// ("ekranda ne goruyorsan onu indirirsin")
+function allOrdersFiltered(){
   const all=(DB.proje.orders||[]).slice().sort((a,b)=>(b.date||0)-(a.date||0));
-  // bina filtresi
-  let list=ORDBINA?all.filter(o=>(o.bina||'')===ORDBINA):all;
-  // arama (substring - sipariş için kati)
-  if(SEARCH){ const q=norm(SEARCH).trim().replace(/\s+/g,'');
-    list=list.filter(o=>{ const hay=norm((o.no||'')+' '+(o.bina||'')+' '+(o.grup||'')+' '+(o.company||'')+' '+(o.lines||[]).map(l=>l.ad+' '+l.code).join(' ')).replace(/\s+/g,''); return hay.indexOf(q)>=0; }); }
-  // bina cipleri (her binada kac siparis var)
+  return all.filter(o=>{
+    if(ORDBINA && (o.bina||'')!==ORDBINA) return false;
+    if(ORDF.comp && (o.company||'')!==ORDF.comp) return false;
+    if(ORDF.from){ const t=new Date(ORDF.from).getTime(); if(!(o.date>=t)) return false; }
+    if(ORDF.to){ const t=new Date(ORDF.to).getTime()+86399999; if(!(o.date<=t)) return false; } // gun sonu dahil
+    if(ORDF.pdf==='var' && !o.pdf) return false;
+    if(ORDF.pdf==='yok' && o.pdf) return false;
+    const lines=o.lines||[];
+    if(ORDF.sart && !((o.grup||'')===ORDF.sart || lines.some(l=>(l.grup||'')===ORDF.sart))) return false;
+    if(ORDF.sec && !lines.some(l=>{ const sp=orderLineSpec(l); return sp&&(sp.cat||'')===ORDF.sec; })) return false;
+    if(ORDF.mat){ const q=norm(ORDF.mat).trim(); if(!lines.some(l=>norm(l.ad||'').indexOf(q)>=0)) return false; }
+    if(ORDF.code){ const q=norm(ORDF.code).trim(); if(!lines.some(l=>norm(l.code||'').indexOf(q)>=0)) return false; }
+    if(SEARCH){ const q=norm(SEARCH).trim().replace(/\s+/g,'');
+      const hay=norm((o.no||'')+' '+(o.bina||'')+' '+(o.grup||'')+' '+(o.company||'')+' '+lines.map(l=>l.ad+' '+l.code).join(' ')).replace(/\s+/g,'');
+      if(hay.indexOf(q)<0) return false; }
+    return true;
+  });
+}
+function renderAllOrders(){
+  const all=(DB.proje.orders||[]).slice();
+  const list=allOrdersFiltered();
+  // filtre secenekleri MEVCUT verilerden dolar: binalar, sartnameler, sirketler
   const binas=projBuildings();
-  const cntByBina={}; all.forEach(o=>{ cntByBina[o.bina||'-']=(cntByBina[o.bina||'-']||0)+1; });
-  let chips=`<button class="def-sec-chip ${!ORDBINA?'on':''}" onclick="setOrdBina('')" style="--cc:#a855f7"><span class="fb-dot" style="background:#a855f7"></span>Tum Binalar <span class="badge">${all.length}</span></button>`;
-  binas.forEach(b=>{ const col=buildingColor(b); const c=cntByBina[b]||0;
-    chips+=`<button class="def-sec-chip ${ORDBINA===b?'on':''}" onclick="setOrdBina('${esc(b)}')" style="--cc:${col}"><span class="fb-dot" style="background:${col}"></span>${esc(b)} <span class="badge">${c}</span></button>`; });
-  // istatistik
+  const sarts=[...new Set(all.flatMap(o=>[(o.grup||''),...(o.lines||[]).map(l=>l.grup||'')]).filter(g=>g&&!g.startsWith('Karma (')))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const comps=[...new Set(all.map(o=>o.company||'').filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const secs=DB.proje.sections||[];
+  const anyFilter=ORDBINA||ORDF.sec||ORDF.sart||ORDF.mat||ORDF.code||ORDF.comp||ORDF.from||ORDF.to||ORDF.pdf||SEARCH;
+  const filterbar=`<div class="ord-filterbar">
+    <div class="ord-f"><label>Bina</label><select onchange="setOrdBina(this.value)"><option value="">Tumu</option>${binas.map(b=>`<option ${ORDBINA===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div>
+    <div class="ord-f"><label>Bolum</label><select onchange="setOrdF('sec',this.value)"><option value="">Tumu</option>${secs.map(s=>`<option ${ORDF.sec===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
+    <div class="ord-f" style="min-width:210px"><label>Sartname</label><select onchange="setOrdF('sart',this.value)"><option value="">Tumu</option>${sarts.map(g=>`<option ${ORDF.sart===g?'selected':''}>${esc(g)}</option>`).join('')}</select></div>
+    <div class="ord-f"><label>Malzeme</label><input value="${esc(ORDF.mat)}" placeholder="ad ile ara..." onchange="setOrdF('mat',this.value.trim())"></div>
+    <div class="ord-f"><label>Urun Kodu</label><input value="${esc(ORDF.code)}" placeholder="kod ile ara..." onchange="setOrdF('code',this.value.trim())"></div>
+    <div class="ord-f"><label>Sirket</label><select onchange="setOrdF('comp',this.value)"><option value="">Tumu</option>${comps.map(c=>`<option ${ORDF.comp===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
+    <div class="ord-f"><label>Tarih Araligi</label><div class="ord-f-dates"><input type="date" value="${esc(ORDF.from)}" onchange="setOrdF('from',this.value)"><span class="t-meta">-</span><input type="date" value="${esc(ORDF.to)}" onchange="setOrdF('to',this.value)"></div></div>
+    <div class="ord-f"><label>Fatura PDF</label><select onchange="setOrdF('pdf',this.value)"><option value="">Tumu</option><option value="var" ${ORDF.pdf==='var'?'selected':''}>PDF ekli</option><option value="yok" ${ORDF.pdf==='yok'?'selected':''}>PDF eksik</option></select></div>
+    ${anyFilter?`<div class="ord-f" style="justify-content:flex-end"><label>&nbsp;</label><button class="btn btn-ghost" style="padding:8px 14px" onclick="clearOrdF()">Filtreyi Temizle</button></div>`:''}
+  </div>`;
+  // kompakt ozet satiri (eski buyuk istatistik kartlarinin yerine)
   const totalLines=list.reduce((s,o)=>s+(o.lines||[]).length,0);
   const totalQty=list.reduce((s,o)=>s+(o.lines||[]).reduce((x,l)=>x+(Number(l.qty)||0),0),0);
-  const stat=statRow([
-    ['Siparis', fmtNum(list.length), ORDBINA?ORDBINA:'tum binalar', 'var(--blue)'],
-    ['Toplam Kalem', fmtNum(totalLines), 'satir', 'var(--green)'],
-    ['Toplam Miktar', fmtNum(totalQty), 'birim', 'var(--amber)']
-  ]);
+  const sumline=`<div class="ord-sumline"><b>${fmtNum(list.length)}</b> siparis · <b>${fmtNum(totalLines)}</b> kalem · <b>${fmtNum(totalQty)}</b> birim${anyFilter?` <span class="t-meta">(${fmtNum(all.length)} siparis icinden filtrelendi)</span>`:''}</div>`;
   // kartlar
   let cards='';
   if(list.length===0){
@@ -2270,16 +2312,16 @@ function renderAllOrders(){
   }
   return `<div class="sel-wrap" style="max-width:1200px">
     <div class="sel-bc"><button onclick="closeAllOrders()">${icoArr('left')} Binalara Don</button></div>
-    <div class="sel-head"><h2>Tum Siparisler</h2><p>Tum binalardaki siparis ve faturalar. Bina filtresiyle daraltabilirsiniz.</p></div>
-    <div class="def-sec-bar"><div class="def-sec-chips">${chips}</div></div>
-    <div class="stats">${stat}</div>
+    <div class="sel-head"><h2>Tum Siparisler</h2><p>Tum binalardaki siparis ve faturalar. Asagidaki alanlarla coklu filtre uygulayabilirsiniz.</p></div>
     <div class="toolbar">${searchBox('Siparis no, bina, urun, sirket ara...')}
       <button class="btn btn-grid" onclick="exportAllOrdersExcel()">${icoXls()} Excel</button></div>
+    ${filterbar}
+    ${sumline}
     ${cards}`;
 }
 function exportAllOrdersExcel(){
-  const all=(DB.proje.orders||[]).slice().sort((a,b)=>(b.date||0)-(a.date||0));
-  const list=ORDBINA?all.filter(o=>(o.bina||'')===ORDBINA):all;
+  // ekranda gorunen (filtrelenmis) liste indirilir - allOrdersFiltered ile ayni kaynak
+  const list=allOrdersFiltered();
   if(!list.length){toast("Siparis yok","err");return;}
   const rows=[["Siparis No","Tarih","Bina","Sirket","Sartname","Spek No","Malzeme","Miktar","Birim"]];
   list.forEach(o=>{ (o.lines||[]).forEach(l=>{ rows.push([o.no,fmtDate(o.date),o.bina||'',o.company||'',l.grup||o.grup||'',l.code||'',l.ad||'',Number(l.qty)||0,l.unit||'']); }); });
