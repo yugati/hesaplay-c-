@@ -404,6 +404,12 @@ main{flex:1;padding:clamp(16px,2vw,28px);max-width:1600px;width:100%;margin:0 au
 .matlib-filterbar{position:sticky;top:56px;z-index:30;background:var(--bg);padding:10px 0;margin:0 0 14px;border-bottom:1px solid var(--line)}
 .matlib-filterbar .toolbar{margin-bottom:10px}
 @media(max-width:720px){ .matlib-filterbar{position:static} }
+/* kutuphane sayfalama cubugu: kayit sayisi solda, sayfa boyutu + onceki/sonraki sagda */
+.matlib-pgbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.matlib-pgbar .t-meta b{color:var(--ink)}
+.matlib-pgctrl{display:flex;align-items:center;gap:8px}
+.matlib-pgctrl .selbox{padding:6px 9px;font-size:12px}
+.matlib-pgctrl .mini-btn:disabled{opacity:.35;cursor:not-allowed}
 /* Sartname kalemleri coğaldikca Kalem Ekle/ara cubuguna erismek icin surekli yukari
    kaydirmamak adina bu cubuk ust menunun (56px) hemen altina sabit (sticky) kalir */
 .spec-toolbar{position:sticky;top:56px;z-index:30;background:var(--bg);padding:10px 0;margin:0 0 14px;border-bottom:1px solid var(--line)}
@@ -2486,6 +2492,37 @@ let _matCatFilter=new Set(); // secili kategori/bolum filtreleri (OR)
 let _matUsageFilter='all'; // 'all' | 'used' | 'unused' | 'multi'
 let _matHighlightDup=false; // Excel'deki "Yinelenen Degerler" gibi: Malzeme/Kod/Standart sutunlarinda tekrar eden degerleri vurgular
 function toggleMatHighlightDup(){ _matHighlightDup=!_matHighlightDup; render(); }
+// SAYFALAMA: buyuk kutuphanede (350+ kayit) tek dev liste yerine sayfa sayfa gezinme.
+// Filtre/arama degisince otomatik ilk sayfaya donulur (_matFilterSig imzasiyla algilanir).
+let _matPage=0, _matPageSize=25, _matFilterSig='';
+function setMatPage(p){ _matPage=p; render(); }
+function setMatPageSize(v){ _matPageSize=Number(v)||25; _matPage=0; render(); }
+// arama + filtre + siralama TEK yerde: tablo satirlari, sayfalama ve "tumunu sec"
+// ayni listeyi gormeli, aksi halde secilen satirlar ile gorunen satirlar ayrisir
+function matLibFilteredSorted(){
+  let mats=(DB.proje.materials||[]).filter(m=>!m.is_deleted);
+  if(SEARCH){
+    mats=mats.filter(m=>matMatchesLibSearch(m,SEARCH));
+    // aramada en iyi eslesen en ustte: birebir kod/ad eslesmesi > icinde gecen > benzer (subsequence)
+    const nq=norm(SEARCH).trim();
+    mats.sort((a,b)=>{
+      const sa=acScore(norm((a.code||'')+' '+(a.name||'')+' '+(a.cat||'')),nq);
+      const sb=acScore(norm((b.code||'')+' '+(b.name||'')+' '+(b.cat||'')),nq);
+      return sa-sb||(a.name||'').localeCompare(b.name||'','tr');
+    });
+  } else {
+    mats.sort((a,b)=>(a.cat||'').localeCompare(b.cat||'','tr')||(a.name||'').localeCompare(b.name||'','tr'));
+  }
+  return mats.filter(matMatchesTagFilter).filter(matMatchesCatFilter).filter(matMatchesUsageFilter);
+}
+function matLibPageSlice(total){
+  const sig=SEARCH+'|'+[..._matCatFilter].sort().join(',')+'|'+[..._matTagFilter].sort().join(',')+'|'+_matUsageFilter;
+  if(sig!==_matFilterSig){ _matFilterSig=sig; _matPage=0; }
+  const pages=Math.max(1,Math.ceil(total/_matPageSize));
+  if(_matPage>=pages)_matPage=pages-1; if(_matPage<0)_matPage=0;
+  const start=_matPage*_matPageSize;
+  return {start,end:Math.min(total,start+_matPageSize),pages};
+}
 // bir alan icin (name/code/standart) kutuphane genelinde tekrar eden normalize degerlerin kumesini dondurur
 function _dupValueSet(getField){
   const counts={};
@@ -2535,10 +2572,11 @@ function matMatchesUsageFilter(m){
   if(_matUsageFilter==='multi') return n>1;
   return true;
 }
-function renderMaterialLibVisibleIds(){ let mats=(DB.proje.materials||[]).filter(m=>!m.is_deleted);
-  if(SEARCH) mats=mats.filter(m=>matMatchesLibSearch(m,SEARCH));
-  mats=mats.filter(matMatchesTagFilter).filter(matMatchesCatFilter).filter(matMatchesUsageFilter);
-  return mats.map(m=>m.id); }
+// "tumunu sec" = o an EKRANDA gorunen sayfa (tum filtrelenmis liste degil) -
+// aksi halde kullanici gormedigi yuzlerce kaydi farkinda olmadan secer/siler
+function renderMaterialLibVisibleIds(){ const mats=matLibFilteredSorted();
+  const{start,end}=matLibPageSlice(mats.length);
+  return mats.slice(start,end).map(m=>m.id); }
 async function delSelectedMaterials(){
   const ids=[..._matSel]; if(!ids.length)return;
   // kullanimda olanlari ayikla
@@ -2635,20 +2673,9 @@ async function confirmMergeMaterials(){
   toast(`Urunler birlestirildi (${affectedSpecs.length} sartname satiri guncellendi)`);
 }
 function renderMaterialLib(){
-  let mats=(DB.proje.materials||[]).filter(m=>!m.is_deleted).slice();
-  if(SEARCH){
-    mats=mats.filter(m=>matMatchesLibSearch(m,SEARCH));
-    // aramada en iyi eslesen en ustte: birebir kod/ad eslesmesi > icinde gecen > benzer (subsequence)
-    const nq=norm(SEARCH).trim();
-    mats.sort((a,b)=>{
-      const sa=acScore(norm((a.code||'')+' '+(a.name||'')+' '+(a.cat||'')),nq);
-      const sb=acScore(norm((b.code||'')+' '+(b.name||'')+' '+(b.cat||'')),nq);
-      return sa-sb||(a.name||'').localeCompare(b.name||'','tr');
-    });
-  } else {
-    mats.sort((a,b)=>(a.cat||'').localeCompare(b.cat||'','tr')||(a.name||'').localeCompare(b.name||'','tr'));
-  }
-  mats=mats.filter(matMatchesTagFilter).filter(matMatchesCatFilter).filter(matMatchesUsageFilter);
+  const matsAll=matLibFilteredSorted();
+  const {start,end,pages}=matLibPageSlice(matsAll.length);
+  const mats=matsAll.slice(start,end); // sadece gorunen sayfa cizilir
   // Excel'deki "Yinelenen Degerler" vurgusu gibi: acikken Malzeme/Kod sutunlarinda kutuphane
   // genelinde (aramadan bagimsiz) tekrar eden degerleri isaretler. Standart No kasten HARIC:
   // cok farkli urunler ayni genel standarda uyabildigi icin (orn. 141 urun tek bir TU numarasini
@@ -2664,8 +2691,6 @@ function renderMaterialLib(){
   (DB.proje.materials||[]).filter(m=>!m.is_deleted).forEach(m=>{ const cs=materialAllCats(m);
     if(!cs.length){uncatCount++;return;} cs.forEach(c=>{catCounts[c]=(catCounts[c]||0)+1;}); });
   const cats=Object.keys(catCounts);
-  const usedCount=(DB.proje.materials||[]).filter(m=>materialSpecCount(m.id)>0).length;
-  const multiCount=(DB.proje.materials||[]).filter(m=>materialSpecCount(m.id)>1).length;
   const allTags=allMaterialTags();
   const tagChips=allTags.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px">
     <span class="t-meta" style="font-size:11px">Etiket:</span>
@@ -2687,8 +2712,18 @@ function renderMaterialLib(){
     <button class="${_matUsageFilter==='unused'?'on':''}" onclick="setMatUsageFilter('unused')">Kullanilmayan</button>
     <button class="${_matUsageFilter==='multi'?'on':''}" onclick="setMatUsageFilter('multi')">Ortak Kullanim</button>
   </div>`;
+  // sayfalama cubugu: "350 malzemeden 1-25 arasi" + sayfa boyutu + onceki/sonraki
+  const pgbar=`<div class="matlib-pgbar">
+    <span class="t-meta">${matsAll.length?`<b>${fmtNum(matsAll.length)}</b> malzemeden <b>${start+1}-${end}</b> arasi gosteriliyor`:'Gosterilecek malzeme yok'}</span>
+    <div class="matlib-pgctrl">
+      <select class="selbox" onchange="setMatPageSize(this.value)">${[25,50,100,250].map(n=>`<option value="${n}" ${_matPageSize===n?'selected':''}>${n} satir</option>`).join('')}</select>
+      <button class="mini-btn" ${_matPage===0?'disabled':`onclick="setMatPage(${_matPage-1})"`} title="Onceki sayfa"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+      <span class="t-meta" style="min-width:44px;text-align:center">${_matPage+1} / ${pages}</span>
+      <button class="mini-btn" ${_matPage>=pages-1?'disabled':`onclick="setMatPage(${_matPage+1})"`} title="Sonraki sayfa"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
+    </div>
+  </div>`;
   let rows='';
-  if(mats.length===0){
+  if(matsAll.length===0){
     rows=`<tr><td colspan="11"><div class="empty" style="padding:30px"><p>${SEARCH||_matTagFilter.size||_matCatFilter.size||_matUsageFilter!=='all'?'Eslesen malzeme yok':'Kutuphane bos'}</p><span style="font-size:12px">Malzeme ekleyin veya sartnamelerden otomatik dolar</span></div></td></tr>`;
   } else {
     mats.forEach(m=>{
@@ -2722,10 +2757,9 @@ function renderMaterialLib(){
         </div></td></tr>`;
     });
   }
-  return `<div class="sel-wrap" style="max-width:1300px">
+  return `<div class="sel-wrap" style="max-width:none">
     <div class="sel-bc"><button onclick="closeMaterialLib()">${icoArr('left')} Binalara Don</button></div>
     <div class="sel-head"><h2>Malzeme Kutuphanesi</h2><p>Tum sartnamelerin ortak malzeme kaynagi - bir malzeme bir kez tanimlanir, her yerde kullanilir</p></div>
-    <div class="stats">${statRow([['Toplam Malzeme',(DB.proje.materials||[]).length,'kayit','var(--blue)'],['Kullanilan',usedCount,'sartnamede','var(--green)'],['Ortak Kullanim',multiCount,'birden fazla spek','#a855f7'],['Kategori',cats.length,'farkli','var(--amber)']])}</div>
     <div class="matlib-filterbar">
     <div class="toolbar">${searchBox('Malzeme ara (kod, ad, marka, standart, etiket, not)...')}
       <button class="btn btn-ghost" onclick="document.getElementById('matLibXlsx').click()">${icoUp()} Excel'den Ice Aktar</button>
@@ -2742,6 +2776,7 @@ function renderMaterialLib(){
       ${_matSel.size>0?`<button class="btn btn-ghost" style="border-color:var(--red)55;color:var(--red)" onclick="delSelectedMaterials()">${icoTrash()} Secilenleri Sil (${_matSel.size})</button>`:''}</div>
     <div style="margin-top:8px">${usageBar}</div>
     <div style="margin-top:10px">${catChips}${tagChips}</div>
+    ${pgbar}
     </div>
     <div class="tablewrap"><table><thead><tr><th style="width:34px;text-align:center"><input type="checkbox" class="mat-check" ${(()=>{const v=renderMaterialLibVisibleIds();return v.length>0&&v.every(id=>_matSel.has(id))?'checked':'';})()} onclick="toggleMatSelAll()"></th><th></th><th>Malzeme</th><th>Kod</th><th>Marka</th><th>Standart</th><th>Agirlik</th><th>Etiket</th><th>Kategori</th><th>Birim</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
