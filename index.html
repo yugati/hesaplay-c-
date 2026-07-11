@@ -516,6 +516,12 @@ tbody tr:hover{background:var(--hover)}
 .cat-tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600;font-family:var(--mono);white-space:nowrap}
 .brand-tags{display:flex;flex-direction:column;align-items:flex-start;gap:3px;max-width:230px}
 .brand-tags .cat-tag{white-space:normal;word-break:break-word;line-height:1.4;text-align:left}
+/* Marka hucresi: uzun serbest-metin marka notlari (orn. "Navigator veya benzeri...")
+   satiri onceden kelime ortasindan bolerek (word-break) dikey olarak sismis, satir
+   yuksekligini bozuyordu. Artik 12 karakter ustu kisaltilip tiklaninca acilir. */
+.brand-cell{display:flex;flex-direction:column;align-items:flex-start;gap:3px;max-width:230px}
+.brand-cell .cat-tag{white-space:nowrap;cursor:pointer;text-align:left}
+.brand-cell .cat-tag.expanded{white-space:normal;word-break:break-word;line-height:1.4}
 .chk-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:4px}
 .chk{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text);cursor:pointer;padding:7px 10px;background:var(--bg);border:1px solid var(--line);border-radius:8px}
 .chk input{width:15px;height:15px;accent-color:var(--blue);cursor:pointer}
@@ -2506,10 +2512,20 @@ function matMatchesLibSearch(m,q){
 function matMatchesTagFilter(m){ if(!_matTagFilter.size) return true; return (m.tags||[]).some(t=>_matTagFilter.has(t)); }
 function toggleMatCatFilter(c){ if(_matCatFilter.has(c))_matCatFilter.delete(c); else _matCatFilter.add(c); render(); }
 function clearMatCatFilter(){ _matCatFilter.clear(); render(); }
-function matMatchesCatFilter(m){ if(!_matCatFilter.size) return true; return _matCatFilter.has(m.cat||''); }
+// bir malzemenin gorunur kategorileri: varsayilan kategorisi + fiilen kullanildigi bolumler.
+// Filtre cipleri, KATEGORI sutunu ve arama AYNI kumeyi kullanmali - aksi halde sartname
+// Excel'inden otomatik olusan malzemeler (varsayilan kategorisi bilerek bos birakilir,
+// cunku bolum kalemin ozelligidir) cipe tiklaninca listeden kaybolur.
+function materialAllCats(m){ return [...new Set([m.cat,...materialUsage(m.id).map(s=>s.cat)].filter(Boolean))]; }
+function matMatchesCatFilter(m){ if(!_matCatFilter.size) return true;
+  const cs=materialAllCats(m);
+  if(!cs.length) return _matCatFilter.has('Kategorisiz');
+  return cs.some(c=>_matCatFilter.has(c)); }
 // bir malzemenin kac FARKLI sartname grubunda gectigi (materialUsage ham satir sayar,
 // burada "X spek'te" rozetiyle tutarli olmasi icin specGroupKey'e gore tekillestirilir)
 function materialSpecCount(matId){ return new Set(materialUsage(matId).map(s=>specGroupKey(s))).size; }
+// Marka hucresindeki kisaltilmis cip'e tiklaninca tam metni ac/kapa (bkz. .brand-cell)
+function brandChipToggle(el){ const on=el.classList.toggle('expanded'); el.textContent=on?el.dataset.full:el.dataset.short; }
 function setMatUsageFilter(v){ _matUsageFilter=v; render(); }
 function matMatchesUsageFilter(m){
   if(_matUsageFilter==='all') return true;
@@ -2642,7 +2658,12 @@ function renderMaterialLib(){
   const dupCellCount=_matHighlightDup?(DB.proje.materials||[]).filter(m=>!m.is_deleted).reduce((n,m)=>{
     let c=0; if(dupNames.has(norm(m.name).trim()))c++; if(m.code&&dupCodes.has(norm(m.code).trim()))c++; return n+c;
   },0):0;
-  const cats=[...new Set((DB.proje.materials||[]).map(m=>m.cat).filter(Boolean))];
+  // cip listesi + sayaclar: materialAllCats ile (varsayilan kategori + kullanildigi bolumler),
+  // boylece cipteki sayi = cipe tiklaninca listelenen satir sayisi (matMatchesCatFilter ayni kume)
+  const catCounts={}; let uncatCount=0;
+  (DB.proje.materials||[]).filter(m=>!m.is_deleted).forEach(m=>{ const cs=materialAllCats(m);
+    if(!cs.length){uncatCount++;return;} cs.forEach(c=>{catCounts[c]=(catCounts[c]||0)+1;}); });
+  const cats=Object.keys(catCounts);
   const usedCount=(DB.proje.materials||[]).filter(m=>materialSpecCount(m.id)>0).length;
   const multiCount=(DB.proje.materials||[]).filter(m=>materialSpecCount(m.id)>1).length;
   const allTags=allMaterialTags();
@@ -2652,11 +2673,12 @@ function renderMaterialLib(){
       return `<span class="cat-tag" data-tag="${esc(t)}" style="cursor:pointer;background:${on?c:c+'22'};color:${on?'#fff':c};border:1px solid ${c}55" onclick="toggleMatTagFilter(this.dataset.tag)">${esc(t)}</span>`; }).join('')}
     ${_matTagFilter.size?`<span class="cat-tag" style="cursor:pointer;background:var(--dim)33;color:var(--text)" onclick="clearMatTagFilter()">Temizle (${_matTagFilter.size})</span>`:''}
   </div>`:'';
-  const catCounts={}; (DB.proje.materials||[]).filter(m=>!m.is_deleted).forEach(m=>{ const c=m.cat||'Kategorisiz'; catCounts[c]=(catCounts[c]||0)+1; });
-  const catChips=cats.length?`<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px">
+  const catChips=(cats.length||uncatCount)?`<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px">
     <span class="t-meta" style="font-size:11px">Kategori:</span>
     ${cats.slice().sort((a,b)=>a.localeCompare(b,'tr')).map(c=>{ const on=_matCatFilter.has(c); const cc=catColor(c);
       return `<span class="cat-tag" data-cat="${esc(c)}" style="cursor:pointer;background:${on?cc:cc+'22'};color:${on?'#fff':cc};border:1px solid ${cc}55" onclick="toggleMatCatFilter(this.dataset.cat)">${esc(c)} <b style="opacity:.75">${catCounts[c]||0}</b></span>`; }).join('')}
+    ${uncatCount?(()=>{ const on=_matCatFilter.has('Kategorisiz');
+      return `<span class="cat-tag" style="cursor:pointer;background:${on?'var(--dim)':'var(--dim)22'};color:${on?'#fff':'var(--mute)'};border:1px solid var(--dim)55" title="Hicbir sartnamede kullanilmayan ve varsayilan kategorisi de bos olan malzemeler" onclick="toggleMatCatFilter('Kategorisiz')">Kategorisiz <b style="opacity:.75">${uncatCount}</b></span>`; })():''}
     ${_matCatFilter.size?`<span class="cat-tag" style="cursor:pointer;background:var(--dim)33;color:var(--text)" onclick="clearMatCatFilter()">Temizle (${_matCatFilter.size})</span>`:''}
   </div>`:'';
   const usageBar=`<div class="seg" style="margin-bottom:2px">
@@ -2680,7 +2702,10 @@ function renderMaterialLib(){
         <td>${thumb}</td>
         <td class="t-name${_matHighlightDup&&dupNames.has(norm(m.name).trim())?' dup-hl':''}">${esc(m.name)} ${usageTag}<div style="margin-top:4px">${specs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px">${esc(g)}</span>`).join('')}</div></td>
         <td class="${_matHighlightDup&&m.code&&dupCodes.has(norm(m.code).trim())?'dup-hl':''}" style="font-family:var(--mono);font-size:12px">${esc(m.code||'-')}</td>
-        <td class="t-meta">${m.brand?`<div class="brand-tags">${m.brand.split(/\n|\s\/\s/).map(b=>b.trim()).filter(Boolean).map(b=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text)">${esc(b)}</span>`).join('')}</div>`:'-'}</td>
+        <td class="t-meta">${m.brand?`<div class="brand-cell">${m.brand.split(/\n|\s\/\s/).map(b=>b.trim()).filter(Boolean).map(b=>{
+          const full=esc(b), short=b.length>12?esc(b.slice(0,12))+'…':full;
+          return `<span class="cat-tag" style="background:var(--dim)33;color:var(--text)" data-full="${full}" data-short="${short}" title="${full}" onclick="event.stopPropagation();brandChipToggle(this)">${short}</span>`;
+        }).join('')}</div>`:'-'}</td>
         <td class="t-meta">${esc(m.standart||'-')}</td>
         <td class="t-meta">${m.weight!=null?fmtNum(m.weight)+' kg':'-'}</td>
         <td>${(m.tags&&m.tags.length)?`<div class="brand-tags">${m.tags.map(t=>{const c=tagColor(t);return `<span class="cat-tag" style="background:${c}22;color:${c}">${esc(t)}</span>`;}).join('')}</div>`:'-'}</td>
