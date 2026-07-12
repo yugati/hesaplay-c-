@@ -1359,6 +1359,19 @@ function migrate(){
   // Toplama zinciri: odalarin toplami fragmenti, fragmentlerin toplami kati,
   // katlarin toplami sartnameyi, sartnamelerin toplami projeyi verir.
   if(!DB.proje.lokasyonlar) DB.proje.lokasyonlar=[];
+  // ONARIM (tek sefer): proje_sections tablosu Supabase'de hep BOS olup istemcinin
+  // eski varsayilan listesine (Tava/Aydinlatma/Topraklama/Pano/Kablolama) guvenen
+  // kurulumlar icin - bolum artik veri oldugundan (varsayilan dayatilmiyor) bu
+  // siteler Bolum & Sartname ekranini bombos gorurdu. Sartname/kalemlerde fiilen
+  // kullanilan bolum adlari varsa geri eklenir ve KALICI olarak Supabase'e yazilir.
+  if(!DB.meta._partial && !DB.meta.sectionsBackfillV){
+    if(!DB.proje.sections.length){
+      const usedSections=[...new Set([...(DB.proje.sartnames||[]).map(x=>x.section),...(DB.proje.specs||[]).map(s=>s.cat)])].filter(Boolean);
+      if(usedSections.length){ DB.proje.sections=usedSections; sbInsertProjeSections(usedSections).catch(e=>console.warn('Bolum onarimi kaydedilemedi:',e)); }
+    }
+    DB.meta.sectionsBackfillV=1;
+    sbSetSetting('sectionsBackfillV',1).catch(()=>{});
+  }
   DB.proje.items.forEach(it=>{ if(!it.type) it.type='in'; });
   // GUNLUK SAHA RAPORU
   // ekipler de VERIDIR: kodda sabit ekip adi yoktur, Ekipler sayfasindan eklenir
