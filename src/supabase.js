@@ -578,7 +578,9 @@ export async function sbLoadAllData(scope) {
     },
     proje: {
       buildings,
-      sections: sections.length ? sections : ['Tava', 'Aydinlatma', 'Topraklama', 'Pano', 'Kablolama'],
+      // bolumler VERIDIR: bos liste bos kalir, varsayilan bolum dayatilmaz
+      // (kullanici "Bolum Ekle" ile veya Excel iceri aktarimiyla doldurur)
+      sections,
       sartnames: r.projeSartnames || [],
       materials: r.projeMaterials || [],
       specs: r.projeSpecs || [],
@@ -716,13 +718,20 @@ export async function sbWipeProjeData() {
 
 // Proje verisinin her basligini ayri ayri temizleyebilmek icin ince kirinim ─
 
-// Sadece bina ve bolum listesini (3D bina modelleri dahil) varsayilana sifirla
+// Bina ve bolum listesini TAMAMEN sil (3D modeller ve lokasyon kirilimi dahil).
+// Bolumler de veridir: temizlik sonrasi liste bos kalir, varsayilan bolum geri gelmez.
 export async function sbWipeProjeBinaData() {
   await Promise.allSettled([
     sbDeleteAll('proje_bina_modelleri'),
+    sbDeleteAll('proje_lokasyonlar'),
     supabase.from('proje_buildings').delete().gte('created_at', '2000-01-01T00:00:00Z'),
     supabase.from('proje_sections').delete().gte('created_at', '2000-01-01T00:00:00Z'),
   ])
+}
+
+// Sadece sirket listesini sil
+export async function sbWipeCompaniesData() {
+  await sbDeleteAll('companies')
 }
 
 // Sadece sartname (Bolum & Sartname) tanimlarini sil

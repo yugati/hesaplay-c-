@@ -23,6 +23,7 @@ import {
   sbWipeProjeSpecData,
   sbWipeProjeMalzemeData,
   sbWipeProjeSiparisData,
+  sbWipeCompaniesData,
   sbWipeAletData,
   sbWipeSahaData,
   sbWipeGeciciData,
@@ -211,6 +212,7 @@ window.sbWipeProjeSartnameData  = sbWipeProjeSartnameData
 window.sbWipeProjeSpecData      = sbWipeProjeSpecData
 window.sbWipeProjeMalzemeData   = sbWipeProjeMalzemeData
 window.sbWipeProjeSiparisData   = sbWipeProjeSiparisData
+window.sbWipeCompaniesData      = sbWipeCompaniesData
 window.sbWipeAletData      = sbWipeAletData
 window.sbWipeSahaData      = sbWipeSahaData
 window.sbWipeGeciciData    = sbWipeGeciciData
