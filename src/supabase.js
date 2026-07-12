@@ -648,6 +648,12 @@ export async function sbMigrateLocalDB(localDB) {
     ops.push(sbInsertEntities('proje_orders', localDB.proje.orders))
   if (localDB.proje?.binaModelleri?.length)
     ops.push(sbInsertEntities('proje_bina_modelleri', localDB.proje.binaModelleri))
+  if (localDB.proje?.alternatives?.length)
+    ops.push(sbInsertEntities('proje_alternatives', localDB.proje.alternatives))
+  if (localDB.proje?.lokasyonlar?.length)
+    ops.push(sbInsertEntities('proje_lokasyonlar', localDB.proje.lokasyonlar))
+  if (localDB.companies?.length)
+    ops.push(sbInsertEntities('companies', localDB.companies))
   if (localDB.meta?.audit?.length)
     ops.push(
       supabase.from('audit_log').insert(
@@ -655,12 +661,18 @@ export async function sbMigrateLocalDB(localDB) {
       ).then(() => {})
     )
 
+  // meta ayarlarinin TAMAMI geri yazilir (binaGiris, migration flag'leri vb.) -
+  // audit ayri tabloya gider, updated/seeded/_partial calisma-ani degerleridir
   const meta = localDB.meta || {}
+  const SKIP_META = new Set(['audit', 'updated', 'seeded', '_partial'])
+  Object.keys(meta).forEach(k => {
+    if (!SKIP_META.has(k) && meta[k] !== undefined) ops.push(sbSetSetting(k, meta[k]))
+  })
   ops.push(
     sbSetSetting('created', meta.created || Date.now()),
-    sbSetSetting('tavaSeedV', meta.tavaSeedV || 4),
-    sbSetSetting('specWipeV', meta.specWipeV || 1),
-    sbSetSetting('matLibV', meta.matLibV || 1),
+    sbSetSetting('tavaSeedV', meta.tavaSeedV != null ? meta.tavaSeedV : 4),
+    sbSetSetting('specWipeV', meta.specWipeV != null ? meta.specWipeV : 1),
+    sbSetSetting('matLibV', meta.matLibV != null ? meta.matLibV : 1),
   )
 
   await Promise.allSettled(ops)
@@ -673,7 +685,7 @@ export async function sbMigrateLocalDB(localDB) {
 export async function sbWipeAllData() {
   const textIdTables = [
     'proje_materials', 'proje_specs', 'proje_items', 'proje_orders', 'proje_sartnames',
-    'proje_bina_modelleri', 'proje_lokasyonlar',
+    'proje_bina_modelleri', 'proje_lokasyonlar', 'proje_alternatives', 'companies',
     'alet_items', 'saha_panels', 'saha_lines', 'saha_sockets',
     'rapor_entries', 'gecici_lib', 'gecici_moves', 'gecici_orders',
   ]
