@@ -1445,6 +1445,23 @@ function migrate(){
       .then(()=>sbSetSetting('specLinkV',1))
       .catch(e=>console.warn('specLinkV onarimi kaydedilemedi:',e));
   }
+  // ONARIM (tek sefer): malzeme duzenleme hatasiyla bolumu silinen sartname kalemlerini kurtar.
+  // saveMaterial eskiden malzemenin varsayilan kategorisini tum kalemlere yaziyordu; varsayilani
+  // bos bir malzeme kaydedilince kalemin bolumu ('cat') silinip kalem sartname ekranindan
+  // kayboluyordu. Kalemin bagli oldugu sartname kaydi (bina+kod) dogru bolumu bildigi icin
+  // bolum oradan geri yazilir (ayni bina+kod birden fazla bolumde varsa dokunulmaz).
+  if(!DB.meta._partial && !DB.meta.specCatFixV){
+    const fixed=[];
+    (DB.proje.specs||[]).forEach(sp=>{
+      if(sp.cat || !(sp.grup&&sp.grup.trim())) return;
+      const srs=(DB.proje.sartnames||[]).filter(x=>x.bina===sp.bina && x.code===sp.grup.trim());
+      if(srs.length===1){ sp.cat=srs[0].section; fixed.push(sp); }
+    });
+    DB.meta.specCatFixV=1;
+    (fixed.length?Promise.all(fixed.map(sp=>sbUpdateProjeSpec(sp.id,{...sp}))):Promise.resolve())
+      .then(()=>sbSetSetting('specCatFixV',1))
+      .catch(e=>console.warn('specCatFixV onarimi kaydedilemedi:',e));
+  }
 }
 
 let SEC="proje", TAB="spec", SEARCH="", GFILTER="", LOGVIEW="akis";
@@ -2863,19 +2880,22 @@ function matModalBgClick(ev){
 function openMaterialModal(id){
   const m=id?getMaterial(id):null; modalImg=m&&m.img?m.img:null;
   modalTags=(m&&m.tags)?m.tags.slice():[];
-  const cats=[...new Set([...(DB.proje.sections||PROJ_CATS),...(DB.proje.materials||[]).map(x=>x.cat).filter(Boolean)])];
   const allTags=[...new Set((DB.proje.materials||[]).flatMap(x=>x.tags||[]))].sort((a,b)=>a.localeCompare(b,'tr'));
   const usage=m?materialUsage(m.id):[];
+  // varsayilan kategori bossa ve malzeme tek bolumde kullaniliyorsa o bolum on-secili gelir:
+  // kullanici "kategorisiz" gorup farkinda olmadan oyle kaydetmesin
+  const useCats=[...new Set(usage.map(s=>s.cat).filter(Boolean))];
+  const selCat=(m&&m.cat)||(useCats.length===1?useCats[0]:'');
+  const cats=[...new Set([...(DB.proje.sections||PROJ_CATS),...(DB.proje.materials||[]).map(x=>x.cat).filter(Boolean),...useCats])];
   const html=`<div class="modal-bg" onclick="matModalBgClick(event)"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${m?'Malzeme Duzenle':'Yeni Malzeme'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow"><label>Malzeme Adi *</label><input id="mt_name" value="${m?esc(m.name):''}" placeholder="orn. Galvaniz Kablo Tavasi 200mm"></div>
     <div class="frow two"><div><label>Urun Kodu</label><input id="mt_code" value="${m?esc(m.code||''):''}" placeholder="orn. 121491"></div><div><label>Marka  <span class="t-meta">(her satir ayri gosterilir)</span></label><textarea id="mt_brand" rows="2" style="min-height:38px" placeholder="orn. Hilti, Schneider">${m?esc(m.brand||''):''}</textarea></div></div>
     <div class="frow two"><div><label>Standart Numarasi</label><input id="mt_standart" value="${m?esc(m.standart||''):''}" placeholder="orn. TS EN 61386"></div><div><label>Agirlik (kg)  <span class="t-meta">(birim agirlik)</span></label><input id="mt_weight" type="number" step="any" min="0" value="${m&&m.weight!=null?m.weight:''}" placeholder="0"></div></div>
     <div class="frow"><label>Birim</label><input id="mt_unit" value="${m?esc(m.unit||''):''}" placeholder="metre / adet"></div>
     <div class="frow"><label>Kategori  <span class="t-meta">(varsayilan bolum - malzeme baska bolumlerin sartnamelerinde de kullanilabilir)</span></label>
-      <select id="mt_cat"><option value="" ${!(m&&m.cat)?'selected':''}>- kategorisiz (varsayilan yok) -</option>${cats.map(c=>`<option ${m&&m.cat===c?'selected':''}>${esc(c)}</option>`).join('')}<option value="__new">+ Yeni kategori...</option></select>
+      <select id="mt_cat"><option value="" ${!selCat?'selected':''}>- kategorisiz (varsayilan yok) -</option>${cats.map(c=>`<option ${selCat===c?'selected':''}>${esc(c)}</option>`).join('')}<option value="__new">+ Yeni kategori...</option></select>
       <input id="mt_newcat" class="hidden" style="margin-top:7px" placeholder="Yeni kategori">
-      ${(()=>{ const useCats=[...new Set(usage.map(s=>s.cat).filter(Boolean))];
-        return useCats.length?`<p style="font-size:11px;color:var(--dim);font-family:var(--mono);margin-top:6px">Fiilen kullanildigi bolum${useCats.length>1?'ler':''}: <b>${useCats.map(esc).join(', ')}</b> - bu bilgi sartname kalemlerinden gelir, yukaridaki secim sadece varsayilandir</p>`:''; })()}
+      ${useCats.length?`<p style="font-size:11px;color:var(--dim);font-family:var(--mono);margin-top:6px">Fiilen kullanildigi bolum${useCats.length>1?'ler':''}: <b>${useCats.map(esc).join(', ')}</b> - bu bilgi sartname kalemlerinden gelir, yukaridaki secim sadece varsayilandir</p>`:''}
     </div>
     <div class="frow"><label>Etiket  <span class="t-meta">(Enter veya virgul ile ekleyin - arama/filtrelemede kullanilir)</span></label>
       <div id="mt_tagsBox" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:24px"></div>
@@ -2937,7 +2957,10 @@ async function saveMaterial(id){ if(!guard('editMaterial'))return;
   if(id){ const m=getMaterial(id);
     Object.assign(m,{name,code,brand,unit,cat,note,standart,weight,tags,proje,img:modalImg,updatedAt:Date.now()});
     const affectedSpecs=materialUsage(id);
-    affectedSpecs.forEach(sp=>{ sp.code=code; sp.name=name; if(unit)sp.unit=unit; sp.cat=cat; sp.brand=brand; sp.matId=id; sp.standart=standart; sp.weight=weight; sp.tags=tags.slice(); sp.img=modalImg||null; });
+    // sp.cat BILEREK guncellenmez: bolum kalemin ozelligidir (bkz. saveSpec), malzemenin kategorisi
+    // sadece kutuphane varsayilanidir. Eskiden buradaki sp.cat=cat, varsayilan kategorisi bos bir
+    // malzeme kaydedilince kalemin bolumunu silip sartname ekranindan kayboluyordu.
+    affectedSpecs.forEach(sp=>{ sp.code=code; sp.name=name; if(unit)sp.unit=unit; sp.brand=brand; sp.matId=id; sp.standart=standart; sp.weight=weight; sp.tags=tags.slice(); sp.img=modalImg||null; });
     await Promise.all([
       sbUpdateProjeMaterial(id,{...m}),
       ...affectedSpecs.map(sp=>sbUpdateProjeSpec(sp.id,{...sp}))
