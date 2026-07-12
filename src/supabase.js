@@ -134,10 +134,24 @@ async function sbInsertEntity(table, entity) {
   await sbRun(supabase.from(table).insert([{ id: entity.id, data: entity }]))
 }
 
+// Satir sayisinin yaninda TOPLAM BAYT boyutuna gore de parcalar: gomulu foto/PDF
+// tasiyan kayitlar (ornegin proje_items) tek satirda birkac MB olabiliyor, 500
+// satirlik sabit blok bu durumda tek istekte onlarca MB'a cikip sessizce
+// basarisiz oluyordu (restore sirasinda hicbir hata gorunmeden kayit kaybi).
 async function sbInsertEntities(table, entities) {
   if (!entities || !entities.length) return
+  const MAX_ROWS = 500
+  const MAX_BYTES = 3 * 1024 * 1024
   const chunks = []
-  for (let i = 0; i < entities.length; i += 500) chunks.push(entities.slice(i, i + 500))
+  let cur = [], curBytes = 0
+  for (const e of entities) {
+    const size = JSON.stringify(e).length
+    if (cur.length && (cur.length >= MAX_ROWS || curBytes + size > MAX_BYTES)) {
+      chunks.push(cur); cur = []; curBytes = 0
+    }
+    cur.push(e); curBytes += size
+  }
+  if (cur.length) chunks.push(cur)
   for (const chunk of chunks) {
     await sbRun(supabase.from(table).insert(chunk.map(e => ({ id: e.id, data: e }))))
   }
@@ -609,75 +623,83 @@ export async function sbLoadAllData(scope) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function sbMigrateLocalDB(localDB) {
+  // her op bir {label, promise} - hangi tablonun basarisiz oldugunu gorebilmek icin.
+  // Eskiden Promise.allSettled sonucu hic kontrol edilmiyordu: buyuk payload'lu
+  // (ornegin gomulu PDF/foto tasiyan proje_items) bir tablo sessizce basarisiz
+  // olsa bile fonksiyon "basarili" donuyor, restore ekrani hata gostermiyordu.
   const ops = []
+  const push = (label, promise) => ops.push({ label, promise })
 
   if (localDB.alet?.items?.length)
-    ops.push(sbInsertEntities('alet_items', localDB.alet.items))
+    push('El Aletleri', sbInsertEntities('alet_items', localDB.alet.items))
   if (localDB.saha?.panels?.length)
-    ops.push(sbInsertEntities('saha_panels', localDB.saha.panels))
+    push('Saha Panolari', sbInsertEntities('saha_panels', localDB.saha.panels))
   if (localDB.saha?.lines?.length)
-    ops.push(sbInsertEntities('saha_lines', localDB.saha.lines))
+    push('Saha Hatlari', sbInsertEntities('saha_lines', localDB.saha.lines))
   if (localDB.saha?.sockets?.length)
-    ops.push(sbInsertEntities('saha_sockets', localDB.saha.sockets))
-  if (localDB.saha?.bg)
-    ops.push(
-      sbSetSahaSetting('bg', localDB.saha.bg),
-      sbSetSahaSetting('bgName', localDB.saha.bgName || '')
-    )
+    push('Saha Prizleri', sbInsertEntities('saha_sockets', localDB.saha.sockets))
+  if (localDB.saha?.bg) {
+    push('Saha Plani Arka Plani', sbSetSahaSetting('bg', localDB.saha.bg))
+    push('Saha Plani Dosya Adi', sbSetSahaSetting('bgName', localDB.saha.bgName || ''))
+  }
   if (localDB.rapor?.entries?.length)
-    ops.push(sbInsertEntities('rapor_entries', localDB.rapor.entries))
+    push('Saha Raporu Kayitlari', sbInsertEntities('rapor_entries', localDB.rapor.entries))
   if (localDB.rapor?.ekipler?.length)
-    ops.push(sbInsertRaporEkipler(localDB.rapor.ekipler))
+    push('Ekipler', sbInsertRaporEkipler(localDB.rapor.ekipler))
   if (localDB.gecici?.lib?.length)
-    ops.push(sbInsertEntities('gecici_lib', localDB.gecici.lib))
+    push('Gecici Elektrik Kutuphanesi', sbInsertEntities('gecici_lib', localDB.gecici.lib))
   if (localDB.gecici?.moves?.length)
-    ops.push(sbInsertEntities('gecici_moves', localDB.gecici.moves))
+    push('Gecici Elektrik Hareketleri', sbInsertEntities('gecici_moves', localDB.gecici.moves))
   if (localDB.gecici?.orders?.length)
-    ops.push(sbInsertEntities('gecici_orders', localDB.gecici.orders))
+    push('Gecici Elektrik Siparisleri', sbInsertEntities('gecici_orders', localDB.gecici.orders))
   if (localDB.proje?.buildings?.length)
-    ops.push(sbInsertProjeBuildings(localDB.proje.buildings))
+    push('Binalar', sbInsertProjeBuildings(localDB.proje.buildings))
   if (localDB.proje?.sections?.length)
-    ops.push(sbInsertProjeSections(localDB.proje.sections))
+    push('Bolumler', sbInsertProjeSections(localDB.proje.sections))
   if (localDB.proje?.sartnames?.length)
-    ops.push(sbInsertEntities('proje_sartnames', localDB.proje.sartnames))
+    push('Sartname Tanimlari', sbInsertEntities('proje_sartnames', localDB.proje.sartnames))
   if (localDB.proje?.materials?.length)
-    ops.push(sbInsertEntities('proje_materials', localDB.proje.materials))
+    push('Malzeme Kutuphanesi', sbInsertEntities('proje_materials', localDB.proje.materials))
   if (localDB.proje?.specs?.length)
-    ops.push(sbInsertEntities('proje_specs', localDB.proje.specs))
+    push('Spesifikasyon Kalemleri', sbInsertEntities('proje_specs', localDB.proje.specs))
   if (localDB.proje?.items?.length)
-    ops.push(sbInsertEntities('proje_items', localDB.proje.items))
+    push('Alim/Hareket Kayitlari', sbInsertEntities('proje_items', localDB.proje.items))
   if (localDB.proje?.orders?.length)
-    ops.push(sbInsertEntities('proje_orders', localDB.proje.orders))
+    push('Siparisler', sbInsertEntities('proje_orders', localDB.proje.orders))
   if (localDB.proje?.binaModelleri?.length)
-    ops.push(sbInsertEntities('proje_bina_modelleri', localDB.proje.binaModelleri))
+    push('3D Bina Modelleri', sbInsertEntities('proje_bina_modelleri', localDB.proje.binaModelleri))
   if (localDB.proje?.alternatives?.length)
-    ops.push(sbInsertEntities('proje_alternatives', localDB.proje.alternatives))
+    push('Alternatif Urunler', sbInsertEntities('proje_alternatives', localDB.proje.alternatives))
   if (localDB.proje?.lokasyonlar?.length)
-    ops.push(sbInsertEntities('proje_lokasyonlar', localDB.proje.lokasyonlar))
+    push('Lokasyonlar', sbInsertEntities('proje_lokasyonlar', localDB.proje.lokasyonlar))
   if (localDB.companies?.length)
-    ops.push(sbInsertEntities('companies', localDB.companies))
+    push('Sirketler', sbInsertEntities('companies', localDB.companies))
   if (localDB.meta?.audit?.length)
-    ops.push(
-      supabase.from('audit_log').insert(
-        localDB.meta.audit.map(entry => ({ data: entry }))
-      ).then(() => {})
-    )
+    push('Denetim Kaydi', supabase.from('audit_log').insert(
+      localDB.meta.audit.map(entry => ({ data: entry }))
+    ).then(() => {}))
 
   // meta ayarlarinin TAMAMI geri yazilir (binaGiris, migration flag'leri vb.) -
   // audit ayri tabloya gider, updated/seeded/_partial calisma-ani degerleridir
   const meta = localDB.meta || {}
   const SKIP_META = new Set(['audit', 'updated', 'seeded', '_partial'])
   Object.keys(meta).forEach(k => {
-    if (!SKIP_META.has(k) && meta[k] !== undefined) ops.push(sbSetSetting(k, meta[k]))
+    if (!SKIP_META.has(k) && meta[k] !== undefined) push('Ayar: ' + k, sbSetSetting(k, meta[k]))
   })
-  ops.push(
-    sbSetSetting('created', meta.created || Date.now()),
-    sbSetSetting('tavaSeedV', meta.tavaSeedV != null ? meta.tavaSeedV : 4),
-    sbSetSetting('specWipeV', meta.specWipeV != null ? meta.specWipeV : 1),
-    sbSetSetting('matLibV', meta.matLibV != null ? meta.matLibV : 1),
-  )
+  push('Ayar: created', sbSetSetting('created', meta.created || Date.now()))
+  push('Ayar: tavaSeedV', sbSetSetting('tavaSeedV', meta.tavaSeedV != null ? meta.tavaSeedV : 4))
+  push('Ayar: specWipeV', sbSetSetting('specWipeV', meta.specWipeV != null ? meta.specWipeV : 1))
+  push('Ayar: matLibV', sbSetSetting('matLibV', meta.matLibV != null ? meta.matLibV : 1))
 
-  await Promise.allSettled(ops)
+  const results = await Promise.allSettled(ops.map(o => o.promise))
+  const failed = results
+    .map((r, i) => (r.status === 'rejected' ? { label: ops[i].label, error: r.reason?.message || String(r.reason) } : null))
+    .filter(Boolean)
+  if (failed.length) {
+    const err = new Error(failed.map(f => f.label + ': ' + f.error).join(' · '))
+    err.failedTables = failed
+    throw err
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
