@@ -2630,7 +2630,7 @@ function matMatchesLibSearch(m,q){
   // (subsequence) aranıyordu - aranan kelimenin harfleri farkli alanlara dagilmis
   // tamamen alakasiz kayitlar da eslesiyordu (orn. "Коробка" aramasinda Щиток satirlari)
   const usageCats=materialUsage(m.id).map(s=>s.cat||'').join(' ');
-  return [m.code,m.name,m.cat,m.brand,m.note,m.standart,(m.tags||[]).join(' '),usageCats]
+  return [m.code,(m.altCodes||[]).join(' '),m.name,m.cat,m.brand,m.note,m.standart,(m.tags||[]).join(' '),usageCats]
     .some(f=>f && matchText(f,q));
 }
 function matMatchesTagFilter(m){ if(!_matTagFilter.size) return true; return (m.tags||[]).some(t=>_matTagFilter.has(t)); }
@@ -2705,7 +2705,7 @@ function openMergeModal(){
     </div>`;
   };
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide merge-modal"><div class="modal-head"><h3>Urunleri Birlestir</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
-    <p class="t-meta" style="margin-bottom:14px;line-height:1.5">Ayni fiziksel urun, Excel'den tekrar aktarilirken urun kodu veya standart numarasi degistigi icin kutuphanede iki ayri kayit olarak gorunebilir. Asagida <b>ana kayit</b> olarak birini secin: digeri silinir, ona bagli tum sartname satirlari ana kayda tasinir; ana kayittaki bos alanlar (foto, marka, standart, agirlik, etiket) diger kayittan otomatik tamamlanir. Ana kayittaki dolu alanlar degismez.</p>
+    <p class="t-meta" style="margin-bottom:14px;line-height:1.5">Ayni fiziksel urun, Excel'den tekrar aktarilirken urun kodu veya standart numarasi degistigi icin kutuphanede iki ayri kayit olarak gorunebilir. Asagida <b>ana kayit</b> olarak birini secin: digeri silinir, ona bagli tum sartname satirlari ana kayda tasinir; ana kayittaki bos alanlar (foto, marka, standart, agirlik, etiket) diger kayittan otomatik tamamlanir. Ana kayittaki dolu alanlar degismez. Silinen kaydin urun kodu ana kayitta <b>varyant kod</b> olarak saklanir - eski kodla arama ve Excel eslestirme calismaya devam eder.</p>
     <div class="merge-cards">${card(a,ua)}${card(b,ub)}</div>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="confirmMergeMaterials()">${icoMerge()} Birlestir</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
@@ -2733,6 +2733,11 @@ async function confirmMergeMaterials(){
     else if(!keep[f]&&drop[f]) keep[f]=drop[f];
   });
   if(keep.weight==null && drop.weight!=null) keep.weight=drop.weight;
+  // silinen kaydin kodlari kaybolmasin: ana kod + varyantlari ana kayda VARYANT KOD olarak gecer.
+  // Boylece eski kodla yapilan Excel yapistirma / ice aktarma ana kayda eslesmeye devam eder.
+  if(!keep.altCodes) keep.altCodes=[];
+  const _keepCodes=new Set(matAllCodes(keep).map(c=>c.toLowerCase()));
+  matAllCodes(drop).forEach(c=>{ if(!_keepCodes.has(c.toLowerCase())){ keep.altCodes.push(c); _keepCodes.add(c.toLowerCase()); } });
   keep.updatedAt=Date.now();
 
   // matId VEYA kod/ad eslesmesiyle (materialUsage) drop'a bagli tum sartname satirlarini ana kayda tasi
@@ -2823,7 +2828,7 @@ function renderMaterialLib(){
         <td style="width:34px;text-align:center"><input type="checkbox" class="mat-check" ${_matSel.has(m.id)?'checked':''} onclick="toggleMatSel('${m.id}')"></td>
         <td>${thumb}</td>
         <td class="t-name${_matHighlightDup&&dupNames.has(norm(m.name).trim())?' dup-hl':''}">${esc(m.name)} ${usageTag}<div style="margin-top:4px">${specs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px">${esc(g)}</span>`).join('')}</div></td>
-        <td class="${_matHighlightDup&&m.code&&dupCodes.has(norm(m.code).trim())?'dup-hl':''}" style="font-family:var(--mono);font-size:12px">${esc(m.code||'-')}</td>
+        <td class="${_matHighlightDup&&m.code&&dupCodes.has(norm(m.code).trim())?'dup-hl':''}" style="font-family:var(--mono);font-size:12px">${esc(m.code||'-')}${(m.altCodes&&m.altCodes.length)?`<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${m.altCodes.map(c=>`<span class="cat-tag" style="background:var(--dim)22;color:var(--mute);font-family:var(--mono);font-size:9px" title="Varyant kod - ayni urunun bilindigi diger kod">${esc(c)}</span>`).join('')}</div>`:''}</td>
         <td class="t-meta">${m.brand?`<div class="brand-cell">${m.brand.split(/\n|\s\/\s/).map(b=>b.trim()).filter(Boolean).map(b=>{
           const full=esc(b), short=b.length>12?esc(b.slice(0,12))+'…':full;
           return `<span class="cat-tag" style="background:var(--dim)33;color:var(--text)" data-full="${full}" data-short="${short}" title="${full}" onclick="event.stopPropagation();brandChipToggle(this)">${short}</span>`;
@@ -2872,14 +2877,15 @@ function renderMaterialLib(){
 // veri kaybini onlemek icin kullanici Iptal/X ile bilerek kapatmali
 function matModalBgClick(ev){
   if(ev.target!==ev.currentTarget) return;
-  const ids=['mt_name','mt_code','mt_brand','mt_standart','mt_weight','mt_unit','mt_proje','mt_note'];
+  const ids=['mt_name','mt_code','mt_brand','mt_standart','mt_weight','mt_unit','mt_proje','mt_note','mt_altCodeInput'];
   const hasData = ids.some(id=>{ const el=document.getElementById(id); return el&&String(el.value||'').trim(); })
-    || (modalTags&&modalTags.length) || modalImg;
+    || (modalTags&&modalTags.length) || (modalAltCodes&&modalAltCodes.length) || modalImg;
   if(!hasData) closeModal();
 }
 function openMaterialModal(id){
   const m=id?getMaterial(id):null; modalImg=m&&m.img?m.img:null;
   modalTags=(m&&m.tags)?m.tags.slice():[];
+  modalAltCodes=(m&&m.altCodes)?m.altCodes.slice():[];
   const allTags=[...new Set((DB.proje.materials||[]).flatMap(x=>x.tags||[]))].sort((a,b)=>a.localeCompare(b,'tr'));
   const usage=m?materialUsage(m.id):[];
   // varsayilan kategori bossa ve malzeme tek bolumde kullaniliyorsa o bolum on-secili gelir:
@@ -2890,6 +2896,10 @@ function openMaterialModal(id){
   const html=`<div class="modal-bg" onclick="matModalBgClick(event)"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${m?'Malzeme Duzenle':'Yeni Malzeme'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow"><label>Malzeme Adi *</label><input id="mt_name" value="${m?esc(m.name):''}" placeholder="orn. Galvaniz Kablo Tavasi 200mm"></div>
     <div class="frow two"><div><label>Urun Kodu</label><input id="mt_code" value="${m?esc(m.code||''):''}" placeholder="orn. 121491"></div><div><label>Marka  <span class="t-meta">(her satir ayri gosterilir)</span></label><textarea id="mt_brand" rows="2" style="min-height:38px" placeholder="orn. Hilti, Schneider">${m?esc(m.brand||''):''}</textarea></div></div>
+    <div class="frow"><label>Varyant Kodlar  <span class="t-meta">(ayni urunun bilindigi diger kodlar - Enter veya virgul ile ekleyin; arama ve Excel eslestirmede ana kod gibi calisir)</span></label>
+      <div id="mt_altCodesBox" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:24px"></div>
+      <input id="mt_altCodeInput" placeholder="orn. 121491-EU, HL121491" oninput="altCodeInputChange(event)" onkeydown="altCodeInputKeydown(event)">
+    </div>
     <div class="frow two"><div><label>Standart Numarasi</label><input id="mt_standart" value="${m?esc(m.standart||''):''}" placeholder="orn. TS EN 61386"></div><div><label>Agirlik (kg)  <span class="t-meta">(birim agirlik)</span></label><input id="mt_weight" type="number" step="any" min="0" value="${m&&m.weight!=null?m.weight:''}" placeholder="0"></div></div>
     <div class="frow"><label>Birim</label><input id="mt_unit" value="${m?esc(m.unit||''):''}" placeholder="metre / adet"></div>
     <div class="frow"><label>Kategori  <span class="t-meta">(varsayilan bolum - malzeme baska bolumlerin sartnamelerinde de kullanilabilir)</span></label>
@@ -2913,6 +2923,7 @@ function openMaterialModal(id){
   document.body.insertAdjacentHTML('beforeend',html);
   document.getElementById('mt_cat').onchange=function(){document.getElementById('mt_newcat').classList.toggle('hidden',this.value!=='__new');};
   renderTagsBox('mt');
+  renderAltCodesBox();
 }
 // basit etiket-cip girisi: Enter/virgul ile mevcut metni cip olarak onaylar (paylasilan modalTags dizisine yazar)
 function renderTagsBox(prefix){
@@ -2933,6 +2944,16 @@ function tagInputKeydown(e,prefix){
   if(v && !modalTags.some(t=>t.toLowerCase()===v.toLowerCase())) modalTags.push(v);
   e.target.value=''; renderTagsBox(prefix);
 }
+// varyant kod cipleri: etiket cipleriyle ayni UX, ayri dizi (modalAltCodes)
+function renderAltCodesBox(){ const box=document.getElementById('mt_altCodesBox'); if(!box)return;
+  box.innerHTML=modalAltCodes.length?modalAltCodes.map((c,i)=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);display:inline-flex;align-items:center;gap:5px">${esc(c)}<span style="cursor:pointer;opacity:.6" onclick="removeModalAltCode(${i})">&times;</span></span>`).join(''):'<span class="t-meta" style="font-size:11px">Henuz varyant kod yok</span>'; }
+function removeModalAltCode(i){ modalAltCodes.splice(i,1); renderAltCodesBox(); }
+function addModalAltCode(v){ const c=String(v||'').trim(); if(!c)return;
+  if(!modalAltCodes.some(x=>x.toLowerCase()===c.toLowerCase())) modalAltCodes.push(c); }
+function altCodeInputChange(e){ const v=e.target.value; if(!v.includes(','))return;
+  v.split(',').forEach(addModalAltCode); e.target.value=''; renderAltCodesBox(); }
+function altCodeInputKeydown(e){ if(e.key!=='Enter')return; e.preventDefault();
+  addModalAltCode(e.target.value); e.target.value=''; renderAltCodesBox(); }
 async function saveMaterial(id){ if(!guard('editMaterial'))return;
   const name=document.getElementById('mt_name').value.trim();
   if(!name){toast("Malzeme adi zorunlu","err");return;}
@@ -2950,12 +2971,22 @@ async function saveMaterial(id){ if(!guard('editMaterial'))return;
   const tagInputLeftover=document.getElementById('mt_tagInput').value.trim();
   if(tagInputLeftover && !modalTags.some(t=>t.toLowerCase()===tagInputLeftover.toLowerCase())) modalTags.push(tagInputLeftover);
   const tags=modalTags.slice();
-  // ayni kod/ad cakismasi (farkli kayit)
-  const dup=(DB.proje.materials||[]).find(x=>x.id!==id && matKey(x.code,x.name)===matKey(code,name));
-  if(dup){toast("Bu malzeme kutuphanede zaten var: "+(code||name),"err");return;}
+  const altCodeLeftover=document.getElementById('mt_altCodeInput').value.trim();
+  if(altCodeLeftover) addModalAltCode(altCodeLeftover);
+  // varyant kod ana kodla ayni olamaz (sessizce ayiklanir)
+  const altCodes=modalAltCodes.map(c=>c.trim()).filter(c=>c && c.toLowerCase()!==code.toLowerCase());
+  // ayni kod/ad cakismasi (farkli kayit) - varyant kodlar dahil: bir kod yalnizca TEK urune ait olabilir
+  const myCodes=[code,...altCodes].filter(Boolean).map(c=>c.toLowerCase());
+  const dup=(DB.proje.materials||[]).find(x=>{
+    if(x.id===id) return false;
+    const xCodes=matAllCodes(x).map(c=>c.toLowerCase());
+    if(myCodes.length && myCodes.some(c=>xCodes.includes(c))) return true;
+    return matKey(x.code,x.name)===matKey(code,name);
+  });
+  if(dup){toast("Bu kod/malzeme baska bir kayitta zaten var: "+(dup.code||dup.name),"err");return;}
   let savedMt;
   if(id){ const m=getMaterial(id);
-    Object.assign(m,{name,code,brand,unit,cat,note,standart,weight,tags,proje,img:modalImg,updatedAt:Date.now()});
+    Object.assign(m,{name,code,brand,unit,cat,note,standart,weight,tags,altCodes,proje,img:modalImg,updatedAt:Date.now()});
     const affectedSpecs=materialUsage(id);
     // sp.cat BILEREK guncellenmez: bolum kalemin ozelligidir (bkz. saveSpec), malzemenin kategorisi
     // sadece kutuphane varsayilanidir. Eskiden buradaki sp.cat=cat, varsayilan kategorisi bos bir
@@ -2968,7 +2999,7 @@ async function saveMaterial(id){ if(!guard('editMaterial'))return;
     savedMt=m;
   } else {
     const now=Date.now();
-    savedMt={id:uid(),name,code,brand,unit,cat,note,standart,weight,tags,proje,img:modalImg,createdAt:now,updatedAt:now};
+    savedMt={id:uid(),name,code,brand,unit,cat,note,standart,weight,tags,altCodes,proje,img:modalImg,createdAt:now,updatedAt:now};
     await sbInsertProjeMaterial(savedMt);
     DB.proje.materials.push(savedMt);
   }
@@ -2993,17 +3024,17 @@ function exportMaterialLib(){
   // urun sutunlari sartname Excel'i ile BIREBIR ayni isim/sirada (Malzeme Ismi...Resim Linki) -
   // iki dosya arasinda kopyala/yapistir ve entegrasyon sorunsuz olsun diye. Sona eklenen sutunlar
   // (Ortak Bolumler, Kac Sartnamede...) salt-bilgi amaclidir, ice aktarmada okunmaz.
-  const rows=[["Malzeme Ismi","Standart Numarasi","Urun Kodu","Marka","Agirlik (kg)","Not","Etiket","Resim Linki","Birim","Kategori","Proje","Ortak Bolumler","Kac Sartnamede","Sartnameler","Olusturulma","Son Guncelleme"]];
+  const rows=[["Malzeme Ismi","Standart Numarasi","Urun Kodu","Marka","Agirlik (kg)","Not","Etiket","Resim Linki","Birim","Kategori","Proje","Varyant Kodlar","Ortak Bolumler","Kac Sartnamede","Sartnameler","Olusturulma","Son Guncelleme"]];
   const sorted=mats.slice().sort((a,b)=>(a.cat||'').localeCompare(b.cat||'','tr')||(a.name||'').localeCompare(b.name||'','tr'));
   sorted.forEach(m=>{
     const usage=materialUsage(m.id); const specs=[...new Set(usage.map(s=>specGroupKey(s)))];
     const ortakBolumler=[...new Set([m.cat,...usage.map(s=>s.cat)].filter(Boolean))].join(', ');
     // base64/veri linkleri (manuel yuklenen fotograflar) hucreye sigmayacagi icin disa aktarilmaz - sadece gercek URL'ler
     const imgUrl=(m.img&&/^https?:\/\//i.test(m.img))?m.img:'';
-    rows.push([m.name,m.standart||'',m.code||'',m.brand||'',m.weight!=null?m.weight:'',m.note||'',formatTagsCell(m.tags),imgUrl,m.unit||'',m.cat||'',m.proje||'',
+    rows.push([m.name,m.standart||'',m.code||'',m.brand||'',m.weight!=null?m.weight:'',m.note||'',formatTagsCell(m.tags),imgUrl,m.unit||'',m.cat||'',m.proje||'',formatTagsCell(m.altCodes),
       ortakBolumler,usage.length,specs.join(', '),m.createdAt?fmtDate(m.createdAt):'',m.updatedAt?fmtDate(m.updatedAt):'']);
   });
-  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:42},{wch:18},{wch:18},{wch:16},{wch:11},{wch:24},{wch:24},{wch:40},{wch:8},{wch:14},{wch:16},{wch:20},{wch:13},{wch:30},{wch:12},{wch:14}];
+  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:42},{wch:18},{wch:18},{wch:16},{wch:11},{wch:24},{wch:24},{wch:40},{wch:8},{wch:14},{wch:16},{wch:20},{wch:20},{wch:13},{wch:30},{wch:12},{wch:14}];
   // kategori sutununda acilir filtre - Tava/Aydinlatma vb. tek tikla ayiklanabilsin.
   // Veri satirlarina dokunmuyor, ice aktarma fonksiyonlarini etkilemez.
   ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:rows[0].length-1}})};
@@ -3667,7 +3698,15 @@ function specGroupKey(sp){ return (sp.grup&&sp.grup.trim())?sp.grup.trim():(sp.c
 function parseTagsCell(v){ return String(v||'').split(',').map(t=>t.trim()).filter(Boolean); }
 function formatTagsCell(tags){ return (tags||[]).join(', '); }
 function matKey(code,name){ return (code&&String(code).trim())?('c:'+String(code).trim().toLowerCase()):('n:'+String(name||'').trim().toLowerCase()); }
-function findMaterial(code,name){ const k=matKey(code,name); return (DB.proje.materials||[]).find(m=>matKey(m.code,m.name)===k); }
+// VARYANT KOD: ayni fiziksel urun birden fazla kodla bilinebilir (uretici kod yenilemesi,
+// tedarikci katalog farki, birlestirmeden kalan eski kod). Teknik ozellikler tek kayitta durur;
+// mt.altCodes o kayda isaret eden ek kodlardir. Bir kod sistemde yalnizca TEK urune ait olabilir.
+function matAllCodes(m){ return [m.code,...(m.altCodes||[])].map(c=>String(c==null?'':c).trim()).filter(Boolean); }
+function findMaterial(code,name){ const k=matKey(code,name);
+  let mt=(DB.proje.materials||[]).find(m=>matKey(m.code,m.name)===k);
+  if(!mt && code && String(code).trim()){ const c=String(code).trim().toLowerCase();
+    mt=(DB.proje.materials||[]).find(m=>(m.altCodes||[]).some(x=>String(x).trim().toLowerCase()===c)); }
+  return mt; }
 function getMaterial(id){ return (DB.proje.materials||[]).find(m=>m.id===id); }
 function ensureMaterial(o){ // {code,name,unit,cat,brand,note,standart,weight,tags,proje,img} -> mevcut varsa dondur, yoksa olustur
   let mt=findMaterial(o.code,o.name);
@@ -3686,9 +3725,10 @@ function ensureMaterial(o){ // {code,name,unit,cat,brand,note,standart,weight,ta
       standart:o.standart||'',weight:o.weight!=null?o.weight:null,tags:o.tags?o.tags.slice():[],proje:o.proje||'',createdAt:now,updatedAt:now};
   DB.proje.materials.push(mt); return mt;
 }
-// bir malzemenin kac spesifikasyonda kullanildigi
-function materialUsage(matId){ const mt=getMaterial(matId); if(!mt)return[]; const k=matKey(mt.code,mt.name);
-  return DB.proje.specs.filter(s=>!s.is_deleted && (s.matId===matId || matKey(s.code,s.name)===k)); }
+// bir malzemenin kac spesifikasyonda kullanildigi (varyant kodlarla eslesen satirlar dahil)
+function materialUsage(matId){ const mt=getMaterial(matId); if(!mt)return[];
+  const keys=new Set([matKey(mt.code,mt.name),...(mt.altCodes||[]).filter(c=>String(c).trim()).map(c=>matKey(c,''))]);
+  return DB.proje.specs.filter(s=>!s.is_deleted && (s.matId===matId || keys.has(matKey(s.code,s.name)))); }
 // TEK KAYNAK OKUMA: bir sartname satirinin bagli oldugu kutuphane malzemesi.
 // Once matId ile, o yoksa kod/ad eslesmesiyle bulunur - urun bilgileri (foto, marka, not, standart...)
 // HER ZAMAN buradan okunmali; sp uzerindeki kopyalar sadece acil yedektir (kopya bayatlasa bile ekran dogru kalir).
@@ -3768,6 +3808,7 @@ function upsertMaterialsFromRows(rows, report){
   const iStd=pick('standart','standart no','standart numarasi','standardi','standart numarasi','standard');
   const iWeight=pick('agirlik','agirligi','agirlik_kg','agirlik (kg)','agirlik(kg)','weight','weight (kg)','kg');
   const iTags=pick('etiket','etiketler','tags','tag');
+  const iAltCodes=pick('varyant kodlar','varyant kod','varyant','varyant kodu','alternatif kodlar','alias','variant codes');
   const iProje=pick('proje','project');
   const iImg=pick('image_url','imageurl','resim linki','resim_linki','resim url','resim_url','resim','foto linki','foto_linki','fotograf linki','fotograf_linki','fotograf url','fotograf','foto','photo url','photo_url','photo','image','gorsel','gorsel linki','gorsel url');
   const iAct=pick('action','islem');
@@ -3792,11 +3833,12 @@ function upsertMaterialsFromRows(rows, report){
     const weightRaw=iWeight>=0?String(row[iWeight]??'').trim():'';
     const weight=(weightRaw!==''&&!isNaN(Number(weightRaw)))?Number(weightRaw):null;
     const tags=iTags>=0?parseTagsCell(row[iTags]):[];
+    const altCodes=iAltCodes>=0?parseTagsCell(row[iAltCodes]).filter(c=>c.toLowerCase()!==code.toLowerCase()):[];
     const proje=iProje>=0?String(row[iProje]??'').trim():'';
     const img=iImg>=0?String(row[iImg]??'').trim():'';
     if(existing){ // UPDATE
       existing.name=name||existing.name; existing.brand=brand; if(cat)existing.cat=cat; if(unit)existing.unit=unit; if(note!=='')existing.note=note; if(img)existing.img=img;
-      if(standart!=='')existing.standart=standart; if(weight!=null)existing.weight=weight; if(tags.length)existing.tags=tags; if(proje!=='')existing.proje=proje;
+      if(standart!=='')existing.standart=standart; if(weight!=null)existing.weight=weight; if(tags.length)existing.tags=tags; if(altCodes.length)existing.altCodes=altCodes; if(proje!=='')existing.proje=proje;
       existing.updatedAt=Date.now();
       // bagli spec'leri senkronla
       // sp.cat bilerek dokunulmaz: bolum kalemin ozelligidir, ayni malzeme farkli bolumlerde kullanilabilir
@@ -3805,7 +3847,7 @@ function upsertMaterialsFromRows(rows, report){
       report.matUpdated++;
     } else { // INSERT
       const now=Date.now();
-      DB.proje.materials.push({id:uid(),code,name:name||code,brand,unit,cat,note,img:img||null,standart,weight,tags,proje,createdAt:now,updatedAt:now}); report.matCreated++;
+      DB.proje.materials.push({id:uid(),code,name:name||code,brand,unit,cat,note,img:img||null,standart,weight,tags,altCodes,proje,createdAt:now,updatedAt:now}); report.matCreated++;
     }
   }
 }
@@ -4693,10 +4735,10 @@ function toast(msg,type){ const w=document.getElementById('toasts'); const t=doc
   t.className='toast'+(cls?' '+cls:''); t.textContent=msg; w.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity .3s';setTimeout(()=>t.remove(),300);},2800); }
 function lightbox(src){ const d=document.createElement('div'); d.className='lightbox'; d.onclick=()=>d.remove(); d.innerHTML=`<img src="${src}">`; document.body.appendChild(d); }
-function closeModal(){ if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; } document.querySelectorAll('.modal-bg').forEach(m=>m.remove()); modalImg=null; modalPdf=null; modalTags=[]; }
+function closeModal(){ if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; } document.querySelectorAll('.modal-bg').forEach(m=>m.remove()); modalImg=null; modalPdf=null; modalTags=[]; modalAltCodes=[]; }
 
 /* ---------- image/pdf pickers (shared) ---------- */
-let modalImg=null, modalPdf=null, modalTags=[];
+let modalImg=null, modalPdf=null, modalTags=[], modalAltCodes=[];
 function compressImg(file,cb){ const r=new FileReader(); r.onload=()=>{ const img=new Image(); img.onload=()=>{ const max=900; let{width:w,height:h}=img; if(w>max||h>max){const s=Math.min(max/w,max/h);w*=s;h*=s;} const c=document.createElement('canvas'); c.width=w;c.height=h; c.getContext('2d').drawImage(img,0,0,w,h); cb(c.toDataURL('image/jpeg',0.8)); }; img.src=r.result; }; r.readAsDataURL(file); }
 function pickImg(e,dropId){ const f=e.target.files[0]; if(!f)return; compressImg(f,d=>{ modalImg=d; const el=document.getElementById(dropId); el.classList.add('has'); el.innerHTML=`<img class="img-prev" src="${d}">`; }); }
 // malzeme modalinda internetten resim linki yapistirma (Excel'deki "Resim Linki" sutununun
@@ -6170,7 +6212,7 @@ function specLibSrc(){
 // MERKEZI MALZEME KUTUPHANESI arama kaynagi - tum bilgi (kod, ad, marka, birim, standart, etiket, FOTO)
 function matLibSrc(){
   return (DB.proje.materials||[]).filter(m=>!m.is_deleted).map(m=>({
-    ad:m.name, alt:(m.code||'')+' '+(m.brand||'')+' '+(m.cat||'')+' '+(m.standart||'')+' '+(m.tags||[]).join(' '),
+    ad:m.name, alt:(m.code||'')+' '+(m.altCodes||[]).join(' ')+' '+(m.brand||'')+' '+(m.cat||'')+' '+(m.standart||'')+' '+(m.tags||[]).join(' '),
     sub:[m.code,m.brand,m.cat,m.unit].filter(Boolean).join(' · '),
     img:m.img||null,
     obj:{matId:m.id,code:m.code||'',ad:m.name,brand:m.brand||'',cat:m.cat||'',unit:m.unit||'',img:m.img||null,
@@ -6421,6 +6463,9 @@ function nordMatchSpec(cells){
   const specs=DB.proje.specs.filter(s=>!s.is_deleted && (s.bina||'')===(NORD.bina||''));
   const texts=cells.map(c=>norm(c).trim()).filter(Boolean);
   for(const t of texts){ const sp=_nordUniq(specs.filter(s=>norm(s.code||'').trim()===t)); if(sp) return sp; }
+  // ana kod eslesmediyse: malzemenin varyant kodlariyla dene (ayni urun, farkli kod)
+  for(const t of texts){ const sp=_nordUniq(specs.filter(s=>{ const mt=specMaterial(s);
+    return mt&&(mt.altCodes||[]).some(c=>norm(c).trim()===t); })); if(sp) return sp; }
   for(const t of texts){ const sp=_nordUniq(specs.filter(s=>norm(s.name||'').trim()===t)); if(sp) return sp; }
   const sp=_nordUniq(specs.filter(s=>{ const hay=norm((s.code||'')+' '+(s.name||''));
     return texts.some(t=>t.length>=3 && hay.indexOf(t)>=0); }));
