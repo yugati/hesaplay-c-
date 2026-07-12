@@ -129,6 +129,10 @@ import {
   sbDeleteProjeBinaModel,
   sbUploadBinaModelFile,
   sbDeleteBinaModelFile,
+  // Parcali giris: lokasyon kirilim agaci
+  sbInsertProjeLokasyon,
+  sbUpdateProjeLokasyon,
+  sbDeleteProjeLokasyonlar,
   // Sirketler
   sbGetCompanies,
   sbInsertCompany,
@@ -323,6 +327,11 @@ window.sbDeleteProjeBinaModel   = guardedSafe('tanimlar', 'delete', sbDeleteProj
 window.sbUploadBinaModelFile    = guardedSafe('tanimlar', 'create', sbUploadBinaModelFile)
 window.sbDeleteBinaModelFile    = guardedSafe('tanimlar', 'delete', sbDeleteBinaModelFile)
 window.initBinaViewer           = initBinaViewer
+
+// ─── Parcali giris: lokasyon kirilim agaci (Kat / Fragment / Oda) ────────────
+window.sbInsertProjeLokasyon    = guardedSafe('tanimlar', 'create', sbInsertProjeLokasyon)
+window.sbUpdateProjeLokasyon    = guardedSafe('tanimlar', 'update', sbUpdateProjeLokasyon)
+window.sbDeleteProjeLokasyonlar = guardedSafe('tanimlar', 'delete', sbDeleteProjeLokasyonlar)
 
 // ─── Sirketler ───────────────────────────────────────────────────────────────
 window.sbGetCompanies      = sbGetCompanies

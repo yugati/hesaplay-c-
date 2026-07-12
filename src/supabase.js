@@ -400,6 +400,14 @@ export async function sbInsertProjeAlternative(e) { return sbInsertEntity('proje
 export async function sbUpdateProjeAlternative(id, e) { return sbUpdateEntity('proje_alternatives', id, e) }
 export async function sbDeleteProjeAlternative(id) { return sbDeleteEntity('proje_alternatives', id) }
 
+// Parçalı giriş: bina lokasyon kırılım ağacı (Kat / Fragment / Oda)
+export async function sbInsertProjeLokasyon(e) { return sbInsertEntity('proje_lokasyonlar', e) }
+export async function sbUpdateProjeLokasyon(id, e) { return sbUpdateEntity('proje_lokasyonlar', id, e) }
+export async function sbDeleteProjeLokasyonlar(ids) {
+  if (!ids || !ids.length) return
+  await sbRun(supabase.from('proje_lokasyonlar').delete().in('id', ids))
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Bina 3D Modelleri (glTF/.glb) - Supabase Storage + JSONB referans tablosu
 // ─────────────────────────────────────────────────────────────────────────────
@@ -510,6 +518,9 @@ export async function sbLoadAllData(scope) {
     tasks.projeSartnames = sbGetAll('proje_sartnames')
     tasks.projeMaterials = sbGetAll('proje_materials')
     tasks.projeSpecs = sbGetAll('proje_specs')
+    // proje_lokasyonlar tablosu supabase_schema.sql'in yeni bölümüyle oluşturulur;
+    // migration henüz çalıştırılmamışsa yüklemeyi kilitlememesi için hataya toleranslı.
+    tasks.projeLokasyonlar = sbGetAll('proje_lokasyonlar').catch(() => [])
   }
   if (needProjeFull) {
     tasks.projeItems = sbGetAll('proje_items')
@@ -575,6 +586,7 @@ export async function sbLoadAllData(scope) {
       orders: r.projeOrders || [],
       alternatives: r.projeAlternatives || [],
       binaModelleri: r.projeBinaModelleri || [],
+      lokasyonlar: r.projeLokasyonlar || [],
     },
     meta: {
       ...settingsMap,
@@ -661,7 +673,7 @@ export async function sbMigrateLocalDB(localDB) {
 export async function sbWipeAllData() {
   const textIdTables = [
     'proje_materials', 'proje_specs', 'proje_items', 'proje_orders', 'proje_sartnames',
-    'proje_bina_modelleri',
+    'proje_bina_modelleri', 'proje_lokasyonlar',
     'alet_items', 'saha_panels', 'saha_lines', 'saha_sockets',
     'rapor_entries', 'gecici_lib', 'gecici_moves', 'gecici_orders',
   ]
@@ -684,6 +696,7 @@ export async function sbWipeProjeData() {
     sbDeleteAll('proje_orders'),
     sbDeleteAll('proje_sartnames'),
     sbDeleteAll('proje_bina_modelleri'),
+    sbDeleteAll('proje_lokasyonlar'),
     supabase.from('proje_buildings').delete().gte('created_at', '2000-01-01T00:00:00Z'),
     supabase.from('proje_sections').delete().gte('created_at', '2000-01-01T00:00:00Z'),
   ])

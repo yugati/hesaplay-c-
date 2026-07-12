@@ -673,3 +673,32 @@ CREATE POLICY "bina_modelleri_anon_delete" ON storage.objects
 --   proje_sections, proje_specs, rapor_ekipler, rapor_entries,
 --   saha_lines, saha_panels, saha_settings, saha_sockets, users
 -- ============================================================
+
+-- ─── 24. PROJE_LOKASYONLAR (Parçalı giriş: Kat / Fragment / Oda) ──
+-- Parçalı giriş modelindeki binaların lokasyon kırılım ağacı.
+-- data: {bina, parentId, level('kat'|'fragment'|'oda'), name}
+-- Toplama zinciri: Oda -> Fragment -> Kat -> Şartname -> Proje.
+-- Metraj (spec.lokTargets), alım (item.lokId) ve montaj (entry.lokId)
+-- bu düğümlere bağlanır; bina giriş modeli app_settings 'binaGiris' anahtarındadır.
+CREATE TABLE IF NOT EXISTS public.proje_lokasyonlar (
+  id          TEXT        NOT NULL PRIMARY KEY,
+  data        JSONB       NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS proje_lokasyonlar_created_at_idx ON public.proje_lokasyonlar (created_at);
+CREATE INDEX IF NOT EXISTS proje_lokasyonlar_bina_idx       ON public.proje_lokasyonlar ((data->>'bina'));
+
+ALTER TABLE public.proje_lokasyonlar ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "proje_lokasyonlar_anon_all"  ON public.proje_lokasyonlar;
+CREATE POLICY "proje_lokasyonlar_anon_all"  ON public.proje_lokasyonlar FOR ALL TO anon        USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "proje_lokasyonlar_auth_all"  ON public.proje_lokasyonlar;
+CREATE POLICY "proje_lokasyonlar_auth_all"  ON public.proje_lokasyonlar FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.proje_lokasyonlar TO anon, authenticated;
+
+DROP TRIGGER IF EXISTS proje_lokasyonlar_updated_at ON public.proje_lokasyonlar;
+CREATE TRIGGER proje_lokasyonlar_updated_at BEFORE UPDATE ON public.proje_lokasyonlar
+  FOR EACH ROW EXECUTE PROCEDURE set_updated_at();

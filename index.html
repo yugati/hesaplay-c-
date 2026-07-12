@@ -1337,6 +1337,10 @@ function migrate(){
   if(!DB.proje.sections){ DB.proje.sections=["Tava","Aydinlatma","Topraklama","Pano","Kablolama"]; }
   if(!DB.proje.sartnames){ DB.proje.sartnames=[]; }
   if(!DB.proje.binaModelleri){ DB.proje.binaModelleri=[]; }
+  // PARCALI GIRIS: lokasyon kirilim agaci (Kat > Fragment > Oda).
+  // Toplama zinciri: odalarin toplami fragmenti, fragmentlerin toplami kati,
+  // katlarin toplami sartnameyi, sartnamelerin toplami projeyi verir.
+  if(!DB.proje.lokasyonlar) DB.proje.lokasyonlar=[];
   DB.proje.items.forEach(it=>{ if(!it.type) it.type='in'; });
   // GUNLUK SAHA RAPORU
   // ekipler de VERIDIR: kodda sabit ekip adi yoktur, Ekipler sayfasindan eklenir
@@ -1344,6 +1348,8 @@ function migrate(){
   if(!DB.rapor.entries) DB.rapor.entries=[];
   if(!DB.rapor.ekipler) DB.rapor.ekipler=[];
   if(!DB.meta) DB.meta={};
+  // bina giris modeli ayari: { [bina]: {model:'tum'|'parcali', levels:['kat','fragment','oda']} }
+  if(!DB.meta.binaGiris) DB.meta.binaGiris={};
   // YETKILENDIRME (cok kullanicili + rol + atanan bolumler)
   if(!DB.meta.audit) DB.meta.audit=[];
   // Kullanici yonetimi Supabase'e tasindi — yerel migrate gerekmez
@@ -1865,6 +1871,8 @@ function renderBinaSecim(){
       <div class="sel-card-tools">
         ${katSayisi?`<button class="card-tool-btn" title="Kat Gorunumu" onclick="event.stopPropagation();openKatGorseli('${esc(b)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M4 8h16M4 13h16M4 18h16"/></svg>Kat</button>`:''}
         <button class="card-tool-btn ${bm?'has':''}" title="${bm?'3D Bina Modeli':'3D Bina Modeli Ekle'}" onclick="event.stopPropagation();open3DBinaModal('${esc(b)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>${bm?'3D':'+3D'}</button>
+        ${binaParcali(b)?`<button class="card-tool-btn has" title="Lokasyon Kirilimi (${binaLoklar(b).length} lokasyon)" onclick="event.stopPropagation();openLokasyonModal('${esc(b)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Parcalar</button>`
+          :can('define')?`<button class="card-tool-btn" title="Giris modelini degistir (Tum / Parcali)" onclick="event.stopPropagation();openBinaGirisModal('${esc(b)}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Model</button>`:''}
       </div>
       <div class="sel-card-ico" style="background:${col}1f;color:${col}"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg></div>
       <div class="sel-card-name">${esc(b)}</div>
@@ -3154,9 +3162,137 @@ function projeFilterBar(){
     <b style="color:${ccol}">${PSPEC==='__all'?'Tum Sartnameler':esc(PSPEC)}</b>
   </div>`;
 }
-async function addBinaPrompt(){ if(!guard('define'))return; const v=prompt("Yeni bina kodu (orn. 00UXX):"); if(!v)return; const b=v.trim(); if(!b)return;
-  if(!DB.proje.buildings.includes(b)){ await sbInsertProjeBuilding(b); DB.proje.buildings.push(b); } setPBina(b); }
+async function addBinaPrompt(){ if(!guard('define'))return; openBinaModal(); }
+// YENI BINA: kod + giris modeli (Tum / Parcali) + parcali icin kirilim seviyeleri
+function openBinaModal(){
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>Yeni Bina</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <div class="frow"><label>Bina Kodu *</label><input id="nb_kod" placeholder="orn. 00UXX"></div>
+    <div class="frow"><label>Giris Modeli</label>
+      <select id="nb_model" onchange="document.getElementById('nb_levels').classList.toggle('hidden',this.value!=='parcali')">
+        <option value="tum">Tum Giris - bina tek butun olarak takip edilir</option>
+        <option value="parcali">Parcali Giris - metraj ve montaj Kat / Fragment / Oda kirilimiyla takip edilir</option>
+      </select>
+      <div id="nb_levels" class="hidden" style="margin-top:9px;border:1px solid var(--line);border-radius:9px;padding:10px">
+        <p style="font-size:11px;color:var(--dim);font-family:var(--mono);margin-bottom:8px">Bu binada kullanilacak kirilim seviyeleri. Toplama zinciri: Oda &rarr; Fragment &rarr; Kat &rarr; Sartname &rarr; Proje. Metraj eldeki veriye gore herhangi bir seviyeye girilebilir.</p>
+        ${LOK_LEVELS.map(([v,l])=>`<label style="display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none;padding:3px 0"><input type="checkbox" class="nb_lv" value="${v}" checked style="width:auto;margin:0"> ${l}</label>`).join('')}
+      </div>
+    </div>
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveNewBina()">Bina Ekle</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(()=>{ const el=document.getElementById('nb_kod'); if(el)el.focus(); },50);
+}
+async function saveNewBina(){
+  const b=document.getElementById('nb_kod').value.trim();
+  if(!b){toast('Bina kodu zorunlu','err');return;}
+  if(DB.proje.buildings.includes(b)){toast('Bu bina zaten var','err');return;}
+  const model=document.getElementById('nb_model').value;
+  const sel=[...document.querySelectorAll('.nb_lv:checked')].map(x=>x.value);
+  const levels=LOK_LEVELS.map(l=>l[0]).filter(v=>sel.includes(v)); // sira sabit: kat > fragment > oda
+  if(model==='parcali'&&!levels.length){toast('En az bir kirilim seviyesi secin','err');return;}
+  await sbInsertProjeBuilding(b); DB.proje.buildings.push(b);
+  await setBinaGiris(b,{model,levels});
+  logAction('define','Bina eklendi: '+b+' ('+(model==='parcali'?'parcali giris: '+levels.map(lokLevelLabel).join('>'):'tum giris')+')');
+  closeModal(); setPBina(b);
+  if(model==='parcali') openLokasyonModal(b);
+}
+// GIRIS MODELI DEGISTIRME (mevcut bina): tum <-> parcali donusum
+function openBinaGirisModal(bina){
+  if(!guard('define',{bina}))return;
+  const cfg=binaGiris(bina);
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>Giris Modeli - ${esc(bina)}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <div class="frow"><label>Giris Modeli</label>
+      <select id="bg_model" onchange="document.getElementById('bg_levels').classList.toggle('hidden',this.value!=='parcali')">
+        <option value="tum" ${cfg.model!=='parcali'?'selected':''}>Tum Giris - bina tek butun olarak takip edilir</option>
+        <option value="parcali" ${cfg.model==='parcali'?'selected':''}>Parcali Giris - metraj ve montaj Kat / Fragment / Oda kirilimiyla takip edilir</option>
+      </select>
+      <div id="bg_levels" class="${cfg.model==='parcali'?'':'hidden'}" style="margin-top:9px;border:1px solid var(--line);border-radius:9px;padding:10px">
+        <p style="font-size:11px;color:var(--dim);font-family:var(--mono);margin-bottom:8px">Kirilim seviyeleri. Toplama zinciri: Oda &rarr; Fragment &rarr; Kat &rarr; Sartname &rarr; Proje.</p>
+        ${LOK_LEVELS.map(([v,l])=>`<label style="display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none;padding:3px 0"><input type="checkbox" class="bg_lv" value="${v}" ${!cfg.levels||!cfg.levels.length||cfg.levels.includes(v)?'checked':''} style="width:auto;margin:0"> ${l}</label>`).join('')}
+      </div>
+    </div>
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveBinaGiris('${esc(bina)}')">Kaydet</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function saveBinaGiris(bina){
+  const model=document.getElementById('bg_model').value;
+  const sel=[...document.querySelectorAll('.bg_lv:checked')].map(x=>x.value);
+  const levels=LOK_LEVELS.map(l=>l[0]).filter(v=>sel.includes(v));
+  if(model==='parcali'&&!levels.length){toast('En az bir kirilim seviyesi secin','err');return;}
+  // parcaliden tume donus: lokasyon verisi varsa engelle (metraj/montaj baglari kopmasin)
+  if(model==='tum'&&binaParcali(bina)){
+    const loks=binaLoklar(bina);
+    const usedByData=loks.length&&((DB.proje.specs||[]).some(s=>s.bina===bina&&(s.lokTargets||[]).length)
+      ||(DB.proje.items||[]).some(i=>i.bina===bina&&i.lokId)
+      ||(DB.rapor.entries||[]).some(e=>e.bina===bina&&e.lokId));
+    if(usedByData){toast('Bu binada lokasyonlara bagli metraj/alim/montaj verisi var - once onlari kaldirin','err');return;}
+    if(loks.length&&!confirm(loks.length+' tanimli lokasyon silinecek. Devam edilsin mi?'))return;
+    if(loks.length){ await sbDeleteProjeLokasyonlar(loks.map(l=>l.id)); DB.proje.lokasyonlar=DB.proje.lokasyonlar.filter(l=>l.bina!==bina); }
+  }
+  await setBinaGiris(bina,{model,levels});
+  logAction('define','Bina giris modeli: '+bina+' -> '+(model==='parcali'?'parcali ('+levels.map(lokLevelLabel).join('>')+')':'tum'));
+  closeModal(); render(); toast('Giris modeli kaydedildi');
+  if(model==='parcali'&&!binaLoklar(bina).length) openLokasyonModal(bina);
+}
 async function addCatPrompt(){ const v=prompt("Yeni kategori adi (orn. Kablo Kanali):"); if(!v)return; const c=v.trim(); if(!c)return; setPCat(c); }
+/* ===== LOKASYON YONETIMI (parcali giris agac editoru) ===== */
+function openLokasyonModal(bina){
+  if(!guard('define',{bina}))return;
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:640px"><div class="modal-head"><h3>Lokasyon Kirilimi - ${esc(bina)}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <p class="t-meta" style="margin-bottom:10px;line-height:1.5">Binanin kirilim agacini tanimlayin. Metraj, siparis ve montaj bu parcalara baglanir; toplamlar asagidan yukari (Oda &rarr; Fragment &rarr; Kat) kendiliginden toplanir.</p>
+    <div id="lokTree"></div>
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="openBinaGirisModal('${esc(bina)}')">Giris Modeli</button><button class="btn btn-add" onclick="closeModal();render()">Tamam</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  renderLokTree(bina);
+}
+function renderLokTree(bina){
+  const w=document.getElementById('lokTree'); if(!w)return;
+  const cfg=binaGiris(bina); const levels=cfg.levels&&cfg.levels.length?cfg.levels:LOK_LEVELS.map(l=>l[0]);
+  const rows=[];
+  const walk=(parentId,depth)=>{
+    lokChildren(bina,parentId).forEach(l=>{
+      const childLevel=levels[levels.indexOf(l.level)+1]||null;
+      rows.push(`<div style="display:flex;align-items:center;gap:7px;padding:6px 8px;margin-left:${depth*22}px;border:1px solid var(--line);border-radius:8px;margin-bottom:5px">
+        <span class="cat-tag" style="background:var(--dim)22;color:var(--mute);font-size:9px;flex-shrink:0">${lokLevelLabel(l.level).toUpperCase()}</span>
+        <b style="flex:1;font-size:13px">${esc(l.name)}</b>
+        ${childLevel?`<button class="mini-btn" title="${lokLevelLabel(childLevel)} ekle" onclick="lokAdd('${esc(bina)}','${l.id}','${childLevel}')">${icoPlus()}</button>`:''}
+        <button class="mini-btn" title="Yeniden adlandir" onclick="lokRename('${esc(bina)}','${l.id}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
+        <button class="mini-btn del" title="Sil" onclick="lokDelete('${esc(bina)}','${l.id}')">${icoTrash()}</button>
+      </div>`);
+      walk(l.id,depth+1);
+    });
+  };
+  walk(null,0);
+  w.innerHTML=(rows.join('')||`<div class="empty" style="padding:20px"><p>Henuz lokasyon tanimlanmadi</p><span style="font-size:12px">Asagidaki butonla ilk ${lokLevelLabel(levels[0])} kaydini ekleyin</span></div>`)
+    +`<button class="add-line" onclick="lokAdd('${esc(bina)}',null,'${levels[0]}')">+ ${lokLevelLabel(levels[0])} Ekle</button>`;
+}
+async function lokAdd(bina,parentId,level){
+  const v=prompt('Yeni '+lokLevelLabel(level)+' adi'+(parentId?' ('+lokPath(parentId)+' altina)':'')+':'); if(!v||!v.trim())return;
+  const name=v.trim();
+  const dup=lokChildren(bina,parentId).find(l=>norm(l.name)===norm(name));
+  if(dup){toast('Bu ad ayni seviyede zaten var','err');return;}
+  const node={id:uid(),bina,parentId:parentId||null,level,name};
+  await sbInsertProjeLokasyon(node); DB.proje.lokasyonlar.push(node);
+  renderLokTree(bina);
+}
+async function lokRename(bina,id){
+  const l=getLok(id); if(!l)return;
+  const v=prompt('Yeni ad:',l.name); if(!v||!v.trim()||v.trim()===l.name)return;
+  l.name=v.trim(); await sbUpdateProjeLokasyon(id,{...l});
+  renderLokTree(bina);
+}
+async function lokDelete(bina,id){
+  const ids=lokSubtreeIds(id);
+  // baglantili veri varsa silme: metraj dagilimlari, alimlar veya montaj kayitlari bu dugumu gosteriyor olabilir
+  const usedSpec=(DB.proje.specs||[]).some(s=>!s.is_deleted&&(s.lokTargets||[]).some(t=>ids.has(t.lokId)));
+  const usedItem=(DB.proje.items||[]).some(i=>!i.is_deleted&&i.lokId&&ids.has(i.lokId));
+  const usedEntry=(DB.rapor.entries||[]).some(e=>e.lokId&&ids.has(e.lokId));
+  if(usedSpec||usedItem||usedEntry){ toast('Bu lokasyona bagli '+[usedSpec?'metraj':'',usedItem?'alim':'',usedEntry?'montaj':''].filter(Boolean).join('/')+' kaydi var - once onlari tasiyin/silin','err'); return; }
+  const sub=ids.size-1;
+  if(!confirm('"'+lokPath(id)+'" silinsin mi?'+(sub?' (altindaki '+sub+' lokasyon da silinir)':'')))return;
+  await sbDeleteProjeLokasyonlar([...ids]);
+  DB.proje.lokasyonlar=DB.proje.lokasyonlar.filter(l=>!ids.has(l.id));
+  renderLokTree(bina);
+}
 // BINA SILME: bina + o binaya ait TUM veriler (sartname, sartname kalemi, alternatif, alim/hareket, siparis, 3D model) kalici silinir
 async function delBina(bina){
   if(!guard('define',{bina}))return;
@@ -3167,12 +3303,14 @@ async function delBina(bina){
   const items=(DB.proje.items||[]).filter(i=>i.bina===bina);
   const orders=(DB.proje.orders||[]).filter(o=>o.bina===bina);
   const bm=binaModel(bina);
+  const loks=binaLoklar(bina);
   const parts=[];
   if(sarts.length)parts.push(sarts.length+' sartname');
   if(specs.length)parts.push(specs.length+' sartname kalemi');
   if(items.length)parts.push(items.length+' alim/hareket kaydi');
   if(orders.length)parts.push(orders.length+' siparis');
   if(bm)parts.push('3D model');
+  if(loks.length)parts.push(loks.length+' lokasyon');
   const detay=parts.length?parts.join(', ')+' de birlikte silinecek.':'Bu binaya ait baska veri yok.';
   if(!confirm(`"${bina}" binasini kalici olarak silmek istiyor musunuz?\n\n${detay}\n\nBu islem GERI ALINAMAZ.`))return;
   const typed=prompt(`Onaylamak icin bina kodunu aynen yazin: ${bina}`);
@@ -3187,8 +3325,11 @@ async function delBina(bina){
     ...orders.map(o=>sbDeleteProjeOrder(o.id)),
     bm?sbDeleteProjeBinaModel(bm.id):Promise.resolve(),
     bm&&bm.path?sbDeleteBinaModelFile(bm.path):Promise.resolve(),
+    loks.length?sbDeleteProjeLokasyonlar(loks.map(l=>l.id)):Promise.resolve(),
     sbDeleteProjeBuilding(bina)
   ]);
+  DB.proje.lokasyonlar=(DB.proje.lokasyonlar||[]).filter(l=>l.bina!==bina);
+  if(DB.meta.binaGiris&&DB.meta.binaGiris[bina]){ const m={...DB.meta.binaGiris}; delete m[bina]; DB.meta.binaGiris=m; sbSetSetting('binaGiris',m).catch(()=>{}); }
   const sartIdSet=new Set(sarts.map(x=>x.id)), altIdSet=new Set(alts.map(a=>a.id)), itemIdSet=new Set(items.map(i=>i.id)), orderIdSet=new Set(orders.map(o=>o.id));
   DB.proje.sartnames=(DB.proje.sartnames||[]).filter(x=>!sartIdSet.has(x.id));
   DB.proje.specs=(DB.proje.specs||[]).filter(s=>!specIdSet.has(s.id));
@@ -3692,6 +3833,36 @@ async function delOffSpecGroup(name,cat,unit){
   render(); toast("Kayitlar silindi");
 }
 function specGroupKey(sp){ return (sp.grup&&sp.grup.trim())?sp.grup.trim():(sp.cat||'Diger'); }
+/* ===== PARCALI GIRIS: LOKASYON KIRILIMI (Kat > Fragment > Oda) =====
+   Bina giris modeli DB.meta.binaGiris'te, lokasyon agaci DB.proje.lokasyonlar'da durur.
+   Metraj (sp.lokTargets), alim (item.lokId) ve montaj (entry.lokId) dugumlere baglanir;
+   toplamlar dugumden yukari (oda->fragment->kat->sartname->proje) kendiliginden toplanir. */
+const LOK_LEVELS=[['kat','Kat'],['fragment','Fragment'],['oda','Oda']];
+function lokLevelLabel(lv){ const x=LOK_LEVELS.find(l=>l[0]===lv); return x?x[1]:lv; }
+function binaGiris(bina){ return (DB.meta.binaGiris||{})[bina]||{model:'tum',levels:[]}; }
+function binaParcali(bina){ return binaGiris(bina).model==='parcali'; }
+async function setBinaGiris(bina,cfg){ DB.meta.binaGiris={...(DB.meta.binaGiris||{}),[bina]:cfg}; await sbSetSetting('binaGiris',DB.meta.binaGiris); }
+function binaLoklar(bina){ return (DB.proje.lokasyonlar||[]).filter(l=>l.bina===bina); }
+function getLok(id){ return (DB.proje.lokasyonlar||[]).find(l=>l.id===id); }
+function lokChildren(bina,parentId){ return binaLoklar(bina).filter(l=>(l.parentId||null)===(parentId||null)).sort((a,b)=>(a.name||'').localeCompare(b.name||'','tr',{numeric:true})); }
+// dugumun tam yolu: "Kat 1 / F-03 / Pompa Odasi"
+function lokPath(id){ const parts=[]; let n=getLok(id), guard=0;
+  while(n&&guard++<10){ parts.unshift(n.name); n=n.parentId?getLok(n.parentId):null; }
+  return parts.join(' / '); }
+// dugum + tum alt dugumlerin id kumesi (kirilim toplamada "kat" secilirse altindaki her sey sayilir)
+function lokSubtreeIds(id){ const out=new Set([id]); const all=DB.proje.lokasyonlar||[];
+  let added=true; while(added){ added=false; all.forEach(l=>{ if(l.parentId&&out.has(l.parentId)&&!out.has(l.id)){ out.add(l.id); added=true; } }); }
+  return out; }
+// binanin tum dugumleri derinlik sirasiyla duz liste: [{lok, depth, path}] (select/agac icin)
+function lokFlat(bina){ const out=[];
+  const walk=(parentId,depth)=>{ lokChildren(bina,parentId).forEach(l=>{ out.push({lok:l,depth,path:lokPath(l.id)}); walk(l.id,depth+1); }); };
+  walk(null,0); return out; }
+// lokasyon secim kutusu HTML'i (deger=lokId, girintili yol adlariyla)
+function lokSelectOptions(bina,selectedId,emptyLabel){
+  const flat=lokFlat(bina);
+  return `<option value="">${esc(emptyLabel||'- lokasyon secin -')}</option>`+flat.map(f=>
+    `<option value="${f.lok.id}" ${f.lok.id===selectedId?'selected':''}>${' '.repeat(f.depth*3)}${esc(f.lok.name)} (${lokLevelLabel(f.lok.level)})</option>`).join('');
+}
 // ===== MERKEZI MALZEME KUTUPHANESI =====
 // etiketler virgulle ayrilir; giris kutusu virgul/Enter'i "cip onayla" olarak yorumladigi icin
 // bir etiketin icinde virgul hic olusmaz (round-trip Excel'de bozulmaz)
@@ -4914,12 +5085,43 @@ function openSpecModal(idOrNull,prefill){ if(!guard('editSpec',{bina:(prefill&&p
       <div id="s_matBox">${specMatBoxHtml()}</div>
     </div>
     <div class="frow two"><div><label>Poz No  <span class="t-meta">(bu sartnamedeki satir no)</span></label><input id="s_poz" value="${sp?esc(sp.poz||''):''}" placeholder="orn. 191"></div><div><label>Hedef Miktar *</label><input id="s_target" type="number" step="any" value="${sp&&!sp.openQty?sp.target:''}" placeholder="0" ${sp&&sp.openQty?'disabled':''}></div></div>
+    <div id="s_lokWrap"></div>
     <div class="frow"><label style="display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none"><input type="checkbox" id="s_open" style="width:auto;margin:0" ${sp&&sp.openQty?'checked':''} onchange="const t=document.getElementById('s_target');t.disabled=this.checked;if(this.checked)t.value='';"> Miktar henuz belli degil (acik kalem)</label>
       <p style="font-size:11px;color:var(--dim);font-family:var(--mono);margin-top:5px">Sartnamede olmayan ama bolumu tamamlamak icin gereken sarf malzemeler icin. Alimlar sinirsiz girilir, kalem ilerleme yuzdesine karismaz; miktar netlesince duzenleyip hedef girin.</p></div>
     <div class="frow"><label>Birim  <span class="t-meta">(bu satira ozel - adet, metre, kg vb.)</span></label><input id="s_unit" value="${esc((sp?sp.unit:'')||(curMat?curMat.unit:'')||'')}" placeholder="adet / metre"></div>
     <p style="font-size:11px;color:var(--dim);font-family:var(--mono)">Malzeme bilgisi (kod, ad, marka, standart, agirlik, etiket, foto) Malzeme Kutuphanesinden gelir. Yeni malzeme icin kutuphaneye ekleyin. Ayni malzeme bu sartnamede farkli Poz No'larla birden fazla kez gecebilir.</p>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveSpec(${sp?`'${sp.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
+  // parcali binada metraj dagilim editoru (lokTargets)
+  _specLokRows=(sp&&sp.lokTargets)?sp.lokTargets.map(t=>({lokId:t.lokId,target:t.target})):[];
+  specLokRender();
+}
+/* metraj dagilimi: parcali binada kalemin hedefi lokasyonlara bolunerek girilir;
+   Hedef Miktar dagilim varken salt-okunur toplam olur. Dagilimsiz da kaydedilebilir (bina geneli). */
+let _specLokRows=[];
+function specLokRender(){
+  const w=document.getElementById('s_lokWrap'); if(!w)return;
+  const bina=document.getElementById('s_bina')?document.getElementById('s_bina').value:'';
+  if(!bina||!binaParcali(bina)){ w.innerHTML=''; _specLokRows=[]; _specLokSync(); return; }
+  const rows=_specLokRows.map((r,i)=>`<div style="display:grid;grid-template-columns:1fr 110px 34px;gap:7px;margin-bottom:6px">
+      <select onchange="_specLokRows[${i}].lokId=this.value;specLokRender()">${lokSelectOptions(bina,r.lokId)}</select>
+      <input type="number" step="any" min="0" placeholder="Miktar" value="${esc(r.target)}" oninput="_specLokRows[${i}].target=this.value;_specLokSync()">
+      <button class="mini-btn del" onclick="_specLokRows.splice(${i},1);specLokRender()">${icoTrash()}</button>
+    </div>`).join('');
+  const toplam=_specLokToplam();
+  w.innerHTML=`<div class="frow"><label>Parca Bazinda Metraj Dagilimi  <span class="t-meta">(opsiyonel - girilirse Hedef Miktar toplamdan gelir)</span></label>
+    ${rows}
+    <button class="add-line" onclick="_specLokRows.push({lokId:'',target:''});specLokRender()">+ Parca Ekle</button>
+    ${_specLokRows.length?`<p style="font-size:11px;color:var(--mute);font-family:var(--mono);margin-top:5px">Dagilim toplami: <b>${fmtNum(toplam)}</b> - Hedef Miktar bu toplama esitlenir</p>`:''}
+    ${binaLoklar(bina).length?'':`<p style="font-size:11px;color:var(--amber);margin-top:5px">Bu binada henuz lokasyon tanimlanmadi - bina kartindaki "Parcalar" butonuyla ekleyin</p>`}
+  </div>`;
+  _specLokSync();
+}
+function _specLokToplam(){ return _specLokRows.reduce((s,r)=>s+(Number(r.target)||0),0); }
+function _specLokSync(){
+  const t=document.getElementById('s_target'); if(!t)return;
+  if(_specLokRows.length){ t.value=_specLokToplam(); t.readOnly=true; t.style.opacity='.6'; }
+  else if(t.readOnly){ t.readOnly=false; t.style.opacity=''; }
 }
 // modal disina (bos alana) tiklandiginda: kutularda girilmis bir deger varsa modali kapatma,
 // veri kaybini onlemek icin kullanici Iptal/X ile bilerek kapatmali
@@ -4952,6 +5154,9 @@ function specModalRefresh(){
   const sartList=(DB.proje.sartnames||[]).filter(x=>x.bina===bina && x.section===cat).map(x=>x.code);
   const gsel=document.getElementById('s_grup');
   gsel.innerHTML=sartList.length?sartList.map(g=>`<option>${esc(g)}</option>`).join(''):'<option value="">- once Bolum & Sartname ekranindan tanimlayin -</option>';
+  // bina degisti: dagilim lokasyonlari eski binaya aitse temizle
+  _specLokRows=_specLokRows.filter(r=>{ const l=getLok(r.lokId); return l&&l.bina===bina; });
+  specLokRender();
 }
 // kutuphaneden malzeme sec (autocomplete)
 function specPickMaterial(){
@@ -4991,7 +5196,11 @@ async function saveSpec(id){ if(!guard('editSpec'))return;
   const unitInput=document.getElementById('s_unit').value.trim();
   const openQty=!!(document.getElementById('s_open')&&document.getElementById('s_open').checked);
   if(!mat||(!mat.code&&!mat.ad)){toast("Malzeme secimi zorunlu - kutuphaneden secin","err");return;}
-  if(!openQty&&(target===''||isNaN(target))){toast("Hedef miktar zorunlu - miktar belli degilse 'acik kalem' isaretleyin","err");return;}
+  // parcali bina metraj dagilimi: bos/gecersiz satirlari ayikla, ayni lokasyon iki kez gecemesin
+  const lokRows=(!openQty&&binaParcali(bina))?_specLokRows.filter(r=>r.lokId&&Number(r.target)>0).map(r=>({lokId:r.lokId,target:Number(r.target)})):[];
+  if(!openQty&&binaParcali(bina)&&_specLokRows.some(r=>(r.lokId&&!(Number(r.target)>0))||(!r.lokId&&Number(r.target)>0))){toast("Dagilim satirlarinda lokasyon ve miktar birlikte girilmeli","err");return;}
+  if(new Set(lokRows.map(r=>r.lokId)).size!==lokRows.length){toast("Ayni lokasyon dagilimda iki kez gecemez","err");return;}
+  if(!openQty&&(target===''||isNaN(target))&&!lokRows.length){toast("Hedef miktar zorunlu - miktar belli degilse 'acik kalem' isaretleyin","err");return;}
   if(!grup){toast("Sartname secimi zorunlu - once Bolum & Sartname ekranindan tanimlayin","err");return;}
   const code=mat.code||''; const name=mat.ad||'';
   // kimlik = poz + urun (matKey: kod varsa kod, yoksa ad). Ayni poz + ayni ad ama FARKLI kod
@@ -5010,8 +5219,10 @@ async function saveSpec(id){ if(!guard('editSpec'))return;
   let mt = mat.matId ? getMaterial(mat.matId) : null;
   if(!mt) mt=ensureMaterial({code,name,unit:mat.unit,cat,brand:mat.brand,img:mat.img,standart:mat.standart,weight:mat.weight,tags:mat.tags});
   // bolum, malzemenin degil kalemin ozelligi: ayni malzeme (orn. krose) farkli bolumlerde kullanilabilir
-  const data={cat,name:mt.name,code:mt.code,brand:mt.brand||'',target:openQty?0:Number(target),unit:unitInput||mt.unit||mat.unit||'',bina,grup,poz,
-    standart:mt.standart||'',weight:mt.weight!=null?mt.weight:null,tags:(mt.tags||[]).slice(),img:mt.img||null,matId:mt.id,openQty};
+  // parcali dagilim girildiyse hedef = dagilim toplami (toplama zinciri: oda->fragment->kat->sartname)
+  const finalTarget=openQty?0:(lokRows.length?lokRows.reduce((s,r)=>s+r.target,0):Number(target));
+  const data={cat,name:mt.name,code:mt.code,brand:mt.brand||'',target:finalTarget,unit:unitInput||mt.unit||mat.unit||'',bina,grup,poz,
+    standart:mt.standart||'',weight:mt.weight!=null?mt.weight:null,tags:(mt.tags||[]).slice(),img:mt.img||null,matId:mt.id,openQty,lokTargets:lokRows};
   // ACIK KALEM degismezi: openQty ise exclude de true olur (tum yuzde hesaplari exclude'u atladigi
   // icin acik kalem hicbir toplami bozamaz). Acik kalemden normale donuste otomatik konan exclude kalkar.
   const prevSp=id?DB.proje.specs.find(s=>s.id===id):null;
@@ -5038,6 +5249,32 @@ async function toggleSpecExclude(id){ if(!guard('editSpec'))return; const sp=DB.
 }
 function icoExclude(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><circle cx="12" cy="12" r="10"/><path d="M4.9 4.9l14.2 14.2"/></svg>'; }
 function icoInclude(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg>'; }
+/* parcali giris: kalemin lokasyon kirilimi - metraj dagilimindaki her dugum icin
+   hedef (lokTargets), alinan (item.lokId, alt-dugumler dahil) ve montaj (entry.lokId) toplanir.
+   Dagilima girmemis ama lokasyonlu hareketi olan dugumler ve lokasyonsuz kayitlar ayri satirda gosterilir.
+   Not: ayni urunde ic ice dugumlere (hem kat hem altindaki oda) metraj girilmesi onerilen kullanim degildir. */
+function specLokBreakdown(sp){
+  if(!binaParcali(sp.bina)) return null;
+  const targets=(sp.lokTargets||[]);
+  const items=DB.proje.items.filter(it=>!it.is_deleted&&it.type!=='out'&&it.specId===sp.id);
+  const entries=(DB.rapor.entries||[]).filter(e=>e.specId===sp.id);
+  if(!targets.length && !items.some(i=>i.lokId) && !entries.some(e=>e.lokId)) return null;
+  const rows=[]; const covered=new Set();
+  targets.forEach(t=>{
+    const ids=lokSubtreeIds(t.lokId); ids.forEach(x=>covered.add(x));
+    const got=items.filter(i=>i.lokId&&ids.has(i.lokId)).reduce((s,i)=>s+(Number(i.qty)||0),0);
+    const mon=entries.filter(e=>e.lokId&&ids.has(e.lokId)).reduce((s,e)=>s+(Number(e.miktar)||0),0);
+    rows.push({path:lokPath(t.lokId)||'(silinmis lokasyon)',target:Number(t.target)||0,got,mon});
+  });
+  const extra={};
+  items.forEach(i=>{ if(i.lokId&&!covered.has(i.lokId)){ (extra[i.lokId]=extra[i.lokId]||{got:0,mon:0}).got+=Number(i.qty)||0; } });
+  entries.forEach(e=>{ if(e.lokId&&!covered.has(e.lokId)){ (extra[e.lokId]=extra[e.lokId]||{got:0,mon:0}).mon+=Number(e.miktar)||0; } });
+  Object.keys(extra).forEach(id=>rows.push({path:lokPath(id)||'(silinmis lokasyon)',target:0,got:extra[id].got,mon:extra[id].mon}));
+  const noLokGot=items.filter(i=>!i.lokId).reduce((s,i)=>s+(Number(i.qty)||0),0);
+  const noLokMon=entries.filter(e=>!e.lokId).reduce((s,e)=>s+(Number(e.miktar)||0),0);
+  if(noLokGot||noLokMon) rows.push({path:'Lokasyonsuz (bina geneli)',target:0,got:noLokGot,mon:noLokMon,genel:true});
+  return rows;
+}
 function openSpecDetail(id){
   const sp=DB.proje.specs.find(s=>s.id===id); if(!sp)return;
   const{got,pct}=specProgress(sp); const{installed:montajGot,pct:montajPct}=specMontajProgress(sp); const c2=catColor(sp.cat); const done=pct>=100; const montajDone=montajPct>=100;
@@ -5050,7 +5287,8 @@ function openSpecDetail(id){
     alimlar.forEach(e=>{ const bt=e.bina?`<span class="bina-tag" style="background:${buildingColor(e.bina)}22;color:${buildingColor(e.bina)};border:1px solid ${buildingColor(e.bina)}55">${esc(e.bina)}</span>`:'-';
       // alternatif urunle yapilan alim: hangi urunle alindigi acikca gosterilir
       const altTag=e.altId?`<div style="margin-top:3px"><span class="cat-tag" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)55" title="Bu alim alternatif urunle yapildi">ALT: ${esc(e.name||'')}</span></div>`:'';
-      alimRows+=`<tr><td>${fmtDate(e.date)}</td><td>${bt}</td><td style="text-align:right;font-weight:700">${fmtNum(e.qty)} <span style="color:var(--mute);font-weight:400">${esc(e.unit||'')}</span></td><td style="font-family:var(--mono);font-size:12px">${esc(e.order||'-')}${altTag}</td></tr>`; });
+      const lokTag=e.lokId?`<div style="margin-top:3px"><span class="cat-tag" style="background:var(--blue)18;color:var(--blue);border:1px solid var(--blue)44" title="Alimin bagli oldugu lokasyon">${esc(lokPath(e.lokId)||'?')}</span></div>`:'';
+      alimRows+=`<tr><td>${fmtDate(e.date)}</td><td>${bt}</td><td style="text-align:right;font-weight:700">${fmtNum(e.qty)} <span style="color:var(--mute);font-weight:400">${esc(e.unit||'')}</span></td><td style="font-family:var(--mono);font-size:12px">${esc(e.order||'-')}${altTag}${lokTag}</td></tr>`; });
   } else {
     alimRows=`<tr><td colspan="4" style="text-align:center;color:var(--mute);padding:16px">Henuz bu spesifikasyona alim girilmemis</td></tr>`;
   }
@@ -5089,6 +5327,15 @@ function openSpecDetail(id){
           </div>`:''}
         </div>
       </div>
+      ${(()=>{ const lokRows=specLokBreakdown(sp); if(!lokRows) return '';
+        return `<div class="spec-detail-section">Parca Kirilimi <span class="t-meta">(${lokRows.length} lokasyon)</span></div>
+        <table class="invoice-table"><thead><tr><th>Lokasyon</th><th style="text-align:right">Hedef</th><th style="text-align:right">Alinan</th><th style="text-align:right">Montaj</th><th style="text-align:right">Montaj %</th></tr></thead><tbody>
+        ${lokRows.map(r=>{ const p=r.target>0?Math.min(100,r.mon/r.target*100):null; const pd=p!=null&&p>=100;
+          return `<tr><td style="${r.genel?'color:var(--mute);font-style:italic':''}">${esc(r.path)}</td>
+            <td style="text-align:right;font-family:var(--mono)">${r.target?fmtNum(r.target)+' '+esc(sp.unit||''):'-'}</td>
+            <td style="text-align:right;font-family:var(--mono)">${r.got?fmtNum(r.got)+' '+esc(sp.unit||''):'-'}</td>
+            <td style="text-align:right;font-family:var(--mono)">${r.mon?fmtNum(r.mon)+' '+esc(sp.unit||''):'-'}</td>
+            <td style="text-align:right;font-family:var(--mono);font-weight:700;color:${p==null?'var(--mute)':pd?'var(--green)':'var(--amber)'}">${p==null?'-':p.toFixed(0)+'%'}</td></tr>`; }).join('')}</tbody></table>`; })()}
       <div class="spec-detail-section">Alim Gecmisi <span class="t-meta">(${alimlar.length} kayit)</span></div>
       <table class="invoice-table"><thead><tr><th>Tarih</th><th>Bina</th><th style="text-align:right">Miktar</th><th>Siparis No</th></tr></thead><tbody>${alimRows}</tbody></table>
       ${buildSpecAltsHtml(sp.id)}
@@ -5797,7 +6044,7 @@ function openRaporModal(id){
   // Duzenleme: ayni groupId'li tum kalemleri yukle; yoksa tek kalem
   let siblings=[];
   if(e){ const gid=e.groupId; siblings = gid ? rEntries().filter(x=>x.groupId===gid) : [e]; }
-  _rLines = e ? siblings.map(s=>({specId:s.specId,code:s.code,name:s.malzeme,unit:s.birim,cat:s.cat,bina:s.bina,grup:s.projeKodu,miktar:s.miktar,kat:s.kat||'',kot:s.kot||'',_id:s.id})) : [{specId:null,code:'',name:'',unit:'',cat:'',bina:'',grup:'',miktar:'',kat:'',kot:'',_id:null}];
+  _rLines = e ? siblings.map(s=>({specId:s.specId,code:s.code,name:s.malzeme,unit:s.birim,cat:s.cat,bina:s.bina,grup:s.projeKodu,miktar:s.miktar,kat:s.kat||'',kot:s.kot||'',lokId:s.lokId||'',_id:s.id})) : [{specId:null,code:'',name:'',unit:'',cat:'',bina:'',grup:'',miktar:'',kat:'',kot:'',lokId:'',_id:null}];
   _rEditId = e ? (e.groupId||e.id) : null;
   _rEditIsGroup = !!(e && e.groupId);
   const binas=projBuildings();
@@ -5831,6 +6078,10 @@ function specRaporProgress(specId){
   return {installed, target:Number(spec.target), unit:spec.unit||'', img};
 }
 function rRenderLines(){ const c=document.getElementById('r_lines'); if(!c)return;
+  const _rBina=document.getElementById('r_bina')?document.getElementById('r_bina').value:'';
+  const _rParcali=_rBina&&binaParcali(_rBina);
+  // bina degistiyse eski binaya ait lokasyon secimleri gecersizdir
+  _rLines.forEach(l=>{ if(l.lokId){ const lk=getLok(l.lokId); if(!lk||lk.bina!==_rBina) l.lokId=''; } });
   c.innerHTML=_rLines.map((l,i)=>{
     const hasName=!!l.name;
     const linked=!!(l.specId&&l.name);
@@ -5863,6 +6114,7 @@ function rRenderLines(){ const c=document.getElementById('r_lines'); if(!c)retur
         <div class="ac-wrap"><input id="rl_mat_${i}" placeholder="Is kalemi / spek no veya ad ara..." value="${esc(hasName?((l.code?l.code+' \u2014 ':'')+l.name):'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" ontouchstart="this.removeAttribute('readonly')" onclick="rLinePick(${i})" style="cursor:pointer"></div>
         <button class="mini-btn del" onclick="rRmLine(${i})" ${_rLines.length<=1?'style="opacity:.4"':''}>${icoTrash()}</button>
       </div>
+      ${_rParcali?`<div style="margin-bottom:6px"><select onchange="rUpdLine(${i},'lokId',this.value)" style="${!l.lokId?'border-color:var(--amber)66':''}">${lokSelectOptions(_rBina,l.lokId,'- lokasyon secin (zorunlu) -')}</select></div>`:''}
       <div style="display:grid;grid-template-columns:72px 90px 1fr 80px;gap:7px">
         <input placeholder="Kat (orn. 4)" value="${esc(l.kat||'')}" oninput="rUpdLine(${i},'kat',this.value)" title="Kat">
         <input placeholder="Kot (orn. 12000)" value="${esc(l.kot||'')}" oninput="rUpdLine(${i},'kot',this.value)" title="Kot">
@@ -5959,6 +6211,11 @@ async function saveRaporEntry(){
   // gecerli kalemler: sartnamesi olsun ya da olmasin (henuz hazir olmayabilir), ad ve miktar yeterli
   const lines=_rLines.filter(l=>l.name && Number(l.miktar)>0);
   if(lines.length===0){ toast('En az bir is kalemi secip miktar girin','err'); return; }
+  // parcali binada montaj kaydi lokasyonsuz giremez: montaj fiziksel olarak belli bir parcada yapilir
+  if(binaParcali(bina)){
+    const eksikLok=lines.filter(l=>!l.lokId).length;
+    if(eksikLok){ toast(eksikLok+' is kaleminde lokasyon secilmedi - parcali giris binasinda lokasyon zorunludur','err'); return; }
+  }
   // bir rapor kaydindaki tum is kalemleri tek bir bolume ait olmalidir (Tava sartnamesi ile Aydinlatma kalemi karisamaz)
   const cats=[...new Set(lines.map(l=>l.cat).filter(Boolean))];
   if(cats.length>1){ toast(`Is kalemleri farkli bolumlere ait olamaz (${cats.join(', ')}). Her bolum icin ayri kayit olusturun.`,'err'); return; }
@@ -6000,12 +6257,12 @@ async function saveRaporEntry(){
         projeKodu: ortak.projeKodu || l.grup || '',
         malzeme:l.name, code:l.code||'', specId:l.specId||null, matId:l.matId||null, cat:l.cat||'',
         miktar:Number(l.miktar), birim:(l.unit||'').trim(),
-        kat:(l.kat||'').trim(), kot:(l.kot||'').trim(),
+        kat:(l.kat||'').trim(), kot:(l.kot||'').trim(), lokId:l.lokId||null,
         created:Date.now()
       };
       if(entry.stokDus){
         const moveId=uid(); entry._moveId=moveId;
-        newItems.push({id:moveId, name:entry.malzeme, qty:entry.miktar, unit:entry.birim, date:new Date(entry.tarih).getTime(), order:'SAHA-'+entry.tarih, note:'Sahada islendi'+(entry.ekip?' ('+shortEkip(entry.ekip)+')':''), cat:entry.cat, code:entry.code, specId:entry.specId, matId:entry.matId, grup:entry.projeKodu, bina:entry.bina, type:'out', img:null, _fromRapor:entry.id});
+        newItems.push({id:moveId, name:entry.malzeme, qty:entry.miktar, unit:entry.birim, date:new Date(entry.tarih).getTime(), order:'SAHA-'+entry.tarih, note:'Sahada islendi'+(entry.ekip?' ('+shortEkip(entry.ekip)+')':''), cat:entry.cat, code:entry.code, specId:entry.specId, matId:entry.matId, grup:entry.projeKodu, bina:entry.bina, lokId:entry.lokId||null, type:'out', img:null, _fromRapor:entry.id});
       }
       newEntries.push(entry);
     });
@@ -6411,8 +6668,8 @@ function openEditOrderPage(orderId){
   // satirlar: guncel spec bilgisiyle tazelenir (foto/marka/grup); spec silinmisse eldeki degerler korunur
   const lines=(o.lines||[]).map(l=>{
     const sp=DB.proje.specs.find(s=>s.id===l.specId);
-    if(sp) return nordSpecToLine(sp, Number(l.qty), '');
-    return {specId:l.specId||'',altId:l.altId||'',code:l.code||'',ad:l.ad||'',cat:'',unit:l.unit||'',grup:l.grup||'',img:null,brand:'',qty:Number(l.qty)||'',raw:l.specId?'':((l.code?l.code+' ':'')+(l.ad||''))};
+    if(sp){ const nl=nordSpecToLine(sp, Number(l.qty), ''); nl.lokId=l.lokId||''; return nl; }
+    return {specId:l.specId||'',altId:l.altId||'',code:l.code||'',ad:l.ad||'',cat:'',unit:l.unit||'',grup:l.grup||'',lokId:l.lokId||'',img:null,brand:'',qty:Number(l.qty)||'',raw:l.specId?'':((l.code?l.code+' ':'')+(l.ad||''))};
   });
   NORD={no:o.no||'',date:o.date?new Date(o.date).toISOString().slice(0,10):new Date().toISOString().slice(0,10),
     bina:o.bina||'',companyId,newCompany,pdf:o.pdf||null,lines:lines.length?lines:[_nordEmptyLine()],editId:orderId};
@@ -6599,9 +6856,11 @@ function nordLinesHtml(){
           <div class="nord-prod-txt"><b>${esc(l.ad)}</b><span>${esc([l.code,l.brand].filter(Boolean).join(' · '))}</span>${tags}</div></div>
        <div class="ac-wrap" style="display:none"><input id="nord_ad_${i}"></div>`
       :`<div class="ac-wrap"><input id="nord_ad_${i}" placeholder="${l.raw?'Eslesme bulunamadi - urun secin':'Spek no veya ad ara...'}" value="${esc(l.raw||'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" onclick="nordAc(${i})" style="cursor:pointer${l.raw?';border-color:var(--red)66':''}">${status}</div>`;
+    // parcali giris binasinda satir opsiyonel olarak bir lokasyona baglanabilir (toplu alimlar lokasyonsuz girilebilir)
+    const lokSel=(ok&&binaParcali(NORD.bina))?`<select style="margin-top:5px;font-size:11px;padding:4px 8px;max-width:280px" onchange="nordUpd(${i},'lokId',this.value)" onclick="event.stopPropagation()">${lokSelectOptions(NORD.bina,l.lokId||'','- lokasyon (opsiyonel) -')}</select>`:'';
     return `<div class="nord-row ${ok?'':'open'}">
       <span class="nord-idx t-meta">${i+1}</span>
-      <div class="nord-prod-col">${prodCell}</div>
+      <div class="nord-prod-col">${prodCell}${lokSel}</div>
       <div class="nord-qty-col"><input type="number" step="any" min="0" placeholder="0" value="${esc(l.qty)}" oninput="nordUpd(${i},'qty',this.value)">${ok&&l.unit?`<span class="nord-unit">${esc(l.unit)}</span>`:''}</div>
       <button class="mini-btn del" onclick="nordRm(${i})">${icoTrash()}</button>
     </div>`;
@@ -6706,8 +6965,8 @@ async function saveNewOrder(){
     // pdf:null bilincli - PDF tek kopya olarak siparis kaydinda durur, hareketler itemPdf() ile oradan okur
     // altId: alternatif urunle yapilan alim - specId ana urunu gosterir (ilerleme ona sayilir),
     // ad/kod ise gercekte alinan alternatif urunundur (fatura gercegi yansitir)
-    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,altId:l.altId||'',grup:l.grup||'',bina,img:l.img||null,brand:l.brand||'',pdf:null};
-    newItems.push(item); lines.push({code:l.code||'',ad:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),specId:l.specId,altId:l.altId||'',grup:l.grup||''});
+    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,altId:l.altId||'',grup:l.grup||'',bina,lokId:l.lokId||null,img:l.img||null,brand:l.brand||'',pdf:null};
+    newItems.push(item); lines.push({code:l.code||'',ad:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),specId:l.specId,altId:l.altId||'',grup:l.grup||'',lokId:l.lokId||null});
   });
   const orderGrups=[...new Set(lines.map(l=>l.grup).filter(Boolean))];
   const orderGrup=orderGrups.length===1?orderGrups[0]:(orderGrups.length>1?'Karma ('+orderGrups.length+' spek)':'');
