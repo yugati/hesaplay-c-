@@ -565,6 +565,10 @@ tbody tr:hover{background:var(--hover)}
 .spec-excluded{opacity:.62;border-style:dashed!important;border-color:var(--amber)55!important;background:repeating-linear-gradient(135deg,transparent,transparent 9px,rgba(240,160,32,.05) 9px,rgba(240,160,32,.05) 18px)}
 .spec-excluded:hover{opacity:.85;border-color:var(--amber)!important}
 .spec-excluded .prog-name,.spec-excluded .prog-row-name{text-decoration:line-through;text-decoration-color:var(--amber)88;text-decoration-thickness:1.5px}
+/* acik kalem: iptal/haric DEGIL - alimi ve montaji yapilacak canli kalem, sadece hedefi belirsiz.
+   Ustu cizilmez, soluklastirilmaz; mavi kesikli cerceve "miktar bekleniyor" der. */
+.spec-open{border-style:dashed!important;border-color:var(--blue)44!important}
+.spec-open:hover{border-color:var(--blue)!important}
 .ex-badge{display:inline-flex;align-items:center;gap:3px}
 /* satir (liste) gorunumu */
 .prog-list{display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
@@ -3578,9 +3582,10 @@ function specProgress(spec){
   const pct=spec.target>0?Math.min(100,(got/spec.target)*100):0; return {got,pct};
 }
 function specMontajProgress(spec){
-  if(!Number(spec.target)) return {installed:0, pct:0};
+  // hedef 0/belirsiz olsa da islenen montaj miktari sayilir (acik kalemde montaj takibi onemli);
+  // yuzde ise ancak hedef varsa hesaplanabilir
   const installed=(DB.rapor.entries||[]).filter(e=>e.specId===spec.id).reduce((s,e)=>s+(Number(e.miktar)||0),0);
-  const pct=Math.min(100,(installed/Number(spec.target))*100);
+  const pct=Number(spec.target)>0?Math.min(100,(installed/Number(spec.target))*100):0;
   return {installed, pct};
 }
 /* ─── HAKEDIS ────────────────────────────────────────────────────────────
@@ -4601,20 +4606,22 @@ function renderSpec(){
         ${canDelete('proje')?`<button class="mini-btn del" onclick="event.stopPropagation();delSpec('${sp.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>`:''}`  :''}</div>`;
       const catBadges=`<span class="cat-tag" style="background:${c2}22;color:${c2}">${esc(sp.cat)}</span>${sp.code?` <span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(sp.code)}</span>`:''}${sp.bina?` <span class="bina-tag" style="background:${buildingColor(sp.bina)}22;color:${buildingColor(sp.bina)};border:1px solid ${buildingColor(sp.bina)}55">${esc(sp.bina)}</span>`:''}${exBadge}`;
       if(SPECVIEW==='list'){
-        cards+=`<div class="prog-row spec-clickable${ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')">${thumb}
+        cards+=`<div class="prog-row spec-clickable${open?' spec-open':ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')">${thumb}
           <div class="prog-row-main"><div class="prog-row-name" title="${esc(sp.name)}">${esc(sp.name)}${altBadge}</div><div class="prog-cat">${catBadges}</div></div>
           <div class="prog-row-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(sp.unit||'')}</b></span><span>Hedef: <b>${open?'belirsiz':fmtNum(sp.target)+' '+esc(sp.unit||'')}</b></span><span>Kalan: <b style="color:${open?'var(--mute)':done?'var(--green)':'var(--amber)'}">${open?'—':done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(sp.unit||'')}</b></span></div>
           <div class="prog-row-bar"><div class="prog-row-bar-top"><span>Alim</span><b style="color:${ex?'var(--mute)':done?'var(--green)':c2}">${open?'—':pct.toFixed(0)+'%'}</b></div><div class="bar"><i style="width:${pct}%;background:${ex?'var(--dim)':done?'var(--green)':c2}"></i></div></div>
-          ${Number(sp.target)>0?`<div class="prog-row-bar"><div class="prog-row-bar-top"><span>Montaj</span><b style="color:${montajDone?'var(--green)':'var(--amber)'}">${montajPct.toFixed(0)}%</b></div><div class="bar"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div></div>`:'<div class="prog-row-bar"></div>'}
+          ${Number(sp.target)>0?`<div class="prog-row-bar"><div class="prog-row-bar-top"><span>Montaj</span><b style="color:${montajDone?'var(--green)':'var(--amber)'}">${montajPct.toFixed(0)}%</b></div><div class="bar"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div></div>`
+            :open?`<div class="prog-row-bar"><div class="prog-row-bar-top"><span>Montaj</span><b style="color:var(--blue)">${fmtNum(montajGot)} ${esc(sp.unit||'')}</b></div></div>`:'<div class="prog-row-bar"></div>'}
           ${actions}</div>`;
       } else {
-      cards+=`<div class="prog-card spec-clickable${ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')"><div class="prog-head"><div style="display:flex;gap:11px;align-items:flex-start;flex:1;min-width:0">${thumb}<div style="min-width:0"><div class="prog-name">${esc(sp.name)}${altBadge}</div>
+      cards+=`<div class="prog-card spec-clickable${open?' spec-open':ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')"><div class="prog-head"><div style="display:flex;gap:11px;align-items:flex-start;flex:1;min-width:0">${thumb}<div style="min-width:0"><div class="prog-name">${esc(sp.name)}${altBadge}</div>
         <div class="prog-cat">${catBadges}</div></div></div>
         <div class="prog-pct" style="color:${ex?'var(--mute)':done?'var(--green)':c2}">${open?'—':pct.toFixed(0)+'%'}</div></div>
         <div class="bar"><i style="width:${pct}%;background:${ex?'var(--dim)':done?'var(--green)':c2}"></i></div>
         <div class="prog-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(sp.unit||'')}</b></span><span>Hedef: <b>${open?'belirsiz':fmtNum(sp.target)+' '+esc(sp.unit||'')}</b></span></div>
         <div class="prog-nums" style="margin-top:3px"><span>Kalan: <b style="color:${open?'var(--mute)':done?'var(--green)':'var(--amber)'}">${open?'—':done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(sp.unit||'')}</b></span></div>
-        ${Number(sp.target)>0?`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:7px;white-space:nowrap"><span style="font-size:11px;color:var(--mute);flex:0 0 auto">Montaj</span><span style="font-size:11px;font-weight:600;color:${montajDone?'var(--green)':'var(--amber)'};overflow:hidden;text-overflow:ellipsis">${fmtNum(montajGot)} ${esc(sp.unit||'')} <span style="font-weight:400;color:var(--mute)">· ${montajPct.toFixed(0)}%</span></span></div><div class="bar" style="height:4px;margin-top:3px"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div>`:''}
+        ${Number(sp.target)>0?`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:7px;white-space:nowrap"><span style="font-size:11px;color:var(--mute);flex:0 0 auto">Montaj</span><span style="font-size:11px;font-weight:600;color:${montajDone?'var(--green)':'var(--amber)'};overflow:hidden;text-overflow:ellipsis">${fmtNum(montajGot)} ${esc(sp.unit||'')} <span style="font-weight:400;color:var(--mute)">· ${montajPct.toFixed(0)}%</span></span></div><div class="bar" style="height:4px;margin-top:3px"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div>`
+          :open?`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:7px;white-space:nowrap"><span style="font-size:11px;color:var(--mute);flex:0 0 auto">Montaj</span><span style="font-size:11px;font-weight:600;color:var(--blue)">${fmtNum(montajGot)} ${esc(sp.unit||'')}</span></div>`:''}
         ${actions}</div>`;
       } });
     sections+=`<div class="spec-group">
@@ -5313,7 +5320,8 @@ function openSpecDetail(id){
           <div class="spec-detail-stats">
             <div class="sd-stat"><div class="sd-lbl">Hedef</div><div class="sd-val">${open?'belirsiz':fmtNum(sp.target)+' '}<span>${open?'':esc(sp.unit||'')}</span></div></div>
             <div class="sd-stat"><div class="sd-lbl">Alinan</div><div class="sd-val" style="color:${c2}">${fmtNum(got)} <span>${esc(sp.unit||'')}</span></div></div>
-            <div class="sd-stat"><div class="sd-lbl">Kalan</div><div class="sd-val" style="color:${open?'var(--mute)':done?'var(--green)':'var(--amber)'}">${open?'—':done?'Bitti':fmtNum(kalan)} <span>${(open||done)?'':esc(sp.unit||'')}</span></div></div>
+            ${open?`<div class="sd-stat"><div class="sd-lbl">Montaj</div><div class="sd-val" style="color:var(--blue)">${fmtNum(montajGot)} <span>${esc(sp.unit||'')}</span></div></div>`
+              :`<div class="sd-stat"><div class="sd-lbl">Kalan</div><div class="sd-val" style="color:${done?'var(--green)':'var(--amber)'}">${done?'Bitti':fmtNum(kalan)} <span>${done?'':esc(sp.unit||'')}</span></div></div>`}
           </div>
           ${Number(sp.target)>0?`<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
             <div style="font-size:11px;color:var(--mute);font-family:var(--mono);letter-spacing:.5px;margin-bottom:6px">MONTAJ ILERLEMESİ</div>
