@@ -3963,9 +3963,14 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
     const exclude=(inc==='HAYIR'||inc==='NO'||inc==='HARIC');
     const cat=sec||mat.cat||'Tava';
     if(existing){ // UPDATE — bina yalnizca Excel'de acikca belirtilmisse guncellenir
-      existing.code=code||existing.code; existing.name=name||existing.name; existing.target=tgt; existing.unit=unit;
+      existing.code=code||existing.code; existing.name=name||existing.name; existing.unit=unit;
       if(insertBina)existing.bina=insertBina; if(grup)existing.grup=grup; existing.cat=cat; existing.matId=mat.id; existing.brand=mat.brand||'';
-      existing.exclude=exclude; if(useExt&&ext)existing.extId=ext; if(poz)existing.poz=poz;
+      // acik kalem (openQty) korunur: Excel'de hedef girildiyse acik kalem normale doner,
+      // girilmediyse (0/bos) kalem acik kalir ve exclude degismezi bozulmaz
+      if(existing.openQty && tgt>0){ existing.openQty=false; existing.target=tgt; existing.exclude=exclude; }
+      else if(existing.openQty){ existing.exclude=true; }
+      else { existing.target=tgt; existing.exclude=exclude; }
+      if(useExt&&ext)existing.extId=ext; if(poz)existing.poz=poz;
       existing.standart=mat.standart||''; existing.weight=mat.weight!=null?mat.weight:null; existing.tags=(mat.tags||[]).slice(); existing.img=mat.img||null;
       report.specUpdated++; touched.add(existing.id);
     } else { // INSERT — bina yoksa defaultBina'yi kullan
@@ -4162,7 +4167,11 @@ async function applySyncPlan(){
   plan.spec.insert.forEach(x=>{ const mt=findMat(x.code,x.name); 
     DB.proje.specs.push({id:uid(),extId:x.ext||'',code:x.code||(mt?mt.code:''),name:x.name||(mt?mt.name:''),target:x.tgt,unit:x.unit||(mt?mt.unit:''),cat:x.sec,bina:x.bina,grup:x.sart,matId:mt?mt.id:null,brand:mt?mt.brand:'',exclude:x.exclude,is_deleted:false}); rep.specCreated++; });
   plan.spec.update.forEach(({existing,data})=>{ const mt=findMat(data.code,data.name);
-    existing.target=data.tgt; if(data.unit)existing.unit=data.unit; existing.cat=data.sec; existing.bina=data.bina; existing.grup=data.sart; existing.exclude=data.exclude; existing.is_deleted=false; if(mt){existing.matId=mt.id;existing.brand=mt.brand;} rep.specUpdated++; });
+    // acik kalem (openQty) korunur: Excel hedef getirdiyse normale doner, getirmediyse acik+haric kalir
+    if(existing.openQty && data.tgt>0){ existing.openQty=false; existing.target=data.tgt; existing.exclude=data.exclude; }
+    else if(existing.openQty){ existing.exclude=true; }
+    else { existing.target=data.tgt; existing.exclude=data.exclude; }
+    if(data.unit)existing.unit=data.unit; existing.cat=data.sec; existing.bina=data.bina; existing.grup=data.sart; existing.is_deleted=false; if(mt){existing.matId=mt.id;existing.brand=mt.brand;} rep.specUpdated++; });
   plan.spec.delete.forEach(s=>{ s.is_deleted=true; rep.specDeleted++; });
   _syncPlan=null;
   logAction('sync','Full sync: malzeme +'+rep.matCreated+'/~'+rep.matUpdated+'/-'+rep.matDeleted+', spec +'+rep.specCreated+'/~'+rep.specUpdated+'/-'+rep.specDeleted);
@@ -4411,29 +4420,29 @@ function renderSpec(){
     }
     const p=g.target>0?Math.min(100,(g.got/g.target)*100):0; const col=catColor(g.cat); const gdone=p>=100;
     let cards='';
-    list.forEach(sp=>{ const{got,pct}=specProgress(sp); const{installed:montajGot,pct:montajPct}=specMontajProgress(sp); const c2=catColor(sp.cat); const done=pct>=100; const ex=!!sp.exclude; const montajDone=montajPct>=100; const spAlts=specAlts(sp.id); const altCount=spAlts.length; const altActive=spAlts.filter(a=>a.status==='kullanımda').length; const altApproved=spAlts.filter(a=>a.status==='onaylandi').length;
+    list.forEach(sp=>{ const{got,pct}=specProgress(sp); const{installed:montajGot,pct:montajPct}=specMontajProgress(sp); const c2=catColor(sp.cat); const done=pct>=100; const ex=!!sp.exclude; const open=!!sp.openQty; const montajDone=montajPct>=100; const spAlts=specAlts(sp.id); const altCount=spAlts.length; const altActive=spAlts.filter(a=>a.status==='kullanımda').length; const altApproved=spAlts.filter(a=>a.status==='onaylandi').length;
       const simg=specImgOf(sp);
       const thumb=simg?`<img src="${simg}" class="spec-thumb" onclick="event.stopPropagation();lightbox('${simg}')">`:`<div class="spec-thumb spec-thumb-ph">${phIcoSm()}</div>`;
-      const exBadge=ex?`<span class="cat-tag ex-badge" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)66">${icoExclude()} ILERLEMEYE DAHIL DEGIL</span>`:'';
+      const exBadge=open?`<span class="cat-tag ex-badge" style="background:var(--blue)22;color:var(--blue);border:1px solid var(--blue)66" title="Miktar henuz belli degil - alimlar sinirsiz girilir, hedef girilince yuzdeye dahil olur">ACIK KALEM · MIKTAR BELIRSIZ</span>`:ex?`<span class="cat-tag ex-badge" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)66">${icoExclude()} ILERLEMEYE DAHIL DEGIL</span>`:'';
       const altBadge=altCount?`<span class="spec-alt-badge" style="background:${altActive?'var(--green)':altApproved?'var(--blue)':'var(--amber)'}22;color:${altActive?'var(--green)':altApproved?'var(--blue)':'var(--amber)'};border:1px solid ${altActive?'var(--green)':altApproved?'var(--blue)':'var(--amber)'}44" title="${altActive?altActive+' kullanımda':altApproved?altApproved+' onaylı':altCount+' öneri'}">${altCount} alt.</span>`:'';
-      const actions=`<div class="prog-actions">${canEdit('proje')?`<button class="btn ${ex?'btn-add':'btn-ghost'}" style="flex:1;padding:7px" onclick="event.stopPropagation();toggleSpecExclude('${sp.id}')" title="${ex?'Ilerleme yuzdesine dahil et':'Ilerleme yuzdesinden cikar'}">${ex?icoInclude()+' Dahil Et':icoExclude()+' Yuzdeden Cikar'}</button>
+      const actions=`<div class="prog-actions">${canEdit('proje')?`${open?'':`<button class="btn ${ex?'btn-add':'btn-ghost'}" style="flex:1;padding:7px" onclick="event.stopPropagation();toggleSpecExclude('${sp.id}')" title="${ex?'Ilerleme yuzdesine dahil et':'Ilerleme yuzdesinden cikar'}">${ex?icoInclude()+' Dahil Et':icoExclude()+' Yuzdeden Cikar'}</button>`}
         <button class="mini-btn" title="Duzenle" onclick="event.stopPropagation();openSpecModal(this.dataset.id)" data-id="${sp.id}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
         ${canDelete('proje')?`<button class="mini-btn del" onclick="event.stopPropagation();delSpec('${sp.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>`:''}`  :''}</div>`;
       const catBadges=`<span class="cat-tag" style="background:${c2}22;color:${c2}">${esc(sp.cat)}</span>${sp.code?` <span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(sp.code)}</span>`:''}${sp.bina?` <span class="bina-tag" style="background:${buildingColor(sp.bina)}22;color:${buildingColor(sp.bina)};border:1px solid ${buildingColor(sp.bina)}55">${esc(sp.bina)}</span>`:''}${exBadge}`;
       if(SPECVIEW==='list'){
         cards+=`<div class="prog-row spec-clickable${ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')">${thumb}
           <div class="prog-row-main"><div class="prog-row-name" title="${esc(sp.name)}">${esc(sp.name)}${altBadge}</div><div class="prog-cat">${catBadges}</div></div>
-          <div class="prog-row-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(sp.unit||'')}</b></span><span>Hedef: <b>${fmtNum(sp.target)} ${esc(sp.unit||'')}</b></span><span>Kalan: <b style="color:${done?'var(--green)':'var(--amber)'}">${done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(sp.unit||'')}</b></span></div>
-          <div class="prog-row-bar"><div class="prog-row-bar-top"><span>Alim</span><b style="color:${ex?'var(--mute)':done?'var(--green)':c2}">${pct.toFixed(0)}%</b></div><div class="bar"><i style="width:${pct}%;background:${ex?'var(--dim)':done?'var(--green)':c2}"></i></div></div>
+          <div class="prog-row-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(sp.unit||'')}</b></span><span>Hedef: <b>${open?'belirsiz':fmtNum(sp.target)+' '+esc(sp.unit||'')}</b></span><span>Kalan: <b style="color:${open?'var(--mute)':done?'var(--green)':'var(--amber)'}">${open?'—':done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(sp.unit||'')}</b></span></div>
+          <div class="prog-row-bar"><div class="prog-row-bar-top"><span>Alim</span><b style="color:${ex?'var(--mute)':done?'var(--green)':c2}">${open?'—':pct.toFixed(0)+'%'}</b></div><div class="bar"><i style="width:${pct}%;background:${ex?'var(--dim)':done?'var(--green)':c2}"></i></div></div>
           ${Number(sp.target)>0?`<div class="prog-row-bar"><div class="prog-row-bar-top"><span>Montaj</span><b style="color:${montajDone?'var(--green)':'var(--amber)'}">${montajPct.toFixed(0)}%</b></div><div class="bar"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div></div>`:'<div class="prog-row-bar"></div>'}
           ${actions}</div>`;
       } else {
       cards+=`<div class="prog-card spec-clickable${ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')"><div class="prog-head"><div style="display:flex;gap:11px;align-items:flex-start;flex:1;min-width:0">${thumb}<div style="min-width:0"><div class="prog-name">${esc(sp.name)}${altBadge}</div>
         <div class="prog-cat">${catBadges}</div></div></div>
-        <div class="prog-pct" style="color:${ex?'var(--mute)':done?'var(--green)':c2}">${pct.toFixed(0)}%</div></div>
+        <div class="prog-pct" style="color:${ex?'var(--mute)':done?'var(--green)':c2}">${open?'—':pct.toFixed(0)+'%'}</div></div>
         <div class="bar"><i style="width:${pct}%;background:${ex?'var(--dim)':done?'var(--green)':c2}"></i></div>
-        <div class="prog-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(sp.unit||'')}</b></span><span>Hedef: <b>${fmtNum(sp.target)} ${esc(sp.unit||'')}</b></span></div>
-        <div class="prog-nums" style="margin-top:3px"><span>Kalan: <b style="color:${done?'var(--green)':'var(--amber)'}">${done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(sp.unit||'')}</b></span></div>
+        <div class="prog-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(sp.unit||'')}</b></span><span>Hedef: <b>${open?'belirsiz':fmtNum(sp.target)+' '+esc(sp.unit||'')}</b></span></div>
+        <div class="prog-nums" style="margin-top:3px"><span>Kalan: <b style="color:${open?'var(--mute)':done?'var(--green)':'var(--amber)'}">${open?'—':done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(sp.unit||'')}</b></span></div>
         ${Number(sp.target)>0?`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:7px;white-space:nowrap"><span style="font-size:11px;color:var(--mute);flex:0 0 auto">Montaj</span><span style="font-size:11px;font-weight:600;color:${montajDone?'var(--green)':'var(--amber)'};overflow:hidden;text-overflow:ellipsis">${fmtNum(montajGot)} ${esc(sp.unit||'')} <span style="font-weight:400;color:var(--mute)">· ${montajPct.toFixed(0)}%</span></span></div><div class="bar" style="height:4px;margin-top:3px"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div>`:''}
         ${actions}</div>`;
       } });
@@ -4904,7 +4913,9 @@ function openSpecModal(idOrNull,prefill){ if(!guard('editSpec',{bina:(prefill&&p
     <div class="frow"><label>Malzeme *  <span class="t-meta">(kutuphaneden secin - bilgiler otomatik gelir)</span></label>
       <div id="s_matBox">${specMatBoxHtml()}</div>
     </div>
-    <div class="frow two"><div><label>Poz No  <span class="t-meta">(bu sartnamedeki satir no)</span></label><input id="s_poz" value="${sp?esc(sp.poz||''):''}" placeholder="orn. 191"></div><div><label>Hedef Miktar *</label><input id="s_target" type="number" step="any" value="${sp?sp.target:''}" placeholder="0"></div></div>
+    <div class="frow two"><div><label>Poz No  <span class="t-meta">(bu sartnamedeki satir no)</span></label><input id="s_poz" value="${sp?esc(sp.poz||''):''}" placeholder="orn. 191"></div><div><label>Hedef Miktar *</label><input id="s_target" type="number" step="any" value="${sp&&!sp.openQty?sp.target:''}" placeholder="0" ${sp&&sp.openQty?'disabled':''}></div></div>
+    <div class="frow"><label style="display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none"><input type="checkbox" id="s_open" style="width:auto;margin:0" ${sp&&sp.openQty?'checked':''} onchange="const t=document.getElementById('s_target');t.disabled=this.checked;if(this.checked)t.value='';"> Miktar henuz belli degil (acik kalem)</label>
+      <p style="font-size:11px;color:var(--dim);font-family:var(--mono);margin-top:5px">Sartnamede olmayan ama bolumu tamamlamak icin gereken sarf malzemeler icin. Alimlar sinirsiz girilir, kalem ilerleme yuzdesine karismaz; miktar netlesince duzenleyip hedef girin.</p></div>
     <div class="frow"><label>Birim  <span class="t-meta">(bu satira ozel - adet, metre, kg vb.)</span></label><input id="s_unit" value="${esc((sp?sp.unit:'')||(curMat?curMat.unit:'')||'')}" placeholder="adet / metre"></div>
     <p style="font-size:11px;color:var(--dim);font-family:var(--mono)">Malzeme bilgisi (kod, ad, marka, standart, agirlik, etiket, foto) Malzeme Kutuphanesinden gelir. Yeni malzeme icin kutuphaneye ekleyin. Ayni malzeme bu sartnamede farkli Poz No'larla birden fazla kez gecebilir.</p>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveSpec(${sp?`'${sp.id}'`:'null'})">Kaydet</button></div></div></div>`;
@@ -4978,8 +4989,9 @@ async function saveSpec(id){ if(!guard('editSpec'))return;
   const mat=window._specMat;
   const poz=document.getElementById('s_poz').value.trim();
   const unitInput=document.getElementById('s_unit').value.trim();
+  const openQty=!!(document.getElementById('s_open')&&document.getElementById('s_open').checked);
   if(!mat||(!mat.code&&!mat.ad)){toast("Malzeme secimi zorunlu - kutuphaneden secin","err");return;}
-  if(target===''||isNaN(target)){toast("Hedef miktar zorunlu","err");return;}
+  if(!openQty&&(target===''||isNaN(target))){toast("Hedef miktar zorunlu - miktar belli degilse 'acik kalem' isaretleyin","err");return;}
   if(!grup){toast("Sartname secimi zorunlu - once Bolum & Sartname ekranindan tanimlayin","err");return;}
   const code=mat.code||''; const name=mat.ad||'';
   // kimlik = poz + urun (matKey: kod varsa kod, yoksa ad). Ayni poz + ayni ad ama FARKLI kod
@@ -4998,11 +5010,16 @@ async function saveSpec(id){ if(!guard('editSpec'))return;
   let mt = mat.matId ? getMaterial(mat.matId) : null;
   if(!mt) mt=ensureMaterial({code,name,unit:mat.unit,cat,brand:mat.brand,img:mat.img,standart:mat.standart,weight:mat.weight,tags:mat.tags});
   // bolum, malzemenin degil kalemin ozelligi: ayni malzeme (orn. krose) farkli bolumlerde kullanilabilir
-  const data={cat,name:mt.name,code:mt.code,brand:mt.brand||'',target:Number(target),unit:unitInput||mt.unit||mat.unit||'',bina,grup,poz,
-    standart:mt.standart||'',weight:mt.weight!=null?mt.weight:null,tags:(mt.tags||[]).slice(),img:mt.img||null,matId:mt.id};
+  const data={cat,name:mt.name,code:mt.code,brand:mt.brand||'',target:openQty?0:Number(target),unit:unitInput||mt.unit||mat.unit||'',bina,grup,poz,
+    standart:mt.standart||'',weight:mt.weight!=null?mt.weight:null,tags:(mt.tags||[]).slice(),img:mt.img||null,matId:mt.id,openQty};
+  // ACIK KALEM degismezi: openQty ise exclude de true olur (tum yuzde hesaplari exclude'u atladigi
+  // icin acik kalem hicbir toplami bozamaz). Acik kalemden normale donuste otomatik konan exclude kalkar.
+  const prevSp=id?DB.proje.specs.find(s=>s.id===id):null;
+  if(openQty) data.exclude=true;
+  else if(prevSp&&prevSp.openQty) data.exclude=false;
   let specEntity;
   if(id){
-    const sp=DB.proje.specs.find(s=>s.id===id); Object.assign(sp,data); specEntity=sp;
+    const sp=prevSp; Object.assign(sp,data); specEntity=sp;
     await sbUpdateProjeSpec(id,{...sp});
   } else {
     specEntity={id:uid(),...data};
@@ -5015,6 +5032,7 @@ async function saveSpec(id){ if(!guard('editSpec'))return;
 }
 async function delSpec(id){ if(!guard('delete'))return; if(!confirm("Bu kalemi silmek istiyor musunuz?"))return; const _s=DB.proje.specs.find(s=>s.id===id); await sbDeleteProjeSpec(id); DB.proje.specs=DB.proje.specs.filter(s=>s.id!==id); logAction('delete','Spesifikasyon: '+((_s&&(_s.code||_s.name))||id)); render(); toast("Kalem silindi"); }
 async function toggleSpecExclude(id){ if(!guard('editSpec'))return; const sp=DB.proje.specs.find(s=>s.id===id); if(!sp)return;
+  if(sp.openQty){ toast("Acik kalem zaten yuzde disinda - hedef miktar girilince otomatik dahil olur","err"); return; }
   sp.exclude=!sp.exclude; await sbUpdateProjeSpec(id,{...sp}); render();
   toast(sp.exclude?"Kalem ilerleme yuzdesinden cikarildi":"Kalem ilerleme yuzdesine dahil edildi");
 }
@@ -5023,6 +5041,7 @@ function icoInclude(){ return '<svg width="13" height="13" viewBox="0 0 24 24" f
 function openSpecDetail(id){
   const sp=DB.proje.specs.find(s=>s.id===id); if(!sp)return;
   const{got,pct}=specProgress(sp); const{installed:montajGot,pct:montajPct}=specMontajProgress(sp); const c2=catColor(sp.cat); const done=pct>=100; const montajDone=montajPct>=100;
+  const open=!!sp.openQty;
   const kalan=Math.max(0,sp.target-got);
   // bu spesifikasyona ait alimlar
   const alimlar=DB.proje.items.filter(it=> it.specId===sp.id || (!it.specId && it.cat===sp.cat && it.name.trim().toLowerCase()===sp.name.trim().toLowerCase()) ).sort((a,b)=>b.date-a.date);
@@ -5050,13 +5069,13 @@ function openSpecDetail(id){
             ${sp.bina?`<span class="bina-tag" style="background:${buildingColor(sp.bina)}22;color:${buildingColor(sp.bina)};border:1px solid ${buildingColor(sp.bina)}55">${esc(sp.bina)}</span>`:''}
           </div>
           <div class="spec-detail-grup">${icoDoc()} ${esc(specGroupKey(sp))}</div>
-          ${sp.exclude?`<div class="ex-notice">${icoExclude()} Bu kalem ilerleme yuzdesine dahil edilmiyor (onay bekliyor)</div>`:''}
-          <div class="spec-detail-pct" style="color:${done?'var(--green)':c2}">${pct.toFixed(1)}%<span style="font-size:13px;color:var(--mute);font-weight:400"> tamamlandi</span></div>
-          <div class="bar" style="height:10px"><i style="width:${pct}%;background:${done?'var(--green)':c2}"></i></div>
+          ${open?`<div class="ex-notice" style="border-color:var(--blue)44;color:var(--blue)">Acik kalem - miktar henuz belli degil. Alimlar sinirsiz girilir, kalem ilerleme yuzdesine karismaz; miktar netlesince Duzenle'den hedef girin.</div>`:sp.exclude?`<div class="ex-notice">${icoExclude()} Bu kalem ilerleme yuzdesine dahil edilmiyor (onay bekliyor)</div>`:''}
+          ${open?'':`<div class="spec-detail-pct" style="color:${done?'var(--green)':c2}">${pct.toFixed(1)}%<span style="font-size:13px;color:var(--mute);font-weight:400"> tamamlandi</span></div>
+          <div class="bar" style="height:10px"><i style="width:${pct}%;background:${done?'var(--green)':c2}"></i></div>`}
           <div class="spec-detail-stats">
-            <div class="sd-stat"><div class="sd-lbl">Hedef</div><div class="sd-val">${fmtNum(sp.target)} <span>${esc(sp.unit||'')}</span></div></div>
+            <div class="sd-stat"><div class="sd-lbl">Hedef</div><div class="sd-val">${open?'belirsiz':fmtNum(sp.target)+' '}<span>${open?'':esc(sp.unit||'')}</span></div></div>
             <div class="sd-stat"><div class="sd-lbl">Alinan</div><div class="sd-val" style="color:${c2}">${fmtNum(got)} <span>${esc(sp.unit||'')}</span></div></div>
-            <div class="sd-stat"><div class="sd-lbl">Kalan</div><div class="sd-val" style="color:${done?'var(--green)':'var(--amber)'}">${done?'Bitti':fmtNum(kalan)} <span>${done?'':esc(sp.unit||'')}</span></div></div>
+            <div class="sd-stat"><div class="sd-lbl">Kalan</div><div class="sd-val" style="color:${open?'var(--mute)':done?'var(--green)':'var(--amber)'}">${open?'—':done?'Bitti':fmtNum(kalan)} <span>${(open||done)?'':esc(sp.unit||'')}</span></div></div>
           </div>
           ${Number(sp.target)>0?`<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
             <div style="font-size:11px;color:var(--mute);font-family:var(--mono);letter-spacing:.5px;margin-bottom:6px">MONTAJ ILERLEMESİ</div>
@@ -5074,7 +5093,7 @@ function openSpecDetail(id){
       <table class="invoice-table"><thead><tr><th>Tarih</th><th>Bina</th><th style="text-align:right">Miktar</th><th>Siparis No</th></tr></thead><tbody>${alimRows}</tbody></table>
       ${buildSpecAltsHtml(sp.id)}
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" style="margin-right:auto;border-color:var(--red)55;color:var(--red)" onclick="delSpec('${sp.id}');closeModal()">${icoTrash()} Sil</button><button class="btn ${sp.exclude?'btn-add':'btn-ghost'}" onclick="toggleSpecExclude('${sp.id}');closeModal()">${sp.exclude?icoInclude()+' Yuzdeye Dahil Et':icoExclude()+' Yuzdeden Cikar'}</button><button class="btn btn-ghost" onclick="closeModal();openSpecModal('${sp.id}')">Duzenle</button><button class="btn btn-add" onclick="closeModal()">Kapat</button></div>
+    <div class="modal-foot"><button class="btn btn-ghost" style="margin-right:auto;border-color:var(--red)55;color:var(--red)" onclick="delSpec('${sp.id}');closeModal()">${icoTrash()} Sil</button>${open?'':`<button class="btn ${sp.exclude?'btn-add':'btn-ghost'}" onclick="toggleSpecExclude('${sp.id}');closeModal()">${sp.exclude?icoInclude()+' Yuzdeye Dahil Et':icoExclude()+' Yuzdeden Cikar'}</button>`}<button class="btn btn-ghost" onclick="closeModal();openSpecModal('${sp.id}')">Duzenle</button><button class="btn btn-add" onclick="closeModal()">Kapat</button></div>
   </div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
 }
