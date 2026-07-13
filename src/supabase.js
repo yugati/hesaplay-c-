@@ -333,6 +333,11 @@ export async function sbDeleteProjeBuilding(code) {
   await sbRun(supabase.from('proje_buildings').delete().eq('code', code))
 }
 
+// code kolonu binanin kendisi (ayri id yok) - yeniden adlandirma satiri silmez, sort_order/created_at korunur
+export async function sbRenameProjeBuilding(oldCode, newCode) {
+  await sbRun(supabase.from('proje_buildings').update({ code: newCode }).eq('code', oldCode))
+}
+
 export async function sbGetProjeSections() {
   const rows = await sbRun(
     supabase.from('proje_sections').select('name').order('sort_order, created_at', { ascending: true })

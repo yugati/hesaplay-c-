@@ -84,6 +84,7 @@ import {
   sbInsertProjeBuilding,
   sbInsertProjeBuildings,
   sbDeleteProjeBuilding,
+  sbRenameProjeBuilding,
   sbGetProjeSections,
   sbInsertProjeSection,
   sbInsertProjeSections,
@@ -279,6 +280,7 @@ window.sbGetProjeBuildings     = sbGetProjeBuildings
 window.sbInsertProjeBuilding   = guardedSafe('tanimlar', 'create', sbInsertProjeBuilding)
 window.sbInsertProjeBuildings  = guardedSafe('tanimlar', 'create', sbInsertProjeBuildings)
 window.sbDeleteProjeBuilding   = guardedSafe('tanimlar', 'delete', sbDeleteProjeBuilding)
+window.sbRenameProjeBuilding   = guardedSafe('tanimlar', 'update', sbRenameProjeBuilding)
 window.sbGetProjeSections      = sbGetProjeSections
 window.sbInsertProjeSection    = guardedSafe('tanimlar', 'create', sbInsertProjeSection)
 window.sbInsertProjeSections   = guardedSafe('tanimlar', 'create', sbInsertProjeSections)
