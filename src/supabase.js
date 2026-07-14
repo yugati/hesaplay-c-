@@ -99,35 +99,51 @@ async function sbRun(builder) {
 }
 
 // Tablodaki tüm satırları entity dizisi olarak döndürür.
-// Sayfalı (chunked) okunur: bazı satırlar (ör. PDF gömülü eski kayıtlar) çok
-// büyük olabiliyor; tek seferde SELECT * atmak Postgres statement_timeout'una
-// takılıp TÜM girişi kilitleyebiliyordu ("canceling statement due to statement
-// timeout"). Sayfa başına zaman aşımı olursa sayfa küçültülüp aynı aralık
-// tekrar denenir - toplam veri boyutundan bağımsız olarak yükleme tamamlanır.
+// HIZ: once toplam satir sayisi ogrenilir (head istegi - veri tasimaz), sonra
+// sayfalar PARALEL cekilir. Eski surum 25'lik sayfalari TEK TEK ardisik cekiyordu;
+// buyuk tablolarda giris onlarca yavas tura donusuyordu (1000 kayit = 40 ardisik
+// istek). Simdi ayni veri birkac es zamanli dalgada iner.
+// DAYANIKLILIK: bazı satırlar (ör. PDF gömülü eski kayıtlar) çok büyük olabiliyor;
+// bir sayfa Postgres statement_timeout'una takilirsa ("canceling statement due to
+// statement timeout") o aralik 5 parcaya bolunup yeniden denenir (1 satira kadar) -
+// toplam veri boyutundan bağımsız olarak yükleme tamamlanır.
+// SIRALAMA: created_at esitliginde (toplu import) sayfa siniri belirsizlesip satir
+// atlatabildigi icin id ile esitlik kirilir - sayfalama artik deterministiktir.
 const SB_TIMEOUT_CODES = new Set(['57014', '54000'])
-async function sbGetAll(table) {
-  const all = []
-  let from = 0
-  let pageSize = 25
-  while (true) {
-    let rows
-    try {
-      rows = await sbRun(
-        supabase.from(table).select('id, data').order('created_at', { ascending: true }).range(from, from + pageSize - 1)
-      )
-    } catch (e) {
-      if (pageSize > 1 && e && SB_TIMEOUT_CODES.has(e.code)) {
-        pageSize = Math.max(1, Math.floor(pageSize / 5))
-        continue
-      }
-      throw e
+const SB_PAGE_SIZE = 100
+const SB_PAGE_CONCURRENCY = 5
+async function sbFetchRange(table, from, to) {
+  try {
+    return await sbRun(
+      supabase.from(table).select('id, data')
+        .order('created_at', { ascending: true }).order('id', { ascending: true })
+        .range(from, to)
+    ) || []
+  } catch (e) {
+    if (!(e && SB_TIMEOUT_CODES.has(e.code)) || to <= from) throw e
+    // zaman asimi: araligi kucuk parcalara bolerek ayni satirlari yeniden dene
+    const step = Math.max(1, Math.ceil((to - from + 1) / 5))
+    const out = []
+    for (let f = from; f <= to; f += step) {
+      out.push(...await sbFetchRange(table, f, Math.min(to, f + step - 1)))
     }
-    if (!rows || !rows.length) break
-    all.push(...rows)
-    if (rows.length < pageSize) break
-    from += pageSize
+    return out
   }
-  return all.map(r => ({ ...r.data, id: r.id }))
+}
+async function sbGetAll(table) {
+  const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true })
+  if (error) throw error
+  const total = count || 0
+  if (!total) return []
+  const ranges = []
+  for (let f = 0; f < total; f += SB_PAGE_SIZE) ranges.push([f, Math.min(total - 1, f + SB_PAGE_SIZE - 1)])
+  const pages = new Array(ranges.length)
+  let next = 0
+  const worker = async () => {
+    while (next < ranges.length) { const i = next++; pages[i] = await sbFetchRange(table, ranges[i][0], ranges[i][1]) }
+  }
+  await Promise.all(Array.from({ length: Math.min(SB_PAGE_CONCURRENCY, ranges.length) }, worker))
+  return pages.flat().map(r => ({ ...r.data, id: r.id }))
 }
 
 async function sbInsertEntity(table, entity) {
