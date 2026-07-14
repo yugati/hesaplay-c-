@@ -7467,34 +7467,56 @@ function renderRaporOzet(list){
   return `<div class="ozet-grid">${html}</div>`;
 }
 function shortEkip(e){ if(!e)return''; const parts=String(e).split(' - '); return parts[parts.length-1]||e; }
-let _rMat=null; let _rLines=[]; let _rEditId=null; let _rEditIsGroup=false; let _rSaving=false;
+// BOLUM BLOKLU SAHA KAYDI: bir saha kaydi birden fazla BOLUM blogu icerebilir.
+// Her blok bir bolume (cat) aittir ve KENDI ekip + adam sayisi + sartname'sine sahiptir.
+// Ortak alanlar (tum kayit icin tek): tarih, bina, vardiya, notlar, stok dus.
+// blok = {cat, ekip, adam, sart, lines:[...]}; line = {specId,matId,code,name,unit,grup,miktar,kat,kot,lokId,_id}
+let _rMat=null; let _rBlocks=[]; let _rEditId=null; let _rEditIsGroup=false; let _rSaving=false;
+function _rEmptyLine(){ return {specId:null,matId:null,code:'',name:'',unit:'',grup:'',miktar:'',kat:'',kot:'',lokId:'',_id:null}; }
+function _rEmptyBlock(){ return {cat:'',ekip:'',adam:'',sart:'',lines:[_rEmptyLine()]}; }
+// arka plana (kenarlara) tiklayinca kapatma: form doldurulmusken yanlislikla
+// disariya tiklayip veri kaybetmeyi onler. Duzenlemede form zaten dolu oldugu icin
+// her zaman korunur; yeni kayitta ise anlamli bir alan girildiyse (bolum/ekip/adam/
+// sartname veya is kalemi/notlar) kapanmaz - Iptal veya X ile kapatilmali.
+function rBgClick(bg,ev){
+  if(ev.target!==bg) return; // sadece backdrop'un kendisine tiklanirsa (modal icine degil)
+  let dirty=!!_rEditId; // duzenleme: her zaman koru
+  if(!dirty){
+    dirty=(_rBlocks||[]).some(bk=>bk&&(bk.cat||bk.ekip||String(bk.adam||'').trim()||bk.sart||
+      (bk.lines||[]).some(l=>l&&(l.name||l.specId||String(l.miktar||'').trim()||String(l.kat||'').trim()||String(l.kot||'').trim()||l.lokId||String(l.unit||'').trim()))));
+    if((document.getElementById('r_not')?.value||'').trim()) dirty=true;
+  }
+  if(dirty){ toast('Formu kapatmak icin Iptal veya X\'e basin'); return; }
+  closeModal();
+}
 function openRaporModal(id){
   const e=id?rEntries().find(x=>x.id===id):null;
   // Duzenleme: ayni groupId'li tum kalemleri yukle; yoksa tek kalem
   let siblings=[];
   if(e){ const gid=e.groupId; siblings = gid ? rEntries().filter(x=>x.groupId===gid) : [e]; }
-  _rLines = e ? siblings.map(s=>({specId:s.specId,code:s.code,name:s.malzeme,unit:s.birim,cat:s.cat,bina:s.bina,grup:s.projeKodu,miktar:s.miktar,kat:s.kat||'',kot:s.kot||'',lokId:s.lokId||'',_id:s.id})) : [{specId:null,code:'',name:'',unit:'',cat:'',bina:'',grup:'',miktar:'',kat:'',kot:'',lokId:'',_id:null}];
+  // siblings'i BOLUM (cat) bazinda bloklara ayir - her bolum kendi ekip/adam/sartname'siyle yuklenir
+  if(e){
+    const byCat=new Map();
+    siblings.forEach(s=>{ const k=s.cat||''; if(!byCat.has(k))byCat.set(k,[]); byCat.get(k).push(s); });
+    _rBlocks=[...byCat.values()].map(grp=>({
+      cat:grp[0].cat||'', ekip:grp[0].ekip||'', adam:grp[0].adamSayisi!=null?String(grp[0].adamSayisi):'', sart:grp[0].projeKodu||'',
+      lines:grp.map(s=>({specId:s.specId,matId:s.matId||null,code:s.code,name:s.malzeme,unit:s.birim,grup:s.projeKodu,miktar:s.miktar,kat:s.kat||'',kot:s.kot||'',lokId:s.lokId||'',_id:s.id}))
+    }));
+  } else { _rBlocks=[_rEmptyBlock()]; }
   _rEditId = e ? (e.groupId||e.id) : null;
   _rEditIsGroup = !!(e && e.groupId);
   const binas=binaOptsFor(e?e.bina:'');
-  const ekipler=(DB.rapor.ekipler||[]);
   const today=new Date().toISOString().slice(0,10);
-  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:620px"><div class="modal-head"><h3>${e?'Saha Kaydi Duzenle':'Saha Kaydi Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
-    <div class="frow two"><div><label>Tarih *</label><input type="date" id="r_tarih" value="${e?esc(e.tarih):today}"></div><div><label>Bina *</label><select id="r_bina" onchange="rBinaChange();rRenderLines()">${binas.map(b=>`<option ${e&&e.bina===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div></div>
-    <div class="frow"><label>Sartname / Proje Kodu</label><select id="r_sart" onchange="rSartChange()"><option value="">- secin -</option></select></div>
-    <div class="frow three"><div><label>Vardiya</label><select id="r_vardiya">${VARDIYALAR.map(v=>`<option ${e&&e.vardiya===v?'selected':''}>${v}</option>`).join('')}</select></div><div><label>Ekip</label><select id="r_ekip"><option value="">- secin -</option>${ekipler.map(ek=>`<option ${e&&e.ekip===ek?'selected':''}>${esc(ek)}</option>`).join('')}<option value="__new">+ Yeni ekip ekle</option></select></div><div><label>Adam Sayisi</label><input type="number" id="r_adam" value="${e?esc(e.adamSayisi||''):''}" placeholder="0"></div></div>
-    <div class="frow"><label>Yapilan Is Kalemleri * <span class="t-meta">(ayni vardiyada birden fazla kalem eklenebilir)</span></label>
-      <div id="r_lines"></div>
-      <button class="add-line" onclick="rAddLine()">+ Is Kalemi Ekle</button>
-    </div>
-    <div class="frow"><label>Notlar</label><input id="r_not" value="${e?esc(e.notlar||''):''}" placeholder="opsiyonel"></div>
+  const html=`<div class="modal-bg" onclick="rBgClick(this,event)"><div class="modal" style="max-width:640px"><div class="modal-head"><h3>${e?'Saha Kaydi Duzenle':'Saha Kaydi Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <div class="frow two"><div><label>Tarih *</label><input type="date" id="r_tarih" value="${e?esc(e.tarih):today}"></div><div><label>Bina *</label><select id="r_bina" onchange="rBinaChange()">${binas.map(b=>`<option ${e&&e.bina===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div></div>
+    <div class="frow"><label>Vardiya</label><select id="r_vardiya" style="max-width:220px">${VARDIYALAR.map(v=>`<option ${e&&e.vardiya===v?'selected':''}>${v}</option>`).join('')}</select></div>
+    <div id="r_blocks"></div>
+    <button class="add-line" onclick="rAddBlock()" style="margin-top:2px">+ Bolum Ekle</button>
+    <div class="frow" style="margin-top:12px"><label>Notlar</label><input id="r_not" value="${e?esc(e.notlar||''):''}" placeholder="opsiyonel"></div>
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:4px"><input type="checkbox" id="r_stok" ${e?(e.stokDus?'checked':''):'checked'} style="width:auto"> Stoktan dus (islenen miktarlar stoktan azaltilsin)</label>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" id="r_saveBtn" onclick="saveRaporEntry()">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
-  rBinaChange();
-  if(e){ setTimeout(()=>{ const s=document.getElementById('r_sart'); if(s)s.value=e.projeKodu||''; },0); }
-  rRenderLines();
-  document.getElementById('r_ekip').onchange=async function(){ if(this.value==='__new'){ const n=prompt('Yeni ekip adi:'); if(n&&n.trim()){ await sbInsertRaporEkip(n.trim()); DB.rapor.ekipler.push(n.trim()); const o=document.createElement('option'); o.textContent=n.trim(); o.selected=true; this.insertBefore(o,this.lastChild); } else this.value=''; } };
+  rRenderBlocks();
 }
 function specRaporProgress(specId){
   const spec=DB.proje.specs.find(s=>s.id===specId);
@@ -7506,131 +7528,183 @@ function specRaporProgress(specId){
     .reduce((s,e)=>s+(Number(e.miktar)||0),0);
   return {installed, target:Number(spec.target), unit:spec.unit||'', img};
 }
-function rRenderLines(){ const c=document.getElementById('r_lines'); if(!c)return;
-  const _rBina=document.getElementById('r_bina')?document.getElementById('r_bina').value:'';
-  const _rParcali=_rBina&&binaParcali(_rBina);
+// tum bloklari cizer (#r_blocks). Her blok: bolum secimi + ekip + adam + sartname + is kalemleri.
+function rRenderBlocks(){
+  const c=document.getElementById('r_blocks'); if(!c)return;
+  const bina=document.getElementById('r_bina')?document.getElementById('r_bina').value:'';
+  const parcali=bina&&binaParcali(bina);
+  const sections=DB.proje.sections||[];
+  const ekipler=(DB.rapor.ekipler||[]);
   // bina degistiyse eski binaya ait lokasyon secimleri gecersizdir
-  _rLines.forEach(l=>{ if(l.lokId){ const lk=getLok(l.lokId); if(!lk||lk.bina!==_rBina) l.lokId=''; } });
-  c.innerHTML=_rLines.map((l,i)=>{
-    const hasName=!!l.name;
-    const linked=!!(l.specId&&l.name);
-    const pr=linked?specRaporProgress(l.specId):null;
-    let barHtml='';
-    if(pr){
-      const tot=pr.installed+(Number(l.miktar)||0);
-      const pct=Math.min(100,(tot/pr.target)*100);
-      const done=pct>=100;
-      const fmtN=n=>n%1?n.toFixed(2):String(n);
-      const lbl=`${fmtN(tot)} / ${pr.target} ${pr.unit} (%${Math.round(pct)})`;
-      barHtml=`<div style="margin-top:8px">
-        <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;margin-bottom:4px">
-          <span id="rl_prog_ttl_${i}" style="color:${done?'var(--green)':'var(--mute)'};font-weight:600">${done?'\u2713 Tamamlandi':'Montaj ilerleme'}</span>
-          <span id="rl_prog_lbl_${i}" style="color:${done?'var(--green)':'var(--mute)'};font-family:var(--mono)">${lbl}</span>
-        </div>
-        <div style="height:8px;border-radius:4px;background:var(--line);overflow:hidden">
-          <div id="rl_prog_fill_${i}" style="height:100%;width:${pct}%;background:${done?'var(--green)':'var(--amber)'};border-radius:4px;transition:width .25s ease"></div>
-        </div>
-      </div>`;
-    }
-    const imgThumb=linked&&pr&&pr.img?`<img src="${pr.img}" style="width:26px;height:26px;border-radius:5px;object-fit:cover;vertical-align:middle;margin-right:5px;flex-shrink:0">`:'';
-    const info=linked
-      ?`<div class="lib-match match-found" style="margin-top:5px;display:flex;align-items:center">${imgThumb}<span>${esc((l.code||'')+' \u00b7 '+(l.cat||''))}</span></div>`
-      :hasName
-        ?`<div class="lib-match" style="margin-top:5px;color:var(--amber)">Sartname disi is kalemi${l.matId?' (kutuphane kaydi ile eslesti)':''} - sartname acildiginda ${l.matId?'otomatik baglanir':'listeden 🔗 ile baglanir'}</div>`
-        :`<div class="lib-match match-new" style="margin-top:5px">Secili binadaki spesifikasyonlardan secin veya henuz sartnamesi yoksa yeni olarak ekleyin</div>`;
-    return `<div class="rline" style="border:1px solid var(--line);border-radius:9px;padding:9px;margin-bottom:8px">
-      <div style="display:grid;grid-template-columns:1fr 32px;gap:7px;margin-bottom:6px">
-        <div class="ac-wrap"><input id="rl_mat_${i}" placeholder="Is kalemi / spek no veya ad ara..." value="${esc(hasName?((l.code?l.code+' \u2014 ':'')+l.name):'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" ontouchstart="this.removeAttribute('readonly')" onclick="rLinePick(${i})" style="cursor:pointer"></div>
-        <button class="mini-btn del" onclick="rRmLine(${i})" ${_rLines.length<=1?'style="opacity:.4"':''}>${icoTrash()}</button>
+  _rBlocks.forEach(bk=>bk.lines.forEach(l=>{ if(l.lokId){ const lk=getLok(l.lokId); if(!lk||lk.bina!==bina) l.lokId=''; } }));
+  c.innerHTML=_rBlocks.map((bk,bi)=>{
+    const sarts=(DB.proje.sartnames||[]).filter(s=>s.bina===bina && (!bk.cat||s.section===bk.cat));
+    const secOpts='<option value="">- bolum secin -</option>'+sections.map(s=>`<option ${bk.cat===s?'selected':''}>${esc(s)}</option>`).join('');
+    const ekipOpts='<option value="">- ekip secin -</option>'+ekipler.map(ek=>`<option ${bk.ekip===ek?'selected':''}>${esc(ek)}</option>`).join('')+'<option value="__new">+ Yeni ekip ekle</option>';
+    const sartOpts='<option value="">- sartname (opsiyonel) -</option>'+sarts.map(s=>`<option value="${esc(s.code)}" ${bk.sart===s.code?'selected':''}>${esc(s.code)}${s.section?' ('+esc(s.section)+')':''}</option>`).join('');
+    const linesHtml=bk.lines.map((l,li)=>rLineHtml(bk,bi,l,li,bina,parcali)).join('');
+    return `<div class="rblock" style="border:1px solid var(--line);border-radius:11px;padding:11px;margin-bottom:10px;background:var(--bg)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
+        <span class="fw-sec" style="margin:0;flex-shrink:0">Bolum ${bi+1}</span>
+        <select onchange="rSetBlockCat(${bi},this.value)" style="flex:1">${secOpts}</select>
+        <button class="mini-btn del" title="Bolumu kaldir" onclick="rRmBlock(${bi})" ${_rBlocks.length<=1?'style="opacity:.4"':''}>${icoTrash()}</button>
       </div>
-      ${_rParcali?`<div style="margin-bottom:6px"><select onchange="rSetLok(${i},this.value)" style="${!l.lokId?'border-color:var(--amber)66':''}">${lokSelectOptions(_rBina,l.lokId,'- lokasyon secin (zorunlu) -')}</select></div>`:''}
-      <div style="display:grid;grid-template-columns:72px 90px 1fr 80px;gap:7px">
-        <input placeholder="Kat (orn. 4)" value="${esc(l.kat||'')}" oninput="rUpdLine(${i},'kat',this.value)" title="Kat">
-        <input placeholder="Kot (orn. 12000)" value="${esc(l.kot||'')}" oninput="rUpdLine(${i},'kot',this.value)" title="Kot">
-        <input type="number" step="any" placeholder="Miktar" value="${esc(l.miktar)}" oninput="rUpdLine(${i},'miktar',this.value)">
-        <input placeholder="Birim" value="${esc(l.unit||'')}" oninput="rUpdLine(${i},'unit',this.value)">
+      <div class="frow three" style="margin-bottom:9px">
+        <div><label>Ekip</label><select onchange="rSetBlockEkip(${bi},this.value,this)">${ekipOpts}</select></div>
+        <div><label>Adam Sayisi</label><input type="number" min="0" value="${esc(bk.adam)}" placeholder="0" oninput="rUpdBlock(${bi},'adam',this.value)"></div>
+        <div><label>Sartname</label><select onchange="rSetBlockSart(${bi},this.value)">${sartOpts}</select></div>
       </div>
-      ${info}${barHtml}</div>`;
+      <label style="font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:.5px;font-family:var(--mono)">Is Kalemleri *</label>
+      <div>${linesHtml}</div>
+      <button class="add-line" onclick="rAddLine(${bi})">+ Is Kalemi Ekle</button>
+    </div>`;
   }).join('');
 }
-function rLinePick(i){ const el=document.getElementById('rl_mat_'+i); const bina=document.getElementById('r_bina').value;
-  const sartCode=document.getElementById('r_sart')?.value||'';
-  const sart=sartCode?(DB.proje.sartnames||[]).find(x=>x.bina===bina&&x.code===sartCode):null;
-  // sartname seciliyse o bolume kilitlenir; degilse bu kaydin diger kalemlerinden gelen bolume kilitlenir
-  // (bir rapor kaydindaki tum is kalemleri tek bir boluma ait olmalidir)
-  const lockedCat=sart?sart.section:((_rLines.find((l,li)=>li!==i&&l.cat)||{}).cat||'');
+// tek bir is kalemi satirinin HTML'i (blok bi, satir li)
+function rLineHtml(bk,bi,l,li,bina,parcali){
+  const hasName=!!l.name;
+  const linked=!!(l.specId&&l.name);
+  const pr=linked?specRaporProgress(l.specId):null;
+  let barHtml='';
+  if(pr){
+    const tot=pr.installed+(Number(l.miktar)||0);
+    const pct=Math.min(100,(tot/pr.target)*100);
+    const done=pct>=100;
+    const fmtN=n=>n%1?n.toFixed(2):String(n);
+    const lbl=`${fmtN(tot)} / ${pr.target} ${pr.unit} (%${Math.round(pct)})`;
+    barHtml=`<div style="margin-top:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;margin-bottom:4px">
+        <span id="rl_prog_ttl_${bi}_${li}" style="color:${done?'var(--green)':'var(--mute)'};font-weight:600">${done?'✓ Tamamlandi':'Montaj ilerleme'}</span>
+        <span id="rl_prog_lbl_${bi}_${li}" style="color:${done?'var(--green)':'var(--mute)'};font-family:var(--mono)">${lbl}</span>
+      </div>
+      <div style="height:8px;border-radius:4px;background:var(--line);overflow:hidden">
+        <div id="rl_prog_fill_${bi}_${li}" style="height:100%;width:${pct}%;background:${done?'var(--green)':'var(--amber)'};border-radius:4px;transition:width .25s ease"></div>
+      </div>
+    </div>`;
+  }
+  const imgThumb=linked&&pr&&pr.img?`<img src="${pr.img}" style="width:26px;height:26px;border-radius:5px;object-fit:cover;vertical-align:middle;margin-right:5px;flex-shrink:0">`:'';
+  const info=linked
+    ?`<div class="lib-match match-found" style="margin-top:5px;display:flex;align-items:center">${imgThumb}<span>${esc((l.code||'')+' · '+(bk.cat||''))}</span></div>`
+    :hasName
+      ?`<div class="lib-match" style="margin-top:5px;color:var(--amber)">Sartname disi is kalemi${l.matId?' (kutuphane kaydi ile eslesti)':''} - sartname acildiginda ${l.matId?'otomatik baglanir':'listeden baglanir'}</div>`
+      :`<div class="lib-match match-new" style="margin-top:5px">Secili binadaki spesifikasyonlardan secin veya henuz sartnamesi yoksa yeni olarak ekleyin</div>`;
+  return `<div class="rline" style="border:1px solid var(--line);border-radius:9px;padding:9px;margin:6px 0;background:var(--panel)">
+    <div style="display:grid;grid-template-columns:1fr 32px;gap:7px;margin-bottom:6px">
+      <div class="ac-wrap"><input id="rl_mat_${bi}_${li}" placeholder="Is kalemi / spek no veya ad ara..." value="${esc(hasName?((l.code?l.code+' — ':'')+l.name):'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" ontouchstart="this.removeAttribute('readonly')" onclick="rLinePick(${bi},${li})" style="cursor:pointer"></div>
+      <button class="mini-btn del" onclick="rRmLine(${bi},${li})" ${bk.lines.length<=1?'style="opacity:.4"':''}>${icoTrash()}</button>
+    </div>
+    ${parcali?`<div style="margin-bottom:6px"><select onchange="rSetLok(${bi},${li},this.value)" style="${!l.lokId?'border-color:var(--amber)66':''}">${lokSelectOptions(bina,l.lokId,'- lokasyon secin (zorunlu) -')}</select></div>`:''}
+    <div style="display:grid;grid-template-columns:72px 90px 1fr 80px;gap:7px">
+      <input placeholder="Kat (orn. 4)" value="${esc(l.kat||'')}" oninput="rUpdLine(${bi},${li},'kat',this.value)" title="Kat">
+      <input placeholder="Kot (orn. 12000)" value="${esc(l.kot||'')}" oninput="rUpdLine(${bi},${li},'kot',this.value)" title="Kot">
+      <input type="number" step="any" placeholder="Miktar" value="${esc(l.miktar)}" oninput="rUpdLine(${bi},${li},'miktar',this.value)">
+      <input placeholder="Birim" value="${esc(l.unit||'')}" oninput="rUpdLine(${bi},${li},'unit',this.value)">
+    </div>
+    ${info}${barHtml}</div>`;
+}
+// --- blok islemleri ---
+function rSetBlockCat(bi,v){
+  const bk=_rBlocks[bi]; if(!bk)return;
+  bk.cat=v;
+  const bina=document.getElementById('r_bina').value;
+  // bolum degisti: yeni bolume ait olmayan sartname baglantili kalemleri temizle
+  bk.lines.forEach(l=>{ if(l.specId){ const sp=DB.proje.specs.find(s=>s.id===l.specId); if(sp && v && sp.cat!==v){ l.specId=null;l.matId=null;l.code='';l.name='';l.grup=''; } } });
+  // sartname secimi yeni bolume ait degilse temizle
+  if(bk.sart){ const sr=(DB.proje.sartnames||[]).find(x=>x.bina===bina&&x.code===bk.sart); if(sr && v && sr.section!==v) bk.sart=''; }
+  rRenderBlocks();
+}
+async function rSetBlockEkip(bi,v,sel){
+  const bk=_rBlocks[bi]; if(!bk)return;
+  if(v==='__new'){
+    const n=prompt('Yeni ekip adi:');
+    if(n&&n.trim()){ const nm=n.trim();
+      if(!DB.rapor.ekipler)DB.rapor.ekipler=[];
+      if(!DB.rapor.ekipler.some(x=>norm(x)===norm(nm))){ await sbInsertRaporEkip(nm); DB.rapor.ekipler.push(nm); }
+      bk.ekip=nm;
+    } else { if(sel)sel.value=bk.ekip||''; return; }
+    rRenderBlocks(); return;
+  }
+  bk.ekip=v;
+}
+function rSetBlockSart(bi,v){
+  const bk=_rBlocks[bi]; if(!bk)return;
+  bk.sart=v;
+  const bina=document.getElementById('r_bina').value;
+  const sr=v?(DB.proje.sartnames||[]).find(x=>x.bina===bina&&x.code===v):null;
+  // sartname secilince blogun bolumu otomatik dolar/kilitlenir (ve uyumsuz kalemler temizlenir)
+  if(sr && sr.section && bk.cat!==sr.section){ rSetBlockCat(bi,sr.section); return; }
+  rRenderBlocks();
+}
+function rUpdBlock(bi,k,v){ if(_rBlocks[bi]) _rBlocks[bi][k]=v; }
+function rAddBlock(){ _rBlocks.push(_rEmptyBlock()); rRenderBlocks(); }
+function rRmBlock(bi){ if(_rBlocks.length<=1){ toast('En az bir bolum olmali','err'); return; } _rBlocks.splice(bi,1); rRenderBlocks(); }
+// --- is kalemi (satir) islemleri: her zaman blok indeksi (bi) + satir indeksi (li) ---
+function rLinePick(bi,li){
+  const bk=_rBlocks[bi]; if(!bk)return;
+  const el=document.getElementById('rl_mat_'+bi+'_'+li);
+  const bina=document.getElementById('r_bina').value;
+  // bolum ve sartname bu BLOGUN kendi degerlerinden gelir (bloklar birbirinden bagimsizdir)
+  const sart=bk.sart?(DB.proje.sartnames||[]).find(x=>x.bina===bina&&x.code===bk.sart):null;
+  const lockedCat=bk.cat || (sart?sart.section:'');
   const specs=DB.proje.specs.filter(s=>!s.is_deleted && s.bina===bina && (!lockedCat||s.cat===lockedCat));
-  const specSrc=specs.map(s=>({ad:s.name, alt:(s.code||'')+' '+specGroupKey(s), sub:[s.code,specGroupKey(s),s.unit].filter(Boolean).join(' \u00b7 '), img:specImgOf(s), obj:{specId:s.id,matId:s.matId||null,code:s.code||'',ad:s.name,name:s.name,unit:s.unit||'',cat:s.cat||'',bina:s.bina,grup:specGroupKey(s)}}));
-  // henuz sartnamesi olmayan is kalemleri icin de Malzeme Kutuphanesinden secim onerilir
-  // (serbest metin yerine kutuphaneden matId ile secilirse, sartname acildiginda otomatik baglanir)
+  const specSrc=specs.map(s=>({ad:s.name, alt:(s.code||'')+' '+specGroupKey(s), sub:[s.code,specGroupKey(s),s.unit].filter(Boolean).join(' · '), img:specImgOf(s), obj:{specId:s.id,matId:s.matId||null,code:s.code||'',ad:s.name,name:s.name,unit:s.unit||'',cat:s.cat||'',bina:s.bina,grup:specGroupKey(s)}}));
   const specMatIds=new Set(specs.map(s=>s.matId).filter(Boolean));
-  const libSrc=matLibSrc().filter(m=>!specMatIds.has(m.obj.matId)).map(m=>({...m, obj:{...m.obj, specId:null, bina, grup:sartCode||''}}));
+  const libSrc=matLibSrc().filter(m=>!specMatIds.has(m.obj.matId)).map(m=>({...m, obj:{...m.obj, specId:null, bina, grup:bk.sart||''}}));
   const src=[...specSrc, ...libSrc];
   el.removeAttribute('readonly'); el.value=''; el.focus();
-  // allowNew=true: kutuphanede de olmayan is kalemleri serbest metin olarak eklenebilir
-  // (sartname/kutuphane kaydi hazir oldugunda \ud83d\udd17 ile geriye donuk baglanir)
   acOpen(el, src, (it,isNew)=>{ if(isNew){
-      _rLines[i]={...(_rLines[i]||{}),specId:null,matId:null,code:'',name:it.ad||'',cat:lockedCat||_rLines[i].cat||'',bina,grup:sartCode||''};
-      el.setAttribute('readonly',''); rRenderLines(); return;
+      bk.lines[li]={...(bk.lines[li]||{}),specId:null,matId:null,code:'',name:it.ad||'',grup:bk.sart||''};
+      el.setAttribute('readonly',''); rRenderBlocks(); return;
     }
-    _rLines[i]={...(_rLines[i]||{}),specId:it.specId||null,matId:it.matId||null,code:it.code||'',name:it.name||it.ad||'',cat:it.cat||lockedCat||_rLines[i].cat||'',bina:it.bina||bina,grup:it.grup||sartCode||''};
-    if(it.unit && !_rLines[i].unit) _rLines[i].unit=it.unit;
-    // sartname otomatik secimi (ilk kalemden)
-    if(it.grup){ const ss=document.getElementById('r_sart'); if(ss && !ss.value && [...ss.options].some(o=>o.value===it.grup)) ss.value=it.grup; }
-    rRenderLines();
+    bk.lines[li]={...(bk.lines[li]||{}),specId:it.specId||null,matId:it.matId||null,code:it.code||'',name:it.name||it.ad||'',grup:it.grup||bk.sart||''};
+    if(it.unit && !bk.lines[li].unit) bk.lines[li].unit=it.unit;
+    // blok bolumu bos ise secilen kalemin bolumunu bloga ata
+    if(!bk.cat && it.cat) bk.cat=it.cat;
+    // blok sartnamesi bos ise ve kalemin grubu bir sartname ise otomatik sec
+    if(!bk.sart && it.grup && (DB.proje.sartnames||[]).some(x=>x.bina===bina&&x.code===it.grup)) bk.sart=it.grup;
+    rRenderBlocks();
   }, true);
 }
-function rUpdLine(i,k,v){
-  _rLines[i][k]=v;
-  if(k==='miktar') _rUpdProgBar(i);
+function rUpdLine(bi,li,k,v){
+  const bk=_rBlocks[bi]; if(!bk||!bk.lines[li])return;
+  bk.lines[li][k]=v;
+  if(k==='miktar') _rUpdProgBar(bi,li);
 }
 // lokasyon secilince kat/kot alanlari secilen dugumun KAT atasindan otomatik dolar (bagdastirma):
 // elle girilmis degerler ezilmez, yalnizca bos alanlar tamamlanir
-function rSetLok(i,v){
-  _rLines[i].lokId=v;
+function rSetLok(bi,li,v){
+  const bk=_rBlocks[bi]; if(!bk||!bk.lines[li])return;
+  const l=bk.lines[li]; l.lokId=v;
   const kat=v?lokKatOf(v):null;
   if(kat){
     const kn=parseKatNo(kat.name);
-    if(!String(_rLines[i].kat||'').trim() && kn!=null) _rLines[i].kat=String(kn);
-    if(!String(_rLines[i].kot||'').trim() && kat.kot!=null && kat.kot!=='') _rLines[i].kot=String(kat.kot);
+    if(!String(l.kat||'').trim() && kn!=null) l.kat=String(kn);
+    if(!String(l.kot||'').trim() && kat.kot!=null && kat.kot!=='') l.kot=String(kat.kot);
   }
-  rRenderLines();
+  rRenderBlocks();
 }
-function _rUpdProgBar(i){
-  const l=_rLines[i]; if(!l.specId) return;
+function _rUpdProgBar(bi,li){
+  const l=_rBlocks[bi]&&_rBlocks[bi].lines[li]; if(!l||!l.specId) return;
   const pr=specRaporProgress(l.specId); if(!pr) return;
   const tot=pr.installed+(Number(l.miktar)||0);
   const pct=Math.min(100,(tot/pr.target)*100);
   const done=pct>=100;
   const col=done?'var(--green)':'var(--amber)';
-  const fill=document.getElementById('rl_prog_fill_'+i);
+  const fill=document.getElementById('rl_prog_fill_'+bi+'_'+li);
   if(fill){ fill.style.width=pct+'%'; fill.style.background=col; }
   const fmtN=n=>n%1?n.toFixed(2):String(n);
-  const lbl=document.getElementById('rl_prog_lbl_'+i);
+  const lbl=document.getElementById('rl_prog_lbl_'+bi+'_'+li);
   if(lbl){ lbl.textContent=`${fmtN(tot)} / ${pr.target} ${pr.unit} (%${Math.round(pct)})`; lbl.style.color=done?'var(--green)':'var(--mute)'; }
-  const ttl=document.getElementById('rl_prog_ttl_'+i);
-  if(ttl){ ttl.textContent=done?'\u2713 Tamamlandi':'Montaj ilerleme'; ttl.style.color=done?'var(--green)':'var(--mute)'; }
+  const ttl=document.getElementById('rl_prog_ttl_'+bi+'_'+li);
+  if(ttl){ ttl.textContent=done?'✓ Tamamlandi':'Montaj ilerleme'; ttl.style.color=done?'var(--green)':'var(--mute)'; }
 }
-function rAddLine(){ _rLines.push({specId:null,code:'',name:'',unit:'',cat:'',bina:'',grup:'',miktar:'',kat:'',kot:'',_id:null}); rRenderLines(); }
-function rRmLine(i){ if(_rLines.length<=1){ toast('En az bir kalem olmali','err'); return; } _rLines.splice(i,1); rRenderLines(); }
-function rBinaChange(){ const bina=document.getElementById('r_bina').value; const sel=document.getElementById('r_sart'); if(!sel)return;
-  const sarts=(DB.proje.sartnames||[]).filter(s=>s.bina===bina);
-  const cur=sel.value;
-  sel.innerHTML='<option value="">- secin -</option>'+sarts.map(s=>`<option value="${esc(s.code)}">${esc(s.code)}${s.section?' ('+esc(s.section)+')':''}</option>`).join('');
-  if(cur && [...sel.options].some(o=>o.value===cur)) sel.value=cur; else sel.value='';
-}
-// Sartname degisince: secili bolume ait olmayan (ait bolumu farkli) kalemleri temizle.
-// Bir bolum icin acilan sartname sadece o bolumun is kalemlerinde kullanilabilir.
-function rSartChange(){
+function rAddLine(bi){ if(_rBlocks[bi]){ _rBlocks[bi].lines.push(_rEmptyLine()); rRenderBlocks(); } }
+function rRmLine(bi,li){ const bk=_rBlocks[bi]; if(!bk)return; if(bk.lines.length<=1){ toast('Bolumde en az bir kalem olmali','err'); return; } bk.lines.splice(li,1); rRenderBlocks(); }
+function rBinaChange(){
   const bina=document.getElementById('r_bina').value;
-  const sartCode=document.getElementById('r_sart').value;
-  const sart=sartCode?(DB.proje.sartnames||[]).find(x=>x.bina===bina&&x.code===sartCode):null;
-  if(sart){
-    let cleared=0;
-    _rLines.forEach(l=>{ if(l.specId && l.cat && l.cat!==sart.section){ l.specId=null; l.code=''; l.name=''; l.cat=''; l.grup=''; cleared++; } });
-    if(cleared) toast(`"${sart.section}" bolumune ait olmayan ${cleared} kalem temizlendi`,'err');
-  }
-  rRenderLines();
+  // bina degisti: her blogun sartname secimi bu binada yoksa temizle
+  _rBlocks.forEach(bk=>{ if(bk.sart && !(DB.proje.sartnames||[]).some(x=>x.bina===bina&&x.code===bk.sart)) bk.sart=''; });
+  rRenderBlocks();
 }
 function rMatPick(){ const el=document.getElementById('r_mat'); const bina=document.getElementById('r_bina').value;
   const src=DB.proje.specs.filter(s=>!s.is_deleted && s.bina===bina).map(s=>({ad:s.name, alt:(s.code||'')+' '+specGroupKey(s), sub:[s.code,specGroupKey(s),s.unit].filter(Boolean).join(' \u00b7 '), obj:{specId:s.id,code:s.code||'',ad:s.name,name:s.name,unit:s.unit||'',cat:s.cat||'',bina:s.bina,grup:specGroupKey(s)}}));
@@ -7645,35 +7719,35 @@ function rMatPick(){ const el=document.getElementById('r_mat'); const bina=docum
 }
 async function saveRaporEntry(){
   if(_rSaving)return;
-  if(!guard('define',{bina:document.getElementById('r_bina')?.value||PBINA})){return;}
+  const bina=document.getElementById('r_bina')?.value||PBINA;
+  if(!guard('define',{bina})){return;}
   const tarih=document.getElementById('r_tarih').value;
-  const bina=document.getElementById('r_bina').value;
   if(!tarih){ toast('Tarih gerekli','err'); return; }
-  // gecerli kalemler: sartnamesi olsun ya da olmasin (henuz hazir olmayabilir), ad ve miktar yeterli
-  const lines=_rLines.filter(l=>l.name && Number(l.miktar)>0);
-  if(lines.length===0){ toast('En az bir is kalemi secip miktar girin','err'); return; }
-  // parcali binada montaj kaydi lokasyonsuz giremez: montaj fiziksel olarak belli bir parcada yapilir
-  if(binaParcali(bina)){
-    const eksikLok=lines.filter(l=>!l.lokId).length;
-    if(eksikLok){ toast(eksikLok+' is kaleminde lokasyon secilmedi - parcali giris binasinda lokasyon zorunludur','err'); return; }
+  const vardiya=document.getElementById('r_vardiya').value;
+  const notlar=document.getElementById('r_not').value.trim();
+  const stokDus=document.getElementById('r_stok').checked;
+  const parcali=binaParcali(bina);
+  // her BOLUM blogunu dogrula ve tum kalemleri duz bir listeye ac (her kalem kendi blogunun
+  // ekip/adam/sartname/bolum degerlerini tasir). Bos bloklar (kalemi olmayan) atlanir.
+  const flat=[];
+  for(let bi=0; bi<_rBlocks.length; bi++){
+    const bk=_rBlocks[bi];
+    const validLines=bk.lines.filter(l=>l.name && Number(l.miktar)>0);
+    if(validLines.length===0) continue;
+    // blok bolumu: acikca secilmisse o, degilse kalemlerin sartname bolumunden turet
+    let cat=bk.cat||'';
+    if(!cat){ const sp=DB.proje.specs.find(s=>validLines.some(l=>l.specId===s.id)); if(sp) cat=sp.cat||''; }
+    // parcali binada her kalem bir lokasyona baglanmalidir
+    if(parcali){ const eksik=validLines.filter(l=>!l.lokId).length; if(eksik){ toast(`Bolum ${bi+1}: ${eksik} kalemde lokasyon secilmedi - parcali binada zorunlu`,'err'); return; } }
+    // sartname secildiyse bolumle uyumlu olmali
+    const sr=bk.sart?(DB.proje.sartnames||[]).find(x=>x.bina===bina&&x.code===bk.sart):null;
+    if(sr && cat && sr.section!==cat){ toast(`Bolum ${bi+1}: secili sartname "${sr.section}" bolumune ait, kalemler "${cat}" - uyusmuyor`,'err'); return; }
+    validLines.forEach(l=>flat.push({bk,l,cat}));
   }
-  // bir rapor kaydindaki tum is kalemleri tek bir bolume ait olmalidir (Tava sartnamesi ile Aydinlatma kalemi karisamaz)
-  const cats=[...new Set(lines.map(l=>l.cat).filter(Boolean))];
-  if(cats.length>1){ toast(`Is kalemleri farkli bolumlere ait olamaz (${cats.join(', ')}). Her bolum icin ayri kayit olusturun.`,'err'); return; }
-  const sartCode=document.getElementById('r_sart').value;
-  const sart=sartCode?(DB.proje.sartnames||[]).find(x=>x.bina===bina&&x.code===sartCode):null;
-  if(sart && cats.length && cats[0]!==sart.section){ toast(`Secili sartname "${sart.section}" bolumune ait, is kalemleri "${cats[0]}" bolumunden - uyusmuyor.`,'err'); return; }
+  if(flat.length===0){ toast('En az bir bolumde is kalemi secip miktar girin','err'); return; }
   _rSaving=true;
   const saveBtn=document.getElementById('r_saveBtn'); if(saveBtn)saveBtn.disabled=true;
   try{
-    const ortak={
-      tarih, bina,
-      projeKodu:document.getElementById('r_sart').value||'',
-      adamSayisi:document.getElementById('r_adam').value?Number(document.getElementById('r_adam').value):null,
-      vardiya:document.getElementById('r_vardiya').value, ekip:document.getElementById('r_ekip').value,
-      notlar:document.getElementById('r_not').value.trim(),
-      stokDus:document.getElementById('r_stok').checked
-    };
     if(!DB.rapor.entries)DB.rapor.entries=[];
     // Duzenleme ise: eski kayitlari (ve bagli stok hareketlerini) temizle
     if(_rEditId){
@@ -7688,15 +7762,18 @@ async function saveRaporEntry(){
       const delIds=new Set(oldIds);
       DB.rapor.entries=DB.rapor.entries.filter(x=>!delIds.has(x.id));
     }
-    // groupId: birden fazla kalem varsa grup olustur
-    const groupId = lines.length>1 ? uid() : null;
+    // tum kayit tek groupId altinda toplanir (bloklar ayni kaydin parcasidir) - duzenlemede hepsi birlikte yuklenir
+    const groupId = flat.length>1 ? uid() : null;
     const newEntries=[], newItems=[];
-    lines.forEach(l=>{
+    flat.forEach(({bk,l,cat})=>{
+      const projeKodu = bk.sart || l.grup || '';
+      const ekip = bk.ekip || '';
+      const adamSayisi = (bk.adam!==''&&bk.adam!=null) ? Number(bk.adam) : null;
       const entry={
         id:uid(), groupId,
-        ...ortak,
-        projeKodu: ortak.projeKodu || l.grup || '',
-        malzeme:l.name, code:l.code||'', specId:l.specId||null, matId:l.matId||null, cat:l.cat||'',
+        tarih, bina, vardiya, notlar, stokDus,
+        ekip, adamSayisi, projeKodu, cat,
+        malzeme:l.name, code:l.code||'', specId:l.specId||null, matId:l.matId||null,
         miktar:Number(l.miktar), birim:(l.unit||'').trim(),
         kat:(l.kat||'').trim(), kot:(l.kot||'').trim(), lokId:l.lokId||null,
         created:Date.now()
@@ -7713,7 +7790,7 @@ async function saveRaporEntry(){
     ]);
     newEntries.forEach(e=>DB.rapor.entries.push(e));
     newItems.forEach(item=>DB.proje.items.push(item));
-    closeModal(); render(); toast(_rEditId?'Kayit guncellendi':(lines.length>1?lines.length+' is kalemi eklendi':'Saha kaydi eklendi'));
+    closeModal(); render(); toast(_rEditId?'Kayit guncellendi':(flat.length>1?flat.length+' is kalemi eklendi':'Saha kaydi eklendi'));
   } finally {
     _rSaving=false;
   }
