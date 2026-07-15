@@ -7500,6 +7500,18 @@ function shortEkip(e){ if(!e)return''; const parts=String(e).split(' - '); retur
 let _rMat=null; let _rBlocks=[]; let _rEditId=null; let _rEditIsGroup=false; let _rSaving=false;
 function _rEmptyLine(){ return {specId:null,matId:null,code:'',name:'',unit:'',grup:'',miktar:'',kat:'',kot:'',lokId:'',_id:null}; }
 function _rEmptyBlock(){ return {cat:'',ekip:'',adam:'',sart:'',lines:[_rEmptyLine()]}; }
+// AYNI YER TEKILLESTIRME: rapor'da ayni bolum(cat) + ayni urun + ayni kat + kot (+ lokasyon)
+// birden fazla kez tutulmaz; tekrar girilirse ILK (en eski) kaydin miktarina eklenir.
+// urun kimligi: sartname baglantiliysa specId, degilse kutuphane matId, o da yoksa ad+kod.
+function _rProdKey(specId,matId,name,code){
+  if(specId) return 's:'+specId;
+  if(matId)  return 'm:'+matId;
+  return 'n:'+norm(name||'')+'|'+norm(code||'');
+}
+function _rMergeKey(cat,specId,matId,name,code,kat,kot,lokId){
+  return norm(cat||'')+'¦'+_rProdKey(specId,matId,name,code)
+    +'¦'+norm(String(kat||'').trim())+'¦'+norm(String(kot||'').trim())+'¦'+(lokId||'');
+}
 // arka plana (kenarlara) tiklayinca kapatma: form doldurulmusken yanlislikla
 // disariya tiklayip veri kaybetmeyi onler. Duzenlemede form zaten dolu oldugu icin
 // her zaman korunur; yeni kayitta ise anlamli bir alan girildiyse (bolum/ekip/adam/
@@ -7788,20 +7800,42 @@ async function saveRaporEntry(){
       const delIds=new Set(oldIds);
       DB.rapor.entries=DB.rapor.entries.filter(x=>!delIds.has(x.id));
     }
-    // tum kayit tek groupId altinda toplanir (bloklar ayni kaydin parcasidir) - duzenlemede hepsi birlikte yuklenir
-    const groupId = flat.length>1 ? uid() : null;
-    const newEntries=[], newItems=[];
+    // 1) FORM ICI TEKILLESTIRME: ayni bolum+urun+kat+kot(+lokasyon) satirlari tek satira toplanir
+    const dedup=new Map(); const flat2=[];
     flat.forEach(({bk,l,cat})=>{
-      const projeKodu = bk.sart || l.grup || '';
-      const ekip = bk.ekip || '';
-      const adamSayisi = (bk.adam!==''&&bk.adam!=null) ? Number(bk.adam) : null;
+      const key=_rMergeKey(cat,l.specId,l.matId,l.name,l.code,l.kat,l.kot,l.lokId);
+      const ex=dedup.get(key);
+      if(ex){ ex.miktar+=Number(l.miktar)||0; return; }
+      const it={bk,cat, specId:l.specId||null, matId:l.matId||null, name:l.name, code:l.code||'',
+        unit:(l.unit||'').trim(), kat:(l.kat||'').trim(), kot:(l.kot||'').trim(), lokId:l.lokId||null,
+        grup:l.grup, miktar:Number(l.miktar)||0};
+      dedup.set(key,it); flat2.push(it);
+    });
+    // 2) KAYITLI RAPORA KARSI TEKILLESTIRME: ayni gun+bina icinde eslesen ILK (en eski) kayda eklenir
+    const pool=new Map();
+    DB.rapor.entries.filter(e=>e.tarih===tarih && e.bina===bina)
+      .slice().sort((a,b)=>(a.created||0)-(b.created||0))
+      .forEach(e=>{ const k=_rMergeKey(e.cat||'',e.specId,e.matId,e.malzeme,e.code,e.kat,e.kot,e.lokId); if(!pool.has(k)) pool.set(k,e); });
+    const newFlat=[], mergeInto=[];
+    flat2.forEach(it=>{
+      const k=_rMergeKey(it.cat,it.specId,it.matId,it.name,it.code,it.kat,it.kot,it.lokId);
+      const ex=pool.get(k);
+      if(ex) mergeInto.push({entry:ex, add:it.miktar}); else newFlat.push(it);
+    });
+    // 3) YENI kayitlar (birden fazlaysa ortak groupId altinda toplanir)
+    const groupId = newFlat.length>1 ? uid() : null;
+    const newEntries=[], newItems=[];
+    newFlat.forEach(it=>{
+      const projeKodu = it.bk.sart || it.grup || '';
+      const ekip = it.bk.ekip || '';
+      const adamSayisi = (it.bk.adam!==''&&it.bk.adam!=null) ? Number(it.bk.adam) : null;
       const entry={
         id:uid(), groupId,
         tarih, bina, vardiya, notlar, stokDus,
-        ekip, adamSayisi, projeKodu, cat,
-        malzeme:l.name, code:l.code||'', specId:l.specId||null, matId:l.matId||null,
-        miktar:Number(l.miktar), birim:(l.unit||'').trim(),
-        kat:(l.kat||'').trim(), kot:(l.kot||'').trim(), lokId:l.lokId||null,
+        ekip, adamSayisi, projeKodu, cat:it.cat,
+        malzeme:it.name, code:it.code||'', specId:it.specId||null, matId:it.matId||null,
+        miktar:it.miktar, birim:it.unit,
+        kat:it.kat, kot:it.kot, lokId:it.lokId||null,
         created:Date.now()
       };
       if(entry.stokDus){
@@ -7810,13 +7844,33 @@ async function saveRaporEntry(){
       }
       newEntries.push(entry);
     });
+    // 4) MEVCUT kayitlara miktar ekle; varsa stok hareketini de guncelle (yoksa ve stok dususu isaretliyse olustur)
+    const updEntries=[], updMoves=[];
+    mergeInto.forEach(({entry,add})=>{
+      entry.miktar=(Number(entry.miktar)||0)+add;
+      if(entry._moveId){
+        const mv=DB.proje.items.find(it=>it.id===entry._moveId);
+        if(mv){ mv.qty=entry.miktar; updMoves.push(mv); }
+      } else if(stokDus){
+        const moveId=uid(); entry._moveId=moveId; entry.stokDus=true;
+        newItems.push({id:moveId, name:entry.malzeme, qty:entry.miktar, unit:entry.birim, date:new Date(entry.tarih).getTime(), order:'SAHA-'+entry.tarih, note:'Sahada islendi'+(entry.ekip?' ('+shortEkip(entry.ekip)+')':''), cat:entry.cat, code:entry.code, specId:entry.specId, matId:entry.matId, grup:entry.projeKodu, bina:entry.bina, lokId:entry.lokId||null, type:'out', img:null, _fromRapor:entry.id});
+      }
+      updEntries.push(entry);
+    });
     await Promise.all([
-      sbInsertRaporEntries(newEntries),
-      ...(newItems.length?[sbInsertProjeItems(newItems)]:[])
+      ...(newEntries.length?[sbInsertRaporEntries(newEntries)]:[]),
+      ...(newItems.length?[sbInsertProjeItems(newItems)]:[]),
+      ...updEntries.map(e=>sbUpdateRaporEntry(e.id,e)),
+      ...updMoves.map(m=>sbUpdateProjeItem(m.id,m))
     ]);
     newEntries.forEach(e=>DB.rapor.entries.push(e));
     newItems.forEach(item=>DB.proje.items.push(item));
-    closeModal(); render(); toast(_rEditId?'Kayit guncellendi':(flat.length>1?flat.length+' is kalemi eklendi':'Saha kaydi eklendi'));
+    closeModal(); render();
+    const nNew=newEntries.length, nMerged=mergeInto.length;
+    toast(_rEditId?'Kayit guncellendi':(
+      nMerged ? (nNew? `${nNew} kalem eklendi, ${nMerged} kalem mevcut kayda birlestirildi`
+                     : `${nMerged} kalem mevcut kayda birlestirildi`)
+              : (nNew>1? nNew+' is kalemi eklendi':'Saha kaydi eklendi')));
   } finally {
     _rSaving=false;
   }
