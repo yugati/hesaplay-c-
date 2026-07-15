@@ -846,6 +846,20 @@ tbody tr:hover{background:var(--hover)}
 .rap-adam{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:12px;color:var(--amber);background:var(--amber)1a;padding:2px 7px;border-radius:6px}
 .vardiya-tag{font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px;background:#f0a0201a;color:#f0a020;border:1px solid #f0a02044}
 .vardiya-tag.gece{background:#6366f11a;color:#818cf8;border-color:#6366f144}
+.rap-days{display:flex;flex-direction:column;gap:9px}
+.rap-day{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px 15px;cursor:pointer;box-shadow:var(--shadow-sm);transition:border-color .15s,box-shadow .15s,transform .05s;font-family:inherit;color:var(--ink)}
+.rap-day:hover{border-color:var(--amber);box-shadow:var(--ring) rgba(240,160,32,.12)}
+.rap-day:active{transform:translateY(1px)}
+.rap-day-l{display:flex;align-items:center;gap:11px;flex-wrap:wrap;min-width:0}
+.rap-day-tags{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.rap-day-r{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.rap-day-sum{font-size:12px;color:var(--mute);font-family:var(--mono);white-space:nowrap}
+.rap-day-chev{color:var(--dim);flex-shrink:0;transition:transform .15s,color .15s}
+.rap-day:hover .rap-day-chev{color:var(--amber);transform:translateX(2px)}
+.rapday-modal{max-width:720px!important}
+.rapday-body{display:flex;flex-direction:column;gap:12px;background:linear-gradient(180deg,var(--panel),var(--bg))}
+.rapday-body .rap-group{background:var(--panel)}
+.rapday-modal .modal-head h3{font-size:16px}
 .ozet-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
 .ozet-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;transition:border-color .15s,box-shadow .15s;box-shadow:var(--shadow-sm)}
 .ozet-card:hover{border-color:var(--dim);box-shadow:var(--shadow-md)}
@@ -6358,7 +6372,7 @@ function _lbRender(){
 function _lbNav(dir){ _lbIdx=(_lbIdx+dir+_lbImgs.length)%_lbImgs.length; _lbRender(); }
 function _lbKeydown(e){ if(e.key==='Escape')_lbClose(); else if(e.key==='ArrowLeft')_lbNav(-1); else if(e.key==='ArrowRight')_lbNav(1); }
 function _lbClose(){ const d=document.querySelector('.lightbox'); if(d)d.remove(); document.removeEventListener('keydown',_lbKeydown); }
-function closeModal(){ if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; } document.querySelectorAll('.modal-bg').forEach(m=>m.remove()); modalImg=null; modalImg2=null; modalPdf=null; modalTags=[]; modalAltCodes=[]; }
+function closeModal(){ if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; } document.querySelectorAll('.modal-bg').forEach(m=>m.remove()); modalImg=null; modalImg2=null; modalPdf=null; modalTags=[]; modalAltCodes=[]; _rDayOpen=null; }
 
 /* ---------- image/pdf pickers (shared) ---------- */
 let modalImg=null, modalImg2=null, modalPdf=null, modalTags=[], modalAltCodes=[];
@@ -7444,33 +7458,78 @@ function renderRapor(){
   else { body=renderRaporListe(list); }
   return `<div class="rapor-wrap"><div class="page-head"><h1>Gunluk Saha Raporu</h1><p class="page-sub">Sahada islenen malzemeler · stok takibi + yapi ilerleyisi · binalarla entegre</p></div>${stats}${filterBar}${body}</div>`;
 }
+// GUN BAZLI LISTE: ayni tarihteki tum kayitlar tek "gun kartinda" ozetlenir;
+// karta tiklayinca o gune ait tum kalemler (bina/vardiya bazli gruplarla) modalde acilir.
 function renderRaporListe(list){
-  const groups={};
-  list.forEach(e=>{ const k=e.tarih+'|'+e.bina+'|'+(e.projeKodu||''); if(!groups[k])groups[k]={tarih:e.tarih,bina:e.bina,projeKodu:e.projeKodu,items:[]}; groups[k].items.push(e); });
-  const keys=Object.keys(groups).sort((a,b)=>(groups[b].tarih||'').localeCompare(groups[a].tarih||''));
+  const byDate={};
+  list.forEach(e=>{ if(!byDate[e.tarih])byDate[e.tarih]={tarih:e.tarih,items:[],binalar:new Set(),vardiyalar:new Set()}; const d=byDate[e.tarih]; d.items.push(e); if(e.bina)d.binalar.add(e.bina); if(e.vardiya)d.vardiyalar.add(e.vardiya); });
+  const dates=Object.keys(byDate).sort((a,b)=>(b||'').localeCompare(a||''));
   let html='';
-  keys.forEach(k=>{ const g=groups[k]; const bcol=buildingColor(g.bina);
-    let rows='';
-    g.items.forEach(e=>{ rows+=`<div class="rap-row">
-      <div style="flex:1;min-width:0"><div class="rap-mat">${esc(e.malzeme)} ${!e.specId?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber)">SARTNAME DISI</span>`:''}</div><div class="rap-meta">${e.kat?`Kat ${esc(e.kat)}`:''}${e.kot!=null&&e.kot!==''?` · Kot ${esc(e.kot)}`:''}${e.ekip?` · ${esc(shortEkip(e.ekip))}`:''}</div></div>
-      <div class="rap-qty">${fmtNum(e.miktar)} <span>${esc(e.birim||'')}</span></div>
-      ${e.adamSayisi?`<div class="rap-adam" title="Adam sayisi">${esc(e.adamSayisi)}<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z"/></svg></div>`:''}
-      <span class="vardiya-tag ${e.vardiya==='GECE'?'gece':''}">${esc(e.vardiya||'GUNDUZ')}</span>
-      ${!e.specId?`<button class="mini-btn" title="Sartnameye Bagla" style="color:var(--amber);border-color:var(--amber)55" onclick="linkRaporModal('${e.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.07 0l2.83-2.83a5 5 0 00-7.07-7.07L11.5 4.5"/><path d="M14 11a5 5 0 00-7.07 0L4.1 13.83a5 5 0 007.07 7.07L12.5 19.5"/></svg></button>`:''}
-      <button class="mini-btn" onclick="openRaporModal('${e.id}')" title="Duzenle"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
-      <button class="mini-btn del" onclick="delRaporEntry('${e.id}')">${icoTrash()}</button>
-    </div>`; });
-    const totAdam=g.items.reduce((s,e)=>s+(Number(e.adamSayisi)||0),0);
-    const ortakAdam=g.items[0]?g.items[0].adamSayisi:null;
-    const ortakVardiya=g.items[0]?g.items[0].vardiya:'';
-    const sameAdam=g.items.every(e=>e.adamSayisi===ortakAdam);
-    const adamGoster=sameAdam?ortakAdam:totAdam;
-    html+=`<div class="rap-group">
-      <div class="rap-group-head"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class="rap-date">${fmtDate(g.tarih)}</span><span class="bina-tag" style="background:${bcol}22;color:${bcol};border:1px solid ${bcol}55">${esc(g.bina)}</span>${g.projeKodu?`<span class="rap-proj">${esc(g.projeKodu)}</span>`:''}${ortakVardiya?`<span class="vardiya-tag ${ortakVardiya==='GECE'?'gece':''}">${esc(ortakVardiya)}</span>`:''}</div><span class="t-meta">${g.items.length} kalem${adamGoster?` · ${adamGoster} adam`:''}</span></div>
-      ${rows}</div>`;
+  dates.forEach(dt=>{ const d=byDate[dt];
+    const totAdam=rGunAdam(d.items);
+    const binaTags=[...d.binalar].map(b=>{ const c=buildingColor(b); return `<span class="bina-tag" style="background:${c}22;color:${c};border:1px solid ${c}55">${esc(b)}</span>`; }).join('');
+    const vardTags=[...d.vardiyalar].map(v=>`<span class="vardiya-tag ${v==='GECE'?'gece':''}">${esc(v)}</span>`).join('');
+    html+=`<button class="rap-day" onclick="openRaporDayModal('${esc(dt)}')" title="Gunun tum kayitlarini ac">
+      <div class="rap-day-l"><span class="rap-date">${fmtDate(dt)}</span><div class="rap-day-tags">${binaTags}${vardTags}</div></div>
+      <div class="rap-day-r"><span class="rap-day-sum">${d.items.length} kalem${totAdam?` · ${totAdam} adam`:''}${d.binalar.size>1?` · ${d.binalar.size} bina`:''}</span>
+        <svg class="rap-day-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div>
+    </button>`;
   });
-  return `<div class="rap-list">${html}</div>`;
+  return `<div class="rap-days">${html}</div>`;
 }
+// Gunun toplam adam sayisi = her bolumun (bina + proje kodu grubu) adam sayisinin toplami (Ozet ile ayni mantik)
+function rGunAdam(items){
+  const gruplar={};
+  items.forEach(e=>{ const gk=e.bina+'|'+(e.projeKodu||''); (gruplar[gk]||(gruplar[gk]=[])).push(e); });
+  return Object.values(gruplar).reduce((s,arr)=>{ const ortak=arr[0]?arr[0].adamSayisi:null; const same=arr.every(x=>x.adamSayisi===ortak); return s+(same?(Number(ortak)||0):arr.reduce((a,x)=>a+(Number(x.adamSayisi)||0),0)); },0);
+}
+// Bir bina|proje grubunun satirlarini ".rap-group" blogu olarak uretir (gun modalinde kullanilir).
+function rGroupHtml(g){
+  const bcol=buildingColor(g.bina);
+  let rows='';
+  g.items.forEach(e=>{ rows+=`<div class="rap-row">
+    <div style="flex:1;min-width:0"><div class="rap-mat">${esc(e.malzeme)} ${!e.specId?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber)">SARTNAME DISI</span>`:''}</div><div class="rap-meta">${e.kat?`Kat ${esc(e.kat)}`:''}${e.kot!=null&&e.kot!==''?` · Kot ${esc(e.kot)}`:''}${e.ekip?` · ${esc(shortEkip(e.ekip))}`:''}</div></div>
+    <div class="rap-qty">${fmtNum(e.miktar)} <span>${esc(e.birim||'')}</span></div>
+    ${e.adamSayisi?`<div class="rap-adam" title="Adam sayisi">${esc(e.adamSayisi)}<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z"/></svg></div>`:''}
+    <span class="vardiya-tag ${e.vardiya==='GECE'?'gece':''}">${esc(e.vardiya||'GUNDUZ')}</span>
+    ${!e.specId?`<button class="mini-btn" title="Sartnameye Bagla" style="color:var(--amber);border-color:var(--amber)55" onclick="linkRaporModal('${e.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.07 0l2.83-2.83a5 5 0 00-7.07-7.07L11.5 4.5"/><path d="M14 11a5 5 0 00-7.07 0L4.1 13.83a5 5 0 007.07 7.07L12.5 19.5"/></svg></button>`:''}
+    <button class="mini-btn" onclick="openRaporModal('${e.id}')" title="Duzenle"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
+    <button class="mini-btn del" onclick="delRaporEntry('${e.id}')">${icoTrash()}</button>
+  </div>`; });
+  const totAdam=g.items.reduce((s,e)=>s+(Number(e.adamSayisi)||0),0);
+  const ortakAdam=g.items[0]?g.items[0].adamSayisi:null;
+  const ortakVardiya=g.items[0]?g.items[0].vardiya:'';
+  const sameAdam=g.items.every(e=>e.adamSayisi===ortakAdam);
+  const adamGoster=sameAdam?ortakAdam:totAdam;
+  return `<div class="rap-group">
+    <div class="rap-group-head"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class="bina-tag" style="background:${bcol}22;color:${bcol};border:1px solid ${bcol}55">${esc(g.bina)}</span>${g.projeKodu?`<span class="rap-proj">${esc(g.projeKodu)}</span>`:''}${ortakVardiya?`<span class="vardiya-tag ${ortakVardiya==='GECE'?'gece':''}">${esc(ortakVardiya)}</span>`:''}</div><span class="t-meta">${g.items.length} kalem${adamGoster?` · ${adamGoster} adam`:''}</span></div>
+    ${rows}</div>`;
+}
+// GUN MODALI: bir tarihe ait tum kayitlari bina|proje gruplariyla tek modalde toplar.
+let _rDayOpen=null;
+function openRaporDayModal(tarih){
+  closeModal();
+  _rDayOpen=tarih;
+  let items=rEntries().filter(e=>e.tarih===tarih);
+  if(RV.filterBina) items=items.filter(e=>e.bina===RV.filterBina);
+  items.sort((a,b)=>(a.bina||'').localeCompare(b.bina||'','tr')||(a.created||0)-(b.created||0));
+  const groups={};
+  items.forEach(e=>{ const k=e.bina+'|'+(e.projeKodu||''); if(!groups[k])groups[k]={bina:e.bina,projeKodu:e.projeKodu,items:[]}; groups[k].items.push(e); });
+  const keys=Object.keys(groups);
+  const body = keys.length ? keys.map(k=>rGroupHtml(groups[k])).join('')
+    : `<div class="empty-state" style="padding:30px 20px"><p>Bu gune ait kayit kalmadi.</p></div>`;
+  const totAdam=rGunAdam(items);
+  const binaSay=new Set(items.map(e=>e.bina).filter(Boolean)).size;
+  const sub=`${items.length} kalem${totAdam?` · ${totAdam} adam`:''}${binaSay>1?` · ${binaSay} bina`:''}`;
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal rapday-modal">
+    <div class="modal-head"><div><h3>${fmtDate(tarih)}</h3><div class="t-meta" style="margin-top:2px">${sub}</div></div><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body rapday-body">${body}</div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Kapat</button><button class="btn btn-add" onclick="openRaporModal(null,'${esc(tarih)}')">${icoPlus()} Bu Gune Ekle</button></div>
+  </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+// Bir mutasyondan (sil/duzenle/bagla) sonra gun modali aciksa yeniden kur; gun bosaldiysa kapat.
+function rDayReopen(tarih){ if(!tarih)return; if(rEntries().some(e=>e.tarih===tarih)) openRaporDayModal(tarih); else closeModal(); }
 function renderRaporOzet(list){
   const byDate={};
   list.forEach(e=>{ if(!byDate[e.tarih])byDate[e.tarih]={tarih:e.tarih,binalar:new Set(),kalem:0,gruplar:{},ekipler:new Set()}; const d=byDate[e.tarih]; d.binalar.add(e.bina); d.kalem++; if(e.ekip)d.ekipler.add(e.ekip); const gk=e.bina+'|'+(e.projeKodu||''); (d.gruplar[gk]||(d.gruplar[gk]=[])).push(e); });
@@ -7527,7 +7586,7 @@ function rBgClick(bg,ev){
   if(dirty){ toast('Formu kapatmak icin Iptal veya X\'e basin'); return; }
   closeModal();
 }
-function openRaporModal(id){
+function openRaporModal(id,presetDate){
   const e=id?rEntries().find(x=>x.id===id):null;
   // Duzenleme: ayni groupId'li tum kalemleri yukle; yoksa tek kalem
   let siblings=[];
@@ -7544,7 +7603,7 @@ function openRaporModal(id){
   _rEditId = e ? (e.groupId||e.id) : null;
   _rEditIsGroup = !!(e && e.groupId);
   const binas=binaOptsFor(e?e.bina:'');
-  const today=new Date().toISOString().slice(0,10);
+  const today=(!e&&presetDate)?presetDate:new Date().toISOString().slice(0,10);
   const html=`<div class="modal-bg" onclick="rBgClick(this,event)"><div class="modal rapor-modal"><div class="modal-head"><h3>${e?'Saha Kaydi Duzenle':'Saha Kaydi Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow two"><div><label>Tarih *</label><input type="date" id="r_tarih" value="${e?esc(e.tarih):today}"></div><div><label>Bina *</label><select id="r_bina" onchange="rBinaChange()">${binas.map(b=>`<option ${e&&e.bina===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div></div>
     <div class="frow"><label>Vardiya</label><select id="r_vardiya" style="max-width:220px">${VARDIYALAR.map(v=>`<option ${e&&e.vardiya===v?'selected':''}>${v}</option>`).join('')}</select></div>
@@ -7708,16 +7767,18 @@ function rUpdLine(bi,li,k,v){
   bk.lines[li][k]=v;
   if(k==='miktar') _rUpdProgBar(bi,li);
 }
-// lokasyon secilince kat/kot alanlari secilen dugumun KAT atasindan otomatik dolar (bagdastirma):
-// elle girilmis degerler ezilmez, yalnizca bos alanlar tamamlanir
+// PARCALI BINADA LOKASYON KAT/KOT'UN TEK KAYNAGIDIR: lokasyon secilince/degisince kat ve kot
+// secilen dugumun KAT atasindan HER ZAMAN yeniden yazilir. (Kat adinda sayi yoksa kat'a dokunulmaz;
+// o zeminlerde deger elle girilir.) Secimden sonra elle yazilan deger, tekrar lokasyon degistirilene
+// kadar korunur.
 function rSetLok(bi,li,v){
   const bk=_rBlocks[bi]; if(!bk||!bk.lines[li])return;
   const l=bk.lines[li]; l.lokId=v;
   const kat=v?lokKatOf(v):null;
   if(kat){
     const kn=parseKatNo(kat.name);
-    if(!String(l.kat||'').trim() && kn!=null) l.kat=String(kn);
-    if(!String(l.kot||'').trim() && kat.kot!=null && kat.kot!=='') l.kot=String(kat.kot);
+    if(kn!=null) l.kat=String(kn);
+    if(kat.kot!=null && kat.kot!=='') l.kot=String(kat.kot);
   }
   rRenderBlocks();
 }
@@ -7757,6 +7818,7 @@ function rMatPick(){ const el=document.getElementById('r_mat'); const bina=docum
 }
 async function saveRaporEntry(){
   if(_rSaving)return;
+  const _day=_rDayOpen; // gun modalinden acildiysa kayittan sonra o gun tekrar acilir
   const bina=document.getElementById('r_bina')?.value||PBINA;
   if(!guard('define',{bina})){return;}
   const tarih=document.getElementById('r_tarih').value;
@@ -7865,7 +7927,7 @@ async function saveRaporEntry(){
     ]);
     newEntries.forEach(e=>DB.rapor.entries.push(e));
     newItems.forEach(item=>DB.proje.items.push(item));
-    closeModal(); render();
+    closeModal(); render(); rDayReopen(_day);
     const nNew=newEntries.length, nMerged=mergeInto.length;
     toast(_rEditId?'Kayit guncellendi':(
       nMerged ? (nNew? `${nNew} kalem eklendi, ${nMerged} kalem mevcut kayda birlestirildi`
@@ -7896,6 +7958,7 @@ function linkRaporModal(id){
   acOpen(el, src, (it,isNew)=>{ if(isNew)return; doLinkRapor(e.id, it.id); }, false);
 }
 async function doLinkRapor(entryId, specId){
+  const _day=_rDayOpen;
   const e=(DB.rapor.entries||[]).find(x=>x.id===entryId);
   const spec=(DB.proje.specs||[]).find(s=>s.id===specId);
   if(!e||!spec)return;
@@ -7906,7 +7969,7 @@ async function doLinkRapor(entryId, specId){
     if(it){ it.specId=spec.id; it.code=spec.code||''; it.cat=spec.cat||''; it.matId=e.matId; ops.push(sbUpdateProjeItem(it.id,{...it})); }
   }
   await Promise.all(ops);
-  closeModal(); render(); toast('Sartnameye baglandi: '+(spec.code||spec.name));
+  closeModal(); render(); rDayReopen(_day); toast('Sartnameye baglandi: '+(spec.code||spec.name));
 }
 // Yeni sartname kaydedildiginde, ayni malzemeye (matId) bagli, ayni binadaki
 // bekleyen "sartname disi" saha kayitlarini otomatik olarak bu sartnameye baglar.
@@ -7935,7 +7998,7 @@ async function delRaporEntry(id){ if(!guard('delete'))return;
   ]);
   if(e._moveId){ DB.proje.items=DB.proje.items.filter(it=>it.id!==e._moveId); }
   DB.rapor.entries=DB.rapor.entries.filter(x=>x.id!==id);
-  render(); toast('Kayit silindi');
+  render(); rDayReopen(_rDayOpen); toast('Kayit silindi');
 }
 function exportRaporExcel(){
   let list=rEntries();
@@ -8982,7 +9045,7 @@ function cmdkSearch(q){
       go:()=>{ switchSection('proje'); openEkipler(); SEARCH=ek; render(); }},q,[ek,'ekip personel vardiya rapor']));
     rEntries().forEach(e=>cmdkAdd(out,{kind:'Rapor',name:e.malzeme||e.code||'Saha kaydi',
       meta:[fmtDate(e.tarih),e.bina,e.ekip,e.vardiya,e.projeKodu,fmtNum(e.miktar)+' '+(e.birim||'')].filter(Boolean).join(' / '),
-      go:()=>{ switchSection('rapor'); RV.filterBina=e.bina||''; RV.filterTarih=e.tarih||''; RV.view='liste'; render(); }},
+      go:()=>{ switchSection('rapor'); RV.filterBina=e.bina||''; RV.filterTarih=''; RV.view='liste'; render(); openRaporDayModal(e.tarih); }},
       q,[e.malzeme,e.code,e.bina,e.ekip,e.vardiya,e.projeKodu,e.cat,e.kat,e.kot,e.notlar,e.birim,'gunluk saha raporu montaj']));
   }
   _cmdkResults=out.sort((a,b)=>a.score-b.score||String(a.kind).localeCompare(String(b.kind),'tr')||String(a.name).localeCompare(String(b.name),'tr')).slice(0,80);
