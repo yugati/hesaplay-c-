@@ -7473,17 +7473,19 @@ function renderRaporListe(list){
 }
 function renderRaporOzet(list){
   const byDate={};
-  list.forEach(e=>{ if(!byDate[e.tarih])byDate[e.tarih]={tarih:e.tarih,binalar:new Set(),kalem:0,adamlar:{}}; const d=byDate[e.tarih]; d.binalar.add(e.bina); d.kalem++; if(e.ekip)d.adamlar[e.ekip]=Math.max(d.adamlar[e.ekip]||0,Number(e.adamSayisi)||0); });
+  list.forEach(e=>{ if(!byDate[e.tarih])byDate[e.tarih]={tarih:e.tarih,binalar:new Set(),kalem:0,gruplar:{},ekipler:new Set()}; const d=byDate[e.tarih]; d.binalar.add(e.bina); d.kalem++; if(e.ekip)d.ekipler.add(e.ekip); const gk=e.bina+'|'+(e.projeKodu||''); (d.gruplar[gk]||(d.gruplar[gk]=[])).push(e); });
   const dates=Object.keys(byDate).sort().reverse();
   let html='';
-  dates.forEach(dt=>{ const d=byDate[dt]; const totAdam=Object.values(d.adamlar).reduce((a,b)=>a+b,0);
+  dates.forEach(dt=>{ const d=byDate[dt];
+    // toplam adam = her bolumun (bina + proje kodu grubu, Liste gorunumuyle ayni) adam sayisinin toplami
+    const totAdam=Object.values(d.gruplar).reduce((s,items)=>{ const ortak=items[0]?items[0].adamSayisi:null; const same=items.every(x=>x.adamSayisi===ortak); return s+(same?(Number(ortak)||0):items.reduce((a,x)=>a+(Number(x.adamSayisi)||0),0)); },0);
     html+=`<div class="ozet-card">
       <div class="ozet-date">${fmtDate(dt)}</div>
       <div class="ozet-stats">
         <div><b>${d.kalem}</b><span>imalat kalemi</span></div>
         <div><b>${d.binalar.size}</b><span>bina</span></div>
         <div><b>${totAdam}</b><span>toplam adam</span></div>
-        <div><b>${Object.keys(d.adamlar).length}</b><span>ekip</span></div>
+        <div><b>${d.ekipler.size}</b><span>ekip</span></div>
       </div>
       <div class="ozet-binas">${[...d.binalar].map(b=>`<span class="bina-tag" style="background:${buildingColor(b)}22;color:${buildingColor(b)}">${esc(b)}</span>`).join('')}</div>
     </div>`;
