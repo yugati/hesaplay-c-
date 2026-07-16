@@ -844,6 +844,8 @@ tbody tr:hover{background:var(--hover)}
 .rap-qty{font-family:var(--mono);font-weight:700;font-size:14px;white-space:nowrap}
 .rap-qty span{font-size:11px;color:var(--mute);font-weight:400}
 .rap-adam{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:12px;color:var(--amber);background:var(--amber)1a;padding:2px 7px;border-radius:6px}
+.rap-creator{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:2px 8px;border-radius:5px;background:#a855f71a;color:#a855f7;border:1px solid #a855f744}
+.rap-day-creators{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--mute)}
 .vardiya-tag{font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px;background:#f0a0201a;color:#f0a020;border:1px solid #f0a02044}
 .vardiya-tag.gece{background:#6366f11a;color:#818cf8;border-color:#6366f144}
 .rap-days{display:flex;flex-direction:column;gap:9px}
@@ -869,6 +871,8 @@ tbody tr:hover{background:var(--hover)}
 .ozet-stats b{font-size:20px;font-family:var(--mono);line-height:1}
 .ozet-stats span{font-size:10px;color:var(--mute);margin-top:2px}
 .ozet-binas{display:flex;gap:5px;flex-wrap:wrap;padding-top:10px;border-top:1px solid var(--line)}
+.ozet-creators{display:flex;align-items:center;gap:5px;margin-top:9px;font-size:11px;color:var(--mute)}
+.ozet-creators svg{color:#a855f7;flex-shrink:0}
 .frow.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .mat-selected{display:flex;align-items:center;gap:11px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px}
 .mat-check{width:16px;height:16px;cursor:pointer;accent-color:var(--blue)}
@@ -1516,7 +1520,7 @@ function migrate(){
   if(!DB.rapor.entries) DB.rapor.entries=[];
   if(!DB.rapor.ekipler) DB.rapor.ekipler=[];
   if(!DB.meta) DB.meta={};
-  // bina giris modeli ayari: { [bina]: {model:'tum'|'parcali', levels:['kat','fragment','oda']} }
+  // bina giris modeli ayari: { [bina]: {model:'tum'|'parcali', levels:['kat','aks','fragment','oda'] (aks opsiyonel)} }
   if(!DB.meta.binaGiris) DB.meta.binaGiris={};
   // YETKILENDIRME (cok kullanicili + rol + atanan bolumler)
   if(!DB.meta.audit) DB.meta.audit=[];
@@ -3726,7 +3730,7 @@ function openBinaModal(){
       </select>
       <div id="nb_levels" class="hidden" style="margin-top:9px;border:1px solid var(--line);border-radius:9px;padding:10px">
         <p style="font-size:11px;color:var(--dim);font-family:var(--mono);margin-bottom:8px">Bu binada kullanilacak kirilim seviyeleri. Toplama zinciri: Oda &rarr; Fragment &rarr; Kat &rarr; Sartname &rarr; Proje. Metraj eldeki veriye gore herhangi bir seviyeye girilebilir.</p>
-        ${LOK_LEVELS.map(([v,l])=>`<label style="display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none;padding:3px 0"><input type="checkbox" class="nb_lv" value="${v}" checked style="width:auto;margin:0"> ${l}</label>`).join('')}
+        ${LOK_LEVELS.map(([v,l])=>`<label style="display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none;padding:3px 0"><input type="checkbox" class="nb_lv" value="${v}" ${LOK_OPTIONAL_LEVELS.has(v)?'':'checked'} style="width:auto;margin:0"> ${l}${LOK_OPTIONAL_LEVELS.has(v)?' <span style="font-size:10px;color:var(--mute)">(opsiyonel ayirici - ayni katta fragment no tekrar ediyorsa)</span>':''}</label>`).join('')}
         <div style="margin-top:10px;border-top:1px dashed var(--line);padding-top:10px">
           <p style="font-size:11px;color:var(--dim);font-family:var(--mono);margin-bottom:8px">Kat kurulumu (opsiyonel): kat sayisi girilirse "Kat 1..N" otomatik olusturulur. Ilk kot + kot adimi yalnizca HIZLI DOLDURMA icindir - asagidaki listede her katin kotu ayri ayri duzenlenebilir (endustriyel projelerde kat yukseklikleri esit ilerlemeyebilir). Gunluk rapor girisinde lokasyon secilince kat/kot otomatik dolar.</p>
           <div class="frow three" style="margin-bottom:0">
@@ -3779,7 +3783,7 @@ async function saveNewBina(){
   if(DB.proje.buildings.includes(b)){toast('Bu bina zaten var','err');return;}
   const model=document.getElementById('nb_model').value;
   const sel=[...document.querySelectorAll('.nb_lv:checked')].map(x=>x.value);
-  const levels=LOK_LEVELS.map(l=>l[0]).filter(v=>sel.includes(v)); // sira sabit: kat > fragment > oda
+  const levels=LOK_LEVELS.map(l=>l[0]).filter(v=>sel.includes(v)); // sira sabit: kat > aks > fragment > oda
   if(model==='parcali'&&!levels.length){toast('En az bir kirilim seviyesi secin','err');return;}
   await sbInsertProjeBuilding(b); DB.proje.buildings.push(b);
   await setBinaGiris(b,{model,levels});
@@ -3814,11 +3818,11 @@ function openBinaGirisModal(bina){
     <div class="frow"><label>Giris Modeli</label>
       <select id="bg_model" onchange="document.getElementById('bg_levels').classList.toggle('hidden',this.value!=='parcali')">
         <option value="tum" ${cfg.model!=='parcali'?'selected':''}>Tum Giris - bina tek butun olarak takip edilir</option>
-        <option value="parcali" ${cfg.model==='parcali'?'selected':''}>Parcali Giris - metraj ve montaj Kat / Fragment / Oda kirilimiyla takip edilir</option>
+        <option value="parcali" ${cfg.model==='parcali'?'selected':''}>Parcali Giris - metraj ve montaj Kat / Aks / Fragment / Oda kirilimiyla takip edilir</option>
       </select>
       <div id="bg_levels" class="${cfg.model==='parcali'?'':'hidden'}" style="margin-top:9px;border:1px solid var(--line);border-radius:9px;padding:10px">
-        <p style="font-size:11px;color:var(--dim);font-family:var(--mono);margin-bottom:8px">Kirilim seviyeleri. Toplama zinciri: Oda &rarr; Fragment &rarr; Kat &rarr; Sartname &rarr; Proje.</p>
-        ${LOK_LEVELS.map(([v,l])=>`<label style="display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none;padding:3px 0"><input type="checkbox" class="bg_lv" value="${v}" ${!cfg.levels||!cfg.levels.length||cfg.levels.includes(v)?'checked':''} style="width:auto;margin:0"> ${l}</label>`).join('')}
+        <p style="font-size:11px;color:var(--dim);font-family:var(--mono);margin-bottom:8px">Kirilim seviyeleri. Toplama zinciri: Oda &rarr; Fragment &rarr; (Aks) &rarr; Kat &rarr; Sartname &rarr; Proje. Aks / Bolge opsiyonel ayiricidir: ayni katta fragment numaralari tekrar ediyorsa kati once aks aralarina bolun; gerekmeyen katta atlanabilir.</p>
+        ${LOK_LEVELS.map(([v,l])=>`<label style="display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none;padding:3px 0"><input type="checkbox" class="bg_lv" value="${v}" ${(!cfg.levels||!cfg.levels.length)?(LOK_OPTIONAL_LEVELS.has(v)?'':'checked'):(cfg.levels.includes(v)?'checked':'')} style="width:auto;margin:0"> ${l}${LOK_OPTIONAL_LEVELS.has(v)?' <span style="font-size:10px;color:var(--mute)">(opsiyonel ayirici - ayni katta fragment no tekrar ediyorsa)</span>':''}</label>`).join('')}
       </div>
     </div>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveBinaGiris('${esc(bina)}')">Kaydet</button></div></div></div>`;
@@ -3850,7 +3854,7 @@ async function addCatPrompt(){ const v=prompt("Yeni kategori adi (orn. Kablo Kan
 function openLokasyonModal(bina){
   if(!guard('define',{bina}))return;
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:640px"><div class="modal-head"><h3>Lokasyon Kirilimi - ${esc(bina)}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
-    <p class="t-meta" style="margin-bottom:10px;line-height:1.5">Binanin kirilim agacini tanimlayin. Metraj, siparis ve montaj bu parcalara baglanir; toplamlar asagidan yukari (Oda &rarr; Fragment &rarr; Kat) kendiliginden toplanir.</p>
+    <p class="t-meta" style="margin-bottom:10px;line-height:1.5">Binanin kirilim agacini tanimlayin. Metraj, siparis ve montaj bu parcalara baglanir; toplamlar asagidan yukari (Oda &rarr; Fragment &rarr; (Aks) &rarr; Kat) kendiliginden toplanir. Aks / Bolge opsiyoneldir: fragment dogrudan katin altina da eklenebilir.</p>
     <div id="lokTree"></div>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="openBinaGirisModal('${esc(bina)}')">Giris Modeli</button><button class="btn btn-ghost" title="Binalar ekranindaki genis duzenleme alani: satir ici duzenleme, coklu/seri ekleme, dal kopyalama, hizli kat uretimi" onclick="closeModal();openLokWorkspace('${esc(bina)}')">Genis Calisma Alani</button><button class="btn btn-add" onclick="closeModal();render()">Tamam</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
@@ -3858,16 +3862,16 @@ function openLokasyonModal(bina){
 }
 function renderLokTree(bina){
   const w=document.getElementById('lokTree'); if(!w)return;
-  const cfg=binaGiris(bina); const levels=cfg.levels&&cfg.levels.length?cfg.levels:LOK_LEVELS.map(l=>l[0]);
+  const cfg=binaGiris(bina); const levels=cfg.levels&&cfg.levels.length?cfg.levels:LOK_DEFAULT_LEVELS;
   const rows=[];
   const walk=(parentId,depth)=>{
     lokChildren(bina,parentId).forEach(l=>{
-      const childLevel=levels[levels.indexOf(l.level)+1]||null;
+      const childLevels=lokChildLevels(levels,l.level);
       rows.push(`<div style="display:flex;align-items:center;gap:7px;padding:6px 8px;margin-left:${depth*22}px;border:1px solid var(--line);border-radius:8px;margin-bottom:5px">
         <span class="cat-tag" style="background:var(--dim)22;color:var(--mute);font-size:9px;flex-shrink:0">${lokLevelLabel(l.level).toUpperCase()}</span>
         <b style="flex:1;font-size:13px">${esc(l.name)}${l.level==='kat'&&l.kot!=null&&l.kot!==''?` <span class="cat-tag" style="background:var(--blue)18;color:var(--blue);font-size:9px;font-family:var(--mono)" title="Kat kotu">Kot ${esc(l.kot)}</span>`:''}</b>
         ${l.level==='kat'?`<button class="mini-btn" style="width:auto;padding:0 7px;font-size:10px;font-family:var(--mono)" title="Kat kotunu duzenle (rapor girisinde otomatik dolar)" onclick="lokSetKot('${esc(bina)}','${l.id}')">Kot</button>`:''}
-        ${childLevel?`<button class="mini-btn" title="${lokLevelLabel(childLevel)} ekle" onclick="lokAdd('${esc(bina)}','${l.id}','${childLevel}')">${icoPlus()}</button>`:''}
+        ${childLevels.map(cl=>`<button class="mini-btn" style="width:auto;padding:0 7px;font-size:10px" title="${lokLevelLabel(cl)} ekle" onclick="lokAdd('${esc(bina)}','${l.id}','${cl}')">+ ${lokLevelLabel(cl)}</button>`).join('')}
         <button class="mini-btn" title="Yeniden adlandir" onclick="lokRename('${esc(bina)}','${l.id}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
         <button class="mini-btn del" title="Sil" onclick="lokDelete('${esc(bina)}','${l.id}')">${icoTrash()}</button>
       </div>`);
@@ -3938,7 +3942,7 @@ function openLokWorkspace(bina){
   render();
 }
 function closeLokWorkspace(){ LOKW.bina=null; render(); }
-function lokwLevelColor(lv){ return lv==='kat'?'var(--blue)':lv==='fragment'?'var(--violet)':'var(--green)'; }
+function lokwLevelColor(lv){ return lv==='kat'?'var(--blue)':lv==='aks'?'#14b8a6':lv==='fragment'?'var(--violet)':'var(--green)'; }
 // dugum basina bagli veri sayilari (kendisi + alt agac): silmeden once riskin gorunur olmasi icin
 function lokwUsageMap(bina){
   const own={};
@@ -3957,12 +3961,12 @@ function lokwUsageMap(bina){
 function lokwUseLabel(u){ const p=[]; if(u.metraj)p.push(u.metraj+' metraj'); if(u.alim)p.push(u.alim+' alim'); if(u.montaj)p.push(u.montaj+' montaj'); return p.join(' · '); }
 function renderLokWorkspace(bina){
   const cfg=binaGiris(bina); const parcali=cfg.model==='parcali';
-  const levels=cfg.levels&&cfg.levels.length?cfg.levels:LOK_LEVELS.map(l=>l[0]);
+  const levels=cfg.levels&&cfg.levels.length?cfg.levels:LOK_DEFAULT_LEVELS;
   const bc=`<div class="sel-bc"><button onclick="closeLokWorkspace()">${icoArr('left')} Binalar</button></div>`;
   const head=`<div class="sel-head"><h2>Lokasyon Kirilimi — ${esc(bina)}</h2><p>Binanin kirilim agacini genis alanda duzenleyin. Metraj, siparis ve montaj bu parcalara baglanir; toplamlar asagidan yukari (${levels.slice().reverse().map(lokLevelLabel).join(' → ')}) kendiliginden toplanir.</p></div>`;
   if(!parcali) return `<div class="sel-wrap" style="max-width:1000px">${bc}${head}
     <div class="empty" style="padding:44px 20px"><svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg>
-      <p>Bu bina "Tum Giris" modelinde</p><span style="font-size:12px">Lokasyon kirilimi (Kat / Fragment / Oda) tanimlamak icin binayi Parcali Giris modeline alin</span></div>
+      <p>Bu bina "Tum Giris" modelinde</p><span style="font-size:12px">Lokasyon kirilimi (Kat / Aks / Fragment / Oda) tanimlamak icin binayi Parcali Giris modeline alin</span></div>
     ${can('define')?`<div style="text-align:center;margin-top:14px"><button class="btn btn-add" onclick="openBinaGirisModal('${esc(bina)}')">Giris Modelini Degistir</button></div>`:''}
   </div>`;
   const loks=binaLoklar(bina);
@@ -3990,7 +3994,7 @@ function renderLokWorkspace(bina){
       if(visible&&!visible.has(l.id))return;
       const kids=lokChildren(bina,l.id);
       const collapsed=!q&&!!LOKW.collapsed[l.id];
-      const childLevel=levels[levels.indexOf(l.level)+1]||null;
+      const childLevels=lokChildLevels(levels,l.level);
       const useLbl=lokwUseLabel(use.sub[l.id]||{metraj:0,alim:0,montaj:0});
       const editing=LOKW.editId===l.id;
       rows.push(`<div class="lokw-row" style="margin-left:${depth*26}px">
@@ -4005,13 +4009,13 @@ function renderLokWorkspace(bina){
         ${useLbl?`<span class="lokw-use" title="Bu dala bagli kayitlar (alt lokasyonlar dahil)">${useLbl}</span>`:''}
         ${l.level==='kat'?`<input class="lokw-kot" value="${l.kot!=null?esc(l.kot):''}" placeholder="kot" title="Kat kotu - gunluk rapor girisinde otomatik dolar" onchange="lokwSetKot('${l.id}',this.value)">`:''}
         <div class="lokw-actions">
-          ${childLevel?`<button class="mini-btn" title="${lokLevelLabel(childLevel)} ekle" onclick="lokwStartAdd('${l.id}','${childLevel}')">${icoPlus()}</button>`:''}
+          ${childLevels.map(cl=>`<button class="mini-btn" style="width:auto;padding:0 7px;font-size:10px" title="${lokLevelLabel(cl)} ekle" onclick="lokwStartAdd('${l.id}','${cl}')">+ ${lokLevelLabel(cl)}</button>`).join('')}
           <button class="mini-btn" title="Yeniden adlandir" onclick="lokwStartEdit('${l.id}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
           <button class="mini-btn" title="Dali kopyala (alt lokasyonlarla birlikte)" onclick="lokwDuplicate('${esc(bina)}','${l.id}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
           <button class="mini-btn del" title="Sil" onclick="lokwDelete('${esc(bina)}','${l.id}')">${icoTrash()}</button>
         </div>
       </div>`);
-      if(LOKW.addUnder===l.id&&!editing) rows.push(addRow(LOKW.addLevel||childLevel||l.level,depth+1));
+      if(LOKW.addUnder===l.id&&!editing) rows.push(addRow(LOKW.addLevel||childLevels[0]||l.level,depth+1));
       if(!collapsed) walk(l.id,depth+1);
     });
   };
@@ -4345,7 +4349,7 @@ function flowSidePanel(){
 }
 function flowBinaPanel(b){
   const col=buildingColor(b), pasif=isBinaPasif(b), parcali=binaParcali(b);
-  const cfg=binaGiris(b); const levels=cfg.levels&&cfg.levels.length?cfg.levels:LOK_LEVELS.map(l=>l[0]);
+  const cfg=binaGiris(b); const levels=cfg.levels&&cfg.levels.length?cfg.levels:LOK_DEFAULT_LEVELS;
   const specs=DB.proje.specs.filter(s=>!s.is_deleted&&s.bina===b);
   const orders=(DB.proje.orders||[]).filter(o=>!o.is_deleted&&o.bina===b);
   const loks=binaLoklar(b);
@@ -4376,8 +4380,8 @@ function flowBinaPanel(b){
 }
 function flowLokPanel(l){
   const b=l.bina, lc=lokwLevelColor(l.level);
-  const cfg=binaGiris(b); const levels=cfg.levels&&cfg.levels.length?cfg.levels:LOK_LEVELS.map(x=>x[0]);
-  const childLevel=levels[levels.indexOf(l.level)+1]||null;
+  const cfg=binaGiris(b); const levels=cfg.levels&&cfg.levels.length?cfg.levels:LOK_DEFAULT_LEVELS;
+  const childLevels=lokChildLevels(levels,l.level);
   const kids=lokChildren(b,l.id);
   const u=lokwUsageMap(b).sub[l.id]||{metraj:0,alim:0,montaj:0};
   const d=can('define');
@@ -4403,8 +4407,8 @@ function flowLokPanel(l){
     <div class="fw-inline"><input class="fw-inp" id="fw_name" value="${esc(l.name)}" onkeydown="if(event.key==='Enter')flowRename('${l.id}')"><button class="btn btn-add" style="padding:7px 12px" onclick="flowRename('${l.id}')">Kaydet</button></div>`:''}
     ${d&&l.level==='kat'?`<div class="fw-sec">Kat Kotu</div>
     <div class="fw-inline"><input class="fw-inp" id="fw_kot" type="number" step="any" value="${l.kot!=null?esc(l.kot):''}" placeholder="orn. 3600 (bos = kaldir)" onkeydown="if(event.key==='Enter')flowKot('${l.id}')"><button class="btn btn-add" style="padding:7px 12px" onclick="flowKot('${l.id}')">Kaydet</button></div>`:''}
-    ${d&&childLevel?`<div class="fw-sec">${lokLevelLabel(childLevel)} Ekle</div>
-    <div class="fw-inline"><input class="fw-inp" id="fw_add" placeholder='orn. Oda 1..8, Depo' onkeydown="if(event.key==='Enter')flowAdd('${esc(b)}','${l.id}','${childLevel}')"><button class="btn btn-add" style="padding:7px 12px" onclick="flowAdd('${esc(b)}','${l.id}','${childLevel}')">Ekle</button></div>`:''}
+    ${d?childLevels.map(cl=>`<div class="fw-sec">${lokLevelLabel(cl)} Ekle${LOK_OPTIONAL_LEVELS.has(cl)?' <span style="font-weight:400;text-transform:none;letter-spacing:0">(opsiyonel ayirici)</span>':''}</div>
+    <div class="fw-inline"><input class="fw-inp" id="fw_add_${cl}" placeholder='orn. ${cl==='aks'?'A-B Aksi, C-D Aksi':cl==='oda'?'Oda 1..8, Depo':lokLevelLabel(cl)+' 1..4'}' onkeydown="if(event.key==='Enter')flowAdd('${esc(b)}','${l.id}','${cl}','fw_add_${cl}')"><button class="btn btn-add" style="padding:7px 12px" onclick="flowAdd('${esc(b)}','${l.id}','${cl}','fw_add_${cl}')">Ekle</button></div>`).join(''):''}
     <div class="fw-sec">Islemler</div>
     <div class="fw-actions">
       ${d?`<button class="btn btn-ghost" onclick="lokwDuplicate('${esc(b)}','${l.id}')">Dali Kopyala (alt agacla)</button>`:''}
@@ -4413,13 +4417,14 @@ function flowLokPanel(l){
     <p class="fw-path" style="margin-top:12px;margin-bottom:0">Bagli metraj/alim/montaj kaydi olan dallar silinemez - once kayitlari tasiyin.</p>`;
 }
 /* --- panel islemleri --- */
-async function flowAdd(bina,parentId,level){
-  const inp=document.getElementById('fw_add'); if(!inp)return;
+async function flowAdd(bina,parentId,level,inpId){
+  const iid=inpId||'fw_add';
+  const inp=document.getElementById(iid); if(!inp)return;
   const raw=inp.value.trim(); if(!raw){ inp.focus(); return; }
   const ok=await lokInsertNames(bina,parentId||null,level,raw);
   if(!ok){ inp.focus(); return; }
   render();
-  setTimeout(()=>{ const i=document.getElementById('fw_add'); if(i)i.focus(); },30);
+  setTimeout(()=>{ const i=document.getElementById(iid); if(i)i.focus(); },30);
 }
 async function flowRename(id){
   const inp=document.getElementById('fw_name'); const l=getLok(id); if(!inp||!l)return;
@@ -4982,12 +4987,23 @@ async function delOffSpecGroup(name,cat,unit){
   render(); toast("Kayitlar silindi");
 }
 function specGroupKey(sp){ return (sp.grup&&sp.grup.trim())?sp.grup.trim():(sp.cat||'Diger'); }
-/* ===== PARCALI GIRIS: LOKASYON KIRILIMI (Kat > Fragment > Oda) =====
+/* ===== PARCALI GIRIS: LOKASYON KIRILIMI (Kat > Aks > Fragment > Oda) =====
    Bina giris modeli DB.meta.binaGiris'te, lokasyon agaci DB.proje.lokasyonlar'da durur.
    Metraj (sp.lokTargets), alim (item.lokId) ve montaj (entry.lokId) dugumlere baglanir;
-   toplamlar dugumden yukari (oda->fragment->kat->sartname->proje) kendiliginden toplanir. */
-const LOK_LEVELS=[['kat','Kat'],['fragment','Fragment'],['oda','Oda']];
+   toplamlar dugumden yukari (oda->fragment->aks->kat->sartname->proje) kendiliginden toplanir.
+   AKS / BOLGE: kat ile fragment arasinda OPSIYONEL ayirici seviye. Ayni katta fragment
+   numaralari tekrar ediyorsa (orn. iki farkli aks arasi ayni F-5'i icerir) kat once
+   akslara bolunur. Opsiyonel oldugu icin agacta atlanabilir: fragment dogrudan katin
+   altina da eklenebilir - toplama parentId tabanli oldugundan iki bicim bir arada calisir. */
+const LOK_LEVELS=[['kat','Kat'],['aks','Aks / Bolge'],['fragment','Fragment'],['oda','Oda']];
+const LOK_DEFAULT_LEVELS=['kat','fragment','oda']; // levels secilmemis eski binalarin varsayilan zinciri (aks bilincli secilmeli)
+const LOK_OPTIONAL_LEVELS=new Set(['aks']);        // ara "ayirici" seviyeler: agacta ve kademeli secimde atlanabilir
 function lokLevelLabel(lv){ const x=LOK_LEVELS.find(l=>l[0]===lv); return x?x[1]:lv; }
+// bir dugumun altina eklenebilecek seviyeler: zincirdeki bir sonraki seviye; o seviye
+// opsiyonel ise (aks) bir sonraki zorunlu seviye de dogrudan eklenebilir (aks atlanir)
+function lokChildLevels(levels,level){ const out=[]; let i=levels.indexOf(level);
+  while(i>=0&&i<levels.length-1){ out.push(levels[i+1]); if(!LOK_OPTIONAL_LEVELS.has(levels[i+1]))break; i++; }
+  return out; }
 function binaGiris(bina){ return (DB.meta.binaGiris||{})[bina]||{model:'tum',levels:[]}; }
 function binaParcali(bina){ return binaGiris(bina).model==='parcali'; }
 async function setBinaGiris(bina,cfg){ DB.meta.binaGiris={...(DB.meta.binaGiris||{}),[bina]:cfg}; await sbSetSetting('binaGiris',DB.meta.binaGiris); }
@@ -5091,7 +5107,7 @@ let _SO=null; // {srId, bina, levels, sel:[{id:'',newName:''}]}
 function openSartOdaEkle(){
   if(!guard('editSpec',{bina:PBINA}))return;
   const sr=sartOfSel(); if(!sr){ toast('Once bu sartnameyi Bolum & Sartname ekranindan tanimlayin','err'); return; }
-  const cfg=binaGiris(PBINA); const levels=(cfg.levels&&cfg.levels.length)?cfg.levels:LOK_LEVELS.map(l=>l[0]);
+  const cfg=binaGiris(PBINA); const levels=(cfg.levels&&cfg.levels.length)?cfg.levels:LOK_DEFAULT_LEVELS;
   _SO={srId:sr.id,bina:PBINA,levels,sel:levels.map(()=>({id:'',newName:''}))};
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>Sartnameye Oda Ekle</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <p class="t-meta" style="margin-bottom:12px;line-height:1.5"><b>${esc(sr.code)}</b> sartnamesine alt birim ekleyin. Kat ve fragment tekrar edebilir; <b>ayni oda bu sartnameye ikinci kez eklenemez</b>. Listede olmayan birimi adini yazarak olusturabilirsiniz.</p>
@@ -5112,15 +5128,18 @@ function soRender(){
     const kids=parentIsNew?[]:lokChildren(_SO.bina,parentId).filter(l=>l.level===lv);
     const opts=kids.map(l=>{ const dis=last&&attached.has(l.id);
       return `<option value="${l.id}" ${s.id===l.id?'selected':''} ${dis?'disabled':''}>${esc(l.name)}${dis?' (bu sartnamede ekli)':''}</option>`; }).join('');
-    html+=`<div class="frow"><label>${lokLevelLabel(lv)} ${last?'*':''}</label>
+    html+=`<div class="frow"><label>${lokLevelLabel(lv)} ${last?'*':LOK_OPTIONAL_LEVELS.has(lv)?'<span style="font-weight:400;color:var(--mute)">(opsiyonel)</span>':''}</label>
       <select onchange="soPick(${i},this.value)" ${i>0&&!_SO.sel[i-1].id?'disabled':''}>
         <option value="">- ${lokLevelLabel(lv).toLocaleLowerCase('tr')} secin -</option>${opts}
+        ${LOK_OPTIONAL_LEVELS.has(lv)&&!last?`<option value="__skip" ${s.id==='__skip'?'selected':''}>(atla - bu dalda ${lokLevelLabel(lv).toLocaleLowerCase('tr')} yok)</option>`:''}
         <option value="__new" ${s.id==='__new'?'selected':''}>+ Yeni ${lokLevelLabel(lv).toLocaleLowerCase('tr')} yaz...</option>
       </select>
-      ${s.id==='__new'?`<input id="so_new_${i}" style="margin-top:7px" placeholder="${lokLevelLabel(lv)} adi (orn. ${lv==='oda'?'Oda 203':lv==='fragment'?'F-03':'Kat 2'})" value="${esc(s.newName)}" oninput="_SO.sel[${i}].newName=this.value">`:''}
+      ${s.id==='__new'?`<input id="so_new_${i}" style="margin-top:7px" placeholder="${lokLevelLabel(lv)} adi (orn. ${lv==='oda'?'Oda 203':lv==='fragment'?'F-03':lv==='aks'?'A-B Aksi':'Kat 2'})" value="${esc(s.newName)}" oninput="_SO.sel[${i}].newName=this.value">`:''}
     </div>`;
-    parentIsNew=parentIsNew||s.id==='__new';
-    parentId=(s.id&&s.id!=='__new')?s.id:null;
+    if(s.id!=='__skip'){ // atlanan opsiyonel seviye ust dugumu degistirmez (fragment dogrudan katin altinda aranir/olusur)
+      parentIsNew=parentIsNew||s.id==='__new';
+      parentId=(s.id&&s.id!=='__new')?s.id:null;
+    }
   });
   w.innerHTML=html;
   const focusInp=w.querySelector('input[id^="so_new_"]'); if(focusInp&&!focusInp.value)focusInp.focus();
@@ -5131,6 +5150,7 @@ async function soSave(){
   let parentId=null;
   for(let i=0;i<_SO.levels.length;i++){
     const lv=_SO.levels[i], s=_SO.sel[i];
+    if(s.id==='__skip') continue; // opsiyonel seviye (aks) atlandi - ust dugum degismeden devam
     let node=null;
     if(s.id&&s.id!=='__new') node=getLok(s.id);
     else if(s.id==='__new'){
@@ -6170,6 +6190,7 @@ function renderProjeOrders(){
   }
   return `<div class="stats">${stat}</div>
     <div class="toolbar">${searchBox('Siparis no, bina, urun, sirket ara...')}
+      ${draftsGet('order').length?`<button class="btn btn-ghost" onclick="openDraftsModal('order')" title="Yarim kalan siparisler">${icoDoc()} Taslaklar (${draftsGet('order').length})</button>`:''}
       <button class="btn btn-grid" onclick="exportOrdersExcel()">${icoXls()} Siparis Raporu</button>
       <button class="btn btn-order" onclick="openProjeOrderModal()">${icoDoc()} Siparis / Fatura Gir</button></div>
     ${cards}`;
@@ -7428,6 +7449,114 @@ function sahaSnapshot(){ const img=document.getElementById('siteImg'); if(!img)r
 const VARDIYALAR=["GUNDUZ","GECE"];
 let RV={ filterBina:"", filterTarih:"", view:"liste" };
 function rEntries(){ return (DB.rapor&&DB.rapor.entries||[]).filter(e=>!e.is_deleted); }
+/* ==================================================================
+   TASLAKLAR - Saha kaydi ve Proje siparisi formlari yarim kalirsa
+   "Taslak Kaydet" ile saklanir, sonra "Devam Et" ile kaldigi yerden acilir.
+   Depo: app_settings (JSONB) -> rapor_drafts / order_drafts anahtarlari.
+   sbLoadAllData tum settings'i DB.meta'ya yaydigi icin acilista otomatik gelir.
+   ================================================================== */
+let _rDraftId=null, _poDraftId=null; // devam edilen taslagin id'si (kaydedilince silinir)
+function draftsGet(kind){ return (DB&&DB.meta&&Array.isArray(DB.meta[kind+'_drafts']))?DB.meta[kind+'_drafts']:[]; }
+async function draftsSet(kind,arr){ if(!DB.meta)DB.meta={}; DB.meta[kind+'_drafts']=arr; await sbSetSetting(kind+'_drafts',arr); }
+function fmtDT(ts){ if(!ts)return''; const d=new Date(ts); return d.toLocaleDateString('tr-TR')+' '+d.toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}); }
+function openDraftsModal(kind){
+  const drafts=draftsGet(kind).slice().sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
+  const title=kind==='rapor'?'Saha Kaydi Taslaklari':'Siparis Taslaklari';
+  let rows='';
+  if(!drafts.length) rows='<div class="empty" style="padding:26px"><p>Taslak yok</p><span style="font-size:12px">Formda "Taslak Kaydet" ile olusturabilirsiniz</span></div>';
+  else drafts.forEach(d=>{
+    const name=kind==='rapor'
+      ? `${d.tarih?fmtDate(d.tarih):'(tarihsiz)'} · ${d.bina||'-'}`
+      : `${d.no||'(fatura no yok)'} · ${d.newBina||d.bina||'-'}`;
+    const cnt=kind==='rapor'
+      ? (d.blocks||[]).reduce((s,bk)=>s+((bk&&bk.lines)||[]).filter(l=>l&&l.name).length,0)
+      : (d.lines||[]).filter(l=>l&&(l.specId||l.ad)).length;
+    const meta=[cnt+' kalem', d.savedBy?`${icoUserSm()} ${esc(d.savedBy)}`:'', fmtDT(d.savedAt)].filter(Boolean).join(' · ');
+    rows+=`<div class="hist-row" style="align-items:center;gap:10px">
+      <div style="flex:1;min-width:0"><div class="t-name" style="font-size:13px">${esc(name)}</div><div class="t-meta" style="font-size:11px">${meta}</div></div>
+      <button class="btn btn-add" style="padding:6px 13px;font-size:12px" onclick="${kind==='rapor'?'openRaporDraft':'openOrderDraft'}('${d.id}')">Devam Et</button>
+      <button class="mini-btn del" title="Taslagi sil" onclick="delDraft('${kind}','${d.id}')">${icoTrash()}</button>
+    </div>`;
+  });
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>${title} (${drafts.length})</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">${rows}</div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function delDraft(kind,id){ if(!confirm('Bu taslak silinsin mi?'))return;
+  await draftsSet(kind, draftsGet(kind).filter(x=>x.id!==id));
+  closeModal(); render(); openDraftsModal(kind);
+}
+// SAHA KAYDI taslagi: form + bolum bloklari oldugu gibi saklanir (stok/rapor tablosuna yazilmaz)
+async function saveRaporDraft(){
+  const tarih=document.getElementById('r_tarih').value;
+  const bina=document.getElementById('r_bina')?.value||'';
+  const vardiya=document.getElementById('r_vardiya').value;
+  const notlar=document.getElementById('r_not').value.trim();
+  const stokDus=document.getElementById('r_stok').checked;
+  const hasContent=notlar||(_rBlocks||[]).some(bk=>bk&&(bk.cat||bk.ekip||String(bk.adam||'').trim()||bk.sart||
+    (bk.lines||[]).some(l=>l&&(l.name||l.specId||String(l.miktar||'').trim()))));
+  if(!hasContent){ toast('Taslak icin en az bir alan doldurun','err'); return; }
+  const drafts=draftsGet('rapor').slice();
+  const d={id:_rDraftId||uid(), savedBy:(CURRENT_USER&&CURRENT_USER.username)||'', savedAt:Date.now(),
+    tarih, bina, vardiya, notlar, stokDus, blocks:JSON.parse(JSON.stringify(_rBlocks||[]))};
+  const i=drafts.findIndex(x=>x.id===d.id); if(i>=0)drafts[i]=d; else drafts.push(d);
+  await draftsSet('rapor',drafts);
+  _rDraftId=null; closeModal(); render(); toast('Saha kaydi taslak olarak kaydedildi');
+}
+function openRaporDraft(id){
+  const d=draftsGet('rapor').find(x=>x.id===id); if(!d)return;
+  closeModal();
+  openRaporModal();
+  _rDraftId=d.id;
+  if(d.tarih) document.getElementById('r_tarih').value=d.tarih;
+  const bsel=document.getElementById('r_bina'); if(d.bina&&[...bsel.options].some(o=>o.value===d.bina)) bsel.value=d.bina;
+  if(d.vardiya) document.getElementById('r_vardiya').value=d.vardiya;
+  document.getElementById('r_not').value=d.notlar||'';
+  document.getElementById('r_stok').checked=d.stokDus!==false;
+  _rBlocks=JSON.parse(JSON.stringify(d.blocks||[])); if(!_rBlocks.length)_rBlocks=[_rEmptyBlock()];
+  rBinaChange(); // gecersiz kalan sartname secimlerini temizler + bloklari cizer
+}
+// PROJE SIPARISI taslagi: fatura no/tarih/bina/sirket/satirlar/PDF saklanir (stok eklenmez)
+async function saveOrderDraft(){
+  const no=document.getElementById('po_no').value.trim();
+  const binaSel=document.getElementById('po_bina').value;
+  const sirketSel=document.getElementById('po_sirket').value;
+  const hasLine=(pOrderLines||[]).some(l=>l&&(l.specId||String(l.qty||'').trim()));
+  if(!no&&!hasLine&&!modalPdf){ toast('Taslak icin en az fatura no veya bir satir girin','err'); return; }
+  const drafts=draftsGet('order').slice();
+  const d={id:_poDraftId||uid(), savedBy:(CURRENT_USER&&CURRENT_USER.username)||'', savedAt:Date.now(),
+    no, date:document.getElementById('po_date').value,
+    bina:binaSel==='__new'?'':binaSel, newBina:binaSel==='__new'?document.getElementById('po_newbina').value.trim():'',
+    companyId:sirketSel==='__new'?'':sirketSel, newCompany:sirketSel==='__new'?document.getElementById('po_newsirket').value.trim():'',
+    grup:document.getElementById('po_grup').value,
+    lines:JSON.parse(JSON.stringify(pOrderLines||[])), pdf:modalPdf,
+    pbina:PBINA, pcat:PCAT};
+  const i=drafts.findIndex(x=>x.id===d.id); if(i>=0)drafts[i]=d; else drafts.push(d);
+  await draftsSet('order',drafts);
+  _poDraftId=null; closeModal(); render(); toast('Siparis taslak olarak kaydedildi');
+}
+function openOrderDraft(id){
+  const d=draftsGet('order').find(x=>x.id===id); if(!d)return;
+  closeModal();
+  // taslak hangi bina/bolum baglaminda kaydedildiyse oraya gec (spec kaynaklari o baglama gore dolar)
+  if(d.pbina&&d.pcat&&(PBINA!==d.pbina||PCAT!==d.pcat)){ PBINA=d.pbina; PCAT=d.pcat; PSPEC='__all'; TAB='orders'; render(); }
+  openProjeOrderModal();
+  if(!document.getElementById('po_no')){ toast('Taslak acilamadi - sartname kalemi bulunamadi','err'); return; }
+  _poDraftId=d.id;
+  document.getElementById('po_no').value=d.no||'';
+  if(d.date) document.getElementById('po_date').value=d.date;
+  const bsel=document.getElementById('po_bina');
+  if(d.newBina){ bsel.value='__new'; bsel.onchange(); document.getElementById('po_newbina').value=d.newBina; }
+  else if(d.bina&&[...bsel.options].some(o=>o.value===d.bina)) bsel.value=d.bina;
+  const ssel=document.getElementById('po_sirket');
+  if(d.newCompany){ ssel.value='__new'; ssel.onchange(); document.getElementById('po_newsirket').value=d.newCompany; }
+  else if(d.companyId&&[...ssel.options].some(o=>o.value===d.companyId)){ ssel.value=d.companyId; ssel.onchange(); }
+  if(d.grup){ const g=document.getElementById('po_grup'); if([...g.options].some(o=>o.value===d.grup)){ g.value=d.grup; window._poGrup=d.grup; } }
+  pOrderLines=JSON.parse(JSON.stringify(d.lines||[])); if(!pOrderLines.length)pOrderLines=[{specId:'',code:'',ad:'',cat:'',unit:'',grup:'',qty:''}];
+  modalPdf=d.pdf||null;
+  if(modalPdf){ const el=document.getElementById('poPdfDrop'); el.classList.add('has'); el.innerHTML=`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(modalPdf.name||'belge')}<button onclick="event.stopPropagation();modalPdf=null;render2pdf('poPdfDrop')">x</button></div>`; }
+  renderPLines();
+}
+
 function renderRapor(){
   const entries=rEntries();
   const binas=[...new Set([...projBuildings(), ...entries.map(e=>e.bina)].filter(Boolean))];
@@ -7446,6 +7575,7 @@ function renderRapor(){
       <button class="${RV.view==='liste'?'on':''}" onclick="RV.view='liste';render()">Liste</button>
       <button class="${RV.view==='ozet'?'on':''}" onclick="RV.view='ozet';render()">Gunluk Ozet</button>
     </div>
+    ${draftsGet('rapor').length?`<button class="btn btn-ghost" onclick="openDraftsModal('rapor')" title="Yarim kalan saha kayitlari">${icoDoc()} Taslaklar (${draftsGet('rapor').length})</button>`:''}
     <button class="btn btn-grid" onclick="exportRaporExcel()">${icoXls()} Plan Excel</button>
     <button class="btn btn-add" onclick="openRaporModal()">${icoPlus()} Saha Kaydi Ekle</button>
   </div>`;
@@ -7469,8 +7599,14 @@ function renderRaporListe(list){
     const totAdam=rGunAdam(d.items);
     const binaTags=[...d.binalar].map(b=>{ const c=buildingColor(b); return `<span class="bina-tag" style="background:${c}22;color:${c};border:1px solid ${c}55">${esc(b)}</span>`; }).join('');
     const vardTags=[...d.vardiyalar].map(v=>`<span class="vardiya-tag ${v==='GECE'?'gece':''}">${esc(v)}</span>`).join('');
+    const creators=rCreators(d.items);
+    const creatorTag = creators.length===1
+      ? `<span class="rap-creator" title="Olusturan">${icoUserSm()} ${esc(creators[0])}</span>`
+      : creators.length>1
+        ? `<span class="rap-creator" title="Olusturanlar: ${esc(creators.join(', '))}">${icoUserSm()} ${creators.length} kisi</span>`
+        : '';
     html+=`<button class="rap-day" onclick="openRaporDayModal('${esc(dt)}')" title="Gunun tum kayitlarini ac">
-      <div class="rap-day-l"><span class="rap-date">${fmtDate(dt)}</span><div class="rap-day-tags">${binaTags}${vardTags}</div></div>
+      <div class="rap-day-l"><span class="rap-date">${fmtDate(dt)}</span><div class="rap-day-tags">${binaTags}${vardTags}${creatorTag}</div></div>
       <div class="rap-day-r"><span class="rap-day-sum">${d.items.length} kalem${totAdam?` · ${totAdam} adam`:''}${d.binalar.size>1?` · ${d.binalar.size} bina`:''}</span>
         <svg class="rap-day-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div>
     </button>`;
@@ -7486,9 +7622,12 @@ function rGunAdam(items){
 // Bir bina|proje grubunun satirlarini ".rap-group" blogu olarak uretir (gun modalinde kullanilir).
 function rGroupHtml(g){
   const bcol=buildingColor(g.bina);
+  const grpCreators=rCreators(g.items); // gruptaki essiz olusturan kisiler
+  const multiCreator=grpCreators.length>1; // birden fazla kisi girdi yaptiysa satir bazli goster
   let rows='';
-  g.items.forEach(e=>{ rows+=`<div class="rap-row">
-    <div style="flex:1;min-width:0"><div class="rap-mat">${esc(e.malzeme)} ${!e.specId?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber)">SARTNAME DISI</span>`:''}</div><div class="rap-meta">${e.kat?`Kat ${esc(e.kat)}`:''}${e.kot!=null&&e.kot!==''?` · Kot ${esc(e.kot)}`:''}${e.ekip?` · ${esc(shortEkip(e.ekip))}`:''}</div></div>
+  g.items.forEach(e=>{ const metaBits=[e.kat?`Kat ${esc(e.kat)}`:'', (e.kot!=null&&e.kot!=='')?`Kot ${esc(e.kot)}`:'', e.ekip?esc(shortEkip(e.ekip)):'', (multiCreator&&e.createdBy)?`${icoUserSm()} ${esc(e.createdBy)}`:''].filter(Boolean).join(' · ');
+    rows+=`<div class="rap-row">
+    <div style="flex:1;min-width:0"><div class="rap-mat">${esc(e.malzeme)} ${!e.specId?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber)">SARTNAME DISI</span>`:''}</div><div class="rap-meta">${metaBits}</div></div>
     <div class="rap-qty">${fmtNum(e.miktar)} <span>${esc(e.birim||'')}</span></div>
     ${e.adamSayisi?`<div class="rap-adam" title="Adam sayisi">${esc(e.adamSayisi)}<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z"/></svg></div>`:''}
     <span class="vardiya-tag ${e.vardiya==='GECE'?'gece':''}">${esc(e.vardiya||'GUNDUZ')}</span>
@@ -7501,8 +7640,14 @@ function rGroupHtml(g){
   const ortakVardiya=g.items[0]?g.items[0].vardiya:'';
   const sameAdam=g.items.every(e=>e.adamSayisi===ortakAdam);
   const adamGoster=sameAdam?ortakAdam:totAdam;
+  // olusturan kisi rozeti: tek kisi ise adi, birden fazla ise "N kisi"
+  const creatorTag = grpCreators.length===1
+    ? `<span class="rap-creator" title="Olusturan">${icoUserSm()} ${esc(grpCreators[0])}</span>`
+    : grpCreators.length>1
+      ? `<span class="rap-creator" title="Olusturanlar: ${esc(grpCreators.join(', '))}">${icoUserSm()} ${grpCreators.length} kisi</span>`
+      : '';
   return `<div class="rap-group">
-    <div class="rap-group-head"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class="bina-tag" style="background:${bcol}22;color:${bcol};border:1px solid ${bcol}55">${esc(g.bina)}</span>${g.projeKodu?`<span class="rap-proj">${esc(g.projeKodu)}</span>`:''}${ortakVardiya?`<span class="vardiya-tag ${ortakVardiya==='GECE'?'gece':''}">${esc(ortakVardiya)}</span>`:''}</div><span class="t-meta">${g.items.length} kalem${adamGoster?` · ${adamGoster} adam`:''}</span></div>
+    <div class="rap-group-head"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class="bina-tag" style="background:${bcol}22;color:${bcol};border:1px solid ${bcol}55">${esc(g.bina)}</span>${g.projeKodu?`<span class="rap-proj">${esc(g.projeKodu)}</span>`:''}${ortakVardiya?`<span class="vardiya-tag ${ortakVardiya==='GECE'?'gece':''}">${esc(ortakVardiya)}</span>`:''}${creatorTag}</div><span class="t-meta">${g.items.length} kalem${adamGoster?` · ${adamGoster} adam`:''}</span></div>
     ${rows}</div>`;
 }
 // GUN MODALI: bir tarihe ait tum kayitlari bina|proje gruplariyla tek modalde toplar.
@@ -7532,12 +7677,16 @@ function openRaporDayModal(tarih){
 function rDayReopen(tarih){ if(!tarih)return; if(rEntries().some(e=>e.tarih===tarih)) openRaporDayModal(tarih); else closeModal(); }
 function renderRaporOzet(list){
   const byDate={};
-  list.forEach(e=>{ if(!byDate[e.tarih])byDate[e.tarih]={tarih:e.tarih,binalar:new Set(),kalem:0,gruplar:{},ekipler:new Set()}; const d=byDate[e.tarih]; d.binalar.add(e.bina); d.kalem++; if(e.ekip)d.ekipler.add(e.ekip); const gk=e.bina+'|'+(e.projeKodu||''); (d.gruplar[gk]||(d.gruplar[gk]=[])).push(e); });
+  list.forEach(e=>{ if(!byDate[e.tarih])byDate[e.tarih]={tarih:e.tarih,binalar:new Set(),kalem:0,gruplar:{},ekipler:new Set(),items:[]}; const d=byDate[e.tarih]; d.binalar.add(e.bina); d.kalem++; if(e.ekip)d.ekipler.add(e.ekip); d.items.push(e); const gk=e.bina+'|'+(e.projeKodu||''); (d.gruplar[gk]||(d.gruplar[gk]=[])).push(e); });
   const dates=Object.keys(byDate).sort().reverse();
   let html='';
   dates.forEach(dt=>{ const d=byDate[dt];
     // toplam adam = her bolumun (bina + proje kodu grubu, Liste gorunumuyle ayni) adam sayisinin toplami
     const totAdam=Object.values(d.gruplar).reduce((s,items)=>{ const ortak=items[0]?items[0].adamSayisi:null; const same=items.every(x=>x.adamSayisi===ortak); return s+(same?(Number(ortak)||0):items.reduce((a,x)=>a+(Number(x.adamSayisi)||0),0)); },0);
+    const creators=rCreators(d.items);
+    const creatorLine = creators.length
+      ? `<div class="ozet-creators">${icoUserSm()} ${esc(creators.join(', '))}</div>`
+      : '';
     html+=`<div class="ozet-card">
       <div class="ozet-date">${fmtDate(dt)}</div>
       <div class="ozet-stats">
@@ -7547,11 +7696,15 @@ function renderRaporOzet(list){
         <div><b>${d.ekipler.size}</b><span>ekip</span></div>
       </div>
       <div class="ozet-binas">${[...d.binalar].map(b=>`<span class="bina-tag" style="background:${buildingColor(b)}22;color:${buildingColor(b)}">${esc(b)}</span>`).join('')}</div>
+      ${creatorLine}
     </div>`;
   });
   return `<div class="ozet-grid">${html}</div>`;
 }
 function shortEkip(e){ if(!e)return''; const parts=String(e).split(' - '); return parts[parts.length-1]||e; }
+function icoUserSm(){ return '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'; }
+// Bir kayit listesindeki essiz "olusturan kisi" adlarini dondurur (bos olanlar atlanir)
+function rCreators(items){ return [...new Set((items||[]).map(e=>e.createdBy).filter(Boolean))]; }
 // BOLUM BLOKLU SAHA KAYDI: bir saha kaydi birden fazla BOLUM blogu icerebilir.
 // Her blok bir bolume (cat) aittir ve KENDI ekip + adam sayisi + sartname'sine sahiptir.
 // Ortak alanlar (tum kayit icin tek): tarih, bina, vardiya, notlar, stok dus.
@@ -7602,6 +7755,7 @@ function openRaporModal(id,presetDate){
   } else { _rBlocks=[_rEmptyBlock()]; }
   _rEditId = e ? (e.groupId||e.id) : null;
   _rEditIsGroup = !!(e && e.groupId);
+  _rDraftId = null; // taslaktan acilirsa openRaporDraft sonradan set eder
   const binas=binaOptsFor(e?e.bina:'');
   const today=(!e&&presetDate)?presetDate:new Date().toISOString().slice(0,10);
   const html=`<div class="modal-bg" onclick="rBgClick(this,event)"><div class="modal rapor-modal"><div class="modal-head"><h3>${e?'Saha Kaydi Duzenle':'Saha Kaydi Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
@@ -7611,7 +7765,7 @@ function openRaporModal(id,presetDate){
     <button class="add-line" onclick="rAddBlock()" style="margin-top:2px">+ Bolum Ekle</button>
     <div class="frow" style="margin-top:12px"><label>Notlar</label><input id="r_not" value="${e?esc(e.notlar||''):''}" placeholder="opsiyonel"></div>
     <label class="rapor-stock-check"><input type="checkbox" id="r_stok" ${e?(e.stokDus?'checked':''):'checked'}> Stoktan dus (islenen miktarlar stoktan azaltilsin)</label>
-  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" id="r_saveBtn" onclick="saveRaporEntry()">Kaydet</button></div></div></div>`;
+  </div><div class="modal-foot">${e?'':`<button class="btn btn-ghost" style="margin-right:auto" onclick="saveRaporDraft()">Taslak Kaydet</button>`}<button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" id="r_saveBtn" onclick="saveRaporEntry()">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   rRenderBlocks();
 }
@@ -7850,8 +8004,11 @@ async function saveRaporEntry(){
   try{
     if(!DB.rapor.entries)DB.rapor.entries=[];
     // Duzenleme ise: eski kayitlari (ve bagli stok hareketlerini) temizle
+    // Yeni kayitlarda "olusturan kisi": duzenlemede orijinal olusturan korunur, aksi halde giris yapan kullanici
+    let _createdBy = (CURRENT_USER && CURRENT_USER.username) || '';
     if(_rEditId){
       const oldEntries = _rEditIsGroup ? DB.rapor.entries.filter(x=>x.groupId===_rEditId) : DB.rapor.entries.filter(x=>x.id===_rEditId);
+      if(oldEntries[0] && oldEntries[0].createdBy) _createdBy = oldEntries[0].createdBy;
       const oldIds=oldEntries.map(o=>o.id);
       const oldMoveIds=oldEntries.filter(o=>o._moveId).map(o=>o._moveId);
       await Promise.all([
@@ -7898,6 +8055,7 @@ async function saveRaporEntry(){
         malzeme:it.name, code:it.code||'', specId:it.specId||null, matId:it.matId||null,
         miktar:it.miktar, birim:it.unit,
         kat:it.kat, kot:it.kot, lokId:it.lokId||null,
+        createdBy:_createdBy,
         created:Date.now()
       };
       if(entry.stokDus){
@@ -7927,6 +8085,8 @@ async function saveRaporEntry(){
     ]);
     newEntries.forEach(e=>DB.rapor.entries.push(e));
     newItems.forEach(item=>DB.proje.items.push(item));
+    // taslaktan devam edilip kesin kaydedildiyse taslagi temizle
+    if(_rDraftId){ await draftsSet('rapor', draftsGet('rapor').filter(x=>x.id!==_rDraftId)); _rDraftId=null; }
     closeModal(); render(); rDayReopen(_day);
     const nNew=newEntries.length, nMerged=mergeInto.length;
     toast(_rEditId?'Kayit guncellendi':(
@@ -8021,7 +8181,8 @@ function exportRaporExcel(){
     "\u0415\u0434. \u0438\u0437\u043c.\nBirim",
     "\u041a\u043e\u043b\u0438\u0447\u0435\u0441\u0442\u0432\u043e \u0440\u0430\u0431\u043e\u0447\u0438\u0445\nAdam Say\u0131s\u0131",
     "\u0421\u043c\u0435\u043d\u0430\nVardiya",
-    "\u041f\u0440\u0438\u043c\u0435\u0447\u0430\u043d\u0438\u0435\nNotlar"
+    "\u041f\u0440\u0438\u043c\u0435\u0447\u0430\u043d\u0438\u0435\nNotlar",
+    "\u0421\u043e\u0437\u0434\u0430\u043b\nOlusturan"
   ];
   const rows=[head];
   list.forEach(e=>{
@@ -8032,11 +8193,11 @@ function exportRaporExcel(){
       specKalemi,
       e.kat||'', e.kot||'',
       e.malzeme, e.miktar, e.birim||'',
-      e.adamSayisi||'', e.vardiya||'GUNDUZ', e.notlar||''
+      e.adamSayisi||'', e.vardiya||'GUNDUZ', e.notlar||'', e.createdBy||''
     ]);
   });
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:12},{wch:18},{wch:30},{wch:22},{wch:20},{wch:6},{wch:8},{wch:34},{wch:14},{wch:10},{wch:12},{wch:10},{wch:22}];
+  ws['!cols']=[{wch:12},{wch:18},{wch:30},{wch:22},{wch:20},{wch:6},{wch:8},{wch:34},{wch:14},{wch:10},{wch:12},{wch:10},{wch:22},{wch:16}];
   XLSX.utils.book_append_sheet(wb,ws,"Plan");
   const fn=RV.filterTarih?`Daily_Report_${RV.filterTarih}.xlsx`:`Daily_Report_${new Date().toISOString().slice(0,10)}.xlsx`;
   XLSX.writeFile(wb,fn); toast("Plan formatinda Excel indirildi");
@@ -8156,7 +8317,7 @@ function matLibSrc(){
          standart:m.standart||'',weight:m.weight!=null?m.weight:null,tags:(m.tags||[]).slice()}
   }));
 }
-function openProjeOrderModal(){ modalPdf=null; pOrderLines=[{specId:'',code:'',ad:'',cat:'',unit:'',grup:'',qty:''}]; window._poGrup=(PSPEC&&PSPEC!=='__all')?PSPEC:'';
+function openProjeOrderModal(){ modalPdf=null; _poDraftId=null; pOrderLines=[{specId:'',code:'',ad:'',cat:'',unit:'',grup:'',qty:''}]; window._poGrup=(PSPEC&&PSPEC!=='__all')?PSPEC:'';
   if(DB.proje.specs.filter(s=>!s.is_deleted).length===0){ toast("Once Sartname sekmesinden kalem ekleyin","err"); setTab('spec'); return; }
   // secili bina+bolume tanimli sartnameler
   const grps=[...new Set((DB.proje.sartnames||[]).filter(x=>x.bina===PBINA && x.section===PCAT).map(x=>x.code))].sort((a,b)=>a.localeCompare(b,'tr'));
@@ -8175,7 +8336,7 @@ function openProjeOrderModal(){ modalPdf=null; pOrderLines=[{specId:'',code:'',a
       <button class="add-line" id="poAddBtn" onclick="addPLine()">+ Satir Ekle</button>
     </div>
     <div class="frow"><label>Siparis / Fatura PDF'i</label><div class="drop" id="poPdfDrop" onclick="document.getElementById('poPdfInput').click()">${icoDoc()}<div style="margin-top:6px">PDF ekleyin</div></div><input type="file" id="poPdfInput" accept="application/pdf" class="hidden" onchange="pickPdf(event,'poPdfDrop')"></div>
-  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-order" onclick="saveProjeOrder()">Faturayi Kaydet & Stok Ekle</button></div></div></div>`;
+  </div><div class="modal-foot"><button class="btn btn-ghost" style="margin-right:auto" onclick="saveOrderDraft()">Taslak Kaydet</button><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-order" onclick="saveProjeOrder()">Faturayi Kaydet & Stok Ekle</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   document.getElementById('po_date').value=new Date().toISOString().slice(0,10);
   document.getElementById('po_bina').onchange=function(){ document.getElementById('po_newbina').classList.toggle('hidden',this.value!=='__new'); };
@@ -8262,6 +8423,8 @@ async function saveProjeOrder(){
   DB.proje.orders.push(order);
   await Promise.all([sbInsertProjeItems(newItems),sbInsertProjeOrder(order)]);
   logAction('order','Fatura '+no+': '+lines.length+' urun - '+bina+(companyName?' - '+companyName:''));
+  // taslaktan devam edilip kesin kaydedildiyse taslagi temizle
+  if(_poDraftId){ await draftsSet('order', draftsGet('order').filter(x=>x.id!==_poDraftId)); _poDraftId=null; }
   closeModal(); render(); toast(`Fatura kaydedildi - ${lines.length} urun (${bina})`);
 }
 
