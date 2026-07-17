@@ -1043,6 +1043,16 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .mc-row span{color:var(--mute)}
 .mc-row b{color:var(--ink);text-align:right;font-family:var(--mono);font-size:11px}
 @media (max-width:560px){.merge-cards{grid-template-columns:1fr}}
+.modal.dedupe-modal{max-width:760px}
+.dedupe-groups{display:flex;flex-direction:column;gap:12px;max-height:56vh;overflow-y:auto;padding-right:2px}
+.dedupe-group{border:1px solid var(--line);border-radius:10px;padding:12px}
+.dedupe-group-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:10px}
+.dedupe-group-head input[type=checkbox]{margin-top:3px;width:16px;height:16px;flex-shrink:0;cursor:pointer}
+.dedupe-rows{display:flex;flex-direction:column;gap:6px}
+.dedupe-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;cursor:pointer;transition:border-color .15s,background .15s}
+.dedupe-row:hover{border-color:var(--dim)}
+.dedupe-row.keep{border-color:var(--green);background:#22c55e14}
+.dedupe-row-meta{font-size:11.5px;color:var(--mute);font-family:var(--mono)}
 .modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
 .modal-head h3{font-size:15px;font-weight:700}
 .modal-body{padding:20px}
@@ -5574,19 +5584,72 @@ function findDuplicateSpecs(){
   });
   return Object.values(groups).filter(g=>g.length>1);
 }
+// id'nin basindaki Date.now().toString(36) kismindan yaklasik olusturulma zamanini cikarir
+// (uid() = zaman damgasi + 5 karakterlik rastgele son ek). Kart listesinde "ne zaman girildi"
+// bilgisini gostermek icin kullanilir; ayri bir created_at alani gerektirmez.
+function uidTime(id){ if(!id||id.length<6) return null; const t=parseInt(id.slice(0,-5),36); return isNaN(t)?null:t; }
+// MUKERRER SARTNAME KAYITLARI: kullaniciyi bilgilendirmeden toptan silmek yerine, her grubu
+// kart olarak gosterip hangi kaydin kalacagini sectirir; sadece isaretli (onayli) gruplar silinir.
+let _DEDUPE=null; // {groups:[{items:[spec,...], keepId, include}]}
 async function dedupeProjeSpecs(){
   if(!isAdmin()){ toast('Bu islem sadece yoneticilere aittir','err'); return; }
   const dupGroups=findDuplicateSpecs();
   if(!dupGroups.length){ toast('Mukerrer sartname kaydi bulunamadi'); return; }
-  const extra=dupGroups.reduce((n,g)=>n+g.length-1,0);
-  if(!confirm(`${dupGroups.length} kalemde toplam ${extra} mukerrer sartname satiri bulundu. Her grupta en eski kayit tutulup digerleri silinecek. Bu islem geri alinamaz. Devam edilsin mi?`)) return;
+  _DEDUPE={groups:dupGroups.map(g=>{ const sorted=g.slice().sort((a,b)=>a.id<b.id?-1:1); return {items:sorted,keepId:sorted[0].id,include:true}; })};
+  renderDedupeModal();
+}
+function dedupeGroupHtml(g,gi){
+  const ref=g.items[0];
+  const rows=g.items.map(s=>{
+    const isKeep=g.keepId===s.id; const ts=uidTime(s.id);
+    return `<div class="dedupe-row ${isKeep?'keep':''}" onclick="dedupePickKeep(${gi},'${s.id}')">
+      <span class="merge-tag ${isKeep?'':'rm'}">${isKeep?'KALACAK':'SILINECEK'}</span>
+      <span class="dedupe-row-meta">${s.poz?'Poz '+esc(s.poz)+' · ':''}Hedef ${fmtNum(s.target)} ${esc(s.unit||'')}${ts?' · '+fmtDT(ts):''}</span>
+    </div>`;
+  }).join('');
+  return `<div class="dedupe-group">
+    <div class="dedupe-group-head">
+      <input type="checkbox" ${g.include?'checked':''} onclick="dedupeToggleGroup(${gi},this.checked)">
+      <div style="flex:1;min-width:0">
+        <div class="mc-name" style="margin-bottom:2px;min-height:0">${esc(ref.name)}</div>
+        <div class="t-meta" style="font-size:11px">${[ref.code,ref.bina,ref.cat,specGroupKey(ref)].filter(Boolean).map(esc).join(' · ')}</div>
+      </div>
+      <span class="cat-tag" style="background:var(--dim)33;color:var(--text);flex-shrink:0">${g.items.length} kayit</span>
+    </div>
+    <div class="dedupe-rows">${rows}</div>
+  </div>`;
+}
+function renderDedupeModal(){
+  if(!_DEDUPE)return;
+  const groups=_DEDUPE.groups;
+  const includedGroups=groups.filter(g=>g.include);
+  const toDeleteCount=includedGroups.reduce((n,g)=>n+g.items.length-1,0);
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeDedupeModal()"><div class="modal dedupe-modal"><div class="modal-head"><h3>Mukerrer Sartname Kayitlari (${groups.length} grup)</h3><button class="mini-btn" onclick="closeDedupeModal()">x</button></div><div class="modal-body">
+    <p class="t-meta" style="margin-bottom:12px;line-height:1.5">Ayni urun + bina + bolum + sartname (+ poz) icin birden fazla kayit bulundu. Kalacak kaydi secmek icin karttaki satira tiklayin; bir grubu bu temizlikten cikarmak icin ustundeki kutuyu kaldirin. Onayladiginiz disinda hicbir kayit silinmez.</p>
+    <label class="chk" style="display:flex;align-items:center;gap:8px;padding:6px 0;font-weight:600;border-bottom:1px solid var(--line);margin-bottom:10px">
+      <input type="checkbox" ${includedGroups.length===groups.length?'checked':''} onclick="dedupeToggleAll(this.checked)"> Tum gruplari sec (${includedGroups.length}/${groups.length})
+    </label>
+    <div class="dedupe-groups">${groups.map((g,gi)=>dedupeGroupHtml(g,gi)).join('')}</div>
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeDedupeModal()">Iptal</button><button class="btn btn-add" style="background:var(--red);border-color:var(--red)" ${toDeleteCount?'':'disabled'} onclick="confirmDedupe()">${toDeleteCount} Kaydi Sil</button></div></div></div>`;
+  document.querySelectorAll('.modal-bg').forEach(m=>m.remove());
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function dedupePickKeep(gi,id){ _DEDUPE.groups[gi].keepId=id; renderDedupeModal(); }
+function dedupeToggleGroup(gi,checked){ _DEDUPE.groups[gi].include=checked; renderDedupeModal(); }
+function dedupeToggleAll(checked){ _DEDUPE.groups.forEach(g=>g.include=checked); renderDedupeModal(); }
+function closeDedupeModal(){ _DEDUPE=null; closeModal(); }
+async function confirmDedupe(){
+  if(!isAdmin()){ toast('Bu islem sadece yoneticilere aittir','err'); return; }
+  if(!_DEDUPE)return;
   const toDelete=[];
-  dupGroups.forEach(g=>{ g.sort((a,b)=>a.id<b.id?-1:1); toDelete.push(...g.slice(1).map(s=>s.id)); });
+  _DEDUPE.groups.forEach(g=>{ if(!g.include)return; g.items.forEach(s=>{ if(s.id!==g.keepId) toDelete.push(s.id); }); });
+  if(!toDelete.length){ toast('Silinecek kayit secili degil','err'); return; }
+  if(!confirm(`${toDelete.length} mukerrer kayit onayladiginiz gibi silinecek. Bu islem geri alinamaz. Devam edilsin mi?`)) return;
   await sbDeleteProjeSpecs(toDelete);
   const idSet=new Set(toDelete);
   DB.proje.specs=DB.proje.specs.filter(s=>!idSet.has(s.id));
   logAction('delete','Mukerrer sartname kaydi temizlendi: '+toDelete.length+' kayit');
-  render(); toast(toDelete.length+' mukerrer kayit silindi');
+  _DEDUPE=null; closeModal(); render(); toast(toDelete.length+' mukerrer kayit silindi');
 }
 
 // MALZEME KUTUPHANESI: tek/cok sayfali dosyayi oku, upsert et
@@ -7925,6 +7988,11 @@ function rUpdLine(bi,li,k,v){
 // secilen dugumun KAT atasindan HER ZAMAN yeniden yazilir. (Kat adinda sayi yoksa kat'a dokunulmaz;
 // o zeminlerde deger elle girilir.) Secimden sonra elle yazilan deger, tekrar lokasyon degistirilene
 // kadar korunur.
+// KAT -> SARTNAME: secilen katin, blogun bolumune (bk.cat) ait TEK bir sartnameye (Bolum & Sartname
+// ekranindan atanan katIds ile) bagli oldugu durumda, blogun Sartname alani da otomatik o sartnameye
+// ayarlanir. Bolum henuz secilmemisse ve tek eslesme varsa bolum de birlikte doldurulur. Birden fazla
+// veya hic eslesme yoksa (belirsiz durum) dokunulmaz - kullanicinin mevcut/bos secimi bozulmaz.
+// Form alanlarinin sirasi (Bolum/Ekip/Adam/Sartname ustte, Kat kalem satirinda) degismez.
 function rSetLok(bi,li,v){
   const bk=_rBlocks[bi]; if(!bk||!bk.lines[li])return;
   const l=bk.lines[li]; l.lokId=v;
@@ -7933,6 +8001,12 @@ function rSetLok(bi,li,v){
     const kn=parseKatNo(kat.name);
     if(kn!=null) l.kat=String(kn);
     if(kat.kot!=null && kat.kot!=='') l.kot=String(kat.kot);
+    const bina=document.getElementById('r_bina').value;
+    const covering=katSartnameleri(bina,kat.id).filter(sr=>!bk.cat||sr.section===bk.cat);
+    if(covering.length===1){
+      bk.sart=covering[0].code;
+      if(!bk.cat) bk.cat=covering[0].section;
+    }
   }
   rRenderBlocks();
 }
