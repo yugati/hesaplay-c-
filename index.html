@@ -871,7 +871,8 @@ tbody tr:hover{background:var(--hover)}
   /* kart duzeni: 1) urun adi TAM genislikte, kirpilmadan sarar 2) altinda kat/kot/kisi
      bilgi satiri 3) en altta sag yasli miktar + vardiya + butonlar (kullanicinin cizimi) */
   .rap-row{flex-wrap:wrap;gap:8px 8px;padding:13px 14px}
-  .rap-row>div:first-child{flex:1 1 100%;min-width:0}
+  /* !important sart: satirin kendisinde style="flex:1" gomulu - o kazanirsa ad dar sutuna sikisir */
+  .rap-row>div:first-child{flex:1 1 100%!important;min-width:0}
   .rap-mat{white-space:normal;overflow:visible;text-overflow:clip;font-size:14.5px;line-height:1.4;font-weight:650}
   .rap-meta{white-space:normal;line-height:1.5;margin-top:4px;font-size:11.5px}
   .rap-qty{margin-left:auto;font-size:15px;align-self:center}
@@ -4479,6 +4480,9 @@ function flowLokPanel(l){
     <div class="fw-inline"><input class="fw-inp" id="fw_kot" type="number" step="any" value="${l.kot!=null?esc(l.kot):''}" placeholder="orn. 3600 (bos = kaldir)" onkeydown="if(event.key==='Enter')flowKot('${l.id}')"><button class="btn btn-add" style="padding:7px 12px" onclick="flowKot('${l.id}')">Kaydet</button></div>`:''}
     ${d?childLevels.map(cl=>`<div class="fw-sec">${lokLevelLabel(cl)} Ekle${LOK_OPTIONAL_LEVELS.has(cl)?' <span style="font-weight:400;text-transform:none;letter-spacing:0">(opsiyonel ayirici)</span>':''}</div>
     <div class="fw-inline"><input class="fw-inp" id="fw_add_${cl}" placeholder='orn. ${cl==='aks'?'A-B Aksi, C-D Aksi':cl==='oda'?'Oda 1..8, Depo':lokLevelLabel(cl)+' 1..4'}' onkeydown="if(event.key==='Enter')flowAdd('${esc(b)}','${l.id}','${cl}','fw_add_${cl}')"><button class="btn btn-add" style="padding:7px 12px" onclick="flowAdd('${esc(b)}','${l.id}','${cl}','fw_add_${cl}')">Ekle</button></div>`).join(''):''}
+    ${d&&l.level==='kat'&&!levels.includes('aks')?`<div class="fw-sec">Aks / Bolge <span style="font-weight:400;text-transform:none;letter-spacing:0">(bu binada kapali)</span></div>
+    <p class="fw-path" style="margin-bottom:6px">Ayni katta fragment numaralari tekrar ediyorsa kati once aks aralarina bolun.</p>
+    <button class="btn btn-ghost" style="width:100%" onclick="enableAksLevel('${esc(b)}')">Aks / Bolge seviyesini bu binada ac</button>`:''}
     <div class="fw-sec">Islemler</div>
     <div class="fw-actions">
       ${d?`<button class="btn btn-ghost" onclick="lokwDuplicate('${esc(b)}','${l.id}')">Dali Kopyala (alt agacla)</button>`:''}
@@ -4487,6 +4491,19 @@ function flowLokPanel(l){
     <p class="fw-path" style="margin-top:12px;margin-bottom:0">Bagli metraj/alim/montaj kaydi olan dallar silinemez - once kayitlari tasiyin.</p>`;
 }
 /* --- panel islemleri --- */
+// Aks / Bolge seviyesini binada TEK TIKLA acar - Giris Modeli modalini aramaya gerek yok.
+// Kat panelinde "aks kapali" uyarisindaki dugmeden cagrilir; mevcut seviyeler korunur,
+// aks dogru siraya (kat ile fragment arasina) eklenir.
+async function enableAksLevel(bina){
+  if(!guard('define',{bina}))return;
+  const cfg=binaGiris(bina);
+  const cur=cfg.levels&&cfg.levels.length?cfg.levels:LOK_DEFAULT_LEVELS.slice();
+  const levels=LOK_LEVELS.map(x=>x[0]).filter(v=>cur.includes(v)||v==='aks'); // sira sabit: kat > aks > fragment > oda
+  await setBinaGiris(bina,{...cfg,model:cfg.model||'parcali',levels});
+  logAction('define','Aks/Bolge seviyesi acildi: '+bina);
+  toast('Aks / Bolge acildi - artik katlarin altina aks ekleyebilirsiniz');
+  render();
+}
 async function flowAdd(bina,parentId,level,inpId){
   const iid=inpId||'fw_add';
   const inp=document.getElementById(iid); if(!inp)return;
