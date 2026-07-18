@@ -1135,9 +1135,16 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .rline{border:1px solid var(--line)!important;border-radius:11px!important;padding:11px!important;margin:8px 0!important;background:var(--bg)!important}
 .rline-main{display:grid;grid-template-columns:minmax(0,1fr) 36px;gap:8px;margin-bottom:8px}
 .rline-grid{display:grid;grid-template-columns:minmax(72px,.8fr) minmax(86px,1fr) minmax(120px,1.6fr) minmax(86px,.9fr);gap:8px}
+/* parcali bina: lokasyon + otomatik Kat/Kot AYNI satirda (lokasyonun hemen yaninda) */
+.rline-loc{display:grid;grid-template-columns:minmax(0,2.4fr) minmax(56px,.55fr) minmax(72px,.75fr);gap:8px;margin-bottom:8px}
+.rline-loc select{margin-bottom:0!important}
+/* parcali binada alt satir: Miktar + Birim + urun kodu/bolum rozeti (minimal, ayni satir) */
+.rline-grid.slim{grid-template-columns:minmax(90px,1fr) minmax(70px,.7fr) minmax(0,1.5fr);align-items:center}
+.rl-code{display:inline-flex;align-items:center;justify-content:flex-end;gap:5px;min-width:0;font-family:var(--mono);font-size:11px;color:var(--green);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rline-grid:not(.slim) .rl-code{grid-column:1/-1;justify-content:flex-start;margin-top:2px}
 /* lokasyondan otomatik dolan Kat/Kot kutulari: kilitli, sakin gorunum - elle dokunulmaz */
-.rline-grid input[readonly]{background:var(--panel2);color:var(--mute);border-style:dashed;cursor:default}
-.rline-grid input[readonly]:focus{border-color:var(--line);box-shadow:none}
+.rline-loc input[readonly],.rline-grid input[readonly]{background:var(--panel2);color:var(--mute);border-style:dashed;cursor:default}
+.rline-loc input[readonly]:focus,.rline-grid input[readonly]:focus{border-color:var(--line);box-shadow:none}
 .rline select{margin-bottom:8px}
 .rline .ac-wrap input{font-weight:500}
 .rline .mini-btn{width:36px;height:36px;border-radius:9px}
@@ -1148,7 +1155,7 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .rl-info{margin-top:7px}
 .rapor-stock-check{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:4px;color:var(--mute);user-select:none}
 .rapor-stock-check input{width:16px;height:16px;accent-color:var(--amber)}
-@media(max-width:720px){.rline-grid{grid-template-columns:1fr 1fr}.rblock-head{align-items:flex-start}.rblock-head select{min-width:0}}
+@media(max-width:720px){.rline-grid{grid-template-columns:1fr 1fr}.rline-loc{grid-template-columns:1fr 1fr}.rline-loc select{grid-column:1/-1}.rline-grid.slim{grid-template-columns:1fr 1fr}.rline-grid.slim .rl-code{grid-column:1/-1;justify-content:flex-start}.rblock-head{align-items:flex-start}.rblock-head select{min-width:0}}
 .drop{border:1.5px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--mute);cursor:pointer;transition:.15s;font-size:13px}
 .drop:hover{border-color:var(--amber);color:var(--ink)}
 .drop.has{padding:8px}
@@ -7944,7 +7951,7 @@ async function delRaporGrup(tarih,bina,projeKodu){
 // blok = {cat, ekip, adam, sart, lines:[...]}; line = {specId,matId,code,name,unit,grup,miktar,kat,kot,lokId,_id}
 let _rMat=null; let _rBlocks=[]; let _rEditId=null; let _rEditIsGroup=false; let _rSaving=false;
 function _rEmptyLine(){ return {specId:null,matId:null,code:'',name:'',unit:'',grup:'',miktar:'',kat:'',kot:'',lokId:'',_id:null}; }
-function _rEmptyBlock(){ return {cat:'',ekip:'',adam:'',sart:'',lok:'',lines:[_rEmptyLine()]}; } // lok: blok seviyesi kat/lokasyon secimi (parcali bina)
+function _rEmptyBlock(){ return {cat:'',ekip:'',adam:'',sart:'',lines:[_rEmptyLine()]}; }
 // AYNI YER TEKILLESTIRME: rapor'da ayni bolum(cat) + ayni urun + ayni kat + kot (+ lokasyon)
 // birden fazla kez tutulmaz; tekrar girilirse ILK (en eski) kaydin miktarina eklenir.
 // urun kimligi: sartname baglantiliysa specId, degilse kutuphane matId, o da yoksa ad+kod.
@@ -7969,15 +7976,10 @@ function openRaporModal(id,presetDate){
   if(e){
     const byCat=new Map();
     siblings.forEach(s=>{ const k=s.cat||''; if(!byCat.has(k))byCat.set(k,[]); byCat.get(k).push(s); });
-    _rBlocks=[...byCat.values()].map(grp=>{
-      // tum kalemler ayni lokasyondaysa blok seviyesi Kat secimi onunla dolu gelir
-      const lokIds=[...new Set(grp.map(s=>s.lokId||''))];
-      return {
-        cat:grp[0].cat||'', ekip:grp[0].ekip||'', adam:grp[0].adamSayisi!=null?String(grp[0].adamSayisi):'', sart:grp[0].projeKodu||'',
-        lok:(lokIds.length===1&&lokIds[0])?lokIds[0]:'',
-        lines:grp.map(s=>({specId:s.specId,matId:s.matId||null,code:s.code,name:s.malzeme,unit:s.birim,grup:s.projeKodu,miktar:s.miktar,kat:s.kat||'',kot:s.kot||'',lokId:s.lokId||'',_id:s.id}))
-      };
-    });
+    _rBlocks=[...byCat.values()].map(grp=>({
+      cat:grp[0].cat||'', ekip:grp[0].ekip||'', adam:grp[0].adamSayisi!=null?String(grp[0].adamSayisi):'', sart:grp[0].projeKodu||'',
+      lines:grp.map(s=>({specId:s.specId,matId:s.matId||null,code:s.code,name:s.malzeme,unit:s.birim,grup:s.projeKodu,miktar:s.miktar,kat:s.kat||'',kot:s.kot||'',lokId:s.lokId||'',_id:s.id}))
+    }));
   } else { _rBlocks=[_rEmptyBlock()]; }
   _rEditId = e ? (e.groupId||e.id) : null;
   _rEditIsGroup = !!(e && e.groupId);
@@ -8037,11 +8039,8 @@ function rRenderBlocks(){
   const parcali=bina&&binaParcali(bina);
   const sections=DB.proje.sections||[];
   const ekipler=(DB.rapor.ekipler||[]);
-  // bina degistiyse eski binaya ait lokasyon secimleri gecersizdir (blok + satir)
-  _rBlocks.forEach(bk=>{
-    if(bk.lok){ const lk=getLok(bk.lok); if(!lk||lk.bina!==bina) bk.lok=''; }
-    bk.lines.forEach(l=>{ if(l.lokId){ const lk=getLok(l.lokId); if(!lk||lk.bina!==bina) l.lokId=''; } });
-  });
+  // bina degistiyse eski binaya ait lokasyon secimleri gecersizdir
+  _rBlocks.forEach(bk=>bk.lines.forEach(l=>{ if(l.lokId){ const lk=getLok(l.lokId); if(!lk||lk.bina!==bina) l.lokId=''; } }));
   c.innerHTML=_rBlocks.map((bk,bi)=>{
     const sarts=(DB.proje.sartnames||[]).filter(s=>s.bina===bina && (!bk.cat||s.section===bk.cat));
     const secOpts='<option value="">- bolum secin -</option>'+sections.map(s=>`<option ${bk.cat===s?'selected':''}>${esc(s)}</option>`).join('');
@@ -8054,11 +8053,10 @@ function rRenderBlocks(){
         <select onchange="rSetBlockCat(${bi},this.value)" style="flex:1">${secOpts}</select>
         <button class="mini-btn del" title="Bolumu kaldir" onclick="rRmBlock(${bi})" ${_rBlocks.length<=1?'style="opacity:.4"':''}>${icoTrash()}</button>
       </div>
-      <div class="frow ${parcali?'four':'three'}" style="margin-bottom:9px">
+      <div class="frow three" style="margin-bottom:9px">
         <div><label>Ekip</label><select onchange="rSetBlockEkip(${bi},this.value,this)">${ekipOpts}</select></div>
         <div><label>Adam Sayisi</label><input type="number" min="0" value="${esc(bk.adam)}" placeholder="0" oninput="rUpdBlock(${bi},'adam',this.value)"></div>
         <div><label>Sartname</label><select onchange="rSetBlockSart(${bi},this.value)">${sartOpts}</select></div>
-        ${parcali?`<div><label>Kat / Lokasyon</label><select onchange="rSetBlockLok(${bi},this.value)">${lokSelectOptions(bina,bk.lok||'','- kat secin -')}</select></div>`:''}
       </div>
       <label style="font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:.5px;font-family:var(--mono)">Is Kalemleri *</label>
       <div>${linesHtml}</div>
@@ -8089,8 +8087,11 @@ function rLineHtml(bk,bi,l,li,bina,parcali){
     </div>`;
   }
   const imgThumb=linked&&pr&&pr.img?`<img src="${pr.img}" style="width:26px;height:26px;border-radius:5px;object-fit:cover;vertical-align:middle;margin-right:5px;flex-shrink:0">`:'';
+  // urun kodu + bolum bilgisi: minimal rozet olarak Miktar/Birim satirinin sonunda gosterilir
+  // (ayri satir kaplamaz). Baglanmamis kalemlerde eski aciklama satirlari asagida kalir.
+  const codeChip=linked?`<span class="rl-code" title="${esc((l.code||'')+(bk.cat?' · '+bk.cat:''))}">${imgThumb}${esc(l.code||'')}${bk.cat?' · '+esc(bk.cat):''}</span>`:'';
   const info=linked
-    ?`<div class="lib-match match-found" style="margin-top:5px;display:flex;align-items:center">${imgThumb}<span>${esc((l.code||'')+' · '+(bk.cat||''))}</span></div>`
+    ?''
     :hasName
       ?`<div class="lib-match" style="margin-top:5px;color:var(--amber)">Sartname disi is kalemi${l.matId?' (kutuphane kaydi ile eslesti)':''} - sartname acildiginda ${l.matId?'otomatik baglanir':'listeden baglanir'}</div>`
       :`<div class="lib-match match-new" style="margin-top:5px">Secili binadaki spesifikasyonlardan secin veya henuz sartnamesi yoksa yeni olarak ekleyin</div>`;
@@ -8099,12 +8100,17 @@ function rLineHtml(bk,bi,l,li,bina,parcali){
       <div class="ac-wrap"><input id="rl_mat_${bi}_${li}" placeholder="Is kalemi / spek no veya ad ara..." value="${esc(hasName?((l.code?l.code+' — ':'')+l.name):'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" ontouchstart="this.removeAttribute('readonly')" onclick="rLinePick(${bi},${li})" style="cursor:pointer"></div>
       <button class="mini-btn del" onclick="rRmLine(${bi},${li})" ${bk.lines.length<=1?'style="opacity:.4"':''}>${icoTrash()}</button>
     </div>
-    ${parcali&&!bk.lok?`<div style="margin-bottom:6px"><select onchange="rSetLok(${bi},${li},this.value)">${lokSelectOptions(bina,l.lokId,'- lokasyon secin (zorunlu) -')}</select></div>`:''}
-    <div class="rline-grid">
-      <input placeholder="Kat (orn. 4)" value="${esc(l.kat||'')}" ${l.lokId?'readonly title="Kat - lokasyondan otomatik dolar"':`oninput="rUpdLine(${bi},${li},'kat',this.value)" title="Kat"`}>
-      <input placeholder="Kot (orn. 12000)" value="${esc(l.kot||'')}" ${l.lokId?'readonly title="Kot - lokasyondan otomatik dolar"':`oninput="rUpdLine(${bi},${li},'kot',this.value)" title="Kot"`}>
+    ${parcali?`<div class="rline-loc">
+      <select onchange="rSetLok(${bi},${li},this.value)">${lokSelectOptions(bina,l.lokId,'- lokasyon secin (zorunlu) -')}</select>
+      <input placeholder="Kat" value="${esc(l.kat||'')}" ${l.lokId?'readonly title="Kat - lokasyondan otomatik dolar"':`oninput="rUpdLine(${bi},${li},'kat',this.value)" title="Kat"`}>
+      <input placeholder="Kot" value="${esc(l.kot||'')}" ${l.lokId?'readonly title="Kot - lokasyondan otomatik dolar"':`oninput="rUpdLine(${bi},${li},'kot',this.value)" title="Kot"`}>
+    </div>`:''}
+    <div class="rline-grid ${parcali?'slim':''}">
+      ${parcali?'':`<input placeholder="Kat (orn. 4)" value="${esc(l.kat||'')}" ${l.lokId?'readonly title="Kat - lokasyondan otomatik dolar"':`oninput="rUpdLine(${bi},${li},'kat',this.value)" title="Kat"`}>
+      <input placeholder="Kot (orn. 12000)" value="${esc(l.kot||'')}" ${l.lokId?'readonly title="Kot - lokasyondan otomatik dolar"':`oninput="rUpdLine(${bi},${li},'kot',this.value)" title="Kot"`}>`}
       <input type="number" step="any" placeholder="Miktar" value="${esc(l.miktar)}" oninput="rUpdLine(${bi},${li},'miktar',this.value)">
       <input placeholder="Birim" value="${esc(l.unit||'')}" oninput="rUpdLine(${bi},${li},'unit',this.value)">
+      ${codeChip}
     </div>
     ${info}${barHtml}</div>`;
 }
@@ -8139,29 +8145,6 @@ function rSetBlockSart(bi,v){
   const sr=v?(DB.proje.sartnames||[]).find(x=>x.bina===bina&&x.code===v):null;
   // sartname secilince blogun bolumu otomatik dolar/kilitlenir (ve uyumsuz kalemler temizlenir)
   if(sr && sr.section && bk.cat!==sr.section){ rSetBlockCat(bi,sr.section); return; }
-  rRenderBlocks();
-}
-// BLOK SEVIYESI KAT/LOKASYON (parcali bina): bolumun tum kalemleri ayni katta calisiyorsa
-// tek secim yeter - Ekip/Sartname'nin hemen yanindan secilir. Secilince TUM satirlara
-// lokasyon + kat/kot otomatik yazilir; satirlardaki Kat/Kot kutulari kilitlenir (dokunmak
-// gerekmez). Kata bagli TEK sartname varsa blok sartnamesi de otomatik dolar (rSetLok kurali).
-function rSetBlockLok(bi,v){
-  const bk=_rBlocks[bi]; if(!bk)return;
-  bk.lok=v;
-  if(v){
-    const kat=lokKatOf(v);
-    const kn=kat?parseKatNo(kat.name):null;
-    bk.lines.forEach(l=>{
-      l.lokId=v;
-      if(kn!=null) l.kat=String(kn);
-      if(kat&&kat.kot!=null&&kat.kot!=='') l.kot=String(kat.kot);
-    });
-    if(kat){
-      const bina=document.getElementById('r_bina').value;
-      const covering=katSartnameleri(bina,kat.id).filter(sr=>!bk.cat||sr.section===bk.cat);
-      if(covering.length===1){ bk.sart=covering[0].code; if(!bk.cat) bk.cat=covering[0].section; }
-    }
-  }
   rRenderBlocks();
 }
 function rUpdBlock(bi,k,v){ if(_rBlocks[bi]) _rBlocks[bi][k]=v; }
@@ -8240,13 +8223,7 @@ function _rUpdProgBar(bi,li){
   const ttl=document.getElementById('rl_prog_ttl_'+bi+'_'+li);
   if(ttl){ ttl.textContent=done?'✓ Tamamlandi':'Montaj ilerleme'; ttl.style.color=done?'var(--green)':'var(--mute)'; }
 }
-function rAddLine(bi){ const bk=_rBlocks[bi]; if(!bk)return;
-  const l=_rEmptyLine();
-  // blok seviyesi Kat seciliyse yeni satir onu miras alir (kat/kot otomatik dolu gelir)
-  if(bk.lok){ l.lokId=bk.lok; const kat=lokKatOf(bk.lok);
-    if(kat){ const kn=parseKatNo(kat.name); if(kn!=null)l.kat=String(kn); if(kat.kot!=null&&kat.kot!=='')l.kot=String(kat.kot); } }
-  bk.lines.push(l); rRenderBlocks();
-}
+function rAddLine(bi){ if(_rBlocks[bi]){ _rBlocks[bi].lines.push(_rEmptyLine()); rRenderBlocks(); } }
 function rRmLine(bi,li){ const bk=_rBlocks[bi]; if(!bk)return; if(bk.lines.length<=1){ toast('Bolumde en az bir kalem olmali','err'); return; } bk.lines.splice(li,1); rRenderBlocks(); }
 function rBinaChange(){
   const bina=document.getElementById('r_bina').value;
