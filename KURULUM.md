@@ -1,5 +1,11 @@
 # Kurulum ve Bilgisayar Değiştirme Rehberi
 
+## Canlı adres
+
+Uygulamanın yayın adresi: **https://hesap.yugati.com.tr/**
+(Vercel projesine bağlı özel alan adı; `main` dalına atılan her commit
+otomatik olarak bu adrese dağıtılır.)
+
 Uygulamayı yerelde çalıştırmak için artık **tek komut** yeterli — Vercel CLI,
 `vercel login`, `vercel link` gerekmez:
 
