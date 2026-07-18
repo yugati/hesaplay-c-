@@ -863,6 +863,18 @@ tbody tr:hover{background:var(--hover)}
 .rapday-body{display:flex;flex-direction:column;gap:12px;background:linear-gradient(180deg,var(--panel),var(--bg))}
 .rapday-body .rap-group{background:var(--panel)}
 .rapday-modal .modal-head h3{font-size:16px}
+/* TELEFON: gun detayi tam genislik alttan acilan sayfa olur; satirlar sarmalanip
+   malzeme adi HIC kirpilmadan tam okunur, dokunma hedefleri buyur */
+@media(max-width:640px){
+  .modal-bg.rapday-bg{align-items:flex-end;padding:0}
+  .rapday-modal{width:100%;max-width:100%!important;max-height:94vh;border-radius:18px 18px 0 0;border-bottom:none}
+  .rap-row{flex-wrap:wrap;gap:7px 10px;padding:12px 13px}
+  .rap-row>div:first-child{flex:1 1 100%;min-width:0}
+  .rap-mat{white-space:normal;overflow:visible;text-overflow:clip;font-size:14px;line-height:1.35;font-weight:600}
+  .rap-meta{white-space:normal;line-height:1.4}
+  .rap-qty{font-size:15px;margin-right:auto}
+  .rap-row .mini-btn{width:40px;height:40px;border-radius:10px}
+}
 /* KULLANICI GIRISLERI: "kim ne girdi" gorunumu. Telefonda alttan acilan sayfa (bottom sheet)
    olarak gelir - tek elle ulasilabilir, buyuk dokunma hedefleri. Masaustunde normal modal. */
 .usr-modal{max-width:560px!important}
@@ -1098,8 +1110,15 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .frow input,.frow select,.frow textarea{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--ink);padding:10px 12px;border-radius:9px;font-size:14px;outline:none;transition:border .15s,box-shadow .15s}
 .frow input:focus,.frow select:focus,.frow textarea:focus{border-color:var(--amber);box-shadow:var(--ring) rgba(240,160,32,.16)}
 .frow textarea{resize:vertical;min-height:54px}
-.rapor-modal{max-width:760px!important}
-.rapor-modal .modal-body{background:linear-gradient(180deg,var(--panel),var(--bg));padding:18px}
+/* SAYFA TABANLI SAHA KAYDI FORMU: modal degil sayfa - telefonda genis, rahat okunur alan */
+.rapor-page{max-width:860px}
+.rapor-page-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.rapor-page-head .btn{flex-shrink:0}
+.rapor-page-head h1{margin:0}
+.rapor-page-body{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow-sm)}
+.rapor-page-foot{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:12px 2px;margin-top:8px;background:var(--bg);border-top:1px solid var(--line)}
+.rapor-page-foot .btn{min-height:44px}
+@media(max-width:720px){ .rapor-page-body{padding:13px} .rapor-page-head h1{font-size:19px} }
 .rblock{border:1px solid var(--line)!important;border-radius:12px!important;padding:13px!important;margin-bottom:12px!important;background:var(--panel)!important;box-shadow:var(--shadow-sm)}
 .rblock-head{display:flex;align-items:center;gap:8px;margin-bottom:11px}
 .rblock-title{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;color:var(--mute);font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.55px;text-transform:uppercase}
@@ -1121,7 +1140,7 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .rl-info{margin-top:7px}
 .rapor-stock-check{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:4px;color:var(--mute);user-select:none}
 .rapor-stock-check input{width:16px;height:16px;accent-color:var(--amber)}
-@media(max-width:720px){.rapor-modal{max-width:100%!important}.rline-grid{grid-template-columns:1fr 1fr}.rblock-head{align-items:flex-start}.rblock-head select{min-width:0}}
+@media(max-width:720px){.rline-grid{grid-template-columns:1fr 1fr}.rblock-head{align-items:flex-start}.rblock-head select{min-width:0}}
 .drop{border:1.5px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--mute);cursor:pointer;transition:.15s;font-size:13px}
 .drop:hover{border-color:var(--amber);color:var(--ink)}
 .drop.has{padding:8px}
@@ -7544,7 +7563,7 @@ function sahaSnapshot(){ const img=document.getElementById('siteImg'); if(!img)r
    =================================================================== */
 /* ============ GUNLUK SAHA RAPORU ============ */
 const VARDIYALAR=["GUNDUZ","GECE"];
-let RV={ filterBina:"", filterTarih:"", view:"liste" };
+let RV={ filterBina:"", filterTarih:"", view:"liste", form:null }; // form: acik saha kaydi formu {id,presetDate,returnDay} - modal degil SAYFA olarak cizilir
 function rEntries(){ return (DB.rapor&&DB.rapor.entries||[]).filter(e=>!e.is_deleted); }
 /* ==================================================================
    TASLAKLAR - Saha kaydi ve Proje siparisi formlari yarim kalirsa
@@ -7597,7 +7616,7 @@ async function saveRaporDraft(){
     tarih, bina, vardiya, notlar, stokDus, blocks:JSON.parse(JSON.stringify(_rBlocks||[]))};
   const i=drafts.findIndex(x=>x.id===d.id); if(i>=0)drafts[i]=d; else drafts.push(d);
   await draftsSet('rapor',drafts);
-  _rDraftId=null; closeModal(); render(); toast('Saha kaydi taslak olarak kaydedildi');
+  _rDraftId=null; RV.form=null; closeModal(); render(); toast('Saha kaydi taslak olarak kaydedildi');
 }
 function openRaporDraft(id){
   const d=draftsGet('rapor').find(x=>x.id===id); if(!d)return;
@@ -7655,6 +7674,7 @@ function openOrderDraft(id){
 }
 
 function renderRapor(){
+  if(RV.form) return renderRaporForm();
   const entries=rEntries();
   const binas=[...new Set([...projBuildings(), ...entries.map(e=>e.bina)].filter(Boolean))];
   let list=entries.slice();
@@ -7768,7 +7788,7 @@ function openRaporDayModal(tarih){
   const totAdam=rGunAdam(items);
   const binaSay=new Set(items.map(e=>e.bina).filter(Boolean)).size;
   const sub=`${items.length} kalem${totAdam?` · ${totAdam} adam`:''}${binaSay>1?` · ${binaSay} bina`:''}`;
-  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal rapday-modal">
+  const html=`<div class="modal-bg rapday-bg" onclick="if(event.target===this)closeModal()"><div class="modal rapday-modal">
     <div class="modal-head"><div><h3>${fmtDate(tarih)}</h3><div class="t-meta" style="margin-top:2px">${sub}</div></div><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body rapday-body">${body}</div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Kapat</button><button class="btn btn-add" onclick="openRaporModal(null,'${esc(tarih)}')">${icoPlus()} Bu Gune Ekle</button></div>
@@ -7911,21 +7931,9 @@ function _rMergeKey(cat,specId,matId,name,code,kat,kot,lokId){
   return norm(cat||'')+'¦'+_rProdKey(specId,matId,name,code)
     +'¦'+norm(String(kat||'').trim())+'¦'+norm(String(kot||'').trim())+'¦'+(lokId||'');
 }
-// arka plana (kenarlara) tiklayinca kapatma: form doldurulmusken yanlislikla
-// disariya tiklayip veri kaybetmeyi onler. Duzenlemede form zaten dolu oldugu icin
-// her zaman korunur; yeni kayitta ise anlamli bir alan girildiyse (bolum/ekip/adam/
-// sartname veya is kalemi/notlar) kapanmaz - Iptal veya X ile kapatilmali.
-function rBgClick(bg,ev){
-  if(ev.target!==bg) return; // sadece backdrop'un kendisine tiklanirsa (modal icine degil)
-  let dirty=!!_rEditId; // duzenleme: her zaman koru
-  if(!dirty){
-    dirty=(_rBlocks||[]).some(bk=>bk&&(bk.cat||bk.ekip||String(bk.adam||'').trim()||bk.sart||
-      (bk.lines||[]).some(l=>l&&(l.name||l.specId||String(l.miktar||'').trim()||String(l.kat||'').trim()||String(l.kot||'').trim()||l.lokId||String(l.unit||'').trim()))));
-    if((document.getElementById('r_not')?.value||'').trim()) dirty=true;
-  }
-  if(dirty){ toast('Formu kapatmak icin Iptal veya X\'e basin'); return; }
-  closeModal();
-}
+// SAYFA TABANLI SAHA KAYDI FORMU: modal degil, rapor bolumunun icinde tam sayfa acilir.
+// Telefonda modal-icinde-modal sikisikligini onler; gun modalindan gelindiyse kapaninca
+// ayni gun modali yeniden acilir (returnDay). Fonksiyon adi geriye uyum icin korunmustur.
 function openRaporModal(id,presetDate){
   const e=id?rEntries().find(x=>x.id===id):null;
   // Duzenleme: ayni groupId'li tum kalemleri yukle; yoksa tek kalem
@@ -7943,18 +7951,43 @@ function openRaporModal(id,presetDate){
   _rEditId = e ? (e.groupId||e.id) : null;
   _rEditIsGroup = !!(e && e.groupId);
   _rDraftId = null; // taslaktan acilirsa openRaporDraft sonradan set eder
+  // gun modalindan mi acildi? oyleyse form kapaninca o gune geri donulur
+  const fromDay=!!document.querySelector('.rapday-modal');
+  if(!fromDay) _rDayOpen=null;
+  RV.form={ id:id||null, presetDate:presetDate||'', returnDay:fromDay?_rDayOpen:null };
+  closeModal();
+  render();
+}
+// formun sayfa govdesi (renderRapor icinden cagrilir). Bloklar DOM'a yerlestikten
+// sonra cizilmelidir; render() innerHTML'i senkron bastigi icin setTimeout(0) yeterli.
+function renderRaporForm(){
+  const f=RV.form;
+  const e=f.id?rEntries().find(x=>x.id===f.id):null;
   const binas=binaOptsFor(e?e.bina:'');
-  const today=(!e&&presetDate)?presetDate:new Date().toISOString().slice(0,10);
-  const html=`<div class="modal-bg" onclick="rBgClick(this,event)"><div class="modal rapor-modal"><div class="modal-head"><h3>${e?'Saha Kaydi Duzenle':'Saha Kaydi Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+  const today=(!e&&f.presetDate)?f.presetDate:new Date().toISOString().slice(0,10);
+  setTimeout(rRenderBlocks,0);
+  return `<div class="rapor-page">
+    <div class="page-head rapor-page-head">
+      <button class="btn btn-ghost" onclick="rCloseForm()" title="Kaydetmeden geri don">&#8592; Geri</button>
+      <div><h1>${e?'Saha Kaydi Duzenle':'Saha Kaydi Ekle'}</h1><p class="page-sub">${e?'Mevcut kaydin kalemlerini guncelleyin':'Sahada islenen malzemeleri girin'}</p></div>
+    </div>
+    <div class="rapor-page-body">
     <div class="frow two"><div><label>Tarih *</label><input type="date" id="r_tarih" value="${e?esc(e.tarih):today}"></div><div><label>Bina *</label><select id="r_bina" onchange="rBinaChange()">${binas.map(b=>`<option ${e&&e.bina===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div></div>
     <div class="frow"><label>Vardiya</label><select id="r_vardiya" style="max-width:220px">${VARDIYALAR.map(v=>`<option ${e&&e.vardiya===v?'selected':''}>${v}</option>`).join('')}</select></div>
     <div id="r_blocks"></div>
     <button class="add-line" onclick="rAddBlock()" style="margin-top:2px">+ Bolum Ekle</button>
     <div class="frow" style="margin-top:12px"><label>Notlar</label><input id="r_not" value="${e?esc(e.notlar||''):''}" placeholder="opsiyonel"></div>
     <label class="rapor-stock-check"><input type="checkbox" id="r_stok" ${e?(e.stokDus?'checked':''):'checked'}> Stoktan dus (islenen miktarlar stoktan azaltilsin)</label>
-  </div><div class="modal-foot">${e?'':`<button class="btn btn-ghost" style="margin-right:auto" onclick="saveRaporDraft()">Taslak Kaydet</button>`}<button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" id="r_saveBtn" onclick="saveRaporEntry()">Kaydet</button></div></div></div>`;
-  document.body.insertAdjacentHTML('beforeend',html);
-  rRenderBlocks();
+    </div>
+    <div class="rapor-page-foot">${e?'':`<button class="btn btn-ghost" style="margin-right:auto" onclick="saveRaporDraft()">Taslak Kaydet</button>`}<button class="btn btn-ghost" onclick="rCloseForm()">Iptal</button><button class="btn btn-add" id="r_saveBtn" onclick="saveRaporEntry()">Kaydet</button></div>
+  </div>`;
+}
+// formu kaydetmeden kapat; gun modalindan gelindiyse ayni gune geri don
+function rCloseForm(){
+  const day=RV.form&&RV.form.returnDay;
+  RV.form=null;
+  render();
+  if(day && rEntries().some(x=>x.tarih===day)) openRaporDayModal(day);
 }
 function specRaporProgress(specId){
   const spec=DB.proje.specs.find(s=>s.id===specId);
@@ -8285,7 +8318,7 @@ async function saveRaporEntry(){
     newItems.forEach(item=>DB.proje.items.push(item));
     // taslaktan devam edilip kesin kaydedildiyse taslagi temizle
     if(_rDraftId){ await draftsSet('rapor', draftsGet('rapor').filter(x=>x.id!==_rDraftId)); _rDraftId=null; }
-    closeModal(); render(); rDayReopen(_day);
+    RV.form=null; closeModal(); render(); rDayReopen(_day);
     const nNew=newEntries.length, nMerged=mergeInto.length;
     logAction('define',`Saha kaydi ${_rEditId?'guncellendi':'girildi'}: ${tarih} ${bina} - ${nNew} yeni${nMerged?`, ${nMerged} birlestirilen`:''} kalem`);
     toast(_rEditId?'Kayit guncellendi':(
