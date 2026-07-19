@@ -754,6 +754,8 @@ tbody tr:hover{background:var(--hover)}
 .fw-use{font-size:9px;font-family:var(--mono);color:var(--mute);flex-shrink:0}
 /* sartname-kat kapsami: kat dugumundeki sartname rozeti + kat panelindeki sartname satirlari */
 .fw-sart{display:inline-flex;align-items:center;gap:3px;font-size:9px;font-family:var(--mono);font-weight:700;color:var(--amber);background:color-mix(in srgb,var(--amber) 14%,transparent);border-radius:5px;padding:1.5px 5px;flex-shrink:0}
+/* paylasimli dugum rozeti: ayni oda birden fazla fragmente bagliysa */
+.fw-shared{display:inline-flex;align-items:center;gap:3px;font-size:9px;font-family:var(--mono);font-weight:700;color:var(--green);background:color-mix(in srgb,var(--green) 14%,transparent);border-radius:5px;padding:1.5px 5px;flex-shrink:0}
 .fw-srt{display:flex;align-items:center;gap:7px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;background:var(--bg)}
 .fw-srt.clk{cursor:pointer;transition:border-color .12s}
 .fw-srt.clk:hover{border-color:var(--dim)}
@@ -4000,14 +4002,31 @@ async function lokSetKot(bina,id){
 // bir lokasyonun KAT atasi (kendisi kat ise kendisi) - kat/kot bagdastirmasi icin
 function lokKatOf(id){ let n=getLok(id),g=0; while(n&&g++<10){ if(n.level==='kat')return n; n=n.parentId?getLok(n.parentId):null; } return null; }
 async function lokDelete(bina,id){
-  const ids=lokSubtreeIds(id);
+  const all=lokSubtreeIds(id);
+  // PAYLASIMLI DUGUM: silinen dalin DISINDA da bir ebeveyne bagli olan dugum (orn. ayni odayi
+  // iki fragment paylasiyorsa) SILINMEZ - sadece bu daldan kopar, diger parcada yasamaya devam
+  // eder. Boyle bir dugumun altindakiler de onunla birlikte korunur.
+  const kalan=new Set(); let ch=true;
+  while(ch){ ch=false;
+    all.forEach(x=>{ if(x===id||kalan.has(x))return;
+      const ps=lokParentIds(getLok(x)).filter(Boolean);
+      if(ps.some(p=>!all.has(p)||kalan.has(p))){ kalan.add(x); ch=true; }
+    });
+  }
+  const ids=new Set([...all].filter(x=>!kalan.has(x)));
   // baglantili veri varsa silme: metraj dagilimlari, alimlar veya montaj kayitlari bu dugumu gosteriyor olabilir
   const usedSpec=(DB.proje.specs||[]).some(s=>!s.is_deleted&&(s.lokTargets||[]).some(t=>ids.has(t.lokId)));
   const usedItem=(DB.proje.items||[]).some(i=>!i.is_deleted&&i.lokId&&ids.has(i.lokId));
   const usedEntry=(DB.rapor.entries||[]).some(e=>e.lokId&&ids.has(e.lokId));
   if(usedSpec||usedItem||usedEntry){ toast('Bu lokasyona bagli '+[usedSpec?'metraj':'',usedItem?'alim':'',usedEntry?'montaj':''].filter(Boolean).join('/')+' kaydi var - once onlari tasiyin/silin','err'); return; }
   const sub=ids.size-1;
-  if(!confirm('"'+lokPath(id)+'" silinsin mi?'+(sub?' (altindaki '+sub+' lokasyon da silinir)':'')))return;
+  if(!confirm('"'+lokPath(id)+'" silinsin mi?'+(sub?' (altindaki '+sub+' lokasyon da silinir)':'')+(kalan.size?'\n\nBaska parcaya da bagli '+kalan.size+' oda silinmez, sadece bu parcayla bagi kopar.':'')))return;
+  // once korunan paylasimli dugumlerin bu dala bakan baglari kaldirilir
+  for(const k of kalan){ const n=getLok(k); if(!n)continue;
+    const rest=lokParentIds(n).filter(p=>p&&!ids.has(p));
+    n.parentId=rest[0]||null; if(rest.length>1)n.parentIds=rest; else delete n.parentIds;
+    await sbUpdateProjeLokasyon(k,{...n});
+  }
   await sbDeleteProjeLokasyonlar([...ids]);
   DB.proje.lokasyonlar=DB.proje.lokasyonlar.filter(l=>!ids.has(l.id));
   // silinen katlar sartname kat atamalarindan da dusulur (gosterim eski id'leri zaten ayiklar; bu kalici temizlik)
@@ -4165,13 +4184,22 @@ async function lokInsertNames(bina,parentId,level,raw){
   if(ex.err){ toast(ex.err,'err'); return false; }
   const pid=parentId||null;
   const existing=new Set(lokChildren(bina,pid).map(l=>norm(l.name)));
-  const nodes=[]; let skipped=0;
-  ex.names.forEach(nm=>{ const k=norm(nm); if(existing.has(k)){skipped++;return;} existing.add(k); nodes.push({id:uid(),bina,parentId:pid,level,name:nm}); });
-  if(!nodes.length){ toast(skipped?'Girilen adlar ayni seviyede zaten var':'Eklenecek ad bulunamadi','err'); return false; }
-  await Promise.all(nodes.map(n=>sbInsertProjeLokasyon(n)));
+  // Ayni kat altinda ayni numarali ODA zaten varsa ikinci dugum ACILMAZ: oda numarasi
+  // tekildir, buyuk bir oda birden fazla fragmentin kesitini tamamliyor olabilir. Mevcut
+  // dugum bu parcaya da baglanir. (Sadece oda seviyesi - fragment no'lari tekrar edebilir.)
+  const pKat=(level==='oda'&&pid)?lokKatOf(pid):null;
+  const katIds=pKat?lokSubtreeIds(pKat.id):null;
+  const nodes=[],linked=[]; let skipped=0;
+  ex.names.forEach(nm=>{ const k=norm(nm); if(existing.has(k)){skipped++;return;} existing.add(k);
+    const mevcut=katIds?binaLoklar(bina).find(x=>x.level===level&&katIds.has(x.id)&&norm(x.name)===k&&!lokHasParent(x,pid)):null;
+    if(mevcut){ linked.push(mevcut); return; }
+    nodes.push({id:uid(),bina,parentId:pid,level,name:nm}); });
+  if(!nodes.length&&!linked.length){ toast(skipped?'Girilen adlar ayni seviyede zaten var':'Eklenecek ad bulunamadi','err'); return false; }
+  await Promise.all([...nodes.map(n=>sbInsertProjeLokasyon(n)),...linked.map(x=>lokLinkParent(x.id,pid))]);
   DB.proje.lokasyonlar.push(...nodes);
-  logAction('define','Lokasyon eklendi: '+bina+' -> '+nodes.map(n=>n.name).join(', '));
-  toast(nodes.length+' lokasyon eklendi'+(skipped?' ('+skipped+' mevcut atlandi)':''));
+  const ozet=[nodes.length?nodes.length+' lokasyon eklendi':'',linked.length?linked.length+' mevcut oda bu parcaya baglandi':''].filter(Boolean).join(', ');
+  logAction('define','Lokasyon eklendi: '+bina+' -> '+[...nodes.map(n=>n.name),...linked.map(x=>x.name+' (baglandi)')].join(', '));
+  toast(ozet+(skipped?' ('+skipped+' mevcut atlandi)':''));
   return true;
 }
 async function lokwAddSubmit(bina){
@@ -4278,7 +4306,10 @@ function flowLayout(binas){
     const parcali=binaParcali(b);
     const use=parcali?lokwUsageMap(b):null;
     const place=(parentId,depth)=>{
-      const kids=lokChildren(b,parentId);
+      // Paylasimli dugum (ayni oda birden fazla fragmentte) yerlesimde SADECE birincil
+      // ebeveyninin altina konur; diger ebeveynlerine yalnizca kenar cizilir. Boylece dugum
+      // iki kez cizilmez ve iki fragment ayni cocuga ortalanip ust uste binmez.
+      const kids=lokChildren(b,parentId).filter(l=>(l.parentId||null)===(parentId||null));
       if(!kids.length)return null;
       const mids=[];
       kids.forEach(l=>{
@@ -4302,11 +4333,14 @@ function flowLayout(binas){
     nodes.push(bn); byId['b:'+b]=bn;
     yCur+=BGAP;
   });
-  // kenarlar: her lokasyon dugumu ebeveynine (yoksa binasina) baglanir
+  // kenarlar: her lokasyon dugumu ebeveynine (yoksa binasina) baglanir.
+  // Paylasimli dugumden ebeveynlerinin HER BIRINE ayri kenar cikar.
   nodes.forEach(n=>{
     if(n.type!=='lok')return;
-    const p=n.lok.parentId?byId[n.lok.parentId]:byId['b:'+n.lok.bina];
-    if(p)edges.push({x1:p.x+p.w,y1:p.y+p.h/2,x2:n.x,y2:n.y+n.h/2});
+    lokParentIds(n.lok).forEach(pid=>{
+      const p=pid?byId[pid]:byId['b:'+n.lok.bina];
+      if(p)edges.push({x1:p.x+p.w,y1:p.y+p.h/2,x2:n.x,y2:n.y+n.h/2,shared:lokIsShared(n.lok)});
+    });
   });
   return {nodes,edges,W:maxX+60,H:yCur+30};
 }
@@ -4314,7 +4348,8 @@ function renderBinaFlow(){
   const binas=projBuildings();
   const {nodes,edges,W,H}=flowLayout(binas);
   const edgeHtml=edges.map(e=>{ const c=Math.max(24,(e.x2-e.x1)/2);
-    return `<path d="M${e.x1} ${e.y1} C${e.x1+c} ${e.y1}, ${e.x2-c} ${e.y2}, ${e.x2} ${e.y2}" fill="none" stroke="var(--line)" stroke-width="1.5"/>`; }).join('');
+    // paylasimli dugumun baglantilari (ayni oda birden fazla fragmentte) kesikli ve renkli
+    return `<path d="M${e.x1} ${e.y1} C${e.x1+c} ${e.y1}, ${e.x2-c} ${e.y2}, ${e.x2} ${e.y2}" fill="none" stroke="${e.shared?'var(--green)':'var(--line)'}" stroke-width="${e.shared?2:1.5}"${e.shared?' stroke-dasharray="5 4"':''}/>`; }).join('');
   const nodeHtml=nodes.map(n=>{
     if(n.type==='bina'){
       const b=n.bina, col=buildingColor(b), pasif=isBinaPasif(b);
@@ -4333,8 +4368,12 @@ function renderBinaFlow(){
     // kat dugumu: bu kati kapsayan sartnameler rozet olarak gorunur (detay ve atama sag panelde)
     const srts=l.level==='kat'?katSartnameleri(l.bina,l.id):[];
     const srtTip=srts.length?'Sartnameler: '+srts.map(s=>s.code).join(', '):'';
-    return `<div class="floww-node ${sel?'sel':''}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:${lc}" onclick="event.stopPropagation();flowSel('${l.id}')" title="${esc(lokPath(l.id))}${uTxt?' · '+esc(uTxt):''}${srtTip?' · '+esc(srtTip):''}">
-      <div class="fw-row"><span class="lokw-lvl" style="--lc:${lc}">${lokLevelLabel(l.level).toUpperCase()}</span><span class="fw-name" style="flex:1">${esc(l.name)}</span>${srts.length?`<span class="fw-sart"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>${srts.length}</span>`:''}</div>
+    // paylasimli dugum: bagli oldugu tum ebeveynlerin adi ipucunda gorunur
+    const shared=lokIsShared(l);
+    const sharedNames=shared?lokParentIds(l).map(p=>{const x=p?getLok(p):null;return x?x.name:'';}).filter(Boolean):[];
+    const sharedTip=shared?'Ayni oda '+sharedNames.length+' parcaya bagli: '+sharedNames.join(' + '):'';
+    return `<div class="floww-node ${sel?'sel':''}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:${lc}" onclick="event.stopPropagation();flowSel('${l.id}')" title="${esc(lokPath(l.id))}${uTxt?' · '+esc(uTxt):''}${srtTip?' · '+esc(srtTip):''}${sharedTip?' · '+esc(sharedTip):''}">
+      <div class="fw-row"><span class="lokw-lvl" style="--lc:${lc}">${lokLevelLabel(l.level).toUpperCase()}</span><span class="fw-name" style="flex:1">${esc(l.name)}</span>${shared?`<span class="fw-shared" title="${esc(sharedTip)}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M10 13a5 5 0 007.07 0l2.83-2.83a5 5 0 00-7.07-7.07L11.5 4.5"/><path d="M14 11a5 5 0 00-7.07 0L4.1 13.83a5 5 0 007.07 7.07L12.5 19.5"/></svg>${sharedNames.length}</span>`:''}${srts.length?`<span class="fw-sart"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>${srts.length}</span>`:''}</div>
       <div class="fw-row" style="margin-top:3px">${l.level==='kat'&&l.kot!=null&&l.kot!==''?`<span class="fw-kot">Kot ${esc(l.kot)}</span>`:''}${uTxt?`<span class="fw-use">${uTxt}</span>`:''}</div>
     </div>`;
   }).join('');
@@ -4485,13 +4524,34 @@ function flowLokPanel(l){
         </div>`).join('')
       :`<p class="fw-path" style="margin-bottom:0">Bu kata atanmis sartname yok${d?' - Bolum & Sartname ekranindan sartnameyi Duzenle ile acip "Kapsadigi Katlar" secin':''}.</p>`);
   }
+  /* PAYLASIMLI ODA: buyuk bir oda birden fazla fragmentin kesitini birlikte tamamlayabilir.
+     Oda numarasi tekil oldugu icin ikinci bir dugum acilmaz; ayni dugum ilgili parcalarin
+     hepsine baglanir. Burada bagli parcalar listelenir, yenisi baglanir ve yanlislikla
+     ikinci kez girilmis ayni numarali dugumler tek odada birlestirilir. */
+  let sharedHtml='';
+  if(l.level!=='kat'){
+    const parents=lokParentIds(l).filter(Boolean).map(p=>getLok(p)).filter(Boolean);
+    const kat=lokKatOf(l.id);
+    const katIds=kat?lokSubtreeIds(kat.id):new Set();
+    const pl=parents[0]?parents[0].level:null;
+    const cands=pl?binaLoklar(b).filter(x=>x.level===pl&&katIds.has(x.id)&&!lokHasParent(l,x.id)):[];
+    const same=lokSameNameInKat(l);
+    sharedHtml=`<div class="fw-sec">Bagli Oldugu Parcalar (${parents.length})</div>
+      ${parents.map((p,i)=>`<div class="fw-srt"><div style="flex:1;min-width:0"><div class="fw-srt-code">${esc(p.name)}</div><div class="fw-srt-name">${esc(lokLevelLabel(p.level))}${i===0?' · birincil':''}</div></div>${d&&parents.length>1?`<button class="mini-btn del" title="Bu parcayla bagi kaldir" onclick="flowUnlinkParent('${l.id}','${p.id}')">${icoTrash()}</button>`:''}</div>`).join('')||`<p class="fw-path" style="margin-bottom:0">Dogrudan binaya bagli.</p>`}
+      ${d&&same.length?`<p class="fw-path" style="margin:9px 0 6px">Bu katta ayni numarayla ${same.length} ayri dugum daha var. Oda numarasi tekil oldugu icin bunlar ayni odadir; birlestirince tek dugum olur ve parcalarin hepsine bagli kalir (metraj/alim/montaj kayitlari korunur).</p>
+      <button class="btn btn-add" style="width:100%" onclick="flowMergeSame('${l.id}')">Ayni Numarali ${same.length+1} Dugumu Birlestir</button>`:''}
+      ${d&&cands.length?`<div class="fw-sec">Baska Parcaya Da Bagla</div>
+      <p class="fw-path" style="margin-bottom:6px">Oda birden fazla ${esc(lokLevelLabel(pl).toLowerCase())} kesitini birlikte tamamliyorsa ikinci kopya acmayin - buradan baglayin.</p>
+      <div class="fw-inline"><select class="fw-inp" id="fw_link">${cands.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select><button class="btn btn-add" style="padding:7px 12px" onclick="flowLinkParent('${l.id}')">Bagla</button></div>`:''}`;
+  }
   return `<h3><span class="lokw-lvl" style="--lc:${lc};vertical-align:2px">${lokLevelLabel(l.level).toUpperCase()}</span> ${esc(l.name)}</h3>
-    <div class="fw-path">${esc(b)} / ${esc(lokPath(l.id))}</div>
+    <div class="fw-path">${esc(b)} / ${esc(lokPath(l.id))}${lokIsShared(l)?' <span class="fw-shared" style="vertical-align:1px">'+lokParentIds(l).length+' parca</span>':''}</div>
     <div class="fw-stat"><span>Alt lokasyon</span><b>${kids.length}</b></div>
     <div class="fw-stat"><span>Metraj dagilimi</span><b>${u.metraj}</b></div>
     <div class="fw-stat"><span>Alim kaydi</span><b>${u.alim}</b></div>
     <div class="fw-stat"><span>Montaj kaydi</span><b>${u.montaj}</b></div>
     ${srtHtml}
+    ${sharedHtml}
     ${d?`<div class="fw-sec">Yeniden Adlandir</div>
     <div class="fw-inline"><input class="fw-inp" id="fw_name" value="${esc(l.name)}" onkeydown="if(event.key==='Enter')flowRename('${l.id}')"><button class="btn btn-add" style="padding:7px 12px" onclick="flowRename('${l.id}')">Kaydet</button></div>`:''}
     ${d&&l.level==='kat'?`<div class="fw-sec">Kat Kotu</div>
@@ -4550,6 +4610,105 @@ async function flowDelete(bina,id){
   await lokDelete(bina,id);
   if(!getLok(id))FLOWW.sel=null; // silindiyse secimi birak
   render();
+}
+/* ===== PAYLASIMLI ODA (ayni oda birden fazla parcaya bagli) =====
+   Buyuk bir oda iki fragmentin kesitini birlikte tamamlayabilir. Oda numarasi tekil
+   oldugu icin bu bir "ikinci oda" degildir: dugum TEKTIR, ilgili parcalarin hepsine
+   baglanir. Metraj/alim/montaj tek dugumde toplandigi icin ust seviyede (kat) iki kez
+   sayilmaz. */
+// mevcut bir dugumu ek bir ebeveyne baglar (dugum tasinmaz, kopyalanmaz)
+async function lokLinkParent(id,newParentId){
+  const l=getLok(id); if(!l)return false;
+  const pid=newParentId||null;
+  if(lokHasParent(l,pid))return false;
+  l.parentIds=[...lokParentIds(l),pid];
+  await sbUpdateProjeLokasyon(id,{...l});
+  return true;
+}
+// ek bagi kaldirir; birincil ebeveyn kaldirilirsa siradaki bag birincil olur
+async function lokUnlinkParent(id,parentId){
+  const l=getLok(id); if(!l)return false;
+  const rest=lokParentIds(l).filter(p=>p!==(parentId||null));
+  if(!rest.length)return false; // dugum ebeveynsiz kalamaz
+  l.parentId=rest[0]; l.parentIds=rest.length>1?rest:null;
+  if(!l.parentIds)delete l.parentIds;
+  await sbUpdateProjeLokasyon(id,{...l});
+  return true;
+}
+// Ayni odanin iki ayri dugum olarak girilmis halini TEK dugumde birlestirir:
+// bagli metraj/alim/montaj kayitlari korunarak kalan dugume tasinir.
+async function lokMergeInto(keepId,dropId){
+  const keep=getLok(keepId), drop=getLok(dropId);
+  if(!keep||!drop||keepId===dropId)return false;
+  const jobs=[];
+  // 1) metraj dagilimlari: ayni kalemde her ikisi de varsa paylari toplanir
+  (DB.proje.specs||[]).filter(s=>!s.is_deleted&&(s.lokTargets||[]).some(t=>t.lokId===dropId)).forEach(s=>{
+    const dropT=(s.lokTargets||[]).filter(t=>t.lokId===dropId).reduce((x,t)=>x+(Number(t.target)||0),0);
+    const rest=(s.lokTargets||[]).filter(t=>t.lokId!==dropId);
+    const keepT=rest.find(t=>t.lokId===keepId);
+    if(keepT)keepT.target=(Number(keepT.target)||0)+dropT;
+    else if(dropT>0)rest.push({lokId:keepId,target:dropT});
+    s.lokTargets=rest;
+    if(s.lokTargets.length)s.target=s.lokTargets.reduce((x,t)=>x+(Number(t.target)||0),0);
+    jobs.push(sbUpdateProjeSpec(s.id,{...s}));
+  });
+  // 2) alim ve 3) montaj kayitlarinin lokasyonu kalan dugume cevrilir
+  (DB.proje.items||[]).filter(i=>i.lokId===dropId).forEach(i=>{ i.lokId=keepId; jobs.push(sbUpdateProjeItem(i.id,{...i})); });
+  (((typeof DB.rapor==='object'&&DB.rapor)||{}).entries||[]).filter(e=>e.lokId===dropId).forEach(e=>{ e.lokId=keepId; jobs.push(sbUpdateRaporEntry(e.id,{...e})); });
+  // 4) sartnamelerin oda listeleri
+  (DB.proje.sartnames||[]).filter(x=>(x.odalar||[]).includes(dropId)).forEach(x=>{
+    x.odalar=[...new Set((x.odalar||[]).map(o=>o===dropId?keepId:o))];
+    jobs.push(sbUpdateProjeSartname(x.id,{...x}));
+  });
+  // 5) silinecek dugumun alt dugumleri kalan dugume baglanir
+  binaLoklar(drop.bina).filter(c=>c.id!==keepId&&lokHasParent(c,dropId)).forEach(c=>{
+    const ps=[...new Set(lokParentIds(c).map(p=>p===dropId?keepId:p))];
+    c.parentId=ps[0]||null; if(ps.length>1)c.parentIds=ps; else delete c.parentIds;
+    jobs.push(sbUpdateProjeLokasyon(c.id,{...c}));
+  });
+  // 6) kalan dugum artik her iki parcaya da bagli
+  const merged=[...new Set([...lokParentIds(keep),...lokParentIds(drop)])].filter(Boolean);
+  keep.parentId=merged[0]||null; if(merged.length>1)keep.parentIds=merged; else delete keep.parentIds;
+  jobs.push(sbUpdateProjeLokasyon(keep.id,{...keep}));
+  jobs.push(sbDeleteProjeLokasyonlar([dropId]));
+  await Promise.all(jobs);
+  DB.proje.lokasyonlar=DB.proje.lokasyonlar.filter(l=>l.id!==dropId);
+  return true;
+}
+// Panel butonu: bu dugumle ayni kattaki ayni numarali dugum(ler)i tek odada birlestirir
+async function flowMergeSame(id){
+  const l=getLok(id); if(!l)return;
+  if(!guard('define',{bina:l.bina}))return;
+  const same=lokSameNameInKat(l);
+  if(!same.length){ toast('Bu katta ayni numarali baska '+lokLevelLabel(l.level).toLowerCase()+' yok'); return; }
+  const use=lokwUsageMap(l.bina);
+  const satir=x=>{ const u=use.sub[x.id]||{metraj:0,alim:0,montaj:0};
+    const d=[u.metraj?u.metraj+' metraj':'',u.alim?u.alim+' alim':'',u.montaj?u.montaj+' montaj':''].filter(Boolean).join(', ');
+    return '  · '+lokPath(x.id)+(d?'  ('+d+')':'  (kayit yok)'); };
+  const parcalar=[...new Set([...lokParentIds(l),...same.flatMap(x=>lokParentIds(x))])].map(p=>{const x=p?getLok(p):null;return x?x.name:'';}).filter(Boolean);
+  if(!confirm(`"${l.name}" tek oda olarak birlestirilsin mi?\n\n${[l,...same].map(satir).join('\n')}\n\nBirlestikten sonra tek dugum olacak ve su parcalarin hepsine bagli kalacak:\n  ${parcalar.join(' + ')}\n\nBagli metraj/alim/montaj kayitlari korunur, ayni kalemdeki metraj paylari toplanir.`))return;
+  for(const d of same){ await lokMergeInto(id,d.id); }
+  FLOWW.sel=id;
+  logAction('define','Ayni numarali odalar birlestirildi: '+l.bina+' / '+l.name+' ('+(same.length+1)+' dugum -> 1)');
+  render(); toast('Birlestirildi - oda artik '+parcalar.length+' parcaya bagli');
+}
+// Panel: dugumu secilen baska bir parcaya da baglar
+async function flowLinkParent(id){
+  const l=getLok(id); if(!l)return;
+  if(!guard('define',{bina:l.bina}))return;
+  const sel=document.getElementById('fw_link'); if(!sel||!sel.value)return;
+  if(await lokLinkParent(id,sel.value)){
+    logAction('define','Lokasyon ek parcaya baglandi: '+l.bina+' / '+l.name);
+    render(); toast('Baglandi - ayni oda artik '+lokParentIds(getLok(id)).length+' parcaya bagli');
+  } else toast('Bu parcaya zaten bagli','err');
+}
+async function flowUnlinkParent(id,pid){
+  const l=getLok(id); if(!l)return;
+  if(!guard('define',{bina:l.bina}))return;
+  const p=getLok(pid);
+  if(!confirm(`"${l.name}" odasinin "${p?p.name:''}" baglantisi kaldirilsin mi?\n\nOda silinmez, sadece bu parcayla bagi kopar.`))return;
+  if(await lokUnlinkParent(id,pid)){ render(); toast('Baglanti kaldirildi'); }
+  else toast('Son baglanti kaldirilamaz - oda ebeveynsiz kalamaz','err');
 }
 // BINA SILME: bina + o binaya ait TUM veriler (sartname, sartname kalemi, alternatif, alim/hareket, siparis, 3D model) kalici silinir
 async function delBina(bina){
@@ -5114,19 +5273,45 @@ function binaParcali(bina){ return binaGiris(bina).model==='parcali'; }
 async function setBinaGiris(bina,cfg){ DB.meta.binaGiris={...(DB.meta.binaGiris||{}),[bina]:cfg}; await sbSetSetting('binaGiris',DB.meta.binaGiris); }
 function binaLoklar(bina){ return (DB.proje.lokasyonlar||[]).filter(l=>l.bina===bina); }
 function getLok(id){ return (DB.proje.lokasyonlar||[]).find(l=>l.id===id); }
-function lokChildren(bina,parentId){ return binaLoklar(bina).filter(l=>(l.parentId||null)===(parentId||null)).sort((a,b)=>(a.name||'').localeCompare(b.name||'','tr',{numeric:true})); }
-// dugumun tam yolu: "Kat 1 / F-03 / Pompa Odasi"
+/* PAYLASIMLI DUGUM (cok ebeveyn): Buyuk bir oda birden fazla fragmentin kesitini birlikte
+   tamamlayabilir. Oda numarasi tekil oldugu icin boyle bir durumda IKI ayri oda dugumu degil,
+   TEK dugum olur ve ilgili fragmentlerin hepsine baglanir. Ek ebeveynler l.parentIds dizisinde
+   durur; l.parentId her zaman BIRINCIL ebeveyndir - yol (lokPath) ve kat (lokKatOf) hesaplari
+   onu kullanir, parentIds tasimayan eski kayitlar da degismeden calisir. */
+function lokParentIds(l){
+  if(!l)return [];
+  const out=[l.parentId||null];
+  (Array.isArray(l.parentIds)?l.parentIds:[]).forEach(p=>{ const v=p||null; if(!out.includes(v))out.push(v); });
+  return out;
+}
+function lokIsShared(l){ return lokParentIds(l).length>1; }
+function lokHasParent(l,parentId){ return lokParentIds(l).includes(parentId||null); }
+function lokChildren(bina,parentId){ const pid=parentId||null; return binaLoklar(bina).filter(l=>lokHasParent(l,pid)).sort((a,b)=>(a.name||'').localeCompare(b.name||'','tr',{numeric:true})); }
+// dugumun tam yolu: "Kat 1 / F-03 / Pompa Odasi" (paylasimli dugumde birincil ebeveynin yolu)
 function lokPath(id){ const parts=[]; let n=getLok(id), guard=0;
   while(n&&guard++<10){ parts.unshift(n.name); n=n.parentId?getLok(n.parentId):null; }
   return parts.join(' / '); }
-// dugum + tum alt dugumlerin id kumesi (kirilim toplamada "kat" secilirse altindaki her sey sayilir)
+// dugum + tum alt dugumlerin id kumesi (kirilim toplamada "kat" secilirse altindaki her sey sayilir).
+// Paylasimli dugume ebeveynlerinden hangisinden inilirse inilsin kumeye girer; Set oldugu icin
+// ust seviyede (orn. kat) BIR KEZ sayilir - metraj iki kez toplanmaz.
 function lokSubtreeIds(id){ const out=new Set([id]); const all=DB.proje.lokasyonlar||[];
-  let added=true; while(added){ added=false; all.forEach(l=>{ if(l.parentId&&out.has(l.parentId)&&!out.has(l.id)){ out.add(l.id); added=true; } }); }
+  let added=true; while(added){ added=false; all.forEach(l=>{ if(!out.has(l.id)&&lokParentIds(l).some(p=>p&&out.has(p))){ out.add(l.id); added=true; } }); }
   return out; }
-// binanin tum dugumleri derinlik sirasiyla duz liste: [{lok, depth, path}] (select/agac icin)
-function lokFlat(bina){ const out=[];
-  const walk=(parentId,depth)=>{ lokChildren(bina,parentId).forEach(l=>{ out.push({lok:l,depth,path:lokPath(l.id)}); walk(l.id,depth+1); }); };
+// binanin tum dugumleri derinlik sirasiyla duz liste: [{lok, depth, path}] (select/agac icin).
+// Paylasimli dugum birden fazla ebeveynin altinda gorunse de listeye BIR KEZ girer.
+function lokFlat(bina){ const out=[],seen=new Set();
+  const walk=(parentId,depth)=>{ lokChildren(bina,parentId).forEach(l=>{ if(seen.has(l.id))return; seen.add(l.id); out.push({lok:l,depth,path:lokPath(l.id)}); walk(l.id,depth+1); }); };
   walk(null,0); return out; }
+// Ayni KAT altinda ayni ada sahip baska dugum(ler): oda numarasi tekil oldugu icin bunlar
+// aslinda ayni odadir. Birlestirme ve tekrar engelleme bu esleme uzerinden calisir.
+// SADECE ODA seviyesi: fragment/aks numaralari ayni katta tekrar edebilir (aks zaten bunun
+// icin ayirici seviye olarak var), onlari ada bakip ayni parca saymak yanlis olur.
+function lokSameNameInKat(l){
+  if(!l||l.level!=='oda')return [];
+  const kat=lokKatOf(l.id); if(!kat)return [];
+  const katIds=lokSubtreeIds(kat.id);
+  return binaLoklar(l.bina).filter(x=>x.id!==l.id&&x.level===l.level&&katIds.has(x.id)&&norm(x.name)===norm(l.name));
+}
 // lokasyon secim kutusu HTML'i (deger=lokId). Alt seviyeler TAM YOLLA gosterilir
 // ("1 / A-B Aksi / 7") - ayni fragment/oda numarasi farkli aks-kat altinda tekrar
 // edebildigi icin sadece ad gostermek belirsizlik yaratir; yol secenekleri tekillestirir.
