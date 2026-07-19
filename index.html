@@ -8086,7 +8086,7 @@ function rGroupHtml(g){
     ${e.adamSayisi?`<div class="rap-adam" title="Adam sayisi">${esc(e.adamSayisi)}<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z"/></svg></div>`:''}
     <span class="vardiya-tag ${e.vardiya==='GECE'?'gece':''}">${esc(e.vardiya||'GUNDUZ')}</span>
     ${!e.specId?`<button class="mini-btn" title="Sartnameye Bagla" style="color:var(--amber);border-color:var(--amber)55" onclick="linkRaporModal('${e.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.07 0l2.83-2.83a5 5 0 00-7.07-7.07L11.5 4.5"/><path d="M14 11a5 5 0 00-7.07 0L4.1 13.83a5 5 0 007.07 7.07L12.5 19.5"/></svg></button>`:''}
-    <button class="mini-btn" onclick="openRaporModal('${e.id}')" title="Duzenle"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
+    ${canEditRaporEntry(e)?`<button class="mini-btn" onclick="openRaporModal('${e.id}')" title="Duzenle"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>`:''}
     ${canDelRaporEntry(e)?`<button class="mini-btn del" onclick="delRaporEntry('${e.id}')" title="Kaydi sil">${icoTrash()}</button>`:''}
   </div>`; });
   const adamGoster=rGunAdam(g.items); // bolum+ekip bazinda tekillestirilmis toplam
@@ -8270,6 +8270,8 @@ function _rMergeKey(cat,specId,matId,name,code,kat,kot,lokId){
 // ayni gun modali yeniden acilir (returnDay). Fonksiyon adi geriye uyum icin korunmustur.
 function openRaporModal(id,presetDate){
   const e=id?rEntries().find(x=>x.id===id):null;
+  // sahiplik denetimi: herkes kendi kaydini duzenleyebilir, baskasininkini yalniz admin
+  if(e && !canEditRaporEntry(e)){ toast('Baskasinin raporunu duzenleyemezsiniz - sadece yonetici duzenleyebilir','err'); return; }
   // Duzenleme: ayni groupId'li tum kalemleri yukle; yoksa tek kalem
   let siblings=[];
   if(e){ const gid=e.groupId; siblings = gid ? rEntries().filter(x=>x.groupId===gid) : [e]; }
@@ -8576,6 +8578,12 @@ async function saveRaporEntry(){
     validLines.forEach(l=>flat.push({bk,l,cat}));
   }
   if(flat.length===0){ toast('En az bir bolumde is kalemi secip miktar girin','err'); return; }
+  // sahiplik denetimi (form kapisina ek guvence): baskasinin kaydi bu yoldan da degistirilemez.
+  // _rSaving/buton kilidinden ONCE yapilir ki engellenen deneme formu kilitli birakmasin.
+  if(_rEditId){
+    const oldCheck=_rEditIsGroup ? DB.rapor.entries.filter(x=>x.groupId===_rEditId) : DB.rapor.entries.filter(x=>x.id===_rEditId);
+    if(oldCheck.some(o=>!canEditRaporEntry(o))){ toast('Baskasinin raporunu duzenleyemezsiniz - sadece yonetici duzenleyebilir','err'); return; }
+  }
   _rSaving=true;
   const saveBtn=document.getElementById('r_saveBtn'); if(saveBtn)saveBtn.disabled=true;
   try{
@@ -8607,9 +8615,12 @@ async function saveRaporEntry(){
         grup:l.grup, miktar:Number(l.miktar)||0};
       dedup.set(key,it); flat2.push(it);
     });
-    // 2) KAYITLI RAPORA KARSI TEKILLESTIRME: ayni gun+bina icinde eslesen ILK (en eski) kayda eklenir
+    // 2) KAYITLI RAPORA KARSI TEKILLESTIRME: ayni gun+bina icinde eslesen ILK (en eski) kayda eklenir.
+    // Yalniz DUZENLEYEBILDIGI (kendi / admin: tum) kayitlara eklenir: baskasinin kaydina miktar
+    // eklemek hem onun kaydini degistirmek hem de kendi emegini ona yazip erisilemez kilmak olur -
+    // boyle eslesmede bunun yerine kendi adina YENI kayit acilir.
     const pool=new Map();
-    DB.rapor.entries.filter(e=>e.tarih===tarih && e.bina===bina)
+    DB.rapor.entries.filter(e=>e.tarih===tarih && e.bina===bina && canEditRaporEntry(e))
       .slice().sort((a,b)=>(a.created||0)-(b.created||0))
       .forEach(e=>{ const k=_rMergeKey(e.cat||'',e.specId,e.matId,e.malzeme,e.code,e.kat,e.kot,e.lokId); if(!pool.has(k)) pool.set(k,e); });
     const newFlat=[], mergeInto=[];
@@ -8729,8 +8740,8 @@ async function doLinkRaporSilent(e,spec){
 }
 async function delRaporEntry(id){
   const e=rEntries().find(x=>x.id===id); if(!e)return;
-  if(!guard('delete',{mod:'rapor',bina:e.bina}))return;
-  // sahiplik denetimi: admin haric kimse baskasinin (veya sahibi bilinmeyen eski) kaydini silemez
+  // sahiplik denetimi yeterlidir: herkes kendi kaydini silebilir (ayrica silme izni gerekmez),
+  // baskasinin (veya sahibi bilinmeyen eski) kaydini yalniz admin silebilir
   if(!canDelRaporEntry(e)){ toast('Baskasinin raporunu silemezsiniz - sadece yonetici silebilir','err'); return; }
   if(!confirm(`"${e.malzeme}" kaydini silmek istiyor musunuz? Bu islem geri alinamaz.`))return;
   await Promise.all([
