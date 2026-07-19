@@ -900,6 +900,9 @@ tbody tr:hover{background:var(--hover)}
 .ozet-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
 .ozet-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;transition:border-color .15s,box-shadow .15s;box-shadow:var(--shadow-sm)}
 .ozet-card:hover{border-color:var(--dim);box-shadow:var(--shadow-md)}
+.ozet-card.clk{cursor:pointer}
+.ozet-chev{margin-left:auto;color:var(--dim);flex-shrink:0;transition:transform .15s,color .15s}
+.ozet-card.clk:hover .ozet-chev{transform:translateX(3px);color:var(--ink)}
 .ozet-date{font-weight:700;font-size:15px;margin-bottom:12px}
 .ozet-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
 .ozet-stats>div{display:flex;flex-direction:column}
@@ -7892,7 +7895,11 @@ function sahaSnapshot(){ const img=document.getElementById('siteImg'); if(!img)r
    =================================================================== */
 /* ============ GUNLUK SAHA RAPORU ============ */
 const VARDIYALAR=["GUNDUZ","GECE"];
-let RV={ filterBina:"", filterTarih:"", view:"liste", form:null }; // form: acik saha kaydi formu {id,presetDate,returnDay} - modal degil SAYFA olarak cizilir
+// Acilis varsayilanlari: sayfa GUNLUK OZET gorunumuyle ve "Dun ve Bugun" (__son2) tarih
+// filtresiyle acilir - guncel is en onde olsun; gecmise Tum Tarihler ile inilir.
+let RV={ filterBina:"", filterTarih:"__son2", view:"ozet", form:null }; // form: acik saha kaydi formu {id,presetDate,returnDay} - modal degil SAYFA olarak cizilir
+// yerel saate gore YYYY-AA-GG (entry.tarih ile ayni bicim)
+function rISO(d){ const x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
 function rEntries(){ return (DB.rapor&&DB.rapor.entries||[]).filter(e=>!e.is_deleted); }
 /* ==================================================================
    TASLAKLAR - Saha kaydi ve Proje siparisi formlari yarim kalirsa
@@ -8008,7 +8015,10 @@ function renderRapor(){
   const binas=[...new Set([...projBuildings(), ...entries.map(e=>e.bina)].filter(Boolean))];
   let list=entries.slice();
   if(RV.filterBina) list=list.filter(e=>e.bina===RV.filterBina);
-  if(RV.filterTarih) list=list.filter(e=>e.tarih===RV.filterTarih);
+  // __son2 = "Dun ve Bugun" (acilis varsayilani); bos deger = Tum Tarihler
+  const bugun=rISO(Date.now()), dun=rISO(Date.now()-86400000);
+  if(RV.filterTarih==='__son2') list=list.filter(e=>e.tarih===bugun||e.tarih===dun);
+  else if(RV.filterTarih) list=list.filter(e=>e.tarih===RV.filterTarih);
   list.sort((a,b)=>(b.tarih||'').localeCompare(a.tarih||'')||(b.created||0)-(a.created||0));
   const tarihler=[...new Set(entries.map(e=>e.tarih).filter(Boolean))].sort().reverse();
   const stats=`<div class="rap-total">Toplam rapor <b>${entries.length}</b></div>`;
@@ -8016,7 +8026,7 @@ function renderRapor(){
   const tarihOpts=tarihler.map(t=>`<option value="${esc(t)}" ${RV.filterTarih===t?'selected':''}>${esc(fmtDate(t))}</option>`).join('');
   const filterBar=`<div class="toolbar" style="flex-wrap:wrap">
     <select onchange="RV.filterBina=this.value;render()" style="max-width:160px"><option value="">Tum Binalar</option>${binaOpts}</select>
-    <select onchange="RV.filterTarih=this.value;render()" style="max-width:170px"><option value="">Tum Tarihler</option>${tarihOpts}</select>
+    <select onchange="RV.filterTarih=this.value;render()" style="max-width:170px"><option value="__son2" ${RV.filterTarih==='__son2'?'selected':''}>Dun ve Bugun</option><option value="" ${RV.filterTarih===''?'selected':''}>Tum Tarihler</option>${tarihOpts}</select>
     <div class="seg" style="margin-left:auto">
       <button class="${RV.view==='liste'?'on':''}" onclick="RV.view='liste';render()">Liste</button>
       <button class="${RV.view==='ozet'?'on':''}" onclick="RV.view='ozet';render()">Gunluk Ozet</button>
@@ -8031,6 +8041,11 @@ function renderRapor(){
     body=`<div class="empty-state"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:.3"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
       <h3>Henuz saha kaydi yok</h3><p>Sahada islenen malzemeleri gunluk olarak kaydedin. Stok ve yapi ilerleyisi otomatik guncellenir.</p>
       <button class="btn btn-add" onclick="openRaporModal()">${icoPlus()} Ilk Kaydi Ekle</button></div>`;
+  } else if(!list.length){
+    // kayit var ama filtreye takildi (orn. acilistaki "Dun ve Bugun" bos) - gecmise tek tikla gecis
+    body=`<div class="empty-state" style="padding:36px 20px"><h3>${RV.filterTarih==='__son2'?'Dun ve bugun icin kayit yok':'Bu filtreye uyan kayit yok'}</h3>
+      <p>Toplam ${entries.length} rapor kayitli.</p>
+      <button class="btn btn-ghost" onclick="RV.filterTarih='';render()">Tum Tarihleri Goster</button></div>`;
   } else if(RV.view==='ozet'){ body=renderRaporOzet(list); }
   else { body=renderRaporListe(list); }
   return `<div class="rapor-wrap"><div class="page-head"><h1>Gunluk Saha Raporu</h1><p class="page-sub">Sahada islenen malzemeler · stok takibi + yapi ilerleyisi · binalarla entegre</p></div>${stats}${filterBar}${body}</div>`;
@@ -8131,9 +8146,12 @@ function openRaporDayModal(tarih){
 }
 // Bir mutasyondan (sil/duzenle/bagla) sonra gun modali aciksa yeniden kur; gun bosaldiysa kapat.
 function rDayReopen(tarih){ if(!tarih)return; if(rEntries().some(e=>e.tarih===tarih)) openRaporDayModal(tarih); else closeModal(); }
+// GUNLUK OZET KARTLARI: karta tiklaninca gunun detayi (gun modali) acilir; oradaki Duzenle
+// dugmesi her zamanki saha kaydi formuna goturur. Kart icindeki kisi adlari kendi tiklamasini
+// tasir (stopPropagation) - kart tiklamasiyla karismaz.
 function renderRaporOzet(list){
   const byDate={};
-  list.forEach(e=>{ if(!byDate[e.tarih])byDate[e.tarih]={tarih:e.tarih,binalar:new Set(),kalem:0,ekipler:new Set(),items:[]}; const d=byDate[e.tarih]; d.binalar.add(e.bina); d.kalem++; if(e.ekip)d.ekipler.add(e.ekip); d.items.push(e); });
+  list.forEach(e=>{ if(!byDate[e.tarih])byDate[e.tarih]={tarih:e.tarih,binalar:new Set(),kalem:0,ekipler:new Set(),vardiyalar:new Set(),bolumler:new Set(),sartDisi:0,items:[]}; const d=byDate[e.tarih]; d.binalar.add(e.bina); d.kalem++; if(e.ekip)d.ekipler.add(e.ekip); if(e.vardiya)d.vardiyalar.add(e.vardiya); if(e.cat)d.bolumler.add(e.cat); if(!e.specId)d.sartDisi++; d.items.push(e); });
   const dates=Object.keys(byDate).sort().reverse();
   let html='';
   dates.forEach(dt=>{ const d=byDate[dt];
@@ -8141,35 +8159,43 @@ function renderRaporOzet(list){
     const totAdam=rGunAdam(d.items);
     const creators=rCreators(d.items);
     const creatorLine = creators.length
-      ? `<div class="ozet-creators">${icoUserSm()} ${creators.map(c=>`<span class="rap-creator" onclick="openRaporUserModal('${esc(c)}')" title="Girislerini gormek icin tikla">${esc(c)}</span>`).join(' ')}</div>`
+      ? `<div class="ozet-creators">${icoUserSm()} ${creators.map(c=>`<span class="rap-creator" onclick="event.stopPropagation();openRaporUserModal('${esc(c)}')" title="Girislerini gormek icin tikla">${esc(c)}</span>`).join(' ')}</div>`
       : '';
-    html+=`<div class="ozet-card">
-      <div class="ozet-date">${fmtDate(dt)}</div>
+    const vardTags=[...d.vardiyalar].map(v=>`<span class="vardiya-tag ${v==='GECE'?'gece':''}">${esc(v)}</span>`).join('');
+    const bolumTags=[...d.bolumler].map(c=>`<span class="cat-tag" style="background:${catColor(c)}22;color:${catColor(c)}">${esc(c)}</span>`).join('');
+    const ekipLine=d.ekipler.size?`<div class="ozet-creators" title="Calisan ekipler">${icoTeamSm()} ${[...d.ekipler].map(e=>esc(shortEkip(e))).join(' · ')}</div>`:'';
+    const sartDisi=d.sartDisi?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber)" title="Sartnameye baglanmamis kalem sayisi">${d.sartDisi} sartname disi</span>`:'';
+    html+=`<div class="ozet-card clk" onclick="openRaporDayModal('${esc(dt)}')" title="Gunun tum kayitlarini acmak icin tiklayin">
+      <div class="ozet-date" style="display:flex;align-items:center;gap:8px">${fmtDate(dt)}${vardTags}<svg class="ozet-chev" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div>
       <div class="ozet-stats">
         <div><b>${d.kalem}</b><span>imalat kalemi</span></div>
         <div><b>${d.binalar.size}</b><span>bina</span></div>
         <div><b>${totAdam}</b><span>toplam adam</span></div>
         <div><b>${d.ekipler.size}</b><span>ekip</span></div>
       </div>
-      <div class="ozet-binas">${[...d.binalar].map(b=>`<span class="bina-tag" style="background:${buildingColor(b)}22;color:${buildingColor(b)}">${esc(b)}</span>`).join('')}</div>
+      <div class="ozet-binas">${[...d.binalar].map(b=>`<span class="bina-tag" style="background:${buildingColor(b)}22;color:${buildingColor(b)}">${esc(b)}</span>`).join('')}${bolumTags}${sartDisi}</div>
+      ${ekipLine}
       ${creatorLine}
     </div>`;
   });
   return `<div class="ozet-grid">${html}</div>`;
 }
+function icoTeamSm(){ return '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/><circle cx="9" cy="7" r="4"/></svg>'; }
 function shortEkip(e){ if(!e)return''; const parts=String(e).split(' - '); return parts[parts.length-1]||e; }
 function icoUserSm(){ return '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'; }
 // Bir kayit listesindeki essiz "olusturan kisi" adlarini dondurur (bos olanlar atlanir)
 function rCreators(items){ return [...new Set((items||[]).map(e=>e.createdBy).filter(Boolean))]; }
-// RAPOR SILME YETKISI: admin her kaydi silebilir; digerleri (rapor silme izni olsa bile)
-// SADECE kendi girdigi kayitlari silebilir. Olusturani bilinmeyen (createdBy'siz eski)
-// kayitlari yalniz admin silebilir - baskasinin emegi yanlislikla silinemesin.
-function canDelRaporEntry(e){
+// RAPOR SAHIPLIK YETKISI: her kullanici KENDI girdigi kaydi silebilir ve duzenleyebilir -
+// bunun icin ayrica silme izni gerekmez. Baskasinin kaydina yalniz admin dokunabilir.
+// Olusturani bilinmeyen (createdBy'siz eski) kayitlar da yalniz admin - baskasinin emegi
+// yanlislikla silinmesin/degistirilmesin.
+function rOwnEntry(e){
   if(isAdmin()) return true;
-  if(!can('delete',{mod:'rapor',bina:e&&e.bina})) return false;
   const me=(CURRENT_USER&&CURRENT_USER.username)||'';
   return !!(e && e.createdBy && me && e.createdBy===me);
 }
+function canDelRaporEntry(e){ return rOwnEntry(e); }
+function canEditRaporEntry(e){ return rOwnEntry(e); }
 // KULLANICI GIRISLERI ("Kim Girdi"): kullanici bazli rapor giris gorunumu.
 // name yok -> tum kullanicilarin ozeti (kalem/gun sayisi, son giris); name var -> o kullanicinin
 // gun gun tum girisleri (gun basligina tiklaninca gun modali acilir). name='__unknown' ->
