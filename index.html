@@ -1133,6 +1133,7 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 /* MALZEME KUNYESI cekmecesi */
 .mat-clk{cursor:pointer}
 .mat-clk:hover{text-decoration:underline;text-decoration-color:var(--dim);text-underline-offset:3px}
+.mat-row{cursor:pointer}
 .matd-top{display:flex;gap:14px;align-items:flex-start}
 .matd-img{width:96px;height:96px;border-radius:12px;object-fit:contain;background:#fff;border:1px solid var(--line);cursor:pointer;flex-shrink:0}
 .matd-ph{display:flex;align-items:center;justify-content:center;color:var(--dim);cursor:default}
@@ -3378,13 +3379,13 @@ function renderMaterialLib(){
     mats.forEach(m=>{
       const usage=materialUsage(m.id);
       const specs=[...new Set(usage.map(s=>specGroupKey(s)))];
-      const thumb=m.img?`<img class="thumb" src="${m.img}" onclick="lightbox(${lbCall([m.img,m.img2])})">`:phThumb();
+      const thumb=m.img?`<img class="thumb" src="${m.img}" onclick="event.stopPropagation();lightbox(${lbCall([m.img,m.img2])})">`:phThumb();
       const ccol=catColor(m.cat);
       const usageTag=specs.length>1?`<span class="merged-badge">${specs.length} spek'te</span>`:specs.length===1?`<span class="cat-tag" style="background:var(--dim)33;color:var(--mute);font-size:9px">1 spek</span>`:`<span class="cat-tag" style="background:var(--red)18;color:var(--red);font-size:9px">kullanilmiyor</span>`;
-      rows+=`<tr class="${_matSel.has(m.id)?'row-sel':''}">
-        <td style="width:34px;text-align:center"><input type="checkbox" class="mat-check" ${_matSel.has(m.id)?'checked':''} onclick="toggleMatSel('${m.id}')"></td>
+      rows+=`<tr class="mat-row ${_matSel.has(m.id)?'row-sel':''}" onclick="openMatDetail('${m.id}')" title="Malzeme kunyesi: sartnameler, siparisler, montaj">
+        <td style="width:34px;text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="mat-check" ${_matSel.has(m.id)?'checked':''} onclick="event.stopPropagation();toggleMatSel('${m.id}')"></td>
         <td>${thumb}</td>
-        <td class="t-name mat-clk${_matHighlightDup&&dupNames.has(norm(m.name).trim())?' dup-hl':''}" onclick="openMatDetail('${m.id}')" title="Malzeme kunyesi: sartnameler, siparisler, montaj">${esc(m.name)} ${usageTag}<div style="margin-top:4px">${specs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px">${esc(g)}</span>`).join('')}</div></td>
+        <td class="t-name mat-clk${_matHighlightDup&&dupNames.has(norm(m.name).trim())?' dup-hl':''}">${esc(m.name)} ${usageTag}<div style="margin-top:4px">${specs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px">${esc(g)}</span>`).join('')}</div></td>
         <td class="${_matHighlightDup&&m.code&&dupCodes.has(norm(m.code).trim())?'dup-hl':''}" style="font-family:var(--mono);font-size:12px">${esc(m.code||'-')}${(m.altCodes&&m.altCodes.length)?`<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${m.altCodes.map(c=>`<span class="cat-tag" style="background:var(--dim)22;color:var(--mute);font-family:var(--mono);font-size:9px" title="Varyant kod - ayni urunun bilindigi diger kod">${esc(c)}</span>`).join('')}</div>`:''}</td>
         <td class="t-meta">${m.brand?`<div class="brand-cell">${m.brand.split(/\n|\s\/\s/).map(b=>b.trim()).filter(Boolean).map(b=>{
           const full=esc(b), short=b.length>12?esc(b.slice(0,12))+'…':full;
@@ -3400,7 +3401,7 @@ function renderMaterialLib(){
           return `<div class="brand-tags">${allCats.map(c=>{const cc=catColor(c);return `<span class="cat-tag" style="background:${cc}22;color:${cc}">${esc(c)}</span>`;}).join('')}</div>`;
         })()}</td>
         <td class="t-meta">${esc(m.unit||'-')}</td>
-        <td><div class="row-actions">
+        <td onclick="event.stopPropagation()"><div class="row-actions">
           <button class="mini-btn" title="Duzenle" onclick="openMaterialModal('${m.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
           <button class="mini-btn del" title="Sil" onclick="delMaterial('${m.id}')">${icoTrash()}</button>
         </div></td></tr>`;
@@ -5828,18 +5829,24 @@ function specImgsOf(sp){ const mt=specMaterial(sp); return [specImgOf(sp),mt&&mt
    etkilemez (salt okunur). Her kaynak satiri tiklanabilir: sartname karta,
    siparis fatura detayina, montaj kaydi gunun rapor modalina goturur. */
 function openMatDetail(matId){
-  const m=getMaterial(matId); if(!m)return;
+  // hata sessizce yutulmasin: karti engelleyen veri sorunu varsa kullanici gorsun
+  try{ _openMatDetail(matId); }
+  catch(err){ console.error('openMatDetail',err); toast('Kunye acilamadi: '+((err&&err.message)||err),'err'); }
+}
+function _openMatDetail(matId){
+  const m=getMaterial(matId);
+  if(!m){ toast('Malzeme bulunamadi - sayfayi yenileyin','warn'); return; }
   const usage=materialUsage(matId);
   const specIds=new Set(usage.map(s=>s.id));
   // siparisler: satirlarinda bu urunun sartname kalemleri gecen faturalar
   const ords=(DB.proje.orders||[]).map(o=>{
     const qty=(o.lines||[]).filter(l=>specIds.has(l.specId)).reduce((s,l)=>s+(Number(l.qty)||0),0);
     return qty>0?{o,qty}:null;
-  }).filter(Boolean).sort((a,b)=>(b.o.date||'').localeCompare(a.o.date||''));
+  }).filter(Boolean).sort((a,b)=>String(b.o.date||'').localeCompare(String(a.o.date||'')));
   const totOrd=ords.reduce((s,x)=>s+x.qty,0);
   // montaj: saha raporu kayitlari (sartname kalemi veya dogrudan malzeme baglantisiyla)
   const raps=rEntries().filter(e=>(e.specId&&specIds.has(e.specId))||e.matId===matId)
-    .sort((a,b)=>(b.tarih||'').localeCompare(a.tarih||''));
+    .sort((a,b)=>String(b.tarih||'').localeCompare(String(a.tarih||'')));
   const totRap=raps.reduce((s,e)=>s+(Number(e.miktar)||0),0);
   const unit=m.unit||usage[0]?.unit||'';
   const kalan=totOrd-totRap;
