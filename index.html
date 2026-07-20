@@ -4625,9 +4625,9 @@ function downloadBulkTemplate(){
     ['2.KAT','00UYB11R001','Koridor']
   ]),'Odalar');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
-    ['PROJE KODU','ODA KODU','URUN ADI / GECIS ISMI','URUN KODU (opsiyonel)','ADET','SARTNAME KODU','BIRIM (opsiyonel)'],
-    ['00UYB12EM0051','00UYB10R001','SRE-UL(1)ASVS-ZSD-100x100-C4','','1','AKU.0130.00UYB.0.EM.TB0002','adet'],
-    ['00UYB12EM0052','00UYB10R002','SRE-UL(1)ASVS-ZSD-150x150-C4','','2','AKU.0130.00UYB.0.EM.TB0002','adet']
+    ['PROJE KODU','ODA KODU (ops.)','KAT (ops. - oda yoksa)','URUN ADI / GECIS ISMI','URUN KODU (opsiyonel)','ADET','SARTNAME KODU','BIRIM (opsiyonel)'],
+    ['00UYB12EM0051','00UYB10R001','','SRE-UL(1)ASVS-ZSD-100x100-C4','','1','AKU.0130.00UYB.0.EM.TB0002','adet'],
+    ['00UYB12EM0052','','1.KAT','SRE-UL(1)ASVS-ZSD-150x150-C4','','2','AKU.0130.00UYB.0.EM.TB0002','adet']
   ]),'Malzemeler');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
     ['TOPLU KURULUM SABLONU - NASIL KULLANILIR'],
@@ -4638,6 +4638,9 @@ function downloadBulkTemplate(){
     ['3) Malzemeler sayfasi: her satir bir yerlestirme. PROJE KODU ayni olan satirlar tek'],
     ['   kaleme birlesir, adetler odalara dagitilir (oda bazli metraj). URUN ADI kutuphanede'],
     ['   aranir; yoksa yeni malzeme olarak eklenir. SARTNAME KODU sistemde tanimli olmali.'],
+    ['   ODA KODU bossa KAT sutunu yazilabilir: yerlestirme dogrudan kata baglanir (odalar'],
+    ['   henuz girilmediyse kat bazli calisma). Ikisi de bossa kalem bina geneli olur.'],
+    ['   PROJE KODU, kalemin Poz No su olur - raporcular sahada bu kodla arayip bulur.'],
     ['4) Mevcut kat/oda/kalem atlanir - dosyayi guncelleyip tekrar yukleyebilirsiniz.']
   ]),'OKUBENI');
   XLSX.writeFile(wb,'toplu_kurulum_sablonu.xlsx');
@@ -4703,26 +4706,30 @@ function _bulkParse(wb,bina,isNew){
   const mRows=_sheetRows(wb,['Malzemeler','Malzeme','Materials']);
   if(mRows&&mRows.length>1){
     const pm=_hdrMap(mRows[0]);
-    const iPoz=pm('proje kodu','poz'), iOda=pm('oda kodu','oda'), iAd=pm('urun adi','gecis ismi','ad','name'),
+    const iPoz=pm('proje kodu','poz'), iOda=pm('oda kodu','oda'), iMKat=pm('kat'), iAd=pm('urun adi','gecis ismi','ad','name'),
           iKod=pm('urun kodu'), iAdet=pm('adet','miktar','quantity'), iSr=pm('sartname kodu','sartname'), iBirim=pm('birim','unit');
     const groups=new Map();
     for(let i=1;i<mRows.length;i++){ const row=mRows[i]; if(!row)continue;
       const poz=iPoz>=0?String(row[iPoz]??'').trim():''; const ad=iAd>=0?String(row[iAd]??'').trim():'';
       if(!poz&&!ad)continue;
       const odaKod=iOda>=0?String(row[iOda]??'').trim():'';
+      const katNm=iMKat>=0?String(row[iMKat]??'').trim():'';
       const srKod=iSr>=0?String(row[iSr]??'').trim():'';
       const adet=Number(iAdet>=0?row[iAdet]:1)||0;
       if(!ad){ p.errors.push(`Malzemeler ${i+1}. satir: urun adi bos`); continue; }
       if(!srKod||!srByCode.get(norm(srKod))){ p.errors.push(`Malzemeler ${i+1}. satir: "${srKod||'(bos)'}" sartnamesi bu binada tanimli degil`); continue; }
       const oda=odaKod?odaByKod.get(norm(odaKod)):null;
       if(odaKod&&!oda){ p.errors.push(`Malzemeler ${i+1}. satir: "${odaKod}" odasi bulunamadi (Odalar sayfasina ekleyin)`); continue; }
+      // ODA yoksa KAT'a baglanabilir: odalar henuz girilmemis binada kat bazli yerlestirme
+      const kat=(!oda&&katNm)?katByName.get(norm(katNm)):null;
+      if(!oda&&katNm&&!kat){ p.errors.push(`Malzemeler ${i+1}. satir: "${katNm}" kati bulunamadi (Katlar sayfasina ekleyin)`); continue; }
       if(!(adet>0)){ p.errors.push(`Malzemeler ${i+1}. satir: gecersiz adet`); continue; }
       const sr=srByCode.get(norm(srKod));
       const kod=iKod>=0?String(row[iKod]??'').trim():'';
       const birim=iBirim>=0?String(row[iBirim]??'').trim():'';
       const gk=norm(sr.code)+'¦'+norm(poz)+'¦'+matKey(kod,ad);
       if(!groups.has(gk)) groups.set(gk,{sr,poz,ad,kod,birim,rows:[]});
-      groups.get(gk).rows.push({odaId:oda?oda.id:null,odaKod,adet});
+      groups.get(gk).rows.push({odaId:oda?oda.id:(kat?kat.id:null),isOda:!!oda,odaKod,adet});
     }
     groups.forEach(g=>{
       // ayni bina+sartname+poz'da ayni urun zaten varsa atla (saveSpec'teki tekillik kurali)
@@ -4730,9 +4737,11 @@ function _bulkParse(wb,bina,isNew){
         &&matKey(s.code,s.name)===matKey(g.kod,g.ad)&&(s.poz||'').trim().toLowerCase()===g.poz.toLowerCase());
       if(exists){ p.skip.spec++; return; }
       p.specs.push(g);
-      if(!p.sartKat.has(g.sr.id)) p.sartKat.set(g.sr.id,{sr:g.sr,katNames:[],odaIds:[]});
-      const ent=p.sartKat.get(g.sr.id);
-      g.rows.forEach(r=>{ if(r.odaId&&!ent.odaIds.includes(r.odaId)) ent.odaIds.push(r.odaId); });
+      if(!p.sartKat.has(g.sr.id)) p.sartKat.set(g.sr.id,{sr:g.sr,katNames:[],odaIds:[],katDirect:[]});
+      const ent=p.sartKat.get(g.sr.id); if(!ent.katDirect)ent.katDirect=[];
+      g.rows.forEach(r=>{ if(!r.odaId)return;
+        if(r.isOda){ if(!ent.odaIds.includes(r.odaId)) ent.odaIds.push(r.odaId); }
+        else { if(!ent.katDirect.includes(r.odaId)) ent.katDirect.push(r.odaId); } });
     });
   }
   p._katByName=katByName; p._odaByKod=odaByKod;
@@ -4788,11 +4797,17 @@ async function applyBulkSetup(){
     const newMats=DB.proje.materials.filter(m=>!beforeIds.has(m.id));
     if(newMats.length) await sbInsertProjeMaterials(newMats);
     if(newSpecs.length){ await sbInsertProjeSpecs(newSpecs); DB.proje.specs.push(...newSpecs); }
-    // 3) sartname kat/oda kapsamlari
-    for(const {sr,katNames,odaIds} of p.sartKat.values()){
+    // 3) sartname kat/oda kapsamlari: Katlar sayfasindaki atamalar + yerlestirmelerden turetilen
+    // kapsamlar (oda -> odanin KATI da kapsanir ki rapor girisinde kat secilince sartname otomatik dolsun)
+    for(const {sr,katNames,odaIds,katDirect} of p.sartKat.values()){
       let changed=false;
-      katNames.forEach(kn=>{ const k=p._katByName.get(kn); if(k&&!(sr.katIds||[]).includes(k.id)){ sr.katIds=[...(sr.katIds||[]),k.id]; changed=true; } });
-      odaIds.forEach(oid=>{ if(!(sr.odalar||[]).includes(oid)){ sr.odalar=[...(sr.odalar||[]),oid]; changed=true; } });
+      const addKat=(kid)=>{ if(kid&&!(sr.katIds||[]).includes(kid)){ sr.katIds=[...(sr.katIds||[]),kid]; changed=true; } };
+      katNames.forEach(kn=>{ const k=p._katByName.get(kn); if(k) addKat(k.id); });
+      (katDirect||[]).forEach(addKat);
+      odaIds.forEach(oid=>{
+        if(!(sr.odalar||[]).includes(oid)){ sr.odalar=[...(sr.odalar||[]),oid]; changed=true; }
+        const k=lokKatOf(oid); if(k) addKat(k.id);
+      });
       if(changed) await sbUpdateProjeSartname(sr.id,{...sr});
     }
     logAction('define',`Toplu kurulum: ${p.bina} - ${p.kats.length} kat, ${p.odas.length} oda, ${newSpecs.length} kalem${newMats.length?`, ${newMats.length} yeni urun`:''}`);
@@ -8707,7 +8722,9 @@ function rLinePick(bi,li){
   const sart=bk.sart?(DB.proje.sartnames||[]).find(x=>x.bina===bina&&x.code===bk.sart):null;
   const lockedCat=bk.cat || (sart?sart.section:'');
   const specs=DB.proje.specs.filter(s=>!s.is_deleted && s.bina===bina && (!lockedCat||s.cat===lockedCat));
-  const specSrc=specs.map(s=>({ad:s.name, alt:(s.code||'')+' '+specGroupKey(s), sub:[s.code,specGroupKey(s),s.unit].filter(Boolean).join(' · '), img:specImgOf(s), obj:{specId:s.id,matId:s.matId||null,code:s.code||'',ad:s.name,name:s.name,unit:s.unit||'',cat:s.cat||'',bina:s.bina,grup:specGroupKey(s)}}));
+  // POZ NO (proje yerlesim kodu, orn. 00UYB12EM0051) da aranabilir ve listede gorunur:
+  // raporcu sahada elindeki tekil yerlesim koduyla dogru kalemi bulur, yuzdeler o kaleme isler
+  const specSrc=specs.map(s=>({ad:s.name, alt:(s.code||'')+' '+(s.poz||'')+' '+specGroupKey(s), sub:[s.poz?'Poz '+s.poz:'',s.code,specGroupKey(s),s.unit].filter(Boolean).join(' · '), img:specImgOf(s), obj:{specId:s.id,matId:s.matId||null,code:s.code||'',ad:s.name,name:s.name,unit:s.unit||'',cat:s.cat||'',bina:s.bina,grup:specGroupKey(s)}}));
   const specMatIds=new Set(specs.map(s=>s.matId).filter(Boolean));
   const libSrc=matLibSrc().filter(m=>!specMatIds.has(m.obj.matId)).map(m=>({...m, obj:{...m.obj, specId:null, bina, grup:bk.sart||''}}));
   const src=[...specSrc, ...libSrc];
