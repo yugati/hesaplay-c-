@@ -3530,9 +3530,15 @@ function matModalBgClick(ev){
   const ids=['mt_name','mt_code','mt_brand','mt_standart','mt_weight','mt_unit','mt_proje','mt_note','mt_altCodeInput'];
   const hasData = ids.some(id=>{ const el=document.getElementById(id); return el&&String(el.value||'').trim(); })
     || (modalTags&&modalTags.length) || (modalAltCodes&&modalAltCodes.length) || modalImg || modalImg2;
-  if(!hasData) closeModal();
+  if(!hasData) matModalClose();
 }
-function openMaterialModal(id){
+// matModalClose: malzeme modali kapanirken, eger spec kalemi duzenlemeden gelindiyse
+// (window._matReturn set) o forma geri doner - aksi halde normal kapanis.
+function matModalClose(){ const r=window._matReturn; window._matReturn=null; window._afterMatSave=null; closeModal(); if(r) r(); }
+function openMaterialModal(id,keepReturn){
+  // standalone acilislarda (kutuphane Duzenle/Yeni) bayat geri-donus callback'lerini temizle;
+  // spec akislari (editSpecMaterial / openMaterialModalFromSpec) keepReturn=true ile korur
+  if(!keepReturn){ window._afterMatSave=null; window._matReturn=null; window._specReturn=null; }
   const m=id?getMaterial(id):null; modalImg=m&&m.img?m.img:null;
   modalImg2=m&&m.img2?m.img2:null;
   modalTags=(m&&m.tags)?m.tags.slice():[];
@@ -3544,7 +3550,7 @@ function openMaterialModal(id){
   const useCats=[...new Set(usage.map(s=>s.cat).filter(Boolean))];
   const selCat=(m&&m.cat)||(useCats.length===1?useCats[0]:'');
   const cats=[...new Set([...(DB.proje.sections||PROJ_CATS),...(DB.proje.materials||[]).map(x=>x.cat).filter(Boolean),...useCats])];
-  const html=`<div class="modal-bg" onclick="matModalBgClick(event)"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${m?'Malzeme Duzenle':'Yeni Malzeme'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+  const html=`<div class="modal-bg" onclick="matModalBgClick(event)"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${m?'Malzeme Duzenle':'Yeni Malzeme'}</h3><button class="mini-btn" onclick="matModalClose()">x</button></div><div class="modal-body">
     <div class="frow"><label>Malzeme Adi *</label><input id="mt_name" value="${m?esc(m.name):''}" placeholder="orn. Galvaniz Kablo Tavasi 200mm"></div>
     <div class="frow two"><div><label>Urun Kodu</label><input id="mt_code" value="${m?esc(m.code||''):''}" placeholder="orn. 121491"></div><div><label>Marka  <span class="t-meta">(her satir ayri gosterilir)</span></label><textarea id="mt_brand" rows="2" style="min-height:38px" placeholder="orn. Hilti, Schneider">${m?esc(m.brand||''):''}</textarea></div></div>
     <div class="frow"><label>Varyant Kodlar  <span class="t-meta">(ayni urunun bilindigi diger kodlar - Enter veya virgul ile ekleyin; arama ve Excel eslestirmede ana kod gibi calisir)</span></label>
@@ -3574,7 +3580,7 @@ function openMaterialModal(id){
       <input type="file" id="mtImg2Input" accept="image/*" class="hidden" onchange="pickImg2(event,'mtImg2Drop')">
       <input id="mt_img2Url" style="margin-top:7px" placeholder="veya resim linki: https://..." value="${m&&m.img2&&/^https?:/i.test(m.img2)?esc(m.img2):''}" onchange="setMatImgUrl2(this.value)"></div>
     ${usage.length?`<p style="font-size:11px;color:var(--dim);font-family:var(--mono)">Bu malzeme ${usage.length} sartnamede kullaniliyor. Degisiklik hepsini etkiler.</p>`:''}
-  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveMaterial(${m?`'${m.id}'`:'null'})">Kaydet</button></div></div></div>`;
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="matModalClose()">Iptal</button><button class="btn btn-add" onclick="saveMaterial(${m?`'${m.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   document.getElementById('mt_cat').onchange=function(){document.getElementById('mt_newcat').classList.toggle('hidden',this.value!=='__new');};
   renderTagsBox('mt');
@@ -7420,6 +7426,7 @@ function openProjePdf(id){ const it=DB.proje.items.find(i=>i.id===id); const pdf
 /* ---------- SPEC modal ---------- */
 function openSpecModalCtx(){ openSpecModal(null,{bina:PBINA,cat:PCAT,grup:PSPEC&&PSPEC!=='__all'?PSPEC:''}); }
 function openSpecModal(idOrNull,prefill){ if(!guard('editSpec',{bina:(prefill&&prefill.bina)||PBINA}))return; const sp=(idOrNull&&typeof idOrNull==='string')?DB.proje.specs.find(s=>s.id===idOrNull):null;
+  window._specEditId=sp?sp.id:null; // editSpecMaterial geri-donuste bu id ile ayni kalemi tekrar acar
   const pf=prefill||{}; modalImg=sp?specImgOf(sp):null;
   const curCat=sp?sp.cat:(pf.cat||PCAT||'');
   const curGrp=sp?(sp.grup||''):(pf.grup||'');
@@ -7497,7 +7504,10 @@ function specMatBoxHtml(){
     return `<div class="mat-selected">${thumb}
       <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px;line-height:1.25">${esc(m.ad)}</div>
         <div style="font-size:11px;color:var(--mute);margin-top:3px;font-family:var(--mono)">${metaBits.map(esc).join(' · ')}</div>${tagsLine}</div>
-      <button class="btn btn-ghost" style="padding:6px 11px;font-size:12px" onclick="specPickMaterial()">Degistir</button></div>`;
+      <div style="display:flex;flex-direction:column;gap:5px;flex-shrink:0">
+        <button class="btn btn-ghost" style="padding:6px 11px;font-size:12px;white-space:nowrap" onclick="editSpecMaterial()" title="Bu urunu Malzeme Kutuphanesinde duzenle - kod, ad, marka, foto, birim; kaydedince buraya donersiniz">Kutuphanede Duzenle</button>
+        <button class="btn btn-ghost" style="padding:6px 11px;font-size:12px;white-space:nowrap" onclick="specPickMaterial()" title="Baska bir malzemeyle degistir">Degistir</button>
+      </div></div>`;
   }
   return `<div class="ac-wrap"><input id="s_matSearch" placeholder="Kutuphaneden malzeme ara (kod, ad, marka, standart, etiket)..." autocomplete="off" readonly onclick="specPickMaterial()" style="cursor:pointer">
     </div><button class="btn btn-ghost" style="margin-top:8px;padding:7px 12px;font-size:12px" onclick="openMaterialModalFromSpec()">${icoPlus()} Kutuphaneye Yeni Malzeme Ekle</button>`;
@@ -7543,7 +7553,43 @@ function openMaterialModalFromSpec(){
     openSpecModal(null,{bina,cat:cat||mt.cat,grup});
     const t=document.getElementById('s_target'); if(t&&target)t.value=target;
   };
-  openMaterialModal();
+  openMaterialModal(null,true);
+}
+// SPEC KALEMINDEN BAGLI MALZEMEYI DUZENLE: mevcut formdaki girisleri (poz/hedef/birim/dagilim)
+// hafizaya alir, malzemenin kutuphane duzenleme modalini acar; kaydedince VEYA vazgecince spec
+// formuna aynen geri doner - malzeme bilgisi (kod/ad/marka/foto/birim) canli tazelenmis olur.
+function editSpecMaterial(){
+  const m=window._specMat;
+  const matId=(m&&m.matId)||(m?((findMaterial(m.code,m.ad)||{}).id):null);
+  if(!matId){ toast('Bu kalem kutuphaneye bagli degil - once Degistir ile bir malzeme secin','err'); return; }
+  const gv=id=>{ const el=document.getElementById(id); return el?el.value:''; };
+  window._specReturn={ id:(window._specEditId||null),
+    bina:gv('s_bina'), cat:gv('s_cat'), grup:gv('s_grup'),
+    poz:gv('s_poz'), target:gv('s_target'), unit:gv('s_unit'),
+    open:!!(document.getElementById('s_open')&&document.getElementById('s_open').checked),
+    lokRows:(_specLokRows||[]).map(r=>({lokId:r.lokId,target:r.target})), matId };
+  window._afterMatSave=(mt)=>reopenSpecAfterMat(mt);
+  window._matReturn=()=>reopenSpecAfterMat(getMaterial(matId));
+  openMaterialModal(matId,true);
+}
+function reopenSpecAfterMat(mt){
+  const r=window._specReturn; window._specReturn=null; window._matReturn=null; window._afterMatSave=null;
+  if(!r) return;
+  openSpecModal(r.id||null,{bina:r.bina,cat:r.cat,grup:r.grup});
+  // formu ucus-halindeki degerlere geri getir (openSpecModal kayitli spec'ten dolduruyor - ustune yaz)
+  const bSel=document.getElementById('s_bina'); if(bSel&&r.bina)bSel.value=r.bina;
+  const cSel=document.getElementById('s_cat'); if(cSel&&r.cat)cSel.value=r.cat;
+  specModalRefresh();
+  const gSel=document.getElementById('s_grup');
+  if(gSel&&r.grup){ if(![...gSel.options].some(o=>o.value===r.grup)) gSel.insertAdjacentHTML('beforeend',`<option>${esc(r.grup)}</option>`); gSel.value=r.grup; }
+  if(mt){ window._specMat={matId:mt.id,code:mt.code,ad:mt.name,brand:mt.brand||'',cat:mt.cat||'',unit:mt.unit||'',img:mt.img||null,standart:mt.standart||'',weight:mt.weight!=null?mt.weight:null,tags:(mt.tags||[]).slice()};
+    modalImg=mt.img||null; const box=document.getElementById('s_matBox'); if(box)box.innerHTML=specMatBoxHtml(); }
+  const pz=document.getElementById('s_poz'); if(pz)pz.value=r.poz||'';
+  const o=document.getElementById('s_open'); if(o)o.checked=!!r.open;
+  const t=document.getElementById('s_target'); if(t){ t.disabled=!!r.open; t.value=r.open?'':(r.target||''); }
+  const u=document.getElementById('s_unit'); if(u){ if(mt&&mt.unit){u.value=mt.unit;u.setAttribute('readonly','');u.classList.add('ro-auto');} else {u.removeAttribute('readonly');u.classList.remove('ro-auto');u.value=r.unit||'';} }
+  _specLokRows=(r.lokRows||[]).filter(x=>{ const l=getLok(x.lokId); return l&&l.bina===r.bina; }).map(x=>({lokId:x.lokId,target:x.target}));
+  specLokRender();
 }
 async function saveSpec(id){ if(!guard('editSpec'))return;
   const cat=document.getElementById('s_cat').value;
