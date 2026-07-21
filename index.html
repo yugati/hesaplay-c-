@@ -8974,7 +8974,10 @@ function rRenderBlocks(){
   const sections=DB.proje.sections||[];
   const ekipler=(DB.rapor.ekipler||[]);
   // bina degistiyse eski binaya ait lokasyon secimleri gecersizdir
-  _rBlocks.forEach(bk=>bk.lines.forEach(l=>{ if(l.lokId){ const lk=getLok(l.lokId); if(!lk||lk.bina!==bina) l.lokId=''; } }));
+  _rBlocks.forEach(bk=>bk.lines.forEach(l=>{ if(l.lokId){ const lk=getLok(l.lokId); if(!lk||lk.bina!==bina) l.lokId=''; }
+    // BIRIM TEK KAYNAK: kutuphanedeki urunun birimi varsa satirin birimi HER ZAMAN ondan gelir
+    // (kutuphanede birim degisirse kayit da dogru birimle kaydedilir)
+    const lu=rLineLibUnit(l); if(lu) l.unit=lu; }));
   c.innerHTML=_rBlocks.map((bk,bi)=>{
     const sarts=(DB.proje.sartnames||[]).filter(s=>s.bina===bina && (!bk.cat||s.section===bk.cat));
     const secOpts='<option value="">- bolum secin -</option>'+sections.map(s=>`<option ${bk.cat===s?'selected':''}>${esc(s)}</option>`).join('');
@@ -9001,8 +9004,17 @@ function rRenderBlocks(){
   }).join('');
 }
 // tek bir is kalemi satirinin HTML'i (blok bi, satir li)
+// Satirin bagli oldugu KUTUPHANE malzemesinin birimi (tek kaynak). Once dogrudan matId,
+// yoksa sartname kaleminin bagli oldugu malzeme uzerinden okunur; yoksa '' doner (elle girilir).
+function rLineLibUnit(l){
+  if(!l) return '';
+  let mt=l.matId?getMaterial(l.matId):null;
+  if(!mt && l.specId){ const sp=DB.proje.specs.find(s=>s.id===l.specId); if(sp) mt=specMaterial(sp); }
+  return (mt&&mt.unit)?mt.unit:'';
+}
 function rLineHtml(bk,bi,l,li,bina,parcali){
   const hasName=!!l.name;
+  const libUnit=rLineLibUnit(l);
   const linked=!!(l.specId&&l.name);
   const pr=linked?specRaporProgress(l.specId):null;
   let barHtml='';
@@ -9047,7 +9059,9 @@ function rLineHtml(bk,bi,l,li,bina,parcali){
       ${parcali?'':`<input placeholder="Kat (orn. 4)" value="${esc(l.kat||'')}" ${l.lokId?'readonly title="Kat - lokasyondan otomatik dolar"':`oninput="rUpdLine(${bi},${li},'kat',this.value)" title="Kat"`}>
       <input placeholder="Kot (orn. 12000)" value="${esc(l.kot||'')}" ${l.lokId?'readonly title="Kot - lokasyondan otomatik dolar"':`oninput="rUpdLine(${bi},${li},'kot',this.value)" title="Kot"`}>`}
       <input type="number" step="any" placeholder="Miktar" value="${esc(l.miktar)}" oninput="rUpdLine(${bi},${li},'miktar',this.value)">
-      <input placeholder="Birim" value="${esc(l.unit||'')}" oninput="rUpdLine(${bi},${li},'unit',this.value)">
+      ${libUnit
+        ?`<input class="ro-auto" value="${esc(libUnit)}" readonly title="Birim Malzeme Kutuphanesindeki urunden otomatik gelir - degistirmek icin kutuphanede duzenleyin">`
+        :`<input placeholder="Birim" value="${esc(l.unit||'')}" oninput="rUpdLine(${bi},${li},'unit',this.value)" title="Kutuphanede birim tanimli degil - elle girin">`}
       ${codeChip}
     </div>
     ${info}${barHtml}</div>`;
@@ -9109,7 +9123,9 @@ function rLinePick(bi,li){
       el.setAttribute('readonly',''); rRenderBlocks(); return;
     }
     bk.lines[li]={...(bk.lines[li]||{}),specId:it.specId||null,matId:it.matId||null,code:it.code||'',name:it.name||it.ad||'',grup:it.grup||bk.sart||''};
-    if(it.unit && !bk.lines[li].unit) bk.lines[li].unit=it.unit;
+    // BIRIM: once kutuphanedeki urunun birimi (tek kaynak), yoksa secilen kalemin birimi
+    const _lu=rLineLibUnit(bk.lines[li]);
+    if(_lu) bk.lines[li].unit=_lu; else if(it.unit && !bk.lines[li].unit) bk.lines[li].unit=it.unit;
     // blok bolumu bos ise secilen kalemin bolumunu bloga ata
     if(!bk.cat && it.cat) bk.cat=it.cat;
     // blok sartnamesi bos ise ve kalemin grubu bir sartname ise otomatik sec
