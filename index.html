@@ -4397,6 +4397,7 @@ function renderBinaFlow(){
       <button class="btn btn-ghost" onclick="flowFit()">Sigdir</button>
       <span style="flex:1"></span>
       ${can('define')?`<button class="btn btn-ghost" onclick="openBulkSetupModal()" title="Excel ile bina + katlar + odalar + oda ici proje kodlu malzemeleri tek seferde kur">${icoXls()} Toplu Kurulum</button>`:''}
+      ${can('define')?`<button class="btn btn-ghost" onclick="openBulkUndoModal()" title="Bir toplu kurulumun ekledigi kat/oda/kalem/malzemeleri geri al">${icoTrash()} Kurulumu Geri Al</button>`:''}
       ${can('define')?`<button class="btn btn-add" onclick="openBinaModal()">${icoPlus()} Bina Ekle</button>`:''}
     </div>
     <div class="floww-wrap">
@@ -4595,6 +4596,7 @@ async function enableAksLevel(bina){
    Ayni proje kodu birden fazla odada gecerse TEK kalem olur, adetler odalara dagitilir.
    Mevcut kat/oda/kalem atlanir - ayni dosya iki kez yuklense de mukerrer olusmaz. */
 let _BULK=null;
+let _BULKUNDO=null;
 function openBulkSetupModal(){
   if(!guard('define'))return;
   _BULK=null;
@@ -4842,6 +4844,9 @@ async function applyBulkSetup(){
     const newMats=DB.proje.materials.filter(m=>!beforeIds.has(m.id));
     if(newMats.length) await sbInsertProjeMaterials(newMats);
     if(newSpecs.length){ await sbInsertProjeSpecs(newSpecs); DB.proje.specs.push(...newSpecs); }
+    // GERI-AL icin: kapsam DEGISMEDEN once ilgili sartnamelerin kat/oda halini fotografla -
+    // boylece kurulum geri alinirsa katIds/odalar tam olarak eski haline dondurulur.
+    const sartBefore=[...p.sartKat.values()].map(({sr})=>({id:sr.id,katIds:(sr.katIds||[]).slice(),odalar:(sr.odalar||[]).slice()}));
     // 3) sartname kat/oda kapsamlari: Katlar sayfasindaki atamalar + yerlestirmelerden turetilen
     // kapsamlar (oda -> odanin KATI da kapsanir ki rapor girisinde kat secilince sartname otomatik dolsun)
     for(const {sr,katNames,odaIds,katDirect} of p.sartKat.values()){
@@ -4855,10 +4860,134 @@ async function applyBulkSetup(){
       });
       if(changed) await sbUpdateProjeSartname(sr.id,{...sr});
     }
+    // GERI-AL kaydi: bu kurulumun urettigi TUM id'ler + sartname foto. Son 10 kurulum saklanir.
+    const batch={id:uid(),ts:Date.now(),user:(CURRENT_USER&&CURRENT_USER.username)||'?',bina:p.bina,isNew:!!p.isNew,
+      katIds:p.kats.map(n=>n.id),odaIds:p.odas.map(n=>n.id),specIds:newSpecs.map(s=>s.id),matIds:newMats.map(m=>m.id),sartBefore};
+    await bulkBatchSave([...bulkBatchesGet(),batch].slice(-10));
     logAction('define',`Toplu kurulum: ${p.bina} - ${p.kats.length} kat, ${p.odas.length} oda, ${newSpecs.length} kalem${newMats.length?`, ${newMats.length} yeni urun`:''}`);
     _BULK=null; closeModal(); render();
     toast(`Kurulum tamam: ${p.kats.length} kat, ${p.odas.length} oda, ${newSpecs.length} kalem eklendi`);
   }catch(err){ console.error(err); toast('Kurulum hatasi: '+(err.message||err),'err'); if(btn){btn.disabled=false;btn.textContent='Kur';} }
+}
+/* ============ TOPLU KURULUM GERI AL ============
+   Iki yol: (1) KAYITLI batch - kurulum sirasinda uretilen tum id'ler + sartname fotografi
+   saklandigindan kat/oda/kalem/malzeme silinir ve sartname kapsami TAM eski haline doner.
+   (2) YENIDEN YAPILANDIRMA - eski (kayitsiz) kurulumlar icin: binadaki oda dugumleri + o
+   odalara yerlestirilmis poz kodlu kalemler + yalniz bu kalemlerce kullanilan malzemeler
+   tespit edilir. Her iki yolda da SILMEDEN once onizleme + baglantili stok/rapor uyarisi. */
+function bulkBatchesGet(){ return (DB.meta&&DB.meta.bulkBatches)||[]; }
+async function bulkBatchSave(list){ if(!DB.meta)DB.meta={}; DB.meta.bulkBatches=list; try{ await sbSetSetting('bulkBatches',list); }catch(e){ console.warn('bulkBatches kaydedilemedi:',e); } }
+// silinecek kalemlere bagli stok girisi / siparis satiri / saha raporu sayilari (uyari icin)
+function bulkSpecRefs(specIds){ const set=new Set(specIds);
+  const items=(DB.proje.items||[]).filter(it=>set.has(it.specId)).length;
+  const ordLines=(DB.proje.orders||[]).reduce((n,o)=>n+(o.lines||[]).filter(l=>set.has(l.specId)).length,0);
+  const raps=rEntries().filter(e=>set.has(e.specId)).length;
+  return {items,ordLines,raps,any:items+ordLines+raps>0};
+}
+// kayitsiz kurulum icin plan: bina + oda dugumleri + poz kodlu oda yerlestirmeleri + yalniz-bu-kalemlerce kullanilan malzemeler
+function bulkUndoReconstructPlan(bina){
+  const odas=binaLoklar(bina).filter(l=>l.level==='oda');
+  const odaSet=new Set(odas.map(o=>o.id));
+  const specs=DB.proje.specs.filter(s=>!s.is_deleted && s.bina===bina && (s.poz||'').trim() && (s.lokTargets||[]).some(t=>odaSet.has(t.lokId)));
+  const specIds=new Set(specs.map(s=>s.id));
+  const matIds=[...new Set(specs.map(s=>s.matId).filter(Boolean))].filter(mid=>{ const u=materialUsage(mid); return u.length && u.every(s=>specIds.has(s.id)); });
+  return {bina,isNew:false,katIds:[],odaIds:[...odaSet],specIds:[...specIds],matIds,sartStripOdas:[...odaSet],reconstruct:true};
+}
+// kayitli batch icin plan (tam geri alma: sartname kapsami fotograftan restore edilir)
+function bulkUndoBatchPlan(b){ return {bina:b.bina,isNew:b.isNew,katIds:(b.katIds||[]).slice(),odaIds:(b.odaIds||[]).slice(),
+  specIds:(b.specIds||[]).slice(),matIds:(b.matIds||[]).slice(),sartRestore:b.sartBefore||[],batchId:b.id}; }
+function openBulkUndoModal(preBina){
+  if(!guard('define'))return;
+  const batches=bulkBatchesGet().slice().reverse(); // en yeni ustte
+  // yeniden yapilandirma yapilabilecek binalar: oda dugumu olan binalar
+  const reconBinas=projBuildings().filter(b=>binaLoklar(b).some(l=>l.level==='oda'));
+  _BULKUNDO={mode:batches.length?'batch':'recon', bina:preBina||(batches[0]?batches[0].bina:(reconBinas[0]||'')), batches, reconBinas};
+  renderBulkUndoModal();
+}
+function bulkUndoSetMode(m){ _BULKUNDO.mode=m; if(m==='recon'&&!_BULKUNDO.reconBinas.includes(_BULKUNDO.bina)) _BULKUNDO.bina=_BULKUNDO.reconBinas[0]||''; renderBulkUndoModal(); }
+function bulkUndoSetBina(b){ _BULKUNDO.bina=b; renderBulkUndoModal(); }
+function bulkUndoSetBatch(id){ const b=_BULKUNDO.batches.find(x=>x.id===id); if(b){ _BULKUNDO.bina=b.bina; _BULKUNDO.batchId=id; } renderBulkUndoModal(); }
+function _bulkUndoCurrentPlan(){
+  if(_BULKUNDO.mode==='batch'){ const b=_BULKUNDO.batches.find(x=>x.id===(_BULKUNDO.batchId||(_BULKUNDO.batches[0]&&_BULKUNDO.batches[0].id))); return b?bulkUndoBatchPlan(b):null; }
+  return _BULKUNDO.bina?bulkUndoReconstructPlan(_BULKUNDO.bina):null;
+}
+function renderBulkUndoModal(){
+  closeModal();
+  const u=_BULKUNDO; const plan=_bulkUndoCurrentPlan();
+  const refs=plan?bulkSpecRefs(plan.specIds):null;
+  const matCount=plan?(plan.matIds||[]).length:0;
+  const modeTabs=`<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    ${u.batches.length?`<button class="def-sec-chip ${u.mode==='batch'?'on':''}" onclick="bulkUndoSetMode('batch')">Kayitli Kurulumlar (${u.batches.length})</button>`:''}
+    <button class="def-sec-chip ${u.mode==='recon'?'on':''}" onclick="bulkUndoSetMode('recon')">Bina Tarayarak</button>
+  </div>`;
+  let body='';
+  if(u.mode==='batch'){
+    const curId=u.batchId||(u.batches[0]&&u.batches[0].id);
+    body=`<div class="frow"><label>Geri alinacak kurulum</label><select onchange="bulkUndoSetBatch(this.value)">
+      ${u.batches.map(b=>`<option value="${b.id}" ${b.id===curId?'selected':''}>${esc(fmtDT(b.ts))} · ${esc(b.bina)} · ${(b.specIds||[]).length} kalem, ${(b.odaIds||[]).length} oda</option>`).join('')}
+    </select></div>`;
+  } else {
+    if(!u.reconBinas.length){ body=`<p style="color:var(--amber);font-size:12.5px">Oda yerlestirmesi olan bina bulunamadi - geri alinacak kurulum yok.</p>`; }
+    else body=`<div class="frow"><label>Bina</label><select onchange="bulkUndoSetBina(this.value)">
+      ${u.reconBinas.map(b=>`<option ${b===u.bina?'selected':''}>${esc(b)}</option>`).join('')}</select></div>
+      <p style="font-size:11.5px;color:var(--mute)">Bu binadaki tum oda dugumleri, o odalara yerlestirilmis poz kodlu kalemler ve yalniz bu kalemlerce kullanilan malzemeler kaldirilir. Kat dugumleri ve elle girdiginiz sartname kat kapsami korunur.</p>`;
+  }
+  const stat=(n,l,c)=>`<div><b style="${c?`color:${c}`:''}">${n}</b><span>${l}</span></div>`;
+  const preview=plan?`<div class="matd-stats" style="grid-template-columns:repeat(3,1fr);margin-top:6px">
+      ${stat(plan.odaIds.length,'oda silinecek')}
+      ${stat(plan.specIds.length,'kalem silinecek')}
+      ${stat(matCount,'malzeme silinecek')}
+    </div>
+    ${plan.katIds&&plan.katIds.length?`<p style="font-size:11.5px;color:var(--mute)">+ ${plan.katIds.length} kat dugumu da silinecek (bu kurulumla eklenmisti).</p>`:''}
+    ${refs&&refs.any?`<div class="matd-sec" style="color:var(--red)">Dikkat - Bagli Kayitlar</div>
+      <p style="font-size:12px;color:var(--red)">Silinecek kalemlerin ${refs.items?`${refs.items} stok girisi, `:''}${refs.ordLines?`${refs.ordLines} siparis satiri, `:''}${refs.raps?`${refs.raps} saha raporu `:''}kaydi var. Kalemler silinince bu kayitlar bir kaleme baglanamaz. Devam etmeden once bunlari kontrol edin.</p>`:`<p style="font-size:12px;color:var(--green)">Silinecek kalemlere bagli stok/siparis/rapor kaydi yok - guvenle geri alinabilir.</p>`}`:'<p style="color:var(--amber)">Silinecek kayit bulunamadi.</p>';
+  const canApply=plan&&(plan.odaIds.length+plan.specIds.length+matCount)>0;
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">
+    <div class="modal-head"><h3>Toplu Kurulumu Geri Al</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--mute);margin-bottom:10px">Bir toplu kurulumun eklediklerini kaldirir (kat/oda/kalem/malzeme). Islem geri alinamaz - once onizlemeyi kontrol edin.</p>
+      ${modeTabs}${body}${preview}
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Vazgec</button>
+      ${canApply?`<button class="btn del-btn" id="bu_apply" style="background:var(--red);color:#fff" onclick="applyBulkUndo()">Geri Al (${plan.odaIds.length+plan.specIds.length+matCount} kayit)</button>`:''}
+    </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function applyBulkUndo(){
+  const plan=_bulkUndoCurrentPlan(); if(!plan){ toast('Plan bulunamadi','err'); return; }
+  if(!guard('define',{bina:plan.bina}))return;
+  const refs=bulkSpecRefs(plan.specIds);
+  const msg=`${plan.bina}: ${plan.odaIds.length} oda, ${plan.specIds.length} kalem${(plan.matIds||[]).length?`, ${plan.matIds.length} malzeme`:''} kalici olarak silinecek.`
+    +(refs.any?`\n\nUYARI: bu kalemlere bagli ${refs.items} stok, ${refs.ordLines} siparis satiri, ${refs.raps} rapor kaydi var - bunlar bosta kalir.`:'')
+    +`\n\nDevam edilsin mi?`;
+  if(!confirm(msg))return;
+  const btn=document.getElementById('bu_apply'); if(btn){btn.disabled=true;btn.textContent='Geri aliniyor...';}
+  try{
+    if(plan.specIds.length){ await sbDeleteProjeSpecs(plan.specIds); const ss=new Set(plan.specIds); DB.proje.specs=DB.proje.specs.filter(s=>!ss.has(s.id)); }
+    const lokIds=[...plan.odaIds,...(plan.katIds||[])];
+    if(lokIds.length){ await sbDeleteProjeLokasyonlar(lokIds); const ls=new Set(lokIds); DB.proje.lokasyonlar=DB.proje.lokasyonlar.filter(l=>!ls.has(l.id)); }
+    if((plan.matIds||[]).length){ await sbDeleteProjeMaterials(plan.matIds); const ms=new Set(plan.matIds); DB.proje.materials=DB.proje.materials.filter(m=>!ms.has(m.id)); }
+    // sartname kapsami: kayitli batch -> tam restore; yeniden yapilandirma -> silinen odalari kapsamdan cikar
+    if(plan.sartRestore&&plan.sartRestore.length){
+      for(const b of plan.sartRestore){ const sr=(DB.proje.sartnames||[]).find(x=>x.id===b.id); if(!sr)continue;
+        sr.katIds=(b.katIds||[]).slice(); sr.odalar=(b.odalar||[]).slice(); await sbUpdateProjeSartname(sr.id,{...sr}); }
+    } else if((plan.sartStripOdas||[]).length){
+      const strip=new Set(plan.sartStripOdas);
+      for(const sr of (DB.proje.sartnames||[]).filter(x=>x.bina===plan.bina)){
+        const na=(sr.odalar||[]).filter(o=>!strip.has(o));
+        if(na.length!==(sr.odalar||[]).length){ sr.odalar=na; await sbUpdateProjeSartname(sr.id,{...sr}); }
+      }
+    }
+    if(plan.isNew){ // yeni olusturulan binayi da kaldir
+      DB.proje.buildings=DB.proje.buildings.filter(b=>b!==plan.bina);
+      try{ await sbDeleteProjeBuilding(plan.bina); }catch(e){}
+      if(DB.meta.binaGiris&&DB.meta.binaGiris[plan.bina]!=null){ const g={...DB.meta.binaGiris}; delete g[plan.bina]; DB.meta.binaGiris=g; await sbSetSetting('binaGiris',g); }
+    }
+    if(plan.batchId) await bulkBatchSave(bulkBatchesGet().filter(b=>b.id!==plan.batchId));
+    logAction('delete',`Toplu kurulum geri alindi: ${plan.bina} - ${plan.odaIds.length} oda, ${plan.specIds.length} kalem${(plan.matIds||[]).length?`, ${plan.matIds.length} malzeme`:''}`);
+    _BULKUNDO=null; closeModal(); render();
+    toast(`Geri alindi: ${plan.odaIds.length} oda, ${plan.specIds.length} kalem silindi`);
+  }catch(err){ console.error(err); toast('Geri alma hatasi: '+(err.message||err),'err'); if(btn){btn.disabled=false;btn.textContent='Geri Al';} }
 }
 async function flowAdd(bina,parentId,level,inpId){
   const iid=inpId||'fw_add';
