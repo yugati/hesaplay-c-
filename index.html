@@ -2102,14 +2102,14 @@ function exportBinaSpecExcel(){
   if(!PBINA||!PCAT||!PSPEC||PSPEC==='__all'){ toast("Once tek bir sartname acin","err"); return; }
   const specs=(DB.proje.specs||[]).filter(s=>!s.is_deleted && s.bina===PBINA && s.cat===PCAT && specGroupKey(s)===PSPEC).slice()
     .sort((a,b)=>(Number(a.poz)||0)-(Number(b.poz)||0)||(a.poz||'').localeCompare(b.poz||'','tr')||a.name.localeCompare(b.name,'tr'));
-  const rows=[["Poz No","Malzeme Ismi","Standart No","Urun Kodu","Marka","Birim","Miktar","Urun Agirligi (kg)","Not","Resim URL"]];
+  const rows=[["Poz No","Özel No","Malzeme Ismi","Standart No","Urun Kodu","Marka","Birim","Miktar","Urun Agirligi (kg)","Not","Resim URL"]];
   specs.forEach(sp=>{ const mt=sp.matId?getMaterial(sp.matId):null;
     const img=(mt&&mt.img&&/^https?:\/\//i.test(mt.img))?mt.img:'';
-    rows.push([sp.poz||'', sp.name||'', sp.standart||'', sp.code||'', sp.brand||'', sp.unit||(mt?mt.unit:'')||'', Number(sp.target)||0, sp.weight!=null?sp.weight:'', (mt?mt.note:'')||'', img]); });
-  if(specs.length===0) rows.push(['','','','','','','','','','']);
+    rows.push([sp.poz||'', sp.ozelNo||'', sp.name||'', sp.standart||'', sp.code||'', sp.brand||'', sp.unit||(mt?mt.unit:'')||'', Number(sp.target)||0, sp.weight!=null?sp.weight:'', (mt?mt.note:'')||'', img]); });
+  if(specs.length===0) rows.push(['','','','','','','','','','','']);
   const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:10},{wch:26},{wch:18},{wch:16},{wch:16},{wch:10},{wch:10},{wch:16},{wch:28},{wch:40}];
-  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:9}})};
+  ws['!cols']=[{wch:10},{wch:16},{wch:26},{wch:18},{wch:16},{wch:16},{wch:10},{wch:10},{wch:16},{wch:28},{wch:40}];
+  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:10}})};
   XLSX.utils.book_append_sheet(wb,ws,"Spesifikasyonlar");
   XLSX.writeFile(wb,`${PBINA}_${PCAT}_${PSPEC}_${new Date().toISOString().slice(0,10)}.xlsx`.replace(/[\\/:*?"<>|]/g,'-'));
   toast("Excel ciktisi indirildi");
@@ -4703,7 +4703,7 @@ function downloadBulkTemplate(){
     ['2.KAT','00UYB11R001','Koridor']
   ]),'Odalar');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
-    ['PROJE KODU','ODA KODU (ops.)','KAT (ops. - oda yoksa)','BOLUM (orn. Tava)','URUN ADI / GECIS ISMI','URUN KODU (opsiyonel)','ADET','SARTNAME KODU (ops. - bolum varsa otomatik)','BIRIM (opsiyonel)'],
+    ['OZEL NO (ops.)','ODA KODU (ops.)','KAT (ops. - oda yoksa)','BOLUM (orn. Tava)','URUN ADI / GECIS ISMI','URUN KODU (opsiyonel)','ADET','SARTNAME KODU (ops. - bolum varsa otomatik)','BIRIM (opsiyonel)'],
     ['00UYB12EM0044','','1.KAT','Tava','SRE-UO(1)ASVS-ZKD-D25-C4','','1','','adet'],
     ['00UYB12EM0051','00UYB10R001','','Tava','SRE-UL(1)ASVS-ZSD-100x100-C4','','1','','adet'],
     ['00UYB12EM0052','','2.KAT','','SRE-UL(1)ASVS-ZSD-150x150-C4','','2','AKU.0130.00UYB.0.EM.TB0002','adet']
@@ -4714,11 +4714,12 @@ function downloadBulkTemplate(){
     ['1) Katlar sayfasi: her satir bir kat. KOT bos birakilabilir. SARTNAMELER sutununa'],
     ['   virgulle sartname kodlari yazarsaniz kat o sartnamelerin kapsamina eklenir.'],
     ['2) Odalar sayfasi: her satir bir oda. KAT sutunu Katlar sayfasindaki adla ayni olmali.'],
-    ['3) Malzemeler sayfasi: her satir bir yerlestirme (orn. prohodka). PROJE KODU ayni olan'],
+    ['3) Malzemeler sayfasi: her satir bir yerlestirme (orn. prohodka). OZEL NO ayni olan'],
     ['   satirlar tek kaleme birlesir, adetler odalara/katlara dagitilir. URUN ADI kutuphanede'],
     ['   aranir (cift dilli adin tek yarisi da yeter, orn. sadece SRE-... kismi); yoksa yeni'],
-    ['   malzeme olarak eklenir. PROJE KODU kalemin Poz No su olur - raporcular sahada bu'],
-    ['   kodla arayip bulur.'],
+    ['   malzeme olarak eklenir. OZEL NO, ayni urunden cok oldugunda kullanilan sistematik'],
+    ['   takip numarasidir (POZ NO DEGIL - poz tekillik kuralina takilmaz); raporcular sahada'],
+    ['   bu no ile arayip bulur. Gercek poz varsa ayri POZ NO sutunu ekleyebilirsiniz.'],
     ['4) SARTNAME: kodu biliyorsaniz SARTNAME KODU sutununa yazin. Bilmiyorsaniz BOLUM'],
     ['   (orn. Tava, Topraklama, Aydinlatma) yazmaniz yeter: sistem KAT + BOLUM bilgisinden'],
     ['   dogru sartnameyi kendisi bulur (orn. 1.KAT + Tava -> 1-5 Tava sartnamesi). Ayni'],
@@ -4815,12 +4816,13 @@ function _bulkParse(wb,bina,isNew){
   const mRows=_sheetRows(wb,['Malzemeler','Malzeme','Materials']);
   if(mRows&&mRows.length>1){
     const pm=_hdrMap(mRows[0]);
-    const iPoz=pm('proje kodu','poz'), iOda=pm('oda kodu','oda'), iMKat=pm('kat'), iBol=pm('bolum','section'), iAd=pm('urun adi','gecis ismi','ad','name'),
+    // "OZEL NO" = sistematik takip no (poz DEGIL). Eski dosyalardaki "PROJE KODU" da ozel no'ya eslenir.
+    const iOzel=pm('ozel no','ozel_no','ozelno','özel no','proje kodu','ozel'), iPoz=pm('poz no','poz'), iOda=pm('oda kodu','oda'), iMKat=pm('kat'), iBol=pm('bolum','section'), iAd=pm('urun adi','gecis ismi','ad','name'),
           iKod=pm('urun kodu'), iAdet=pm('adet','miktar','quantity'), iSr=pm('sartname kodu','sartname'), iBirim=pm('birim','unit');
     const groups=new Map();
     for(let i=1;i<mRows.length;i++){ const row=mRows[i]; if(!row)continue;
-      const poz=iPoz>=0?String(row[iPoz]??'').trim():''; const ad=iAd>=0?String(row[iAd]??'').trim():'';
-      if(!poz&&!ad)continue;
+      const ozelNo=iOzel>=0?String(row[iOzel]??'').trim():''; const poz=iPoz>=0?String(row[iPoz]??'').trim():''; const ad=iAd>=0?String(row[iAd]??'').trim():'';
+      if(!ozelNo&&!poz&&!ad)continue;
       const odaKod=iOda>=0?String(row[iOda]??'').trim():'';
       const katNm=iMKat>=0?String(row[iMKat]??'').trim():'';
       const srKod=iSr>=0?String(row[iSr]??'').trim():'';
@@ -4840,17 +4842,19 @@ function _bulkParse(wb,bina,isNew){
       const sr=res.sr;
       const kod=iKod>=0?String(row[iKod]??'').trim():'';
       const birim=iBirim>=0?String(row[iBirim]??'').trim():'';
-      const gk=sr.id+'¦'+norm(poz)+'¦'+matKey(kod,ad);
-      if(!groups.has(gk)) groups.set(gk,{sr,poz,ad,kod,birim,rows:[]});
+      // gruplama kimligi: ozel no varsa onunla (poz'un tekillik kurallarina takilmaz), yoksa poz
+      const gk=sr.id+'¦o:'+norm(ozelNo)+'¦p:'+norm(poz)+'¦'+matKey(kod,ad);
+      if(!groups.has(gk)) groups.set(gk,{sr,ozelNo,poz,ad,kod,birim,rows:[]});
       groups.get(gk).rows.push({odaId:oda?oda.id:(kat?kat.id:null),isOda:!!oda,odaKod,adet});
     }
     groups.forEach(g=>{
-      // ayni bina+sartname+poz'da ayni urun zaten varsa atla (saveSpec'teki tekillik kurali);
-      // urun kutuphanede cift dilli adla kayitliysa karsilastirma o kayit uzerinden yapilir
+      // ayni bina+sartname+(ozel no/poz)'da ayni urun zaten varsa atla; urun kutuphanede cift
+      // dilli adla kayitliysa karsilastirma o kayit uzerinden yapilir
       const looseMt=findMaterialLoose(g.kod,g.ad);
       const gKey=looseMt?matKey(looseMt.code,looseMt.name):matKey(g.kod,g.ad);
+      const gOzel=(g.ozelNo||'').trim().toLowerCase(), gPoz=(g.poz||'').trim().toLowerCase();
       const exists=DB.proje.specs.some(s=>!s.is_deleted&&s.bina===bina&&s.grup===g.sr.code
-        &&matKey(s.code,s.name)===gKey&&(s.poz||'').trim().toLowerCase()===g.poz.toLowerCase());
+        &&matKey(s.code,s.name)===gKey&&(s.ozelNo||'').trim().toLowerCase()===gOzel&&(s.poz||'').trim().toLowerCase()===gPoz);
       if(exists){ p.skip.spec++; return; }
       p.specs.push(g);
       if(!p.sartKat.has(g.sr.id)) p.sartKat.set(g.sr.id,{sr:g.sr,katNames:[],odaIds:[],katDirect:[]});
@@ -4912,7 +4916,7 @@ async function applyBulkSetup(){
       const lokTargets=g.rows.filter(r=>r.odaId).map(r=>({lokId:r.odaId,target:r.adet}));
       const target=g.rows.reduce((s,r)=>s+r.adet,0);
       newSpecs.push({id:uid(),cat:g.sr.section,name:mt.name,code:mt.code,brand:mt.brand||'',target,
-        unit:g.birim||mt.unit||'adet',bina:p.bina,grup:g.sr.code,poz:g.poz,standart:mt.standart||'',
+        unit:g.birim||mt.unit||'adet',bina:p.bina,grup:g.sr.code,poz:g.poz||'',ozelNo:g.ozelNo||'',standart:mt.standart||'',
         weight:mt.weight!=null?mt.weight:null,tags:(mt.tags||[]).slice(),img:mt.img||null,matId:mt.id,
         openQty:false,lokTargets});
     });
@@ -6248,7 +6252,7 @@ function _findSheet(wb,kind){
   return null;
 }
 function _firstDataRow(rows){ // baslik satiri: hucrelerden biri TAM olarak bir anahtar sutun adi olan ilk satir
-  const keys=new Set(['material_code','materialcode','spec_external_id','specexternalid','kategori','category','malzeme adi','malzeme ismi','malzeme','target_qty','hedef miktar','hedef','miktar','material_name','poz no','urun kodu']);
+  const keys=new Set(['material_code','materialcode','spec_external_id','specexternalid','kategori','category','malzeme adi','malzeme ismi','malzeme','target_qty','hedef miktar','hedef','miktar','material_name','poz no','ozel no','özel no','urun kodu']);
   for(let i=0;i<Math.min(rows.length,8);i++){ const line=rows[i].map(x=>norm(String(x).trim())); if(line.some(c=>keys.has(c))) return i; }
   return 0;
 }
@@ -6327,6 +6331,7 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
   const h=_firstDataRow(rows); const pick=_hdrMap(rows[h]);
   const iExt=pick('spec_external_id','specexternalid','spec id','spec_id');
   const iPoz=pick('poz','poz no','poz_no','pos','pos no');
+  const iOzel=pick('ozel no','ozel_no','ozelno','özel no','ozel');
   const iCode=pick('material_code','materialcode','urun kodu','kod','kodu','spek no','code');
   const iName=pick('material_name','materialname','malzeme adi','malzeme ismi','malzeme','ad','name');
   const iBina=pick('building','bina');
@@ -6353,6 +6358,7 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
     const row=rows[r]; if(!row || row.every(c=>String(c).trim()==='')) continue;
     const ext=useExt?String(row[iExt]??'').trim():'';
     const poz=iPoz>=0?String(row[iPoz]??'').trim():'';
+    const ozelNo=iOzel>=0?String(row[iOzel]??'').trim():'';
     const code=iCode>=0?String(row[iCode]??'').trim():'';
     const name=iName>=0?String(row[iName]??'').trim():'';
     const tgtRaw=String(row[iTgt]??'').trim();
@@ -6384,8 +6390,16 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
     // ama ayni urun FARKLI Poz No'larla birden fazla kez gecebilir (bkz. Sartname Kalemi modal aciklamasi).
     const ctxKey=insertBina.toLowerCase()+'|'+sec.toLowerCase()+'|'+grup.toLowerCase();
     const pozKey=(poz||'').toLowerCase();
-    const skey=(useExt&&ext)?('e:'+ext.toLowerCase()):('m:'+ctxKey+'|'+matKey(code,name)+'|p:'+pozKey);
-    if(seen.has(skey)){ const dupLbl=code?`"${code}" urun kodu`:`"${name}" urun adi`; report.errors.push(`Spek satir ${r+1}: ${dupLbl}${poz?` (Poz ${poz})`:''} bu sartnamede birden fazla olamaz (${insertBina}/${sec}/${grup})`); continue; }
+    const ozelKey=(ozelNo||'').toLowerCase();
+    // kimlik: ozel no varsa ONUNLA da ayrilir - farkli ozel no -> farkli kalem; ayni urun ozel no'suz
+    // ise poz ile ayrilir (eski davranis).
+    const skey=(useExt&&ext)?('e:'+ext.toLowerCase()):('m:'+ctxKey+'|'+matKey(code,name)+'|p:'+pozKey+'|o:'+ozelKey);
+    if(seen.has(skey)){
+      // ayni (urun + ozel no) tekrari HATA DEGIL: ozel no zaten cok sayida ayni urun icin sistematik
+      // numaradir - ilk kayit tutulur, tekrar sessizce birlestirilir (raporda bilgi olarak gosterilir).
+      if(ozelNo){ report.ozelMerged=(report.ozelMerged||0)+1; continue; }
+      const dupLbl=code?`"${code}" urun kodu`:`"${name}" urun adi`; report.errors.push(`Spek satir ${r+1}: ${dupLbl}${poz?` (Poz ${poz})`:''} bu sartnamede birden fazla olamaz (${insertBina}/${sec}/${grup})`); continue;
+    }
     seen.add(skey);
     // mevcut spec bul: once extId; sonra urun kodu (varsa) / ad uyumu (matKey) + poz.
     // ONEMLI: sadece Poz No'ya bakip urun adini/kodunu yok sayan bir eslesme YAPILMAZ -
@@ -6394,12 +6408,12 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
     // (bos veya dolu) ayni urun+kapsam zaten varsa yeni satir ACILMAZ, o kayit guncellenir.
     let existing;
     if(useExt&&ext){ existing=DB.proje.specs.find(s=>(s.extId||'').toLowerCase()===ext.toLowerCase()); }
-    if(!existing){ existing=DB.proje.specs.find(s=>matKey(s.code,s.name)===matKey(code,name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup && (pozKey?(s.poz||'').trim().toLowerCase()===pozKey:true)); }
+    if(!existing){ existing=DB.proje.specs.find(s=>matKey(s.code,s.name)===matKey(code,name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup && (ozelKey?(s.ozelNo||'').trim().toLowerCase()===ozelKey:true) && (pozKey?(s.poz||'').trim().toLowerCase()===pozKey:true)); }
     // ONARIM: onceki bir hatali import/coklu sekme yuzunden ayni urun+kapsam icin birden
     // fazla kayit olusmus olabilir (bkz dedupeProjeSpecs). Ilkini "existing" olarak kullan,
     // geri kalanini mukerrer sayip sil - boylece her import kendi kapsamini kendiliginden onarir.
     if(existing){
-      const dupMatch=DB.proje.specs.filter(s=>s.id!==existing.id && matKey(s.code,s.name)===matKey(existing.code,existing.name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup && (s.poz||'').trim().toLowerCase()===pozKey);
+      const dupMatch=DB.proje.specs.filter(s=>s.id!==existing.id && matKey(s.code,s.name)===matKey(existing.code,existing.name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup && (s.ozelNo||'').trim().toLowerCase()===ozelKey && (s.poz||'').trim().toLowerCase()===pozKey);
       if(dupMatch.length){
         const dupIds=dupMatch.map(s=>s.id);
         DB.proje.specs=DB.proje.specs.filter(s=>!dupIds.includes(s.id));
@@ -6440,12 +6454,12 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
         if(Number(existing.target)!==tgt) report.errors.push(`${existing.code||existing.name}: Excel hedefi (${tgt}) yok sayildi - kalemin oda dagilimi toplami (${existing.target}) korundu`);
       }
       else { existing.target=tgt; existing.exclude=exclude; }
-      if(useExt&&ext)existing.extId=ext; if(poz)existing.poz=poz;
+      if(useExt&&ext)existing.extId=ext; if(poz)existing.poz=poz; if(ozelNo)existing.ozelNo=ozelNo;
       existing.standart=mat.standart||''; existing.weight=mat.weight!=null?mat.weight:null; existing.tags=(mat.tags||[]).slice(); existing.img=mat.img||null;
       report.specUpdated++; touched.add(existing.id);
     } else { // INSERT — bina yoksa defaultBina'yi kullan
       const newId=uid();
-      DB.proje.specs.push({id:newId,extId:(useExt?ext:''),poz,code:code||mat.code,name:name||mat.name,target:tgt,unit,cat,bina:insertBina,grup:grup||(cat+' Spek-1'),
+      DB.proje.specs.push({id:newId,extId:(useExt?ext:''),poz,ozelNo,code:code||mat.code,name:name||mat.name,target:tgt,unit,cat,bina:insertBina,grup:grup||(cat+' Spek-1'),
         standart:mat.standart||'',weight:mat.weight!=null?mat.weight:null,tags:(mat.tags||[]).slice(),img:mat.img||null,matId:mat.id,brand:mat.brand||'',exclude});
       report.specCreated++; touched.add(newId);
     }
@@ -6940,6 +6954,7 @@ function showImportReport(rep,baslik){
       ${stat('Yeni spesifikasyon','+'+rep.specCreated,'var(--green)')}
       ${stat('Guncellenen spesifikasyon',rep.specUpdated,'var(--blue)')}
       ${stat('Silinen spesifikasyon',rep.specDeleted,'var(--red)')}
+      ${rep.ozelMerged?stat('Ayni ozel no ile birlesen satir',rep.ozelMerged,'var(--amber)'):''}
     </div>
     ${total===0&&!rep.errors.length?'<p style="color:var(--mute);text-align:center;font-size:13px">Islenecek yeni veri bulunamadi.</p>':''}
     ${errHtml}
@@ -6982,7 +6997,7 @@ function renderSpec(){
   let sections='';
   const q=SEARCH;
   groupKeys.forEach(k=>{ const g=groups[k];
-    let list=g.specs.filter(sp=>!q||matchText(sp.name+' '+(sp.code||''), q));
+    let list=g.specs.filter(sp=>!q||matchText(sp.name+' '+(sp.code||'')+' '+(sp.poz||'')+' '+(sp.ozelNo||''), q));
     if(list.length===0) return;
     // arama aktifken en alakali sonuc (birebir alt dize) en ustte gelsin;
     // sadece harf-sirasi (fuzzy) eslesenler alfabetik siralamada geriye dusmesin diye en sona atilir
@@ -7525,7 +7540,8 @@ function openSpecModal(idOrNull,prefill){ if(!guard('editSpec',{bina:(prefill&&p
     <div class="frow"><label>Malzeme *  <span class="t-meta">(kutuphaneden secin - bilgiler otomatik gelir)</span></label>
       <div id="s_matBox">${specMatBoxHtml()}</div>
     </div>
-    <div class="frow two"><div><label>Poz No  <span class="t-meta">(bu sartnamedeki satir no)</span></label><input id="s_poz" value="${sp?esc(sp.poz||''):''}" placeholder="orn. 191"></div><div><label>Hedef Miktar *</label><input id="s_target" type="number" step="any" value="${sp&&!sp.openQty?sp.target:''}" placeholder="0" ${sp&&sp.openQty?'disabled':''}></div></div>
+    <div class="frow two"><div><label>Poz No  <span class="t-meta">(bu sartnamedeki satir no)</span></label><input id="s_poz" value="${sp?esc(sp.poz||''):''}" placeholder="orn. 191"></div><div><label>Özel No  <span class="t-meta">(sistematik takip no - orn. 00UYB12EM0044)</span></label><input id="s_ozelno" value="${sp?esc(sp.ozelNo||''):''}" placeholder="varsa ozel no"></div></div>
+    <div class="frow"><label>Hedef Miktar *</label><input id="s_target" type="number" step="any" value="${sp&&!sp.openQty?sp.target:''}" placeholder="0" ${sp&&sp.openQty?'disabled':''}></div>
     <div id="s_lokWrap"></div>
     <div class="frow"><label style="display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none"><input type="checkbox" id="s_open" style="width:auto;margin:0" ${sp&&sp.openQty?'checked':''} onchange="const t=document.getElementById('s_target');t.disabled=this.checked;if(this.checked)t.value='';"> Miktar henuz belli degil (acik kalem)</label>
       <p style="font-size:11px;color:var(--dim);font-family:var(--mono);margin-top:5px">Sartnamede olmayan ama bolumu tamamlamak icin gereken sarf malzemeler icin. Alimlar sinirsiz girilir, kalem ilerleme yuzdesine karismaz; miktar netlesince duzenleyip hedef girin.</p></div>
@@ -7645,7 +7661,7 @@ function editSpecMaterial(){
   const gv=id=>{ const el=document.getElementById(id); return el?el.value:''; };
   window._specReturn={ id:(window._specEditId||null),
     bina:gv('s_bina'), cat:gv('s_cat'), grup:gv('s_grup'),
-    poz:gv('s_poz'), target:gv('s_target'), unit:gv('s_unit'),
+    poz:gv('s_poz'), ozelNo:gv('s_ozelno'), target:gv('s_target'), unit:gv('s_unit'),
     open:!!(document.getElementById('s_open')&&document.getElementById('s_open').checked),
     lokRows:(_specLokRows||[]).map(r=>({lokId:r.lokId,target:r.target})), matId };
   window._afterMatSave=(mt)=>reopenSpecAfterMat(mt);
@@ -7665,6 +7681,7 @@ function reopenSpecAfterMat(mt){
   if(mt){ window._specMat={matId:mt.id,code:mt.code,ad:mt.name,brand:mt.brand||'',cat:mt.cat||'',unit:mt.unit||'',img:mt.img||null,standart:mt.standart||'',weight:mt.weight!=null?mt.weight:null,tags:(mt.tags||[]).slice()};
     modalImg=mt.img||null; const box=document.getElementById('s_matBox'); if(box)box.innerHTML=specMatBoxHtml(); }
   const pz=document.getElementById('s_poz'); if(pz)pz.value=r.poz||'';
+  const on=document.getElementById('s_ozelno'); if(on)on.value=r.ozelNo||'';
   const o=document.getElementById('s_open'); if(o)o.checked=!!r.open;
   const t=document.getElementById('s_target'); if(t){ t.disabled=!!r.open; t.value=r.open?'':(r.target||''); }
   const u=document.getElementById('s_unit'); if(u){ if(mt&&mt.unit){u.value=mt.unit;u.setAttribute('readonly','');u.classList.add('ro-auto');} else {u.removeAttribute('readonly');u.classList.remove('ro-auto');u.value=r.unit||'';} }
@@ -7678,6 +7695,7 @@ async function saveSpec(id){ if(!guard('editSpec'))return;
   const target=document.getElementById('s_target').value;
   const mat=window._specMat;
   const poz=document.getElementById('s_poz').value.trim();
+  const ozelNo=(document.getElementById('s_ozelno')?document.getElementById('s_ozelno').value:'').trim();
   const unitInput=document.getElementById('s_unit').value.trim();
   const openQty=!!(document.getElementById('s_open')&&document.getElementById('s_open').checked);
   if(!mat||(!mat.code&&!mat.ad)){toast("Malzeme secimi zorunlu - kutuphaneden secin","err");return;}
@@ -7706,7 +7724,7 @@ async function saveSpec(id){ if(!guard('editSpec'))return;
   // bolum, malzemenin degil kalemin ozelligi: ayni malzeme (orn. krose) farkli bolumlerde kullanilabilir
   // parcali dagilim girildiyse hedef = dagilim toplami (toplama zinciri: oda->fragment->kat->sartname)
   const finalTarget=openQty?0:(lokRows.length?lokRows.reduce((s,r)=>s+r.target,0):Number(target));
-  const data={cat,name:mt.name,code:mt.code,brand:mt.brand||'',target:finalTarget,unit:unitInput||mt.unit||mat.unit||'',bina,grup,poz,
+  const data={cat,name:mt.name,code:mt.code,brand:mt.brand||'',target:finalTarget,unit:unitInput||mt.unit||mat.unit||'',bina,grup,poz,ozelNo,
     standart:mt.standart||'',weight:mt.weight!=null?mt.weight:null,tags:(mt.tags||[]).slice(),img:mt.img||null,matId:mt.id,openQty,lokTargets:lokRows};
   // ACIK KALEM degismezi: openQty ise exclude de true olur (tum yuzde hesaplari exclude'u atladigi
   // icin acik kalem hicbir toplami bozamaz). Acik kalemden normale donuste otomatik konan exclude kalkar.
@@ -7789,6 +7807,8 @@ function openSpecDetail(id){
           <div class="spec-detail-tags">
             <span class="cat-tag" style="background:${c2}22;color:${c2}">${esc(sp.cat)}</span>
             ${sp.code?`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(sp.code)}</span>`:''}
+            ${sp.ozelNo?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber);font-family:var(--mono)" title="Özel No - sistematik takip no">Özel ${esc(sp.ozelNo)}</span>`:''}
+            ${sp.poz?`<span class="cat-tag" style="background:var(--dim)33;color:var(--mute);font-family:var(--mono)" title="Poz No">Poz ${esc(sp.poz)}</span>`:''}
             ${sp.bina?`<span class="bina-tag" style="background:${buildingColor(sp.bina)}22;color:${buildingColor(sp.bina)};border:1px solid ${buildingColor(sp.bina)}55">${esc(sp.bina)}</span>`:''}
           </div>
           <div class="spec-detail-grup">${icoDoc()} ${esc(specGroupKey(sp))}</div>
@@ -9044,7 +9064,7 @@ function rLinePick(bi,li){
   const specs=DB.proje.specs.filter(s=>!s.is_deleted && s.bina===bina && (!lockedCat||s.cat===lockedCat));
   // POZ NO (proje yerlesim kodu, orn. 00UYB12EM0051) da aranabilir ve listede gorunur:
   // raporcu sahada elindeki tekil yerlesim koduyla dogru kalemi bulur, yuzdeler o kaleme isler
-  const specSrc=specs.map(s=>({ad:s.name, alt:(s.code||'')+' '+(s.poz||'')+' '+specGroupKey(s), sub:[s.poz?'Poz '+s.poz:'',s.code,specGroupKey(s),s.unit].filter(Boolean).join(' · '), img:specImgOf(s), obj:{specId:s.id,matId:s.matId||null,code:s.code||'',ad:s.name,name:s.name,unit:s.unit||'',cat:s.cat||'',bina:s.bina,grup:specGroupKey(s)}}));
+  const specSrc=specs.map(s=>({ad:s.name, alt:(s.code||'')+' '+(s.poz||'')+' '+(s.ozelNo||'')+' '+specGroupKey(s), sub:[s.ozelNo?'Özel '+s.ozelNo:'',s.poz?'Poz '+s.poz:'',s.code,specGroupKey(s),s.unit].filter(Boolean).join(' · '), img:specImgOf(s), obj:{specId:s.id,matId:s.matId||null,code:s.code||'',ad:s.name,name:s.name,unit:s.unit||'',cat:s.cat||'',bina:s.bina,grup:specGroupKey(s)}}));
   const specMatIds=new Set(specs.map(s=>s.matId).filter(Boolean));
   const libSrc=matLibSrc().filter(m=>!specMatIds.has(m.obj.matId)).map(m=>({...m, obj:{...m.obj, specId:null, bina, grup:bk.sart||''}}));
   const src=[...specSrc, ...libSrc];
@@ -9703,8 +9723,8 @@ function nordSetSart(v){ NORD.sart=v||''; render(); }
 function nordSpecSrc(){
   const specs=DB.proje.specs.filter(s=>!s.is_deleted && (s.bina||'')===(NORD.bina||'') && nordSartMatch(s))
     .map(s=>{ const mt=specMaterial(s); const img=specImgOf(s); const brand=(mt&&mt.brand)||s.brand||'';
-      return {ad:s.name||s.code||'?', alt:(s.code||'')+' '+(s.cat||'')+' '+specGroupKey(s),
-        sub:[s.code,brand,s.cat,specGroupKey(s),s.unit].filter(Boolean).join(' · '), img,
+      return {ad:s.name||s.code||'?', alt:(s.code||'')+' '+(s.poz||'')+' '+(s.ozelNo||'')+' '+(s.cat||'')+' '+specGroupKey(s),
+        sub:[s.ozelNo?'Özel '+s.ozelNo:'',s.code,brand,s.cat,specGroupKey(s),s.unit].filter(Boolean).join(' · '), img,
         obj:{specId:s.id,code:s.code||'',ad:s.name,cat:s.cat||'',unit:s.unit||'',grup:specGroupKey(s),img,brand}};});
   const alts=activeAltsFor(NORD.bina).filter(({sp})=>nordSartMatch(sp)).map(({alt:a,sp})=>{ const la=altLive(a); return {
     ad:la.name||la.code||'?',
