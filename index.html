@@ -1740,6 +1740,7 @@ function migrate(){
 let SEC="proje", TAB="spec", SEARCH="", GFILTER="", LOGVIEW="akis";
 let PBINA="", PCAT="", PSPEC="", PLIB=false, PDEF=false, PORD=false, PCOMP=false, PEKIP=false, PNEWORD=false, PBINAY=false, ORDBINA="";  // proje filtreleri + kutuphane + tanimlar + tum siparisler + sirketler + ekipler + siparis ekleme sayfasi + bina yonetimi
 let ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:''}; // Tum Siparisler yapisal filtreleri (bolum/sartname/malzeme/kod/sirket/tarih/pdf) - ORDBINA ile birlikte calisir
+let ORDVIEW='orders'; // Tum Siparisler alt gorunumu: 'orders' (kesinlesmis) | 'drafts' (taslaklar)
 let SPECVIEW=localStorage.getItem('specview')==='list'?'list':'grid';     // sartname kalemleri gorunumu: 'grid' (kart) | 'list' (satir) - kullanicinin son secimi hatirlanir
 function setSpecView(v){ SPECVIEW=v; try{localStorage.setItem('specview',v);}catch(e){} render(); }
 let CURRENT_USER=null;   // giris yapan kullanici
@@ -2530,7 +2531,8 @@ function openDefinitions(){ PDEF=true; PUSERS=false; PAUDIT=false; PLIB=false; P
 function closeDefinitions(){ PDEF=false; render(); }
 
 /* ============ TUM SIPARISLER (bina filtreli) ============ */
-function openAllOrders(){ PORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PCOMP=false; PEKIP=false; PNEWORD=false; PBINAY=false; ORDBINA=""; ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:''}; SEARCH=""; render(); }
+function openAllOrders(){ PORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PCOMP=false; PEKIP=false; PNEWORD=false; PBINAY=false; ORDBINA=""; ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:''}; ORDVIEW='orders'; SEARCH=""; render(); }
+function setOrdView(v){ ORDVIEW=v; SEARCH=""; render(); }
 function closeAllOrders(){ PORD=false; render(); }
 
 /* ============ SIRKETLER (proje siparis/fatura girisinde secilir) ============ */
@@ -2803,7 +2805,24 @@ function allOrdersFiltered(){
     return true;
   });
 }
+// TASLAKLAR: kesinlesmemis siparisler. proje.orders'a GIRMEZ, stok/ilerleme URETMEZ;
+// DB.meta.orderDrafts icinde (app_settings) saklanir - "Tum Siparisler" altinda ayri sekme.
+function orderDraftsGet(){ return (DB.meta&&DB.meta.orderDrafts)||[]; }
+async function orderDraftsSave(list){ if(!DB.meta)DB.meta={}; DB.meta.orderDrafts=list; try{ await sbSetSetting('orderDrafts',list); }catch(e){ console.warn('Taslaklar kaydedilemedi:',e); } }
+// yeni (NORD) + eski (modal) siparis taslaklarini birlestirip src etiketiyle dondurur
+function orderDraftsAll(){
+  const nord=orderDraftsGet().map(d=>({...d,src:'nord'}));
+  const legacy=(typeof draftsGet==='function'?draftsGet('order'):[]).filter(d=>d&&d.src!=='nord').map(d=>({...d,src:'modal'}));
+  return nord.concat(legacy).sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
+}
 function renderAllOrders(){
+  // yeni tam-sayfa taslaklari (orderDrafts) + eski modal taslaklari (order_drafts) tek listede
+  const drafts=orderDraftsAll();
+  const tabs=`<div style="display:flex;gap:8px;margin:4px 0 14px">
+    <button class="def-sec-chip ${ORDVIEW==='orders'?'on':''}" onclick="setOrdView('orders')">Siparisler (${(DB.proje.orders||[]).length})</button>
+    <button class="def-sec-chip ${ORDVIEW==='drafts'?'on':''}" onclick="setOrdView('drafts')">Taslaklar (${drafts.length})</button>
+  </div>`;
+  if(ORDVIEW==='drafts') return renderOrderDrafts(tabs,drafts);
   const all=(DB.proje.orders||[]).slice();
   const list=allOrdersFiltered();
   // filtre secenekleri MEVCUT verilerden dolar: binalar, sartnameler, sirketler
@@ -2857,10 +2876,51 @@ function renderAllOrders(){
   return `<div class="sel-wrap" style="max-width:1200px">
     <div class="sel-bc"><button onclick="closeAllOrders()">${icoArr('left')} Binalara Don</button></div>
     <div class="sel-head"><h2>Tum Siparisler</h2><p>Tum binalardaki siparis ve faturalar. Asagidaki alanlarla coklu filtre uygulayabilirsiniz.</p></div>
+    ${tabs}
     <div class="toolbar">${searchBox('Siparis no, bina, urun, sirket ara...')}
       <button class="btn btn-grid" onclick="exportAllOrdersExcel()">${icoXls()} Excel</button></div>
     ${filterbar}
     ${sumline}
+    ${cards}`;
+}
+// Taslaklar sekmesi: kesinlesmemis siparisler - Devam Et (editore yukle) / Sil
+function renderOrderDrafts(tabs,drafts){
+  let cards='';
+  if(!drafts.length){
+    cards=`<div class="empty"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg><p>Henuz taslak yok</p><span style="font-size:12px">Siparis Ekle sayfasinda "Taslak Kaydet" ile kesinlestirmeden saklarsiniz</span></div>`;
+  } else {
+    drafts.forEach(d=>{
+      const bina=d.bina||d.newBina||'';
+      const validLines=(d.lines||[]).filter(l=>l.specId&&Number(l.qty)>0);
+      const qty=validLines.reduce((s,l)=>s+Number(l.qty),0);
+      const col=buildingColor(bina);
+      const comp=d.newCompany||((DB.companies||[]).find(c=>c.id===d.companyId)||{}).ad||'';
+      const named=(d.lines||[]).filter(l=>l.ad);
+      const urunOzet=named.slice(0,3).map(l=>esc(String(l.ad).split('/').pop().trim())).join(', ')+(named.length>3?` +${named.length-3} urun`:'');
+      cards+=`<div class="order-card" style="border-style:dashed" onclick="nordOpenDraftRoute('${d.src}','${d.id}')">
+        <div class="order-card-top">
+          <div class="order-no">${icoDoc()} <b>${esc(d.no||'(no yok)')}</b> <span class="cat-tag" style="background:var(--amber)22;color:var(--amber);margin-left:4px">TASLAK</span>${d.src==='modal'?'<span class="cat-tag" style="background:var(--dim)33;color:var(--mute);margin-left:3px">eski form</span>':''}</div>
+          <span class="order-date">${d.savedAt?fmtDate(d.savedAt):''}</span>
+        </div>
+        <div class="order-meta" style="margin-top:8px">
+          <span class="bina-tag" style="background:${col}22;color:${col};border:1px solid ${col}55">${esc(bina||'-')}</span>
+          ${comp?`<span class="cat-tag" style="background:#a855f722;color:#a855f7">${esc(comp)}</span>`:''}
+          ${d.savedBy?`<span class="t-meta">${icoUserSm()} ${esc(d.savedBy)}</span>`:''}
+        </div>
+        <div class="order-urunler">${urunOzet||'<span class="t-meta">urun secilmemis</span>'}</div>
+        <div class="order-foot"><span>${validLines.length} gecerli kalem · ${fmtNum(qty)} birim</span>
+          <span style="display:flex;gap:6px">
+            <button class="mini-btn" title="Devam et" onclick="event.stopPropagation();nordOpenDraftRoute('${d.src}','${d.id}')">${icoChevron()}</button>
+            <button class="mini-btn del" title="Taslagi sil" onclick="event.stopPropagation();nordDelDraftRoute('${d.src}','${d.id}')">${icoTrash()}</button>
+          </span></div>
+      </div>`;
+    });
+    cards=`<div class="order-grid">${cards}</div>`;
+  }
+  return `<div class="sel-wrap" style="max-width:1200px">
+    <div class="sel-bc"><button onclick="closeAllOrders()">${icoArr('left')} Binalara Don</button></div>
+    <div class="sel-head"><h2>Tum Siparisler</h2><p>Kesinlestirilmemis siparis taslaklari. Bir taslak stok/ilerlemeyi etkilemez; "Devam Et" ile acip kaydettiginizde gercek siparise donusur.</p></div>
+    ${tabs}
     ${cards}`;
 }
 function exportAllOrdersExcel(){
@@ -9531,7 +9591,7 @@ function openNewOrderPage(){
   if(!guard('order'))return;
   if(DB.proje.specs.filter(s=>!s.is_deleted).length===0){ toast("Once sartname kalemleri tanimlanmali","err"); return; }
   const bins=binaOptsFor('').filter(b=>canSeeBuilding(b));
-  NORD={no:'',date:new Date().toISOString().slice(0,10),bina:bins[0]||'',sart:'',companyId:'',newCompany:'',pdf:null,lines:[_nordEmptyLine()],editId:null};
+  NORD={no:'',date:new Date().toISOString().slice(0,10),bina:bins[0]||'',sart:'',companyId:'',newCompany:'',pdf:null,lines:[_nordEmptyLine()],editId:null,draftId:null};
   PNEWORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PBINAY=false; SEARCH="";
   render();
 }
@@ -9587,7 +9647,7 @@ function openEditOrderPage(orderId){
     return {specId:l.specId||'',altId:l.altId||'',code:l.code||'',ad:l.ad||'',cat:'',unit:l.unit||'',grup:l.grup||'',lokId:l.lokId||'',img:null,brand:'',qty:Number(l.qty)||'',raw:l.specId?'':((l.code?l.code+' ':'')+(l.ad||''))};
   });
   NORD={no:o.no||'',date:o.date?new Date(o.date).toISOString().slice(0,10):new Date().toISOString().slice(0,10),
-    bina:o.bina||'',sart:'',companyId,newCompany,pdf:o.pdf||null,lines:lines.length?lines:[_nordEmptyLine()],editId:orderId};
+    bina:o.bina||'',sart:'',companyId,newCompany,pdf:o.pdf||null,lines:lines.length?lines:[_nordEmptyLine()],editId:orderId,draftId:null};
   PNEWORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PBINAY=false; SEARCH="";
   render();
 }
@@ -9808,9 +9868,12 @@ function nordSummaryHtml(){
   if(pending) warn+=`<span class="nord-pill err">${pending} satir urun secimi bekliyor</span>`;
   if(noQty) warn+=`<span class="nord-pill err">${noQty} satirda miktar eksik</span>`;
   if(dupRows) warn+=`<span class="nord-pill err">${dupRows} satir mukerrer urun</span>`;
-  return `<div class="nord-sum-left"><b>${ok.length}</b> gecerli satir · toplam <b>${fmtNum(totQty)}</b> birim ${warn}</div>
+  // Taslak butonu: kesinlesmemis siparisleri saklamak icin - gercek siparis duzenlerken (editId) gizli
+  const draftBtn=NORD.editId?'':`<button class="btn btn-ghost" onclick="nordSaveDraft()" title="Kesinlestirmeden sakla - stok/ilerlemeyi etkilemez, Taslaklar sekmesinde durur">${NORD.draftId?'Taslagi Guncelle':'Taslak Kaydet'}</button>`;
+  return `<div class="nord-sum-left"><b>${ok.length}</b> gecerli satir · toplam <b>${fmtNum(totQty)}</b> birim ${NORD.draftId?'<span class="nord-pill" style="background:var(--amber)22;color:var(--amber)">taslak</span>':''} ${warn}</div>
     <div class="nord-sum-right">
       <button class="btn btn-ghost" onclick="nordClear()">Temizle</button>
+      ${draftBtn}
       <button class="btn btn-order" ${ok.length?'':'disabled style="opacity:.5;cursor:not-allowed"'} onclick="saveNewOrder()">${icoDoc()} ${NORD.editId?`Degisiklikleri Kaydet (${ok.length})`:`Siparisi Kaydet & Stok Ekle (${ok.length})`}</button>
     </div>`;
 }
@@ -9929,8 +9992,55 @@ async function saveNewOrder(){
     await Promise.all([sbInsertProjeItems(newItems),sbInsertProjeOrder(order)]);
     logAction('order','Fatura '+no+': '+lines.length+' urun - '+bina+(companyName?' - '+companyName:''));
   }
-  PNEWORD=false; NORD=null; PORD=true; ORDBINA=bina;
+  // bir taslaktan kesinlestiyse o taslak artik gercek siparis oldu - taslaklardan cikar
+  if(NORD.draftId){ await orderDraftsSave(orderDraftsGet().filter(d=>d.id!==NORD.draftId)); }
+  PNEWORD=false; NORD=null; PORD=true; ORDBINA=bina; ORDVIEW='orders';
   render(); toast(editId?`Siparis guncellendi - ${lines.length} urun (${bina})`:`Siparis kaydedildi - ${lines.length} urun (${bina})`);
+}
+// TASLAK KAYDET (yeni tam-sayfa editor): siparisi kesinlestirmeden saklar (stok/ilerleme URETMEZ).
+// Not: eski modal formunun kendi saveOrderDraft'i (order_drafts) ayridir - bu NORD editorune ozgudur.
+async function nordSaveDraft(){
+  if(!guard('order',{bina:NORD.bina}))return;
+  const hasAny=(NORD.no||'').trim() || NORD.lines.some(l=>l.specId||l.raw);
+  if(!hasAny){ toast('Taslak icin en az siparis no veya bir urun girin','err'); return; }
+  const id=NORD.draftId||uid();
+  const draft={ id, src:'nord', no:(NORD.no||'').trim(), date:NORD.date, bina:NORD.bina, sart:NORD.sart||'',
+    companyId:NORD.companyId||'', newCompany:NORD.newCompany||'', pdf:NORD.pdf||null,
+    lines:NORD.lines.map(l=>({...l})), savedBy:(CURRENT_USER&&CURRENT_USER.username)||'', savedAt:Date.now() };
+  const list=orderDraftsGet().filter(d=>d.id!==id); list.push(draft);
+  await orderDraftsSave(list);
+  logAction('order',`Siparis taslagi kaydedildi: ${draft.no||'(no yok)'} - ${draft.bina}`);
+  PNEWORD=false; NORD=null; PORD=true; ORDBINA=''; ORDVIEW='drafts';
+  render(); toast('Taslak kaydedildi - Taslaklar sekmesinde');
+}
+// TASLAGI DEVAM ETTIR: taslagi tam-sayfa editore yukler (gercek siparis gibi degil - draftId ile isaretli)
+function nordOpenDraft(id){
+  if(!guard('order'))return;
+  const d=orderDraftsGet().find(x=>x.id===id);
+  if(!d){ toast('Taslak bulunamadi','err'); return; }
+  NORD={ no:d.no||'', date:d.date||new Date().toISOString().slice(0,10), bina:d.bina||'', sart:d.sart||'',
+    companyId:d.companyId||'', newCompany:d.newCompany||'', pdf:d.pdf||null,
+    lines:(d.lines&&d.lines.length)?d.lines.map(l=>({...l})):[_nordEmptyLine()], editId:null, draftId:id };
+  PNEWORD=true; PORD=false; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PCOMP=false; PEKIP=false; PBINAY=false; SEARCH="";
+  render();
+}
+async function nordDelDraft(id){
+  if(!guard('order'))return;
+  const d=orderDraftsGet().find(x=>x.id===id); if(!d)return;
+  if(!confirm(`"${d.no||'(no yok)'}" taslagini silmek istiyor musunuz?`))return;
+  await orderDraftsSave(orderDraftsGet().filter(x=>x.id!==id));
+  logAction('order',`Siparis taslagi silindi: ${d.no||'(no yok)'}`);
+  render(); toast('Taslak silindi');
+}
+// Taslaklar sekmesinden yonlendirme: yeni (nord) editor ya da eski (modal) form
+function nordOpenDraftRoute(src,id){ if(src==='modal'){ PORD=false; openOrderDraft(id); } else nordOpenDraft(id); }
+async function nordDelDraftRoute(src,id){
+  if(src!=='modal') return nordDelDraft(id);
+  if(!guard('order'))return;
+  const d=(draftsGet('order')||[]).find(x=>x.id===id); if(!d)return;
+  if(!confirm(`"${d.no||'(no yok)'}" taslagini silmek istiyor musunuz?`))return;
+  await draftsSet('order', draftsGet('order').filter(x=>x.id!==id));
+  render(); toast('Taslak silindi');
 }
 
 /* ===================================================================
