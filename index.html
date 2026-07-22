@@ -2341,6 +2341,7 @@ function renderSidebar(){
   }
   if(can('sync')) ops+=it('Full Sync (Excel)','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16"/></svg>',"document.getElementById('syncXlsx').click()",false,'','Excel ile tam senkronizasyon (tek kaynak)');
   if(isAdmin()) ops+=it('Mükerrer Kayıtları Temizle','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>','dedupeProjeSpecs()',false,'','Ayni urun+sartname icin birden fazla kayit varsa fazlalarini siler');
+  if(isAdmin()) ops+=it('Kalem Etki Analizi','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L14.7 3.9a2 2 0 00-3.4 0z"/></svg>','openSpecImpact()',false,'','Kalemleri silmeden once hangi rapor/siparis/stok kayitlarina bagli olduklarini gosterir');
   if(can('wipe')) danger+=it('Temizle','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg>','wipeAllData()',false,'danger','Girilen tum verileri sil');
   const groups=[top,mid,ops,danger].filter(Boolean).join('<div class="sb-sep"></div>');
   const app=document.getElementById('app'); if(app) app.classList.toggle('sb-none',!groups);
@@ -6522,6 +6523,132 @@ function findDuplicateSpecs(){
     (groups[key]=groups[key]||[]).push(s);
   });
   return Object.values(groups).filter(g=>g.length>1);
+}
+/* ============ KALEM ETKI ANALIZI & TOPLU TEMIZLIK (yonetici) ============
+   Bir kalem kumesini (bina / sartname / ad-kod-poz-ozelno filtresi) SILMEDEN ONCE hangi saha
+   raporuna, siparis satirina ve stok girisine bagli oldugunu gosterir - "hangi raporlar
+   etkilenir" sorusu silmeden once yanitlanir. Silme yalnizca buradan, ayri onayla yapilir;
+   hicbir baglantisi olmayan ("serbest") kalemler ayrica tek tikla silinebilir.
+   NOT: Yalnizca KALEM (spec) silinir; rapor/siparis kayitlarina dokunulmaz. */
+let _KIMP=null;
+function openSpecImpact(){
+  if(!isAdmin()){ toast('Bu islem sadece yoneticilere aittir','err'); return; }
+  _KIMP={bina:'__all',grup:'__all',q:''};
+  renderSpecImpact();
+}
+function kimpSet(k,v){ if(!_KIMP)return; _KIMP[k]=v; if(k==='bina')_KIMP.grup='__all'; renderSpecImpact(); }
+function _kimpMatch(){
+  const f=_KIMP, q=norm(f.q||'').trim();
+  return DB.proje.specs.filter(s=>{
+    if(s.is_deleted) return false;
+    if(f.bina==='__none'){ if((s.bina||'')!=='') return false; }
+    else if(f.bina!=='__all' && (s.bina||'')!==f.bina) return false;
+    if(f.grup!=='__all' && specGroupKey(s)!==f.grup) return false;
+    if(q && norm((s.name||'')+' '+(s.code||'')+' '+(s.poz||'')+' '+(s.ozelNo||'')).indexOf(q)<0) return false;
+    return true;
+  });
+}
+function _kimpLinks(specs){
+  const ids=new Set(specs.map(s=>s.id));
+  const raps=rEntries().filter(e=>e.specId&&ids.has(e.specId));
+  const items=(DB.proje.items||[]).filter(it=>it.specId&&ids.has(it.specId));
+  const oLines=[]; (DB.proje.orders||[]).forEach(o=>(o.lines||[]).forEach(l=>{ if(l.specId&&ids.has(l.specId)) oLines.push({o,l}); }));
+  const linked=new Set(); raps.forEach(e=>linked.add(e.specId)); items.forEach(i=>linked.add(i.specId)); oLines.forEach(x=>linked.add(x.l.specId));
+  return {raps,items,oLines,linked};
+}
+function renderSpecImpact(){
+  closeModal();
+  const f=_KIMP; if(!f)return;
+  const all=DB.proje.specs.filter(s=>!s.is_deleted);
+  const binas=[...new Set(all.map(s=>s.bina||'').filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const noBinaCount=all.filter(s=>!(s.bina||'')).length;
+  const scope=all.filter(s=>f.bina==='__none'?!(s.bina||''):(f.bina==='__all'||(s.bina||'')===f.bina));
+  const grups=[...new Set(scope.map(s=>specGroupKey(s)))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const specs=_kimpMatch();
+  const {raps,items,oLines,linked}=_kimpLinks(specs);
+  const free=specs.filter(s=>!linked.has(s.id));
+  const stat=(n,l,c)=>`<div><b style="${c?`color:${c}`:''}">${fmtNum(n)}</b><span>${l}</span></div>`;
+  // etkilenen saha raporlari: tarih+bina+kisi bazinda listelenir (en yeni ustte)
+  const rapRows=raps.slice().sort((a,b)=>String(b.tarih||'').localeCompare(String(a.tarih||''))).slice(0,60).map(e=>{
+    const sp=DB.proje.specs.find(s=>s.id===e.specId);
+    return `<div class="matd-row" style="cursor:default">
+      <span class="t-meta" style="flex-shrink:0">${fmtDate(e.tarih)}</span>
+      <span class="bina-tag" style="background:${buildingColor(e.bina)}22;color:${buildingColor(e.bina)};flex-shrink:0">${esc(e.bina||'-')}</span>
+      ${e.kat?`<span class="t-meta" style="flex-shrink:0">Kat ${esc(e.kat)}</span>`:''}
+      ${e.createdBy?`<span class="t-meta" style="flex-shrink:0">${icoUserSm()} ${esc(e.createdBy)}</span>`:''}
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px">${esc(sp?sp.name:'(kalem silinmis)')}</span>
+      <b style="margin-left:auto;white-space:nowrap;font-family:var(--mono);font-size:12px">${fmtNum(e.miktar)} ${esc(e.birim||'')}</b>
+    </div>`;
+  }).join('');
+  const html=`<div class="modal-bg drawer-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide drawer">
+    <div class="modal-head"><h3>Kalem Etki Analizi</h3><button class="mini-btn" onclick="_KIMP=null;closeModal()">x</button></div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--mute);margin-bottom:12px">Secilen kalemleri silmeden once hangi saha raporu / siparis / stok kaydina bagli olduklarini gosterir. Silme islemi yalnizca KALEMLERI kaldirir - rapor ve siparis kayitlariniz silinmez, sadece bagli olduklari kalem ortadan kalkar.</p>
+      <div class="frow two">
+        <div><label>Bina</label><select onchange="kimpSet('bina',this.value)">
+          <option value="__all" ${f.bina==='__all'?'selected':''}>Tumu (${all.length} kalem)</option>
+          ${noBinaCount?`<option value="__none" ${f.bina==='__none'?'selected':''}>— BINASI YOK (${noBinaCount} kalem) —</option>`:''}
+          ${binas.map(b=>`<option value="${esc(b)}" ${f.bina===b?'selected':''}>${esc(b)}</option>`).join('')}
+        </select></div>
+        <div><label>Sartname / Grup</label><select onchange="kimpSet('grup',this.value)">
+          <option value="__all" ${f.grup==='__all'?'selected':''}>Tumu</option>
+          ${grups.map(g=>`<option value="${esc(g)}" ${f.grup===g?'selected':''}>${esc(g)}</option>`).join('')}
+        </select></div>
+      </div>
+      <div class="frow"><label>Ad / Kod / Poz / Ozel No icinde ara</label>
+        <input value="${esc(f.q)}" placeholder="orn. Проходка" onchange="kimpSet('q',this.value.trim())"></div>
+      <div class="matd-stats" style="grid-template-columns:repeat(4,1fr)">
+        ${stat(specs.length,'eslesen kalem')}
+        ${stat(free.length,'baglantisiz (guvenli)','var(--green)')}
+        ${stat(specs.length-free.length,'bagli kalem',(specs.length-free.length)?'var(--red)':'')}
+        ${stat(raps.length,'saha raporu kaydi',raps.length?'var(--amber)':'')}
+      </div>
+      <p style="font-size:12px;color:var(--mute)">Bagli kayitlar: <b>${fmtNum(raps.length)}</b> saha raporu · <b>${fmtNum(oLines.length)}</b> siparis satiri · <b>${fmtNum(items.length)}</b> stok girisi</p>
+      ${raps.length?`<div class="matd-sec">Etkilenecek Saha Raporlari <span>${raps.length}</span><i><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px" onclick="kimpExportRaps()">${icoXls()} Excel</button></i></div>${rapRows}${raps.length>60?`<p class="matd-empty">+ ${raps.length-60} kayit daha (tam liste icin Excel)</p>`:''}`
+        :`<p style="font-size:12.5px;color:var(--green);margin-top:10px">Bu kalemlere bagli saha raporu YOK - silmek raporlari etkilemez.</p>`}
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="margin-right:auto" onclick="_KIMP=null;closeModal()">Kapat</button>
+      ${free.length?`<button class="btn btn-ghost" style="border-color:var(--amber)66;color:var(--amber)" onclick="kimpDelete('free')">Baglantisizlari Sil (${free.length})</button>`:''}
+      ${specs.length?`<button class="btn" style="background:var(--red);color:#fff" onclick="kimpDelete('all')">Tumunu Sil (${specs.length})</button>`:''}
+    </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function kimpExportRaps(){
+  const specs=_kimpMatch(); const {raps}=_kimpLinks(specs);
+  if(!raps.length){ toast('Etkilenen rapor yok','err'); return; }
+  const rows=[['Tarih','Bina','Kat','Lokasyon','Giren Kullanici','Kalem','Kod','Poz','Ozel No','Miktar','Birim']];
+  raps.slice().sort((a,b)=>String(a.tarih||'').localeCompare(String(b.tarih||''))).forEach(e=>{
+    const sp=DB.proje.specs.find(s=>s.id===e.specId)||{};
+    const lk=e.lokId?getLok(e.lokId):null;
+    rows.push([fmtDate(e.tarih),e.bina||'',e.kat||'',lk?lokPath(lk.id):'',e.createdBy||'',sp.name||e.name||'',sp.code||'',sp.poz||'',sp.ozelNo||'',Number(e.miktar)||0,e.birim||'']);
+  });
+  const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:12},{wch:10},{wch:8},{wch:26},{wch:16},{wch:40},{wch:14},{wch:16},{wch:16},{wch:10},{wch:10}];
+  XLSX.utils.book_append_sheet(wb,ws,'Etkilenen Raporlar');
+  XLSX.writeFile(wb,`etkilenen_raporlar_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('Excel indirildi');
+}
+async function kimpDelete(mode){
+  if(!isAdmin()){ toast('Bu islem sadece yoneticilere aittir','err'); return; }
+  const specs=_kimpMatch(); const {raps,items,oLines,linked}=_kimpLinks(specs);
+  const target = mode==='free' ? specs.filter(s=>!linked.has(s.id)) : specs;
+  if(!target.length){ toast('Silinecek kalem yok','err'); return; }
+  const willOrphan = mode==='free' ? 0 : raps.length;
+  const msg=`${target.length} kalem KALICI olarak silinecek.`
+    +(mode==='all'&&(raps.length||oLines.length||items.length)
+      ? `\n\nUYARI: bu kalemlere bagli ${raps.length} saha raporu, ${oLines.length} siparis satiri, ${items.length} stok girisi var. Bu kayitlar SILINMEZ ama bagli olduklari kalem kalmaz.`
+      : `\n\nSecilenlerin hicbirine bagli rapor/siparis/stok kaydi yok.`)
+    +`\n\nDevam edilsin mi?`;
+  if(!confirm(msg))return;
+  try{
+    const ids=target.map(s=>s.id);
+    await sbDeleteProjeSpecs(ids);
+    const del=new Set(ids); DB.proje.specs=DB.proje.specs.filter(s=>!del.has(s.id));
+    logAction('delete',`Kalem etki analizi: ${ids.length} kalem silindi (bagli rapor ${willOrphan})`);
+    renderSpecImpact(); render();
+    toast(`${ids.length} kalem silindi`);
+  }catch(err){ console.error(err); toast('Silme hatasi: '+(err.message||err),'err'); }
 }
 // id'nin basindaki Date.now().toString(36) kismindan yaklasik olusturulma zamanini cikarir
 // (uid() = zaman damgasi + 5 karakterlik rastgele son ek). Kart listesinde "ne zaman girildi"
