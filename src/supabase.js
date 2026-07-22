@@ -569,7 +569,17 @@ export async function sbLoadAllData(scope) {
   if (!scope) tasks.auditRes = supabase.from('audit_log').select('data').order('created_at', { ascending: true }).limit(2000)
 
   const keys = Object.keys(tasks)
-  const results = await Promise.all(keys.map(k => tasks[k]))
+  // Yukleme ekranina GERCEK ilerleme bildirilir: her tablo tamamlandiginda hangi tablonun
+  // indigi ve kacinci oldugu haber verilir (window.__sbLoadProgress varsa). Sorgular paralel
+  // gittigi icin sira degisebilir - bildirilen ad her zaman O AN biten tablodur.
+  const report = typeof window !== 'undefined' ? window.__sbLoadProgress : null
+  if (report) { try { report({ phase: 'start', done: 0, total: keys.length }) } catch (_) {} }
+  let done = 0
+  const results = await Promise.all(keys.map(k => Promise.resolve(tasks[k]).then(v => {
+    done++
+    if (report) { try { report({ phase: 'task', key: k, done, total: keys.length }) } catch (_) {} }
+    return v
+  })))
   const r = {}
   keys.forEach((k, i) => { r[k] = results[i] })
 

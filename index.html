@@ -255,21 +255,27 @@ html.booting #login{display:none!important}
 /* logo: kutusuz, filtresiz, sabit — ayni PNG koyu ve acik temada oldugu gibi gosterilir */
 .ld-logo{width:104px;height:auto;object-fit:contain;
   animation:ld-in .5s cubic-bezier(.16,.8,.3,1) both}
-/* dolum cubugu: 0 -> %90 kendiliginden dolar, yukleme bitince JS %100'e tamamlar */
+/* dolum cubugu: GERCEK ilerleme ile dolar (her tablo indikce JS genisletir).
+   Renk var(--ink): acik temada siyah, koyu temada beyaz - iki temada da okunur kalir.
+   Veri gelmeye baslamadan once yavas suzulen bir "isinma" animasyonu vardir; ilk
+   gercek ilerleme geldigi anda (.ld-bar.live) animasyon durur, cubuk olcumle surer. */
 .ld-bar{width:200px;height:3px;margin-top:28px;border-radius:99px;background:var(--line);overflow:hidden;animation:ld-in .5s cubic-bezier(.16,.8,.3,1) .08s both}
-.ld-bar i{display:block;height:100%;width:0;border-radius:inherit;
-  background:linear-gradient(90deg,var(--amber-d),var(--amber));
-  box-shadow:0 0 10px rgba(240,160,32,.5);
-  animation:ld-fill 2.6s cubic-bezier(.22,.61,.36,1) forwards;transition:width .22s ease}
+.ld-bar i{display:block;height:100%;width:0;border-radius:inherit;background:var(--ink);
+  animation:ld-warm 3s cubic-bezier(.22,.61,.36,1) forwards;transition:width .28s cubic-bezier(.22,.61,.36,1)}
+.ld-bar.live i{animation:none}
 .ld-label{margin-top:16px;font-size:12px;color:var(--mute);font-family:var(--mono);letter-spacing:.5px;display:flex;align-items:center;gap:2px;animation:ld-in .5s cubic-bezier(.16,.8,.3,1) .16s both}
+/* durum yazisi degisince kisa bir gecis - metin zipladigi icin degil, degistigi belli olsun diye */
+.ld-txt{transition:opacity .18s ease}
+.ld-txt.sw{opacity:.35}
+.ld-num{margin-left:7px;opacity:.55;font-size:11px}
 .ld-dots{display:inline-flex;gap:3px;margin-left:3px}
 .ld-dots i{width:3px;height:3px;border-radius:50%;background:var(--mute);display:inline-block;font-style:normal;animation:ld-dot 1.3s ease-in-out infinite}
 .ld-dots i:nth-child(2){animation-delay:.15s}
 .ld-dots i:nth-child(3){animation-delay:.3s}
-@keyframes ld-fill{0%{width:0}18%{width:38%}45%{width:62%}75%{width:78%}100%{width:90%}}
+@keyframes ld-warm{0%{width:0}40%{width:9%}100%{width:16%}}
 @keyframes ld-dot{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-2px)}}
 @keyframes ld-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-@media (prefers-reduced-motion:reduce){.ld-logo{animation:none}.ld-bar i{animation:none;width:80%}.ld-dots i{animation:none;opacity:.6}}
+@media (prefers-reduced-motion:reduce){.ld-logo{animation:none}.ld-bar i{animation:none}.ld-dots i{animation:none;opacity:.6}}
 
 #app{display:flex;flex-direction:column;min-height:100vh;opacity:0;transition:opacity .45s ease}
 #app.show{opacity:1}
@@ -1491,7 +1497,7 @@ datalist{display:none}
 </head>
 <body>
 
-<div id="loading"><img class="ld-logo" src="/logo.png" alt=""><div class="ld-bar"><i></i></div><div class="ld-label">Yükleniyor<span class="ld-dots"><i></i><i></i><i></i></span></div></div>
+<div id="loading"><img class="ld-logo" src="/logo.png" alt=""><div class="ld-bar"><i></i></div><div class="ld-label"><span class="ld-txt">Oturum doğrulanıyor</span><span class="ld-dots"><i></i><i></i><i></i></span><span class="ld-num"></span></div></div>
 
 <div id="login">
   <!-- Aurora arka plan katmanlari (tamamen dekoratif; JS motoru sayfa sonunda).
@@ -1562,6 +1568,35 @@ datalist{display:none}
 if(localStorage.getItem('authUser')) localStorage.removeItem('authUser');
 // Head'deki onyukleme kontrolu gecerli oturum bulduysa sinif durumlarini esitle
 // (gorunurluk zaten html.booting CSS kurallariyla ilk boyamadan itibaren saglanir)
+/* ── YUKLEME EKRANI DURUMU ────────────────────────────────────────────────
+   "Yukleniyor" yerine o an gercekten ne indigi yazilir. Kaynak uydurma degil:
+   sbLoadAllData her tablo tamamlandiginda window.__sbLoadProgress'i cagirir;
+   burada tablo adi Turkce karsiligina cevrilir ve cubuk biten/toplam oraniyla
+   surulur. Tablo yuklemesi bitince asama yazilari (hazirlanma, arayuz) devreye girer. */
+const LD_ADLAR={ settingsRes:'Ayarlar', aletItems:'El aletleri',
+  sahaPanels:'Saha panolari', sahaLines:'Saha hatlari', sahaSockets:'Saha prizleri', sahaSettings:'Saha plani',
+  geciciLib:'Gecici depo malzemeleri', geciciMoves:'Depo hareketleri', geciciOrders:'Depo siparisleri',
+  raporEntries:'Saha raporlari', raporEkiplerRes:'Ekipler',
+  projeBuildingsRes:'Binalar', projeSectionsRes:'Bolumler', projeSartnames:'Sartnameler',
+  projeMaterials:'Malzeme kutuphanesi', projeSpecs:'Sartname kalemleri', projeLokasyonlar:'Kat ve odalar',
+  projeItems:'Stok hareketleri', projeOrders:'Siparisler', projeAlternatives:'Alternatif urunler',
+  projeBinaModelleri:'Bina modelleri', companies:'Firmalar', auditRes:'Denetim kaydi' };
+let _ldSon='';
+function ldDurum(metin,yuzde,sayac){
+  const ld=document.getElementById('loading'); if(!ld) return;
+  const t=ld.querySelector('.ld-txt'), bar=ld.querySelector('.ld-bar'), fill=ld.querySelector('.ld-bar i'), num=ld.querySelector('.ld-num');
+  if(t&&metin&&metin!==_ldSon){ _ldSon=metin;
+    t.classList.add('sw'); setTimeout(()=>{ t.textContent=metin; t.classList.remove('sw'); },110); }
+  if(num) num.textContent=sayac||'';
+  if(fill&&yuzde!=null){ bar.classList.add('live'); fill.style.width=Math.max(0,Math.min(100,yuzde))+'%'; }
+}
+window.__sbLoadProgress=function(p){
+  if(!p) return;
+  if(p.phase==='start'){ ldDurum('Veriler indiriliyor',6,''); return; }
+  const ad=LD_ADLAR[p.key]||'Veriler';
+  // tablo indirme toplam cubugun %85'ini kaplar; kalani hazirlama + arayuz asamalarina ayrilir
+  ldDurum(ad, 6+Math.round((p.done/Math.max(1,p.total))*79), p.done+'/'+p.total);
+};
 if(document.documentElement.classList.contains('booting')){
   document.getElementById('login').classList.add('hidden');
   document.getElementById('loading').classList.add('active');
@@ -1629,7 +1664,8 @@ async function loadDB(){
       return blankDB(); // ilk kurulum: bulut bos, yerelde de veri yok
     }catch(e){
       lastErr=e; console.warn('Supabase load failed ('+attempt+'/3):',e);
-      if(attempt<3) await new Promise(r=>setTimeout(r,700*attempt));
+      if(attempt<3){ try{ ldDurum('Bağlantı yeniden deneniyor',null,attempt+'/3'); }catch(_){}
+        await new Promise(r=>setTimeout(r,700*attempt)); }
     }
   }
   const err=new Error('Veriler yuklenemedi: '+((lastErr&&lastErr.message)||'baglanti hatasi'));
@@ -2018,8 +2054,14 @@ async function doLogin(){
     const token=user.__token; delete user.__token;
     window.AUTH_TOKEN=token;
     CURRENT_USER=user; window.CURRENT_USER=user;
-    btn.textContent='Veriler yükleniyor...'; // kimlik dogrulandi, sira veri yuklemede
-    if(!DB){ DB=await loadDB(); migrate(); }
+    // kimlik dogrulandi, sira veri yuklemede: dugmede de o an inen tablonun adi yazilir
+    btn.textContent='Veriler yükleniyor...';
+    const _oncekiIlerleme=window.__sbLoadProgress;
+    window.__sbLoadProgress=function(p){ try{ _oncekiIlerleme&&_oncekiIlerleme(p); }catch(_){}
+      if(p&&p.phase==='task') btn.textContent=(LD_ADLAR[p.key]||'Veriler')+' ('+p.done+'/'+p.total+')'; };
+    try{
+      if(!DB){ DB=await loadDB(); btn.textContent='Veriler hazırlanıyor...'; migrate(); }
+    } finally { window.__sbLoadProgress=_oncekiIlerleme; }
     logAction('login','Giris yapildi'); await saveDB();
     SEC=firstAllowedSection(); applyLandingPanels();
     // "Beni Hatirla" isaretliyse oturum 30 gun, degilse 1 saat yasar; ttl oturumla
@@ -2055,8 +2097,9 @@ document.addEventListener('DOMContentLoaded', async function(){
   const lg=document.getElementById('login');
   function hideLoading(){
     // once dolum cubugunu %100'e tamamla, sonra ekrani yumusakca kapat
+    ldDurum('Hazir',100,'');
     const bar=ld.querySelector('.ld-bar i');
-    if(bar){ bar.style.width=getComputedStyle(bar).width; bar.style.animation='none'; void bar.offsetWidth; bar.style.width='100%'; }
+    if(bar){ bar.style.animation='none'; bar.style.width='100%'; }
     setTimeout(()=>{
       ld.classList.add('fade-out');
       setTimeout(()=>{ ld.classList.remove('active','fade-out'); document.documentElement.classList.remove('booting'); },380);
@@ -2075,7 +2118,12 @@ document.addEventListener('DOMContentLoaded', async function(){
     // Önbellekten kullanıcıyı anında yükle — Supabase çağrısı BEKLENMEZ
     CURRENT_USER=sess.user; window.CURRENT_USER=sess.user;
     saveSession(sess.user, sess.ttl, sess.token); // oturumu kendi suresiyle uzat (1 saat / Beni Hatirla: 30 gun)
-    if(!DB){ DB=await loadDB(); migrate(); }
+    if(!DB){
+      DB=await loadDB();
+      ldDurum('Veriler hazırlanıyor',90,'');
+      migrate();
+    }
+    ldDurum('Arayüz hazırlanıyor',96,'');
     SEC=firstAllowedSection();
     // Sayfa yenilemeden önceki gezinti durumunu geri yükle
     try {
