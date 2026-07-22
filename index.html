@@ -2410,6 +2410,7 @@ function renderSidebar(){
   if(can('sync')) ops+=it('Full Sync (Excel)','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16"/></svg>',"document.getElementById('syncXlsx').click()",false,'','Excel ile tam senkronizasyon (tek kaynak)');
   if(isAdmin()) ops+=it('Mükerrer Kayıtları Temizle','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>','dedupeProjeSpecs()',false,'','Ayni urun+sartname icin birden fazla kayit varsa fazlalarini siler');
   if(isAdmin()) ops+=it('Kalem Etki Analizi','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L14.7 3.9a2 2 0 00-3.4 0z"/></svg>','openSpecImpact()',false,'','Kalemleri silmeden once hangi rapor/siparis/stok kayitlarina bagli olduklarini gosterir');
+  if(isAdmin()) ops+=it('Kat Bazinda Toplulastir','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4M3 17l9 4 9-4"/></svg>','openSpecKatMerge()',false,'','Ayni urunun yerlesim kodu basina acilmis kalemlerini kat bazinda tek kaleme toplar - bagli siparis/stok/rapor kayitlari tasinir');
   if(can('wipe')) danger+=it('Temizle','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg>','wipeAllData()',false,'danger','Girilen tum verileri sil');
   const groups=[top,mid,ops,danger].filter(Boolean).join('<div class="sb-sep"></div>');
   const app=document.getElementById('app'); if(app) app.classList.toggle('sb-none',!groups);
@@ -6736,6 +6737,268 @@ async function kimpDelete(mode){
     toast(`${ids.length} kalem silindi`);
   }catch(err){ console.error(err); toast('Silme hatasi: '+(err.message||err),'err'); }
 }
+/* ========= KAT BAZINDA KALEM TOPLULASTIRMA (yonetici) =======================
+   Ayni urun projede her yerlesim kodu icin ayri kalem olarak acilinca (Hedef 1 +
+   Hedef 1 + Hedef 2 ...) ilerleme listesi okunmaz olur ve siparisle gelen toplu
+   alim hicbir kaleme dusmez. Bu arac ayni urunu KAT bazinda tek kaleme toplar:
+     - hedefler toplanir (1+1+2 = 4),
+     - kaleme bagli SIPARIS SATIRI, STOK GIRISI ve SAHA RAPORU satirlari kalan
+       kaleme TASINIR - hicbir kayit silinmez, yalnizca bagli olduklari kalem degisir,
+     - ozel numaralar kalemde liste olarak saklanir (ozelNolar), kaybolmaz,
+     - kalan kalemin kati yazilir (kat alani).
+   Kat, ozel no (veya poz) icindeki karakter araligindan cikarilir. Kural ekranda
+   kurulur: hangi karakterler okunuyorsa canli gosterilir ve her kod parcasinin kat
+   karsiligi elle duzeltilebilir - tahmin sessizce uygulanmaz.
+   Tum islem tek tikla geri alinir (DB.meta.mergeBatches). */
+let _KTOP=null;
+function ktopRuleGet(){ const k=(DB.meta&&DB.meta.katKurali)||{};
+  return {src:k.src==='poz'?'poz':'ozel', start:Number(k.start)>0?Number(k.start):6,
+    len:Number(k.len)>0?Number(k.len):2, map:(k.map&&typeof k.map==='object')?{...k.map}:{}}; }
+async function ktopRuleSave(sessiz){ if(!_KTOP)return; if(!DB.meta)DB.meta={};
+  const k={src:_KTOP.src,start:_KTOP.start,len:_KTOP.len,map:_KTOP.map};
+  DB.meta.katKurali=k;
+  try{ await sbSetSetting('katKurali',k); if(!sessiz)toast('Kat kurali kaydedildi'); }
+  catch(e){ console.warn('katKurali kaydedilemedi:',e); if(!sessiz)toast('Kural kaydedilemedi','err'); } }
+function ktopBatches(){ return (DB.meta&&DB.meta.mergeBatches)||[]; }
+async function ktopBatchSave(list){ if(!DB.meta)DB.meta={}; DB.meta.mergeBatches=list;
+  try{ await sbSetSetting('mergeBatches',list); }catch(e){ console.warn('mergeBatches kaydedilemedi:',e); } }
+function openSpecKatMerge(){
+  if(!isAdmin()){ toast('Bu islem sadece yoneticilere aittir','err'); return; }
+  const r=ktopRuleGet();
+  _KTOP={bina:'__all',grup:'__all',q:'',src:r.src,start:r.start,len:r.len,map:r.map,off:{}};
+  renderKatMerge();
+}
+function ktopSet(k,v){ if(!_KTOP)return;
+  if(k==='start'||k==='len') v=Math.max(1,Math.min(40,Number(v)||1));
+  _KTOP[k]=v; if(k==='bina')_KTOP.grup='__all'; renderKatMerge(); }
+function ktopMapSet(parca,kat){ if(!_KTOP)return; _KTOP.map[parca]=String(kat||'').trim(); renderKatMerge(); }
+// tikli grup anahtar yerine SIRA NO ile gelir: urun adinda tirnak olsa bile onclick bozulmaz
+function ktopToggle(i,on){ if(!_KTOP)return;
+  const g=ktopPlan().filter(x=>x.specs.length>1)[i]; if(!g)return;
+  if(on) delete _KTOP.off[g.key]; else _KTOP.off[g.key]=1; renderKatMerge(); }
+function ktopMapSetIdx(i,kat){ if(!_KTOP)return; const p=(_KTOP._parcalar||[])[i]; if(p==null)return; ktopMapSet(p,kat); }
+// ACIK KALEM (miktari belirsiz) toplulastirmaya girmez: hedefi olmadigi icin toplam bozulur
+function _ktopSpecs(){ const f=_KTOP, q=norm(f.q||'').trim();
+  return DB.proje.specs.filter(s=>{
+    if(s.is_deleted||s.openQty) return false;
+    if(f.bina==='__none'){ if((s.bina||'')!=='') return false; }
+    else if(f.bina!=='__all' && (s.bina||'')!==f.bina) return false;
+    if(f.grup!=='__all' && specGroupKey(s)!==f.grup) return false;
+    if(q && norm((s.name||'')+' '+(s.code||'')+' '+(s.poz||'')+' '+(s.ozelNo||'')).indexOf(q)<0) return false;
+    return true; }); }
+function ktopSrcVal(sp){ return String((_KTOP.src==='poz'?sp.poz:sp.ozelNo)||'').trim(); }
+function ktopParca(sp){ const v=ktopSrcVal(sp); if(!v)return ''; return v.substr(_KTOP.start-1,_KTOP.len).trim().toUpperCase(); }
+// varsayilan TAHMIN: parcadaki ilk rakam kat sayilir (12 -> 1, 20 -> 2). Ekranda gosterilir,
+// kullanici her parcayi elle degistirebilir; bos birakilan parcanin kalemleri toplanmaz.
+function ktopGuess(p){ const d=String(p).replace(/\D/g,''); return d?d[0]:''; }
+function ktopKat(sp){ const p=ktopParca(sp); if(!p)return '';
+  const m=_KTOP.map; return (Object.prototype.hasOwnProperty.call(m,p)?String(m[p]||''):ktopGuess(p)).trim(); }
+// okunan karakterleri kaynak degerin icinde vurgular - kuralin dogru yeri okudugu gozle gorulur
+function ktopHl(v){ if(!v) return '<span class="t-meta">(bos)</span>';
+  const a=esc(v.slice(0,_KTOP.start-1)), b=esc(v.substr(_KTOP.start-1,_KTOP.len)), c=esc(v.slice(_KTOP.start-1+_KTOP.len));
+  return `<span style="font-family:var(--mono);font-size:11px">${a}<b style="background:rgba(59,130,246,.22);color:var(--blue);padding:1px 3px;border-radius:3px">${b||'·'}</b>${c}</span>`; }
+// urun + bina + bolum + sartname + KAT kirilimi; her grup icin baglar ve kalacak kalem hesaplanir
+function ktopPlan(){
+  const groups={};
+  _ktopSpecs().forEach(sp=>{
+    const kat=ktopKat(sp), p=ktopParca(sp);
+    const key=matKey(sp.code,sp.name)+'|'+(sp.bina||'')+'|'+(sp.cat||'')+'|'+specGroupKey(sp)+'|k:'+kat;
+    if(!groups[key]) groups[key]={key,kat,name:sp.name,code:sp.code||'',unit:sp.unit||'',bina:sp.bina||'',
+      cat:sp.cat||'',grup:specGroupKey(sp),specs:[],ozelNolar:[]};
+    const g=groups[key]; g.specs.push(sp);
+    const on=(sp.ozelNo||'').trim(); if(on&&g.ozelNolar.indexOf(on)<0)g.ozelNolar.push(on);
+    if(p&&!g.parca)g.parca=p;
+  });
+  return Object.values(groups).map(g=>{
+    const ids=new Set(g.specs.map(s=>s.id));
+    const items=(DB.proje.items||[]).filter(it=>it.specId&&ids.has(it.specId));
+    const raps=rEntries().filter(e=>e.specId&&ids.has(e.specId));
+    const oLines=[]; (DB.proje.orders||[]).forEach(o=>(o.lines||[]).forEach((l,li)=>{ if(l.specId&&ids.has(l.specId)) oLines.push({o,l,li}); }));
+    // kalacak kalem: en cok bagi olan (kayit tasima en aza iner); esitlikte en eski kayit
+    const score={}; g.specs.forEach(s=>score[s.id]=0);
+    items.forEach(i=>score[i.specId]++); raps.forEach(e=>score[e.specId]++); oLines.forEach(x=>score[x.l.specId]++);
+    const keep=g.specs.slice().sort((a,b)=>(score[b.id]-score[a.id])||(a.id<b.id?-1:1))[0];
+    return {...g, keep, items, raps, oLines,
+      target:g.specs.reduce((s,x)=>s+(Number(x.target)||0),0),
+      got:g.specs.reduce((s,x)=>s+specProgress(x).got,0),
+      birlesir:g.specs.length>1&&!!g.kat, sel:!_KTOP.off[g.key]};
+  }).sort((a,b)=>a.name.localeCompare(b.name,'tr')||String(a.kat).localeCompare(String(b.kat),'tr'));
+}
+function renderKatMerge(){
+  closeModal();
+  const f=_KTOP; if(!f)return;
+  const all=DB.proje.specs.filter(s=>!s.is_deleted);
+  const binas=[...new Set(all.map(s=>s.bina||'').filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const noBinaCount=all.filter(s=>!(s.bina||'')).length;
+  const scope=all.filter(s=>f.bina==='__none'?!(s.bina||''):(f.bina==='__all'||(s.bina||'')===f.bina));
+  const grups=[...new Set(scope.map(s=>specGroupKey(s)))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const specs=_ktopSpecs();
+  // kaynak degerdeki parcalar: her parca icin kac kalem + ornek deger + kat karsiligi
+  const parcalar={};
+  specs.forEach(sp=>{ const p=ktopParca(sp);
+    if(!parcalar[p]) parcalar[p]={p,n:0,ornek:ktopSrcVal(sp)};
+    parcalar[p].n++; if(!parcalar[p].ornek)parcalar[p].ornek=ktopSrcVal(sp); });
+  const parcaList=Object.values(parcalar).sort((a,b)=>a.p.localeCompare(b.p,'tr'));
+  f._parcalar=parcaList.map(x=>x.p); // sira no ile duzenleme icin
+  const parcaRows=parcaList.map((x,pi)=>{
+    const kat=x.p?(Object.prototype.hasOwnProperty.call(f.map,x.p)?f.map[x.p]:ktopGuess(x.p)):'';
+    const tahmin=x.p&&!Object.prototype.hasOwnProperty.call(f.map,x.p)&&kat;
+    return `<div class="matd-row" style="cursor:default;gap:10px">
+      <b style="font-family:var(--mono);font-size:12px;min-width:44px">${x.p?esc(x.p):'—'}</b>
+      <span style="min-width:0;overflow:hidden">${ktopHl(x.ornek)}</span>
+      <span class="t-meta" style="margin-left:auto;white-space:nowrap">${x.n} kalem</span>
+      ${x.p?`<span style="display:flex;align-items:center;gap:5px;flex-shrink:0"><span class="t-meta">Kat</span>
+        <input value="${esc(kat)}" placeholder="—" style="width:56px;padding:5px 7px;text-align:center;font-family:var(--mono)${tahmin?';border-color:var(--amber)66':''}" title="${tahmin?'Tahmin - dogrula veya degistir':'Bu kod parcasinin kat karsiligi'}" onchange="ktopMapSetIdx(${pi},this.value)"></span>`
+        :`<span class="t-meta" style="flex-shrink:0;color:var(--amber)">kod yok - toplanmaz</span>`}
+    </div>`; }).join('');
+  const plan=ktopPlan();
+  const birlesecek=plan.filter(g=>g.birlesir&&g.sel);
+  const bekleyen=plan.filter(g=>g.specs.length>1&&!g.kat);
+  const planRows=plan.filter(g=>g.specs.length>1).map((g,gi)=>{
+    const bagli=`${g.oLines.length} siparis · ${g.items.length} stok · ${g.raps.length} rapor`;
+    const katTag=g.kat?`<span class="cat-tag" style="background:rgba(168,85,247,.16);color:var(--violet);flex-shrink:0">${esc(/^\d+$/.test(g.kat)?g.kat+'. KAT':g.kat)}</span>`
+      :`<span class="cat-tag" style="background:rgba(240,160,32,.16);color:var(--amber);flex-shrink:0">KAT YOK</span>`;
+    return `<div class="matd-row" style="cursor:default;align-items:flex-start;gap:9px;${g.kat?'':'opacity:.65'}">
+      <input type="checkbox" ${g.sel?'checked':''} ${g.kat?'':'disabled'} style="margin-top:3px;flex-shrink:0" onclick="ktopToggle(${gi},this.checked)">
+      <div style="min-width:0;flex:1">
+        <div style="font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(g.name)}</div>
+        <div class="t-meta" style="font-size:11px;margin-top:2px">${katTag} ${esc(g.bina)} · ${esc(g.grup)} · bagli: ${bagli}</div>
+        ${g.ozelNolar.length?`<div class="t-meta" style="font-size:10px;font-family:var(--mono);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(g.ozelNolar.join(', '))}">${esc(g.ozelNolar.slice(0,5).join(', '))}${g.ozelNolar.length>5?` +${g.ozelNolar.length-5}`:''}</div>`:''}
+      </div>
+      <div style="text-align:right;flex-shrink:0;font-family:var(--mono);font-size:11.5px">
+        <div><b>${g.specs.length} → 1</b> kalem</div>
+        <div class="t-meta">Hedef ${fmtNum(g.target)} ${esc(g.unit||'')}</div>
+      </div>
+    </div>`; }).join('');
+  const batches=ktopBatches();
+  const son=batches[batches.length-1];
+  const stat=(n,l,c)=>`<div><b style="${c?`color:${c}`:''}">${fmtNum(n)}</b><span>${l}</span></div>`;
+  const html=`<div class="modal-bg drawer-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide drawer">
+    <div class="modal-head"><h3>Kat Bazinda Kalem Toplulastirma</h3><button class="mini-btn" onclick="_KTOP=null;closeModal()">x</button></div>
+    <div class="modal-body">
+      <p style="font-size:12px;color:var(--mute);margin-bottom:12px;line-height:1.55">Ayni urunun her yerlesim kodu icin acilmis kalemlerini <b>kat bazinda tek kaleme</b> toplar. Hedefler toplanir; kaleme bagli <b>siparis satirlari, stok girisleri ve saha raporu satirlari kalan kaleme tasinir</b> - hicbir kayit silinmez. Ozel numaralar kalemde saklanir. Islem tek tikla geri alinabilir.</p>
+      <div class="frow two">
+        <div><label>Bina</label><select onchange="ktopSet('bina',this.value)">
+          <option value="__all" ${f.bina==='__all'?'selected':''}>Tumu</option>
+          ${noBinaCount?`<option value="__none" ${f.bina==='__none'?'selected':''}>— BINASI YOK (${noBinaCount}) —</option>`:''}
+          ${binas.map(b=>`<option value="${esc(b)}" ${f.bina===b?'selected':''}>${esc(b)}</option>`).join('')}
+        </select></div>
+        <div><label>Sartname / Grup</label><select onchange="ktopSet('grup',this.value)">
+          <option value="__all" ${f.grup==='__all'?'selected':''}>Tumu</option>
+          ${grups.map(g=>`<option value="${esc(g)}" ${f.grup===g?'selected':''}>${esc(g)}</option>`).join('')}
+        </select></div>
+      </div>
+      <div class="frow"><label>Ad / Kod / Poz / Ozel No icinde ara</label>
+        <input value="${esc(f.q)}" placeholder="orn. Проходка" onchange="ktopSet('q',this.value.trim())"></div>
+      <div class="matd-sec">Kat Kurali <i>kat bilgisi hangi koddan, hangi karakterlerden okunacak</i></div>
+      <div class="frow" style="grid-template-columns:1fr 110px 110px;display:grid;gap:10px;align-items:end">
+        <div><label>Kaynak</label><select onchange="ktopSet('src',this.value)">
+          <option value="ozel" ${f.src==='ozel'?'selected':''}>Ozel No</option>
+          <option value="poz" ${f.src==='poz'?'selected':''}>Poz No</option>
+        </select></div>
+        <div><label>Baslangic</label><input type="number" min="1" max="40" value="${f.start}" onchange="ktopSet('start',this.value)"></div>
+        <div><label>Karakter</label><input type="number" min="1" max="40" value="${f.len}" onchange="ktopSet('len',this.value)"></div>
+      </div>
+      ${parcaList.length?`<div class="matd-sec">Kod Parcasi → Kat <span>${parcaList.length}</span><i>turuncu cerceve = tahmin, dogrula</i></div>${parcaRows}`
+        :`<p class="matd-empty">Filtreye uyan kalem yok.</p>`}
+      <div class="matd-stats" style="grid-template-columns:repeat(4,1fr)">
+        ${stat(specs.length,'kapsamdaki kalem')}
+        ${stat(birlesecek.length,'toplanacak grup',birlesecek.length?'var(--green)':'')}
+        ${stat(birlesecek.reduce((n,g)=>n+g.specs.length-1,0),'kaldirilacak kalem',birlesecek.length?'var(--red)':'')}
+        ${stat(birlesecek.reduce((n,g)=>n+g.oLines.length+g.items.length+g.raps.length,0),'tasinacak kayit','var(--blue)')}
+      </div>
+      ${bekleyen.length?`<p style="font-size:12px;color:var(--amber)">${bekleyen.length} grup kat karsiligi girilmedigi icin bekliyor - yukaridaki tabloda kat yazin.</p>`:''}
+      ${planRows?`<div class="matd-sec">Onizleme <i>yalnizca isaretli gruplar toplanir</i></div>${planRows}`
+        :`<p class="matd-empty">Ayni urunden birden fazla kalem bulunamadi - toplanacak bir sey yok.</p>`}
+      ${son?`<p style="font-size:11.5px;color:var(--mute);margin-top:12px">Son toplulastirma: ${fmtDT(son.ts)} · ${son.groups.length} grup · ${esc(son.user||'')}</p>`:''}
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="margin-right:auto" onclick="_KTOP=null;closeModal()">Kapat</button>
+      ${son?`<button class="btn btn-ghost" style="border-color:var(--amber)66;color:var(--amber)" onclick="ktopUndo()">Son Islemi Geri Al</button>`:''}
+      <button class="btn btn-ghost" onclick="ktopRuleSave()">Kurali Kaydet</button>
+      <button class="btn btn-add" ${birlesecek.length?'':'disabled'} onclick="ktopApply()">Toplulastir (${birlesecek.length} grup)</button>
+    </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function ktopApply(){
+  if(!isAdmin()){ toast('Bu islem sadece yoneticilere aittir','err'); return; }
+  const gruplar=ktopPlan().filter(g=>g.birlesir&&g.sel);
+  if(!gruplar.length){ toast('Toplanacak grup yok','err'); return; }
+  const kalem=gruplar.reduce((n,g)=>n+g.specs.length-1,0);
+  const tasin=gruplar.reduce((n,g)=>n+g.oLines.length+g.items.length+g.raps.length,0);
+  if(!confirm(`${gruplar.length} grup tek kaleme toplanacak.\n\n`
+    +`· ${kalem} kalem kaldirilacak, hedefleri kalan kaleme eklenecek\n`
+    +`· ${tasin} bagli kayit (siparis satiri / stok girisi / saha raporu) kalan kaleme TASINACAK - hicbiri silinmez\n`
+    +`· Ozel numaralar kalan kalemde saklanacak\n\nDevam edilsin mi?`)) return;
+  try{
+    const batch={id:uid(),ts:Date.now(),user:(CURRENT_USER&&CURRENT_USER.username)||'?',groups:[]};
+    const specUp=[], itemUp=[], rapUp=[], ordUp={}, specDel=[];
+    gruplar.forEach(g=>{
+      const keep=g.keep, others=g.specs.filter(s=>s.id!==keep.id);
+      const snap={keepId:keep.id,
+        keepBefore:{target:Number(keep.target)||0,kat:keep.kat||'',ozelNolar:(keep.ozelNolar||[]).slice(),lokTargets:(keep.lokTargets||[]).map(t=>({...t}))},
+        removed:others.map(s=>JSON.parse(JSON.stringify(s))), moves:[]};
+      g.items.forEach(it=>{ if(it.specId===keep.id)return; snap.moves.push({t:'item',id:it.id,from:it.specId}); it.specId=keep.id; itemUp.push(it); });
+      g.raps.forEach(e=>{ if(e.specId===keep.id)return; snap.moves.push({t:'rap',id:e.id,from:e.specId}); e.specId=keep.id; rapUp.push(e); });
+      g.oLines.forEach(x=>{ if(x.l.specId===keep.id)return; snap.moves.push({t:'ord',id:x.o.id,li:x.li,from:x.l.specId}); x.l.specId=keep.id; ordUp[x.o.id]=x.o; });
+      // hedefler ve lokasyon dagilimlari toplanir; ozel numaralar listeye alinir
+      const lokMap={}; g.specs.forEach(s=>(s.lokTargets||[]).forEach(t=>{ lokMap[t.lokId]=(lokMap[t.lokId]||0)+(Number(t.target)||0); }));
+      const lokTargets=Object.keys(lokMap).map(k=>({lokId:k,target:lokMap[k]}));
+      keep.target=g.target; keep.kat=g.kat;
+      keep.ozelNolar=[...new Set([...(keep.ozelNolar||[]),...g.ozelNolar])];
+      if(lokTargets.length) keep.lokTargets=lokTargets;
+      specUp.push(keep); specDel.push(...others.map(s=>s.id));
+      batch.groups.push(snap);
+    });
+    if(itemUp.length) await sbUpsertProjeItems(itemUp);
+    for(const e of rapUp) await sbUpdateRaporEntry(e.id,{...e});
+    for(const oid of Object.keys(ordUp)) await sbUpdateProjeOrder(oid,{...ordUp[oid]});
+    if(specUp.length) await sbUpsertProjeSpecs(specUp);
+    if(specDel.length) await sbDeleteProjeSpecs(specDel);
+    const del=new Set(specDel); DB.proje.specs=DB.proje.specs.filter(s=>!del.has(s.id));
+    await ktopBatchSave([...ktopBatches(),batch].slice(-10));
+    await ktopRuleSave(true);
+    logAction('editSpec',`Kat bazinda toplulastirma: ${gruplar.length} grup, ${kalem} kalem birlestirildi, ${tasin} bagli kayit tasindi`);
+    renderKatMerge(); render();
+    toast(`${gruplar.length} grup toplandi · ${tasin} kayit tasindi`);
+  }catch(err){ console.error(err); toast('Toplulastirma hatasi: '+(err.message||err),'err'); }
+}
+// SON TOPLULASTIRMAYI GERI AL: kaldirilan kalemler aynen geri eklenir, tasinan kayitlarin
+// specId'si eski kalemine dondurulur, kalan kalemin hedef/kat/ozel no bilgisi eski haline alinir.
+async function ktopUndo(){
+  if(!isAdmin()){ toast('Bu islem sadece yoneticilere aittir','err'); return; }
+  const list=ktopBatches(); const b=list[list.length-1];
+  if(!b){ toast('Geri alinacak islem yok','err'); return; }
+  const kalem=b.groups.reduce((n,g)=>n+g.removed.length,0);
+  const tasin=b.groups.reduce((n,g)=>n+g.moves.length,0);
+  if(!confirm(`${fmtDT(b.ts)} tarihli toplulastirma geri alinacak.\n\n· ${kalem} kalem geri gelecek\n· ${tasin} bagli kayit eski kalemine donecek\n\nDevam edilsin mi?`)) return;
+  try{
+    const itemUp=[], rapUp=[], ordUp={}, specUp=[], geri=[];
+    b.groups.forEach(g=>{
+      const keep=DB.proje.specs.find(s=>s.id===g.keepId);
+      g.moves.forEach(m=>{
+        if(m.t==='item'){ const it=(DB.proje.items||[]).find(x=>x.id===m.id); if(it&&it.specId===g.keepId){ it.specId=m.from; itemUp.push(it); } }
+        else if(m.t==='rap'){ const e=rEntries().find(x=>x.id===m.id); if(e&&e.specId===g.keepId){ e.specId=m.from; rapUp.push(e); } }
+        else if(m.t==='ord'){ const o=(DB.proje.orders||[]).find(x=>x.id===m.id); const l=o&&(o.lines||[])[m.li];
+          if(l&&l.specId===g.keepId){ l.specId=m.from; ordUp[o.id]=o; } }
+      });
+      if(keep){ keep.target=g.keepBefore.target; keep.kat=g.keepBefore.kat;
+        keep.ozelNolar=(g.keepBefore.ozelNolar||[]).slice();
+        if((g.keepBefore.lokTargets||[]).length) keep.lokTargets=g.keepBefore.lokTargets.map(t=>({...t}));
+        specUp.push(keep); }
+      g.removed.forEach(s=>{ if(!DB.proje.specs.some(x=>x.id===s.id)) geri.push(JSON.parse(JSON.stringify(s))); });
+    });
+    if(geri.length){ await sbUpsertProjeSpecs(geri); DB.proje.specs.push(...geri); }
+    if(specUp.length) await sbUpsertProjeSpecs(specUp);
+    if(itemUp.length) await sbUpsertProjeItems(itemUp);
+    for(const e of rapUp) await sbUpdateRaporEntry(e.id,{...e});
+    for(const oid of Object.keys(ordUp)) await sbUpdateProjeOrder(oid,{...ordUp[oid]});
+    await ktopBatchSave(list.slice(0,-1));
+    logAction('editSpec',`Toplulastirma geri alindi: ${geri.length} kalem geri geldi, ${tasin} bagli kayit eski kalemine dondu`);
+    if(_KTOP) renderKatMerge();
+    render(); toast(`Geri alindi · ${geri.length} kalem geri geldi`);
+  }catch(err){ console.error(err); toast('Geri alma hatasi: '+(err.message||err),'err'); }
+}
 // id'nin basindaki Date.now().toString(36) kismindan yaklasik olusturulma zamanini cikarir
 // (uid() = zaman damgasi + 5 karakterlik rastgele son ek). Kart listesinde "ne zaman girildi"
 // bilgisini gostermek icin kullanilir; ayri bir created_at alani gerektirmez.
@@ -7265,7 +7528,11 @@ function renderSpec(){
       const actions=`<div class="prog-actions">${canEdit('proje')?`${open?'':`<button class="btn ${ex?'btn-add':'btn-ghost'}" style="flex:1;padding:7px" onclick="event.stopPropagation();toggleSpecExclude('${sp.id}')" title="${ex?'Ilerleme yuzdesine dahil et':'Ilerleme yuzdesinden cikar'}">${ex?icoInclude()+' Dahil Et':icoExclude()+' Yuzdeden Cikar'}</button>`}
         <button class="mini-btn" title="Duzenle" onclick="event.stopPropagation();openSpecModal(this.dataset.id)" data-id="${sp.id}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
         ${canDelete('proje')?`<button class="mini-btn del" onclick="event.stopPropagation();delSpec('${sp.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>`:''}`  :''}</div>`;
-      const catBadges=`<span class="cat-tag" style="background:${c2}22;color:${c2}">${esc(sp.cat)}</span>${sp.code?` <span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(sp.code)}</span>`:''}${sp.bina?` <span class="bina-tag" style="background:${buildingColor(sp.bina)}22;color:${buildingColor(sp.bina)};border:1px solid ${buildingColor(sp.bina)}55">${esc(sp.bina)}</span>`:''}${exBadge}`;
+      // kat ve toplanmis ozel kod rozetleri: kat bazinda toplulastirilmis kalemin ne oldugu listede gorunur
+      const katTag=sp.kat?` <span class="cat-tag" style="background:rgba(168,85,247,.16);color:var(--violet)" title="Kalemin kati">${esc(/^\d+$/.test(String(sp.kat))?sp.kat+'. KAT':sp.kat)}</span>`:'';
+      const ozelTag=(sp.ozelNolar&&sp.ozelNolar.length)?` <span class="cat-tag" style="background:rgba(240,160,32,.16);color:var(--amber);font-family:var(--mono);font-size:9px" title="${esc(sp.ozelNolar.slice(0,40).join(', '))}${sp.ozelNolar.length>40?' …':''}">${sp.ozelNolar.length} ozel kod</span>`
+        :(sp.ozelNo?` <span class="cat-tag" style="background:rgba(240,160,32,.16);color:var(--amber);font-family:var(--mono);font-size:9px" title="Ozel No">${esc(sp.ozelNo)}</span>`:'');
+      const catBadges=`<span class="cat-tag" style="background:${c2}22;color:${c2}">${esc(sp.cat)}</span>${sp.code?` <span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(sp.code)}</span>`:''}${katTag}${ozelTag}${sp.bina?` <span class="bina-tag" style="background:${buildingColor(sp.bina)}22;color:${buildingColor(sp.bina)};border:1px solid ${buildingColor(sp.bina)}55">${esc(sp.bina)}</span>`:''}${exBadge}`;
       if(SPECVIEW==='list'){
         cards+=`<div class="prog-row spec-clickable${open?' spec-open':ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')">${thumb}
           <div class="prog-row-main"><div class="prog-row-name" title="${esc(sp.name)}">${esc(sp.name)}${altBadge}</div><div class="prog-cat">${catBadges}</div></div>
