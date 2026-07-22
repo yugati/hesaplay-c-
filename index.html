@@ -6760,6 +6760,44 @@ function ktopRuleGet(){ const k=(DB.meta&&DB.meta.katKurali)||{};
    sutunundan, yoksa SAYFA ADINDAN alinir ("Kot +4.200" -> "+4.200"). */
 function ktopKey(v){ return String(v==null?'':v).replace(/[\s\-_]/g,'').toLowerCase(); }
 function ktopKotAd(t){ const s=String(t||'').trim(); const m=s.match(/([+\-]?\s*\d+[.,]\d+)/); return m?m[1].replace(/\s+/g,''):s; }
+/* SAYFA ADINDAN KOT: yalnizca gercekten kot bildiren sayfa adlari kabul edilir.
+   "Kot +4.200" -> +4.200 · "3. Kat" -> 3 · "Kat Listesi" / "Sayfa1" -> yok (bos doner).
+   Boylece sablon dosyasinin sayfa adi yanlislikla kot sanilmaz. */
+function ktopSayfaKot(sn){
+  const s=String(sn||'').trim(); if(!s) return '';
+  const d=s.match(/[+\-]?\d+[.,]\d+/); if(d) return d[0].replace(/\s+/g,'');
+  if(/kot|kat|etaj|level|floor|отметка|этаж/i.test(s)){ const m=s.match(/[+\-]?\d+/); if(m) return m[0]; }
+  return '';
+}
+/* SABLON: mevcut durumu Excel'e dokup kullaniciya verir - kullanici KOT (ve isterse KAT)
+   sutununu doldurup ayni dosyayi geri yukler. Eslesme OZEL NO sutunuyla yapilir. */
+function ktopExportSablon(){
+  const specs=_ktopSpecs().filter(s=>(s.ozelNo||'').trim());
+  const ozelsiz=_ktopSpecs().length-specs.length;
+  if(!specs.length){ toast('Kapsamda ozel no tasiyan kalem yok','err'); return; }
+  const rows=[['Ozel No','Kot','Kat','Malzeme','Urun Kodu','Bina','Bolum','Sartname','Poz','Hedef','Birim']];
+  specs.slice().sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'tr')||String(a.ozelNo||'').localeCompare(String(b.ozelNo||''),'tr'))
+    .forEach(s=>rows.push([s.ozelNo||'',s.kot||'',s.kat||'',s.name||'',s.code||'',s.bina||'',s.cat||'',specGroupKey(s),s.poz||'',Number(s.target)||0,s.unit||'']));
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:20},{wch:10},{wch:7},{wch:44},{wch:14},{wch:10},{wch:12},{wch:14},{wch:12},{wch:9},{wch:8}];
+  ws['!freeze']={xSplit:'1',ySplit:'1'};
+  XLSX.utils.book_append_sheet(wb,ws,'Kat Listesi');
+  const ws2=XLSX.utils.aoa_to_sheet([
+    ['NASIL DOLDURULUR'],[''],
+    ['1) KOT sutununa kalemin kotunu yazin - ornek: 0.000 · +4.200 · +8.400'],
+    ['2) Isterseniz KAT sutununa kat numarasini yazin (1, 2, 3). Bos kalirsa kot etiketi kullanilir.'],
+    ['3) Diger sutunlar yalnizca tanimak icindir - degistirmeniz gerekmez, silebilirsiniz de.'],
+    ['4) Her kat icin AYRI SAYFA da kullanabilirsiniz: sayfa adi "Kot +4.200" ise o sayfadaki tum kodlar o kotu alir.'],
+    ['5) Dosyayi "Kat Bazinda Toplulastir" ekranindan Excel Yukle ile geri yukleyin.'],[''],
+    ['ONEMLI: Ozel No sutunundaki kodlar degistirilmemelidir - eslesme bu kodla yapilir.'],
+    ['Satir sirasi, sutun sirasi ve sayfa sayisi onemli degildir.']
+  ]);
+  ws2['!cols']=[{wch:112}];
+  XLSX.utils.book_append_sheet(wb,ws2,'Nasil Doldurulur');
+  XLSX.writeFile(wb,`kat_listesi_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast(`${specs.length} kalem sablona aktarildi${ozelsiz?` · ${ozelsiz} kalemde ozel no yok`:''}`);
+}
 function ktopListeGet(){ const l=(DB.meta&&DB.meta.katListesi)||null; return (l&&l.map&&typeof l.map==='object')?l:null; }
 async function ktopListeSave(l){ if(!DB.meta)DB.meta={}; DB.meta.katListesi=l;
   try{ await sbSetSetting('katListesi',l); }catch(e){ console.warn('katListesi kaydedilemedi:',e); } }
@@ -6769,7 +6807,7 @@ function ktopParseKatWb(wb){
   (wb.SheetNames||[]).forEach(sn=>{
     const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:''});
     if(!rows.length)return;
-    const sayfaKot=ktopKotAd(sn);
+    const sayfaKot=ktopSayfaKot(sn);
     // ilk satirlarda kat / kot sutunu ara (varsa satir bazli deger sayfa adindan onceliklidir)
     let hKat=-1,hKot=-1,hdrRow=-1;
     for(let i=0;i<Math.min(8,rows.length);i++){
@@ -6924,15 +6962,20 @@ function renderKatMerge(){
           <span class="t-meta">${fmtDT(f.liste.ts)}</span>
           <span style="margin-left:auto;display:flex;gap:7px">
             <input type="file" id="ktopXlsx" accept=".xlsx,.xls,.xlsm" style="display:none" onchange="ktopLoadKatExcel(event)">
+            <button class="btn btn-ghost" style="padding:5px 11px;font-size:11.5px" onclick="ktopExportSablon()" title="Mevcut durumu Excel olarak indir - doldurup geri yukleyin">${icoXls()} Sablon Indir</button>
             <button class="btn btn-ghost" style="padding:5px 11px;font-size:11.5px" onclick="document.getElementById('ktopXlsx').click()">Yeni Dosya</button></span>
         </div>
         <div class="t-meta" style="font-size:11px;margin-top:6px">Kapsamdaki <b>${fmtNum(specs.length)}</b> kalemin <b style="color:var(--green)">${fmtNum(eslesen)}</b> tanesi listede bulundu${eksik.length?` · <b style="color:var(--amber)">${fmtNum(eksik.length)}</b> kalem listede yok`:''}</div>
         ${Object.keys(f.liste.sayfalar||{}).length?`<div class="t-meta" style="font-size:11px;margin-top:4px;font-family:var(--mono)">${Object.keys(f.liste.sayfalar).map(k=>`${esc(k)} (${f.liste.sayfalar[k]})`).join(' · ')}</div>`:''}
         ${eksik.length?`<div class="t-meta" style="font-size:10.5px;margin-top:4px;font-family:var(--mono);color:var(--amber)" title="${esc(eksik.map(s=>s.ozelNo).join(', '))}">Listede olmayanlar: ${esc(eksik.slice(0,8).map(s=>s.ozelNo).join(', '))}${eksik.length>8?` +${eksik.length-8}`:''}</div>`:''}`
-        :`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <span class="t-meta" style="font-size:12px">Kot/kat listesini Excel olarak yukle - kod hangi sutunda olursa olsun bulunur, kot sayfa adindan (orn. "Kot +4.200") ya da kot sutunundan okunur.</span>
-          <input type="file" id="ktopXlsx" accept=".xlsx,.xls,.xlsm" style="display:none" onchange="ktopLoadKatExcel(event)">
-          <button class="btn btn-grid" style="margin-left:auto" onclick="document.getElementById('ktopXlsx').click()">${icoXls()} Excel Yukle</button>
+        :`<div>
+          <div class="t-meta" style="font-size:12px;line-height:1.55"><b style="color:var(--ink)">1.</b> <b style="color:var(--ink)">Sablon Indir</b> ile mevcut kalemleri Excel olarak al · <b style="color:var(--ink)">2.</b> KOT sutununu doldur (0.000 · +4.200 …) · <b style="color:var(--ink)">3.</b> Ayni dosyayi <b style="color:var(--ink)">Excel Yukle</b> ile geri ver.<br>
+            Elindeki hazir liste de olur: kod hangi sutunda olursa olsun bulunur, kot sayfa adindan ("Kot +4.200") ya da Kot sutunundan okunur.</div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            <input type="file" id="ktopXlsx" accept=".xlsx,.xls,.xlsm" style="display:none" onchange="ktopLoadKatExcel(event)">
+            <button class="btn btn-grid" onclick="ktopExportSablon()" title="Kapsamdaki kalemleri Ozel No + bos Kot sutunuyla indirir">${icoXls()} Sablon Indir</button>
+            <button class="btn btn-add" onclick="document.getElementById('ktopXlsx').click()">Excel Yukle</button>
+          </div>
         </div>`}
       </div>`
     : `<div class="frow" style="grid-template-columns:110px 110px;display:grid;gap:10px;align-items:end">
