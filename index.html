@@ -8834,14 +8834,19 @@ function renderRaporListe(list){
   const buAy=rISO(Date.now()).slice(0,7);
   let html='';
   aylar.forEach(ay=>{
-    let ayKalem=0, ayAdam=0;
-    ay.dates.forEach(dt=>{ ayKalem+=byDate[dt].items.length; ayAdam+=rGunAdam(byDate[dt].items); });
+    // KALEM toplanir (ayri ayri islerdir), ADAM SAYISI TOPLANMAZ: ayni ekip her gun
+    // yeniden sayilacagi icin toplam anlamsiz olur - gunluk ORTALAMA gosterilir.
+    let ayKalem=0; const gunAdam=[];
+    ay.dates.forEach(dt=>{ ayKalem+=byDate[dt].items.length; const a=rGunAdam(byDate[dt].items); if(a>0)gunAdam.push(a); });
+    const ortAdam=gunAdam.length?Math.round(gunAdam.reduce((s,v)=>s+v,0)/gunAdam.length*10)/10:0;
+    const enYuksek=gunAdam.length?Math.max(...gunAdam):0;
+    const adamTip=gunAdam.length?`Gunluk adam sayisi toplanmaz - ${gunAdam.length} gunun ortalamasi (en yuksek gun: ${enYuksek} adam)`:'';
     const m=rAyBilgi(ay.ym);
     html+=`<div class="rap-mon" style="--mc:${m.renk};--mcs:${m.renk}2b">
       <span class="rap-mon-dot"></span><span class="rap-mon-name">${esc(m.ad)}</span><span class="rap-mon-yr">${esc(m.yil)}</span>
       ${ay.ym===buAy?`<span class="rap-mon-now">BU AY</span>`:''}
       <span class="rap-mon-line"></span>
-      <span class="rap-mon-sum">${ay.dates.length} gun · ${ayKalem} kalem${ayAdam?` · ${ayAdam} adam`:''}</span>
+      <span class="rap-mon-sum">${ay.dates.length} gun · ${ayKalem} kalem${ortAdam?` · <span title="${esc(adamTip)}">ort. ${fmtNum(ortAdam)} adam/gun</span>`:''}</span>
     </div><div class="rap-mgrp" style="--mc:${m.renk};--mcs:${m.renk}2b">${rAyKartlari(ay.dates,byDate)}</div>`;
   });
   return `<div class="rap-days">${html}</div>`;
