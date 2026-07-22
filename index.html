@@ -853,6 +853,25 @@ tbody tr:hover{background:var(--hover)}
 .rap-day-sum{font-size:12px;color:var(--mute);font-family:var(--mono);white-space:nowrap}
 .rap-day-chev{color:var(--dim);flex-shrink:0;transition:transform .15s,color .15s}
 .rap-day:hover .rap-day-chev{color:var(--ink);transform:translateX(2px)}
+/* AY AYIRICI: gun kartlari aya gore bloklanir. Baslik yapiskandir (kaydirirken hangi
+   ayda oldugun hep gorunur), rengi ay numarasindan turer - ayni ay her zaman ayni renk,
+   komsu aylar hep farkli. O ayin kartlari ayni renkte ince bir sol kenarla isaretlenir. */
+.rap-mon{display:flex;align-items:center;gap:9px;position:sticky;top:56px;z-index:20;background:var(--bg);padding:9px 2px 8px;margin:0 -2px}
+.rap-days>.rap-mon:not(:first-child){margin-top:14px}
+.rap-mon-dot{width:9px;height:9px;border-radius:50%;background:var(--mc);box-shadow:0 0 0 3px var(--mcs);flex-shrink:0}
+.rap-mon-name{font-size:12px;font-weight:800;letter-spacing:1.3px;text-transform:uppercase;color:var(--ink);white-space:nowrap}
+.rap-mon-yr{font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.5px}
+.rap-mon-now{font-size:9px;font-weight:700;letter-spacing:.6px;padding:2px 7px;border-radius:5px;background:var(--mcs);color:var(--mc);white-space:nowrap}
+.rap-mon-line{flex:1;min-width:10px;height:1px;background:linear-gradient(90deg,var(--mcs),var(--line),transparent)}
+.rap-mon-sum{font-family:var(--mono);font-size:11px;color:var(--mute);white-space:nowrap}
+.rap-mgrp{display:flex;flex-direction:column;gap:9px}
+.rap-mgrp .rap-day{border-left:3px solid var(--mcs)}
+.rap-mgrp .rap-day:hover{border-left-color:var(--mc)}
+@media(max-width:767px){
+  .rap-mon{top:52px;gap:7px}
+  .rap-mon-sum{font-size:10px}
+  .rap-mon-yr{font-size:10px}
+}
 .rapday-modal{max-width:720px!important}
 .rapday-body{display:flex;flex-direction:column;gap:12px;background:linear-gradient(180deg,var(--panel),var(--bg))}
 .rapday-body .rap-group{background:var(--panel)}
@@ -8806,6 +8825,36 @@ function renderRaporListe(list){
   const byDate={};
   list.forEach(e=>{ if(!byDate[e.tarih])byDate[e.tarih]={tarih:e.tarih,items:[],binalar:new Set(),vardiyalar:new Set()}; const d=byDate[e.tarih]; d.items.push(e); if(e.bina)d.binalar.add(e.bina); if(e.vardiya)d.vardiyalar.add(e.vardiya); });
   const dates=Object.keys(byDate).sort((a,b)=>(b||'').localeCompare(a||''));
+  // AY BLOKLARI: tarihler zaten yeniden eskiye sirali - ay degistigi anda yeni blok acilir
+  const aylar=[];
+  dates.forEach(dt=>{ const ym=String(dt||'').slice(0,7);
+    const son=aylar[aylar.length-1];
+    if(son&&son.ym===ym) son.dates.push(dt); else aylar.push({ym,dates:[dt]});
+  });
+  const buAy=rISO(Date.now()).slice(0,7);
+  let html='';
+  aylar.forEach(ay=>{
+    let ayKalem=0, ayAdam=0;
+    ay.dates.forEach(dt=>{ ayKalem+=byDate[dt].items.length; ayAdam+=rGunAdam(byDate[dt].items); });
+    const m=rAyBilgi(ay.ym);
+    html+=`<div class="rap-mon" style="--mc:${m.renk};--mcs:${m.renk}2b">
+      <span class="rap-mon-dot"></span><span class="rap-mon-name">${esc(m.ad)}</span><span class="rap-mon-yr">${esc(m.yil)}</span>
+      ${ay.ym===buAy?`<span class="rap-mon-now">BU AY</span>`:''}
+      <span class="rap-mon-line"></span>
+      <span class="rap-mon-sum">${ay.dates.length} gun · ${ayKalem} kalem${ayAdam?` · ${ayAdam} adam`:''}</span>
+    </div><div class="rap-mgrp" style="--mc:${m.renk};--mcs:${m.renk}2b">${rAyKartlari(ay.dates,byDate)}</div>`;
+  });
+  return `<div class="rap-days">${html}</div>`;
+}
+// "2026-07" -> {ad:'TEMMUZ', yil:'2026', renk:'#...'}. Renk AY NUMARASINDAN turer:
+// ayni ay her yil ayni renkte, ardisik aylar hep farkli renkte olur (filtre degisse de kaymaz).
+const TR_AYLAR=['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
+const TR_AY_RENK=['#3b82f6','#f0a020','#22c55e','#a855f7','#06b6d4','#ef4444'];
+function rAyBilgi(ym){
+  const p=String(ym||'').split('-'); const mi=Math.min(11,Math.max(0,(Number(p[1])||1)-1));
+  return {ad:TR_AYLAR[mi], yil:p[0]||'', renk:TR_AY_RENK[mi%TR_AY_RENK.length]};
+}
+function rAyKartlari(dates,byDate){
   let html='';
   dates.forEach(dt=>{ const d=byDate[dt];
     const totAdam=rGunAdam(d.items);
@@ -8823,7 +8872,7 @@ function renderRaporListe(list){
         <svg class="rap-day-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div>
     </button>`;
   });
-  return `<div class="rap-days">${html}</div>`;
+  return html;
 }
 // Adam sayisi BOLUM + EKIP bazinda girilir: bir bolumde bir ekip icin girilen sayi o blogun
 // tum is kalemlerini kapsar, her satirda yeniden sayilmaz. Ayni ekip baska bir bolume
