@@ -6752,8 +6752,60 @@ async function kimpDelete(mode){
    Tum islem tek tikla geri alinir (DB.meta.mergeBatches). */
 let _KTOP=null;
 function ktopRuleGet(){ const k=(DB.meta&&DB.meta.katKurali)||{};
-  return {src:k.src==='poz'?'poz':'ozel', start:Number(k.start)>0?Number(k.start):6,
+  return {src:(k.src==='poz'||k.src==='liste')?k.src:'ozel', start:Number(k.start)>0?Number(k.start):6,
     len:Number(k.len)>0?Number(k.len):2, map:(k.map&&typeof k.map==='object')?{...k.map}:{}}; }
+/* KAT LISTESI (Excel): kodun kati/kotu tahmin edilmez, kullanicinin hazir listesinden okunur.
+   Dosyada sutun basligi aramaya calismak yerine SATIRDAKI HER HUCRE sistemdeki ozel kodlarla
+   karsilastirilir - kod hangi sutunda olursa olsun bulunur. Kot ise once satirdaki kat/kot
+   sutunundan, yoksa SAYFA ADINDAN alinir ("Kot +4.200" -> "+4.200"). */
+function ktopKey(v){ return String(v==null?'':v).replace(/[\s\-_]/g,'').toLowerCase(); }
+function ktopKotAd(t){ const s=String(t||'').trim(); const m=s.match(/([+\-]?\s*\d+[.,]\d+)/); return m?m[1].replace(/\s+/g,''):s; }
+function ktopListeGet(){ const l=(DB.meta&&DB.meta.katListesi)||null; return (l&&l.map&&typeof l.map==='object')?l:null; }
+async function ktopListeSave(l){ if(!DB.meta)DB.meta={}; DB.meta.katListesi=l;
+  try{ await sbSetSetting('katListesi',l); }catch(e){ console.warn('katListesi kaydedilemedi:',e); } }
+function ktopParseKatWb(wb){
+  const bilinen={}; DB.proje.specs.forEach(s=>{ const k=ktopKey(s.ozelNo); if(k)bilinen[k]=1; });
+  const map={}; const sayfalar={}; let satir=0, kodsuz=0;
+  (wb.SheetNames||[]).forEach(sn=>{
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:''});
+    if(!rows.length)return;
+    const sayfaKot=ktopKotAd(sn);
+    // ilk satirlarda kat / kot sutunu ara (varsa satir bazli deger sayfa adindan onceliklidir)
+    let hKat=-1,hKot=-1,hdrRow=-1;
+    for(let i=0;i<Math.min(8,rows.length);i++){
+      (rows[i]||[]).forEach((c,ci)=>{ const t=norm(c);
+        if(hKat<0&&/^(kat|floor|etaj|этаж)$/.test(t)){ hKat=ci; hdrRow=i; }
+        if(hKot<0&&/^(kot|seviye|level|отметка)$/.test(t)){ hKot=ci; hdrRow=i; } });
+    }
+    rows.forEach((r,ri)=>{ if(ri===hdrRow||!r)return;
+      let kod=''; for(const c of r){ const t=ktopKey(c); if(t&&bilinen[t]){ kod=t; break; } }
+      // "eslesmedi" sayaci yalniz KODA BENZEYEN degerleri sayar (harf+rakam, bosluksuz):
+      // baslik satirlari ve aciklama hucreleri uyari uretmesin
+      if(!kod){ if(r.some(c=>{ const t=String(c||'').trim(); return t.length>=6&&!/\s/.test(t)&&/[A-Za-z]/.test(t)&&/\d/.test(t); })) kodsuz++; return; }
+      const kot=(hKot>=0?String(r[hKot]||'').trim():'')||sayfaKot||'';
+      const kat=(hKat>=0?String(r[hKat]||'').trim():'');
+      if(!kot&&!kat)return;
+      map[kod]={kot,kat,sayfa:sn}; satir++;
+      const et=kat||kot; sayfalar[et]=(sayfalar[et]||0)+1;
+    });
+  });
+  return {map,satir,kodsuz,sayfalar};
+}
+function ktopLoadKatExcel(ev){
+  const f=ev.target.files&&ev.target.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=async e=>{ try{
+    const wb=XLSX.read(e.target.result,{type:'binary'});
+    const {map,satir,kodsuz,sayfalar}=ktopParseKatWb(wb);
+    if(!satir){ toast('Dosyada sistemdeki ozel kodlarla eslesen satir bulunamadi','err'); return; }
+    const liste={map,ts:Date.now(),dosya:f.name,n:satir,sayfalar};
+    await ktopListeSave(liste);
+    if(_KTOP){ _KTOP.liste=liste; _KTOP.src='liste'; renderKatMerge(); }
+    toast(`${satir} kod okundu${kodsuz?` · ${kodsuz} satir eslesmedi`:''}`);
+  }catch(err){ console.error(err); toast('Excel okunamadi: '+(err.message||err),'err'); }
+  ev.target.value=''; };
+  r.readAsBinaryString(f);
+}
 async function ktopRuleSave(sessiz){ if(!_KTOP)return; if(!DB.meta)DB.meta={};
   const k={src:_KTOP.src,start:_KTOP.start,len:_KTOP.len,map:_KTOP.map};
   DB.meta.katKurali=k;
@@ -6764,8 +6816,8 @@ async function ktopBatchSave(list){ if(!DB.meta)DB.meta={}; DB.meta.mergeBatches
   try{ await sbSetSetting('mergeBatches',list); }catch(e){ console.warn('mergeBatches kaydedilemedi:',e); } }
 function openSpecKatMerge(){
   if(!isAdmin()){ toast('Bu islem sadece yoneticilere aittir','err'); return; }
-  const r=ktopRuleGet();
-  _KTOP={bina:'__all',grup:'__all',q:'',src:r.src,start:r.start,len:r.len,map:r.map,off:{}};
+  const r=ktopRuleGet(), l=ktopListeGet();
+  _KTOP={bina:'__all',grup:'__all',q:'',src:(r.src==='liste'&&!l)?'ozel':r.src,start:r.start,len:r.len,map:r.map,off:{},liste:l};
   renderKatMerge();
 }
 function ktopSet(k,v){ if(!_KTOP)return;
@@ -6787,12 +6839,21 @@ function _ktopSpecs(){ const f=_KTOP, q=norm(f.q||'').trim();
     if(q && norm((s.name||'')+' '+(s.code||'')+' '+(s.poz||'')+' '+(s.ozelNo||'')).indexOf(q)<0) return false;
     return true; }); }
 function ktopSrcVal(sp){ return String((_KTOP.src==='poz'?sp.poz:sp.ozelNo)||'').trim(); }
-function ktopParca(sp){ const v=ktopSrcVal(sp); if(!v)return ''; return v.substr(_KTOP.start-1,_KTOP.len).trim().toUpperCase(); }
-// varsayilan TAHMIN: parcadaki ilk rakam kat sayilir (12 -> 1, 20 -> 2). Ekranda gosterilir,
-// kullanici her parcayi elle degistirebilir; bos birakilan parcanin kalemleri toplanmaz.
-function ktopGuess(p){ const d=String(p).replace(/\D/g,''); return d?d[0]:''; }
+// Excel listesinden gelen kayit (kot/kat) - yalnizca 'liste' kaynaginda kullanilir
+function ktopListeRec(sp){ const l=_KTOP&&_KTOP.liste; if(!l)return null;
+  const k=ktopKey(sp.ozelNo); return k?(l.map[k]||null):null; }
+// kalemin "parcasi" = gruplama etiketi. liste: Excel'deki kat (yoksa kot); digerlerinde karakter araligi
+function ktopParca(sp){
+  if(_KTOP.src==='liste'){ const rec=ktopListeRec(sp); return rec?String(rec.kat||rec.kot||'').trim().toUpperCase():''; }
+  const v=ktopSrcVal(sp); if(!v)return ''; return v.substr(_KTOP.start-1,_KTOP.len).trim().toUpperCase(); }
+// varsayilan TAHMIN: karakter araliginda parcadaki ilk rakam kat sayilir (12 -> 1, 20 -> 2);
+// Excel listesinde tahmin YOKTUR - deger neyse aynen kullanilir. Ekranda gosterilir, elle
+// degistirilebilir; bos birakilan parcanin kalemleri toplanmaz.
+function ktopGuess(p){ if(_KTOP&&_KTOP.src==='liste') return String(p||''); const d=String(p).replace(/\D/g,''); return d?d[0]:''; }
 function ktopKat(sp){ const p=ktopParca(sp); if(!p)return '';
   const m=_KTOP.map; return (Object.prototype.hasOwnProperty.call(m,p)?String(m[p]||''):ktopGuess(p)).trim(); }
+// kalemin kotu (Excel listesinden) - kat yazarken ayrica saklanir
+function ktopKot(sp){ const rec=ktopListeRec(sp); return rec?String(rec.kot||'').trim():''; }
 // okunan karakterleri kaynak degerin icinde vurgular - kuralin dogru yeri okudugu gozle gorulur
 function ktopHl(v){ if(!v) return '<span class="t-meta">(bos)</span>';
   const a=esc(v.slice(0,_KTOP.start-1)), b=esc(v.substr(_KTOP.start-1,_KTOP.len)), c=esc(v.slice(_KTOP.start-1+_KTOP.len));
@@ -6840,17 +6901,46 @@ function renderKatMerge(){
     parcalar[p].n++; if(!parcalar[p].ornek)parcalar[p].ornek=ktopSrcVal(sp); });
   const parcaList=Object.values(parcalar).sort((a,b)=>a.p.localeCompare(b.p,'tr'));
   f._parcalar=parcaList.map(x=>x.p); // sira no ile duzenleme icin
+  const liste=f.src==='liste';
   const parcaRows=parcaList.map((x,pi)=>{
     const kat=x.p?(Object.prototype.hasOwnProperty.call(f.map,x.p)?f.map[x.p]:ktopGuess(x.p)):'';
-    const tahmin=x.p&&!Object.prototype.hasOwnProperty.call(f.map,x.p)&&kat;
+    const tahmin=!liste&&x.p&&!Object.prototype.hasOwnProperty.call(f.map,x.p)&&kat;
     return `<div class="matd-row" style="cursor:default;gap:10px">
       <b style="font-family:var(--mono);font-size:12px;min-width:44px">${x.p?esc(x.p):'—'}</b>
-      <span style="min-width:0;overflow:hidden">${ktopHl(x.ornek)}</span>
+      <span style="min-width:0;overflow:hidden">${liste?`<span class="t-meta" style="font-size:11px">${esc(x.ornek)}</span>`:ktopHl(x.ornek)}</span>
       <span class="t-meta" style="margin-left:auto;white-space:nowrap">${x.n} kalem</span>
       ${x.p?`<span style="display:flex;align-items:center;gap:5px;flex-shrink:0"><span class="t-meta">Kat</span>
-        <input value="${esc(kat)}" placeholder="—" style="width:56px;padding:5px 7px;text-align:center;font-family:var(--mono)${tahmin?';border-color:var(--amber)66':''}" title="${tahmin?'Tahmin - dogrula veya degistir':'Bu kod parcasinin kat karsiligi'}" onchange="ktopMapSetIdx(${pi},this.value)"></span>`
-        :`<span class="t-meta" style="flex-shrink:0;color:var(--amber)">kod yok - toplanmaz</span>`}
+        <input value="${esc(kat)}" placeholder="—" style="width:${liste?86:56}px;padding:5px 7px;text-align:center;font-family:var(--mono)${tahmin?';border-color:var(--amber)66':''}" title="${tahmin?'Tahmin - dogrula veya degistir':'Bu kot/kod parcasinin kat karsiligi - istersen 1, 2, 3 yaz'}" onchange="ktopMapSetIdx(${pi},this.value)"></span>`
+        :`<span class="t-meta" style="flex-shrink:0;color:var(--amber)">${liste?'listede yok - toplanmaz':'kod yok - toplanmaz'}</span>`}
     </div>`; }).join('');
+  // Excel listesi durumu: kac kalem esletti, kac kalem listede yok
+  const eslesen=specs.filter(sp=>!!ktopListeRec(sp)).length;
+  const eksik=specs.filter(sp=>(sp.ozelNo||'').trim()&&!ktopListeRec(sp));
+  const kaynakHtml=liste
+    ? `<div style="border:1px solid var(--line);border-radius:10px;padding:11px 13px;background:var(--panel2)">
+        ${f.liste?`<div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+          <b style="font-size:12.5px">${esc(f.liste.dosya||'kat listesi')}</b>
+          <span class="cat-tag" style="background:rgba(34,197,94,.16);color:var(--green)">${fmtNum(f.liste.n||0)} kod</span>
+          <span class="t-meta">${fmtDT(f.liste.ts)}</span>
+          <span style="margin-left:auto;display:flex;gap:7px">
+            <input type="file" id="ktopXlsx" accept=".xlsx,.xls,.xlsm" style="display:none" onchange="ktopLoadKatExcel(event)">
+            <button class="btn btn-ghost" style="padding:5px 11px;font-size:11.5px" onclick="document.getElementById('ktopXlsx').click()">Yeni Dosya</button></span>
+        </div>
+        <div class="t-meta" style="font-size:11px;margin-top:6px">Kapsamdaki <b>${fmtNum(specs.length)}</b> kalemin <b style="color:var(--green)">${fmtNum(eslesen)}</b> tanesi listede bulundu${eksik.length?` · <b style="color:var(--amber)">${fmtNum(eksik.length)}</b> kalem listede yok`:''}</div>
+        ${Object.keys(f.liste.sayfalar||{}).length?`<div class="t-meta" style="font-size:11px;margin-top:4px;font-family:var(--mono)">${Object.keys(f.liste.sayfalar).map(k=>`${esc(k)} (${f.liste.sayfalar[k]})`).join(' · ')}</div>`:''}
+        ${eksik.length?`<div class="t-meta" style="font-size:10.5px;margin-top:4px;font-family:var(--mono);color:var(--amber)" title="${esc(eksik.map(s=>s.ozelNo).join(', '))}">Listede olmayanlar: ${esc(eksik.slice(0,8).map(s=>s.ozelNo).join(', '))}${eksik.length>8?` +${eksik.length-8}`:''}</div>`:''}`
+        :`<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span class="t-meta" style="font-size:12px">Kot/kat listesini Excel olarak yukle - kod hangi sutunda olursa olsun bulunur, kot sayfa adindan (orn. "Kot +4.200") ya da kot sutunundan okunur.</span>
+          <input type="file" id="ktopXlsx" accept=".xlsx,.xls,.xlsm" style="display:none" onchange="ktopLoadKatExcel(event)">
+          <button class="btn btn-grid" style="margin-left:auto" onclick="document.getElementById('ktopXlsx').click()">${icoXls()} Excel Yukle</button>
+        </div>`}
+      </div>`
+    : `<div class="frow" style="grid-template-columns:110px 110px;display:grid;gap:10px;align-items:end">
+        <div><label>Baslangic</label><input type="number" min="1" max="40" value="${f.start}" onchange="ktopSet('start',this.value)"></div>
+        <div><label>Karakter</label><input type="number" min="1" max="40" value="${f.len}" onchange="ktopSet('len',this.value)"></div>
+      </div>`;
+  const yazilacak=specs.filter(sp=>{ const k=ktopKat(sp); if(!k)return false;
+    return String(sp.kat||'')!==k || (liste&&String(sp.kot||'')!==ktopKot(sp)); }).length;
   const plan=ktopPlan();
   const birlesecek=plan.filter(g=>g.birlesir&&g.sel);
   const bekleyen=plan.filter(g=>g.specs.length>1&&!g.kat);
@@ -6890,16 +6980,14 @@ function renderKatMerge(){
       </div>
       <div class="frow"><label>Ad / Kod / Poz / Ozel No icinde ara</label>
         <input value="${esc(f.q)}" placeholder="orn. Проходка" onchange="ktopSet('q',this.value.trim())"></div>
-      <div class="matd-sec">Kat Kurali <i>kat bilgisi hangi koddan, hangi karakterlerden okunacak</i></div>
-      <div class="frow" style="grid-template-columns:1fr 110px 110px;display:grid;gap:10px;align-items:end">
-        <div><label>Kaynak</label><select onchange="ktopSet('src',this.value)">
-          <option value="ozel" ${f.src==='ozel'?'selected':''}>Ozel No</option>
-          <option value="poz" ${f.src==='poz'?'selected':''}>Poz No</option>
-        </select></div>
-        <div><label>Baslangic</label><input type="number" min="1" max="40" value="${f.start}" onchange="ktopSet('start',this.value)"></div>
-        <div><label>Karakter</label><input type="number" min="1" max="40" value="${f.len}" onchange="ktopSet('len',this.value)"></div>
-      </div>
-      ${parcaList.length?`<div class="matd-sec">Kod Parcasi → Kat <span>${parcaList.length}</span><i>turuncu cerceve = tahmin, dogrula</i></div>${parcaRows}`
+      <div class="matd-sec">Kat Kaynagi <i>kalemin kati nereden okunacak</i></div>
+      <div class="frow"><label>Kaynak</label><select onchange="ktopSet('src',this.value)">
+        <option value="liste" ${f.src==='liste'?'selected':''}>Excel listesi (kod → kot/kat) — onerilen</option>
+        <option value="ozel" ${f.src==='ozel'?'selected':''}>Ozel No icindeki karakterler</option>
+        <option value="poz" ${f.src==='poz'?'selected':''}>Poz No icindeki karakterler</option>
+      </select></div>
+      ${kaynakHtml}
+      ${parcaList.length?`<div class="matd-sec">${liste?'Kot / Kat → Kat Etiketi':'Kod Parcasi → Kat'} <span>${parcaList.length}</span><i>${liste?'istersen kot yerine 1, 2, 3 yaz':'turuncu cerceve = tahmin, dogrula'}</i></div>${parcaRows}`
         :`<p class="matd-empty">Filtreye uyan kalem yok.</p>`}
       <div class="matd-stats" style="grid-template-columns:repeat(4,1fr)">
         ${stat(specs.length,'kapsamdaki kalem')}
@@ -6910,15 +6998,41 @@ function renderKatMerge(){
       ${bekleyen.length?`<p style="font-size:12px;color:var(--amber)">${bekleyen.length} grup kat karsiligi girilmedigi icin bekliyor - yukaridaki tabloda kat yazin.</p>`:''}
       ${planRows?`<div class="matd-sec">Onizleme <i>yalnizca isaretli gruplar toplanir</i></div>${planRows}`
         :`<p class="matd-empty">Ayni urunden birden fazla kalem bulunamadi - toplanacak bir sey yok.</p>`}
-      ${son?`<p style="font-size:11.5px;color:var(--mute);margin-top:12px">Son toplulastirma: ${fmtDT(son.ts)} · ${son.groups.length} grup · ${esc(son.user||'')}</p>`:''}
+      ${son?`<p style="font-size:11.5px;color:var(--mute);margin-top:12px">Son islem: ${son.tip==='kat'?'kat yazma':'toplulastirma'} · ${fmtDT(son.ts)} · ${son.groups.length} ${son.tip==='kat'?'kalem':'grup'} · ${esc(son.user||'')}</p>`:''}
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" style="margin-right:auto" onclick="_KTOP=null;closeModal()">Kapat</button>
       ${son?`<button class="btn btn-ghost" style="border-color:var(--amber)66;color:var(--amber)" onclick="ktopUndo()">Son Islemi Geri Al</button>`:''}
-      <button class="btn btn-ghost" onclick="ktopRuleSave()">Kurali Kaydet</button>
+      <button class="btn btn-ghost" ${yazilacak?'':'disabled'} onclick="ktopWriteKat()" title="Kalemlere yalnizca kat/kot bilgisini yazar - birlestirme yapmaz">Kat/Kot Yaz (${yazilacak})</button>
       <button class="btn btn-add" ${birlesecek.length?'':'disabled'} onclick="ktopApply()">Toplulastir (${birlesecek.length} grup)</button>
     </div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
+}
+/* SADECE KAT/KOT YAZ: birlestirme yapmadan kalemlere kat (ve Excel listesi kullanildiysa kot)
+   bilgisini isler. Tek basina calisir - once kat bilgisini yazip listeyi kontrol etmek,
+   toplulastirmayi sonra yapmak icin. Ayni geri alma kaydini kullanir. */
+async function ktopWriteKat(){
+  if(!isAdmin()){ toast('Bu islem sadece yoneticilere aittir','err'); return; }
+  const liste=_KTOP.src==='liste';
+  const hedef=_ktopSpecs().map(sp=>({sp,kat:ktopKat(sp),kot:liste?ktopKot(sp):''}))
+    .filter(x=>x.kat && (String(x.sp.kat||'')!==x.kat || (liste&&String(x.sp.kot||'')!==x.kot)));
+  if(!hedef.length){ toast('Yazilacak yeni kat bilgisi yok','err'); return; }
+  if(!confirm(`${hedef.length} kaleme kat${liste?'/kot':''} bilgisi yazilacak.\n\nKalemler birlestirilmez, hedef/miktar degismez - yalnizca kat alani islenir.\n\nDevam edilsin mi?`)) return;
+  try{
+    const batch={id:uid(),ts:Date.now(),user:(CURRENT_USER&&CURRENT_USER.username)||'?',tip:'kat',groups:[]};
+    const up=[];
+    hedef.forEach(x=>{ const sp=x.sp;
+      batch.groups.push({keepId:sp.id,
+        keepBefore:{target:Number(sp.target)||0,kat:sp.kat||'',kot:sp.kot||'',ozelNolar:(sp.ozelNolar||[]).slice(),lokTargets:(sp.lokTargets||[]).map(t=>({...t}))},
+        removed:[],moves:[]});
+      sp.kat=x.kat; if(liste&&x.kot)sp.kot=x.kot; up.push(sp); });
+    await sbUpsertProjeSpecs(up);
+    await ktopBatchSave([...ktopBatches(),batch].slice(-10));
+    await ktopRuleSave(true);
+    logAction('editSpec',`Kat bilgisi yazildi: ${up.length} kalem${liste?' (Excel listesinden)':''}`);
+    renderKatMerge(); render();
+    toast(`${up.length} kaleme kat bilgisi yazildi`);
+  }catch(err){ console.error(err); toast('Kat yazma hatasi: '+(err.message||err),'err'); }
 }
 async function ktopApply(){
   if(!isAdmin()){ toast('Bu islem sadece yoneticilere aittir','err'); return; }
@@ -6936,7 +7050,7 @@ async function ktopApply(){
     gruplar.forEach(g=>{
       const keep=g.keep, others=g.specs.filter(s=>s.id!==keep.id);
       const snap={keepId:keep.id,
-        keepBefore:{target:Number(keep.target)||0,kat:keep.kat||'',ozelNolar:(keep.ozelNolar||[]).slice(),lokTargets:(keep.lokTargets||[]).map(t=>({...t}))},
+        keepBefore:{target:Number(keep.target)||0,kat:keep.kat||'',kot:keep.kot||'',ozelNolar:(keep.ozelNolar||[]).slice(),lokTargets:(keep.lokTargets||[]).map(t=>({...t}))},
         removed:others.map(s=>JSON.parse(JSON.stringify(s))), moves:[]};
       g.items.forEach(it=>{ if(it.specId===keep.id)return; snap.moves.push({t:'item',id:it.id,from:it.specId}); it.specId=keep.id; itemUp.push(it); });
       g.raps.forEach(e=>{ if(e.specId===keep.id)return; snap.moves.push({t:'rap',id:e.id,from:e.specId}); e.specId=keep.id; rapUp.push(e); });
@@ -6945,6 +7059,8 @@ async function ktopApply(){
       const lokMap={}; g.specs.forEach(s=>(s.lokTargets||[]).forEach(t=>{ lokMap[t.lokId]=(lokMap[t.lokId]||0)+(Number(t.target)||0); }));
       const lokTargets=Object.keys(lokMap).map(k=>({lokId:k,target:lokMap[k]}));
       keep.target=g.target; keep.kat=g.kat;
+      const _kot=ktopKot(keep)||g.specs.map(s=>ktopKot(s)).find(Boolean)||keep.kot||'';
+      if(_kot) keep.kot=_kot;
       keep.ozelNolar=[...new Set([...(keep.ozelNolar||[]),...g.ozelNolar])];
       if(lokTargets.length) keep.lokTargets=lokTargets;
       specUp.push(keep); specDel.push(...others.map(s=>s.id));
@@ -6971,7 +7087,10 @@ async function ktopUndo(){
   if(!b){ toast('Geri alinacak islem yok','err'); return; }
   const kalem=b.groups.reduce((n,g)=>n+g.removed.length,0);
   const tasin=b.groups.reduce((n,g)=>n+g.moves.length,0);
-  if(!confirm(`${fmtDT(b.ts)} tarihli toplulastirma geri alinacak.\n\n· ${kalem} kalem geri gelecek\n· ${tasin} bagli kayit eski kalemine donecek\n\nDevam edilsin mi?`)) return;
+  const msg = b.tip==='kat'
+    ? `${fmtDT(b.ts)} tarihli kat yazma islemi geri alinacak.\n\n· ${b.groups.length} kalemin kat/kot bilgisi eski haline donecek\n\nDevam edilsin mi?`
+    : `${fmtDT(b.ts)} tarihli toplulastirma geri alinacak.\n\n· ${kalem} kalem geri gelecek\n· ${tasin} bagli kayit eski kalemine donecek\n\nDevam edilsin mi?`;
+  if(!confirm(msg)) return;
   try{
     const itemUp=[], rapUp=[], ordUp={}, specUp=[], geri=[];
     b.groups.forEach(g=>{
@@ -6982,7 +7101,7 @@ async function ktopUndo(){
         else if(m.t==='ord'){ const o=(DB.proje.orders||[]).find(x=>x.id===m.id); const l=o&&(o.lines||[])[m.li];
           if(l&&l.specId===g.keepId){ l.specId=m.from; ordUp[o.id]=o; } }
       });
-      if(keep){ keep.target=g.keepBefore.target; keep.kat=g.keepBefore.kat;
+      if(keep){ keep.target=g.keepBefore.target; keep.kat=g.keepBefore.kat; keep.kot=g.keepBefore.kot||'';
         keep.ozelNolar=(g.keepBefore.ozelNolar||[]).slice();
         if((g.keepBefore.lokTargets||[]).length) keep.lokTargets=g.keepBefore.lokTargets.map(t=>({...t}));
         specUp.push(keep); }
@@ -6994,9 +7113,9 @@ async function ktopUndo(){
     for(const e of rapUp) await sbUpdateRaporEntry(e.id,{...e});
     for(const oid of Object.keys(ordUp)) await sbUpdateProjeOrder(oid,{...ordUp[oid]});
     await ktopBatchSave(list.slice(0,-1));
-    logAction('editSpec',`Toplulastirma geri alindi: ${geri.length} kalem geri geldi, ${tasin} bagli kayit eski kalemine dondu`);
+    logAction('editSpec',b.tip==='kat'?`Kat yazma geri alindi: ${b.groups.length} kalem`:`Toplulastirma geri alindi: ${geri.length} kalem geri geldi, ${tasin} bagli kayit eski kalemine dondu`);
     if(_KTOP) renderKatMerge();
-    render(); toast(`Geri alindi · ${geri.length} kalem geri geldi`);
+    render(); toast(b.tip==='kat'?`Geri alindi · ${b.groups.length} kalemin kati eski haline dondu`:`Geri alindi · ${geri.length} kalem geri geldi`);
   }catch(err){ console.error(err); toast('Geri alma hatasi: '+(err.message||err),'err'); }
 }
 // id'nin basindaki Date.now().toString(36) kismindan yaklasik olusturulma zamanini cikarir
@@ -7529,7 +7648,7 @@ function renderSpec(){
         <button class="mini-btn" title="Duzenle" onclick="event.stopPropagation();openSpecModal(this.dataset.id)" data-id="${sp.id}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
         ${canDelete('proje')?`<button class="mini-btn del" onclick="event.stopPropagation();delSpec('${sp.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>`:''}`  :''}</div>`;
       // kat ve toplanmis ozel kod rozetleri: kat bazinda toplulastirilmis kalemin ne oldugu listede gorunur
-      const katTag=sp.kat?` <span class="cat-tag" style="background:rgba(168,85,247,.16);color:var(--violet)" title="Kalemin kati">${esc(/^\d+$/.test(String(sp.kat))?sp.kat+'. KAT':sp.kat)}</span>`:'';
+      const katTag=sp.kat?` <span class="cat-tag" style="background:rgba(168,85,247,.16);color:var(--violet)" title="Kalemin kati${sp.kot?' · Kot '+esc(sp.kot):''}">${esc(/^\d+$/.test(String(sp.kat))?sp.kat+'. KAT':sp.kat)}${sp.kot&&String(sp.kot)!==String(sp.kat)?` <span style="opacity:.7;font-family:var(--mono);font-size:9px">${esc(sp.kot)}</span>`:''}</span>`:'';
       const ozelTag=(sp.ozelNolar&&sp.ozelNolar.length)?` <span class="cat-tag" style="background:rgba(240,160,32,.16);color:var(--amber);font-family:var(--mono);font-size:9px" title="${esc(sp.ozelNolar.slice(0,40).join(', '))}${sp.ozelNolar.length>40?' …':''}">${sp.ozelNolar.length} ozel kod</span>`
         :(sp.ozelNo?` <span class="cat-tag" style="background:rgba(240,160,32,.16);color:var(--amber);font-family:var(--mono);font-size:9px" title="Ozel No">${esc(sp.ozelNo)}</span>`:'');
       const catBadges=`<span class="cat-tag" style="background:${c2}22;color:${c2}">${esc(sp.cat)}</span>${sp.code?` <span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(sp.code)}</span>`:''}${katTag}${ozelTag}${sp.bina?` <span class="bina-tag" style="background:${buildingColor(sp.bina)}22;color:${buildingColor(sp.bina)};border:1px solid ${buildingColor(sp.bina)}55">${esc(sp.bina)}</span>`:''}${exBadge}`;
