@@ -3487,10 +3487,14 @@ function renderMaterialLib(){
       const thumb=m.img?`<img class="thumb" src="${m.img}" onclick="event.stopPropagation();lightbox(${lbCall([m.img,m.img2])})">`:phThumb();
       const ccol=catColor(m.cat);
       const usageTag=specs.length>1?`<span class="merged-badge">${specs.length} spek'te</span>`:specs.length===1?`<span class="cat-tag" style="background:var(--dim)33;color:var(--mute);font-size:9px">1 spek</span>`:`<span class="cat-tag" style="background:var(--red)18;color:var(--red);font-size:9px">kullanilmiyor</span>`;
+      // OZEL KOD rozeti: ayni urun tek kutuphane kaydidir; kac farkli ozel no (yerlesim kodu)
+      // ile kullanildigi bir bakista gorunur - detayi Kunye'deki "Ozel Kodlar" bolumunde
+      const ozelNos=[...new Set(usage.map(s=>(s.ozelNo||'').trim()).filter(Boolean))];
+      const ozelTag=ozelNos.length?`<span class="cat-tag" style="background:var(--amber)18;color:var(--amber);font-family:var(--mono);font-size:9px" title="${esc(ozelNos.slice(0,40).join(', '))}${ozelNos.length>40?' …':''}">${ozelNos.length} ozel kod</span>`:'';
       rows+=`<tr class="mat-row ${_matSel.has(m.id)?'row-sel':''}" onclick="openMatDetail('${m.id}')" title="Malzeme kunyesi: sartnameler, siparisler, montaj">
         <td style="width:34px;text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="mat-check" ${_matSel.has(m.id)?'checked':''} onclick="event.stopPropagation();toggleMatSel('${m.id}')"></td>
         <td>${thumb}</td>
-        <td class="t-name mat-clk${_matHighlightDup&&dupNames.has(norm(m.name).trim())?' dup-hl':''}">${esc(m.name)} ${usageTag}<div style="margin-top:4px">${specs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px">${esc(g)}</span>`).join('')}</div></td>
+        <td class="t-name mat-clk${_matHighlightDup&&dupNames.has(norm(m.name).trim())?' dup-hl':''}">${esc(m.name)} ${usageTag} ${ozelTag}<div style="margin-top:4px">${specs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px">${esc(g)}</span>`).join('')}</div></td>
         <td class="${_matHighlightDup&&m.code&&dupCodes.has(norm(m.code).trim())?'dup-hl':''}" style="font-family:var(--mono);font-size:12px">${esc(m.code||'-')}${(m.altCodes&&m.altCodes.length)?`<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${m.altCodes.map(c=>`<span class="cat-tag" style="background:var(--dim)22;color:var(--mute);font-family:var(--mono);font-size:9px" title="Varyant kod - ayni urunun bilindigi diger kod">${esc(c)}</span>`).join('')}</div>`:''}</td>
         <td class="t-meta">${m.brand?`<div class="brand-cell">${m.brand.split(/\n|\s\/\s/).map(b=>b.trim()).filter(Boolean).map(b=>{
           const full=esc(b), short=b.length>12?esc(b.slice(0,12))+'…':full;
@@ -6169,6 +6173,13 @@ function _openMatDetail(matId){
     unit?`<span class="matd-chip dim">${esc(unit)}</span>`:'',
     ...((m.tags||[]).map(t=>{const c=tagColor(t);return `<span class="matd-chip" style="color:${c};border-color:${c}55">${esc(t)}</span>`;}))
   ].filter(Boolean).join('');
+  // OZEL KODLAR: bu urunun kullanildigi tum ozel no'lar (yerlesim kodlari). Ayni urun kutuphanede
+  // TEK kayittir; ozel no kalemde durur - bu bolum "bu urun hangi ozel kodlarda geciyor" sorusunu yanitlar.
+  const ozelList=[...new Set(usage.map(s=>(s.ozelNo||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const ozelSection=ozelList.length?`<div class="matd-sec">Ozel Kodlar <span>${ozelList.length}</span><i>bu urunun kullanildigi yerlesim kodlari</i></div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px;max-height:132px;overflow-y:auto;padding:2px 0">
+      ${ozelList.map(o=>`<span class="cat-tag" style="background:var(--amber)18;color:var(--amber);font-family:var(--mono);font-size:10.5px">${esc(o)}</span>`).join('')}
+    </div>`:'';
   // sartname kalemleri: kalem bazinda hedef ve o kaleme yazilan montaj toplami
   const specRows=usage.length?usage.map(s=>{
     const grp=specGroupKey(s), bc=buildingColor(s.bina), cc=catColor(s.cat);
@@ -6179,6 +6190,7 @@ function _openMatDetail(matId){
     return `<div class="matd-row" onclick="matDetailGoSpec('${esc(s.bina)}','${esc(s.cat)}','${esc(grp)}')" title="Sartname kartina git">
       <span class="bina-tag" style="background:${bc}22;color:${bc};flex-shrink:0">${esc(s.bina)}</span>
       <span class="mono" style="font-size:11px;flex-shrink:0">${esc(grp)}</span>
+      ${s.ozelNo?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber);font-family:var(--mono);flex-shrink:0" title="Özel No">${esc(s.ozelNo)}</span>`:''}
       <span class="cat-tag" style="background:${cc}22;color:${cc};flex-shrink:0">${esc(s.cat)}</span>
       <span class="t-meta" style="margin-left:auto;white-space:nowrap">${mont?fmtNum(mont)+' / ':''}${tgt?fmtNum(tgt):'-'} ${esc(s.unit||'')}</span>
       ${bar}
@@ -6217,6 +6229,7 @@ function _openMatDetail(matId){
         <div><b style="color:${kalan<0?'var(--red)':kalan>0?'var(--ink)':'var(--green)'}">${fmtNum(kalan)}</b><span>Kalan ${kalan<0?'(fazla montaj!)':''}</span></div>
         <div><b>${usage.length}</b><span>Sartname kalemi</span></div>
       </div>
+      ${ozelSection}
       <div class="matd-sec">Sartnameler <span>${usage.length}</span></div>${specRows}
       <div class="matd-sec">Siparisler <span>${ords.length}</span>${totOrd?`<i>${fmtNum(totOrd)} ${esc(unit)}</i>`:''}</div>${ordRows}
       <div class="matd-sec">Saha Raporlari - Montaj <span>${raps.length}</span>${totRap?`<i>${fmtNum(totRap)} ${esc(unit)}</i>`:''}</div>${rapRows}
@@ -6395,7 +6408,12 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
     const ext=useExt?String(row[iExt]??'').trim():'';
     const poz=iPoz>=0?String(row[iPoz]??'').trim():'';
     const ozelNo=iOzel>=0?String(row[iOzel]??'').trim():'';
-    const code=iCode>=0?String(row[iCode]??'').trim():'';
+    const _rawCode=iCode>=0?String(row[iCode]??'').trim():'';
+    // OZEL KOD, URUN KODU DEGILDIR: yerlesim kodu (orn. 00UYB20EM0492) urun kodu sutununa
+    // dusmusse her yerlestirme icin kutuphanede AYRI malzeme olusur ve ayni urun onlarca kez
+    // yer kaplar. Kod ile ozel no ayni ise kod YOK sayilir - urun ADIYLA eslesir (tek kayit),
+    // ozel no ise kalemin uzerinde kalir (kalemler yine birbirinden ayirt edilir).
+    const code=(_rawCode && ozelNo && norm(_rawCode)===norm(ozelNo)) ? '' : _rawCode;
     const name=iName>=0?String(row[iName]??'').trim():'';
     const tgtRaw=String(row[iTgt]??'').trim();
     if(!code && !name && !tgtRaw) continue;
