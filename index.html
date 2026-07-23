@@ -5775,15 +5775,26 @@ function _ozelKodBol(field){
   }
   return out;
 }
-// bir kalemin tum ozel kodlari (tekil ozelNo + toplulastirmadan gelen ozelNolar).
-// Tek alanda birden fazla TAM kod varsa ayrilir; boslukla kopmus tek kod ise birlestirilir.
+// GORUNUM icin ozel kodlar: her ozel no ALANI OLDUGU GIBI (boslugu korunarak) tek girdi olur.
+// Bolme YOK - "00UYB18EM0426 00UYB18EM0427" tek chip kalir, boslugu silinmez/ayrilmaz.
 function katAtaKodlar(sp){
-  const out=[];
-  [sp.ozelNo,...(sp.ozelNolar||[])].forEach(v=>_ozelKodBol(v).forEach(p=>{ if(p)out.push(p); }));
-  return [...new Set(out)];
+  return [...new Set([sp.ozelNo,...(sp.ozelNolar||[])].map(x=>String(x||'').trim()).filter(Boolean))];
 }
-// ozel kod anahtari -> kalem id haritasi (bu sartname icin)
-function katAtaIndex(){ const idx={}; katAtaSpecs().forEach(sp=>katAtaKodlar(sp).forEach(k=>{ const kk=ktopKey(k); if(kk&&!idx[kk])idx[kk]=sp.id; })); return idx; }
+// ESLESME icin anahtarlar: her ozel no alani icin (1) BUTUN alanin anahtari (bosluklar silinip
+// birlesik) + (2) alan birden fazla TAM koddan olusuyorsa HER TAM kodun anahtari ayri ayri.
+// Boylece "00UYB18EM0426 00UYB18EM0427" hem tek tek hem cift olarak yapistirildiginda eslesir;
+// gorunum ise bozulmaz (alan oldugu gibi kalir).
+function katAtaIndex(){
+  const idx={};
+  katAtaSpecs().forEach(sp=>{
+    katAtaKodlar(sp).forEach(field=>{
+      const kk=ktopKey(field); if(kk&&!idx[kk])idx[kk]=sp.id;        // butun alan (birlesik)
+      const parts=_ozelKodBol(field);
+      if(parts.length>1) parts.forEach(p=>{ const pk=ktopKey(p); if(pk&&!idx[pk])idx[pk]=sp.id; }); // ayri TAM kodlar
+    });
+  });
+  return idx;
+}
 // serbest metni ozel kod anahtarlarina boler: virgul/bosluk/satir/noktali virgul ayirici
 function katAtaTokens(text){ return String(text||'').split(/[\s,;\n\r\t]+/).map(x=>ktopKey(x)).filter(Boolean); }
 // metni HAM parcalara boler (kullanicinin gordugu haliyle, normalize etmeden)
