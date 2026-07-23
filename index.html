@@ -10481,7 +10481,7 @@ function rLineHtml(bk,bi,l,li,bina,parcali){
       <button class="mini-btn del" onclick="rRmLine(${bi},${li})" ${bk.lines.length<=1?'style="opacity:.4"':''}>${icoTrash()}</button>
     </div>
     ${parcali?`<div class="rline-loc">
-      <select onchange="rSetLok(${bi},${li},this.value)">${lokSelectOptions(bina,l.lokId,'- lokasyon secin (zorunlu) -')}</select>
+      <select onchange="rSetLok(${bi},${li},this.value)">${lokSelectOptions(bina,l.lokId,String(l.kat||'').trim()?'- lokasyon (opsiyonel - kat girili) -':'- lokasyon secin (zorunlu) -')}</select>
       <input placeholder="Kat" value="${esc(l.kat||'')}" ${l.lokId?'readonly title="Kat - lokasyondan otomatik dolar"':`oninput="rUpdLine(${bi},${li},'kat',this.value)" title="Kat"`}>
       <input placeholder="Kot" value="${esc(l.kot||'')}" ${l.lokId?'readonly title="Kot - lokasyondan otomatik dolar"':`oninput="rUpdLine(${bi},${li},'kot',this.value)" title="Kot"`}>
     </div>`:''}
@@ -10544,6 +10544,10 @@ function _rApplySpecKat(line, sp){
 }
 // kalemin kat etiketi: "3" -> "3. Kat", sayisal degilse oldugu gibi
 function _katEtiket(k){ k=String(k==null?'':k).trim(); if(!k)return ''; return /^\d+$/.test(k)?k+'. Kat':k; }
+// PARCALI BINADA bir kalem ya LOKASYONA (oda) ya da KATA bagli olmali. Kat girili (Kat Ata'dan
+// otomatik gelen ya da elle yazilan) ise oda secimi ZORUNLU DEGIL - montaj kat bazinda islenir
+// (prohodka gibi oda kirilimi olmayan kalemler icin). Ikisi de yoksa lokasyon gerekir.
+function _rLineNeedsLok(l){ return !(l&&l.lokId) && !String((l&&l.kat)||'').trim(); }
 function rLinePick(bi,li){
   const bk=_rBlocks[bi]; if(!bk)return;
   const el=document.getElementById('rl_mat_'+bi+'_'+li);
@@ -10662,8 +10666,8 @@ async function saveRaporEntry(){
     // blok bolumu: acikca secilmisse o, degilse kalemlerin sartname bolumunden turet
     let cat=bk.cat||'';
     if(!cat){ const sp=DB.proje.specs.find(s=>validLines.some(l=>l.specId===s.id)); if(sp) cat=sp.cat||''; }
-    // parcali binada her kalem bir lokasyona baglanmalidir
-    if(parcali){ const eksik=validLines.filter(l=>!l.lokId).length; if(eksik){ toast(`Bolum ${bi+1}: ${eksik} kalemde lokasyon secilmedi - parcali binada zorunlu`,'err'); return; } }
+    // parcali binada her kalem lokasyona VEYA kata bagli olmali (kat giriliyse oda opsiyonel)
+    if(parcali){ const eksik=validLines.filter(_rLineNeedsLok).length; if(eksik){ toast(`Bolum ${bi+1}: ${eksik} kalemde lokasyon ya da kat girilmedi - parcali binada biri zorunlu`,'err'); return; } }
     // sartname secildiyse bolumle uyumlu olmali
     const sr=bk.sart?(DB.proje.sartnames||[]).find(x=>x.bina===bina&&x.code===bk.sart):null;
     if(sr && cat && sr.section!==cat){ toast(`Bolum ${bi+1}: secili sartname "${sr.section}" bolumune ait, kalemler "${cat}" - uyusmuyor`,'err'); return; }
