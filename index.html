@@ -5791,15 +5791,26 @@ function katAtaRecount(){
   const seen={}; // key -> ilk goruldugu kat index (cakisma tespiti)
   let toplamSpec=new Set();
   const perFloor=areas.map(a=>{ const i=Number(a.dataset.idx); f.floors[i].text=a.value;
-    const keys=katAtaTokens(a.value); const uniq=[...new Set(keys)];
-    let eslesen=0, yok=[], cak=[];
-    uniq.forEach(k=>{ if(idx[k]){ eslesen++; toplamSpec.add(idx[k]); if(seen[k]!=null&&seen[k]!==i)cak.push(k); else seen[k]=i; } else yok.push(k); });
-    return {i,eslesen,yok,cak}; });
+    // ham parcalar (kullanicinin yazdigi haliyle) + normalize anahtarlari birlikte tutulur;
+    // "bulunamadi" listesinde kullanicinin GORDUGU metin gosterilir, normalize hali degil
+    const ham=String(a.value||'').split(/[\s,;\n\r\t]+/).map(x=>x.trim()).filter(Boolean);
+    const gorulen={}; let eslesen=0, yok=new Set(), yokRaw=[], cak=[];
+    ham.forEach(raw=>{ const k=ktopKey(raw); if(!k||gorulen[k])return; gorulen[k]=1;
+      if(idx[k]){ eslesen++; toplamSpec.add(idx[k]); if(seen[k]!=null&&seen[k]!==i)cak.push(raw); else seen[k]=i; }
+      else if(!yok.has(k)){ yok.add(k); yokRaw.push(raw); } });
+    return {i,eslesen,yok:[...yok],yokRaw,cak}; });
   perFloor.forEach(p=>{
     const c=document.getElementById('kata-cnt-'+p.i);
     if(c) c.innerHTML=p.eslesen?`<b style="color:var(--green)">${p.eslesen}</b> eslesti${p.yok.length?` · <span style="color:var(--amber)">${p.yok.length} bulunamadi</span>`:''}`:(p.yok.length?`<span style="color:var(--amber)">${p.yok.length} kod bu sartnamede yok</span>`:'');
     const w=document.getElementById('kata-warn-'+p.i);
-    if(w) w.textContent=p.cak.length?('Baska katta da yazili: '+p.cak.slice(0,6).join(', ')+(p.cak.length>6?' …':'')+' — kaydedince SON kat gecerli olur'):'';
+    if(w){
+      // BULUNAMAYAN kodlar acikca listelenir: kullanici yanlisi bulup duzeltebilsin.
+      // Bunlar kutuya yapistirilan ama bu sartnamede karsiligi olmayan kodlardir (yazim
+      // hatasi, baska sartnameye ait kod, ya da sistemde olmayan '.1/.2' gibi son ek).
+      const yokHtml=p.yokRaw.length?`<div style="color:var(--amber);margin-bottom:${p.cak.length?'4px':'0'}">Bu sartnamede bulunamadi (${p.yokRaw.length}): <b style="font-family:var(--mono)">${p.yokRaw.slice(0,20).map(esc).join(', ')}</b>${p.yokRaw.length>20?` +${p.yokRaw.length-20}`:''} — yazimi duzeltin ya da bu koddan cikarin</div>`:'';
+      const cakHtml=p.cak.length?`<div style="color:var(--amber)">Baska katta da yazili: ${p.cak.slice(0,6).map(esc).join(', ')}${p.cak.length>6?' …':''} — kaydedince SON kat gecerli olur</div>`:'';
+      w.innerHTML=yokHtml+cakHtml;
+    }
   });
   // atanmamis rozetleri: kutulara girilen kodlar ustu cizili gorunur
   const assigned=new Set(Object.keys(seen));
