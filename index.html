@@ -5722,7 +5722,12 @@ function katAtaTokens(text){ return String(text||'').split(/[\s,;\n\r\t]+/).map(
 function openKatAta(){
   if(!canEdit('proje')){ toast('Duzenleme yetkiniz yok','err'); return; }
   if(!PSPEC||PSPEC==='__all'){ toast('Once tek bir sartname acin','err'); return; }
-  const kats=binaKatlar(PBINA); if(!kats.length){ toast('Bu binada tanimli kat yok','err'); return; }
+  // Sartnamenin KAT KAPSAMI (daha once "TAVA 1-5" gibi ogretilen katIds): yalnizca bu
+  // sartnamenin gecerli oldugu katlar gosterilir. Kapsam tanimli degilse tum katlara dusulur.
+  const tumKat=binaKatlar(PBINA); if(!tumKat.length){ toast('Bu binada tanimli kat yok','err'); return; }
+  const sr=sartOfSel(); const kapsamIds=sr?sartKatIds(sr):[];
+  const kats=kapsamIds.length ? tumKat.filter(k=>kapsamIds.includes(k.id)) : tumKat;
+  const kapsamli=kapsamIds.length>0 && kapsamIds.length<tumKat.length;
   const specs=katAtaSpecs();
   // katlar: yuksek kat ustte (tersten). her katin ilk ozel kodlarini onceden doldur.
   const floors=kats.slice().reverse().map(k=>({id:k.id,name:k.name,no:parseKatNo(k.name),kot:(k.kot!=null&&k.kot!=='')?ktopKotFmt(k.kot):'',text:''}));
@@ -5734,7 +5739,7 @@ function openKatAta(){
     else if(sp.kot&&floorByKot[ktopKotFmt(sp.kot)])fl=floorByKot[ktopKotFmt(sp.kot)];
     else if(sp.kat&&floorByKot[ktopKotFmt(sp.kat)])fl=floorByKot[ktopKotFmt(sp.kat)];
     if(fl){ const kod=katAtaKodlar(sp)[0]; if(kod)fl.text+=(fl.text?'\n':'')+kod; } });
-  _KATA={bina:PBINA,cat:PCAT,code:PSPEC,floors};
+  _KATA={bina:PBINA,cat:PCAT,code:PSPEC,floors,kapsamli,tumKatN:tumKat.length};
   renderKatAta();
 }
 function renderKatAta(){
@@ -5759,7 +5764,9 @@ function renderKatAta(){
       <div class="t-meta" style="margin-top:2px">${esc(f.bina)} · ${esc(f.cat)} — her katin altina ozel numaralari yapistirin</div></div>
       <button class="mini-btn" onclick="_KATA=null;closeModal()">x</button></div>
     <div class="modal-body">
-      <div class="kata-intro">Binadaki katlar asagida. <b>Her katin kutusuna o kata ait ozel numaralari</b> yapistirin (virgul, bosluk ya da alt alta fark etmez). Kaydedince yalnizca eslesen kalemlere kat${f.floors.some(x=>x.kot)?' ve kot':''} yazilir - hedef, siparis, montaj hicbir sey degismez. Bu sartnamede <b>${specs.length}</b> kalem var, <b>${atanmis}</b> tanesinin kati atanmis.</div>
+      <div class="kata-intro"><b>Her katin kutusuna o kata ait ozel numaralari</b> yapistirin (virgul, bosluk ya da alt alta fark etmez). Kaydedince yalnizca eslesen kalemlere kat${f.floors.some(x=>x.kot)?' ve kot':''} yazilir - hedef, siparis, montaj hicbir sey degismez. Bu sartnamede <b>${specs.length}</b> kalem var, <b>${atanmis}</b> tanesinin kati atanmis.
+        ${f.kapsamli?`<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="cat-tag" style="background:rgba(59,130,246,.13);color:var(--blue)">Bu sartname yalnizca <b>${f.floors.length}</b> katta gecerli</span><span class="t-meta">(${f.tumKatN} kattan) - kapsam disi katlar gizli</span><button class="btn btn-ghost" style="padding:3px 10px;font-size:11px" onclick="_KATA=null;closeModal();openSartnameModal(_katAtaSrId())" title="Sartnamenin gecerli oldugu katlari degistir">Kapsami Duzenle</button></div>`:''}
+      </div>
       ${uniqBos.length?`<div class="kata-unassigned"><div class="katp-sec">Kati Atanmamis Ozel Kodlar <span>${uniqBos.length}</span><i style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--dim)">tiklayinca kopyalanir</i></div><div class="kata-chips">${chips}${uniqBos.length>200?`<span class="t-meta">+${uniqBos.length-200} daha</span>`:''}</div></div>`:''}
       <div class="katp-sec" style="margin-bottom:8px">Katlar <span>${f.floors.length}</span></div>
       <div class="kata-floors">${floorsHtml}</div>
@@ -5774,6 +5781,8 @@ function renderKatAta(){
   katAtaRecount();
 }
 function katAtaCopy(kod){ try{ navigator.clipboard.writeText(kod); toast('Kopyalandi: '+kod); }catch(e){ toast(kod); } }
+// Kapsami Duzenle dugmesi icin: acik sartnamenin id'si
+function _katAtaSrId(){ const sr=sartOfSel(); return sr?sr.id:''; }
 // canli sayac: her katin kutusundaki kodlari okur, eslesme/yok/cakisma sayar - full render YOK
 function katAtaRecount(){
   const f=_KATA; if(!f)return;
