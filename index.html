@@ -10533,6 +10533,17 @@ function rUpdBlock(bi,k,v){ if(_rBlocks[bi]) _rBlocks[bi][k]=v; }
 function rAddBlock(){ _rBlocks.push(_rEmptyBlock()); rRenderBlocks(); }
 function rRmBlock(bi){ if(_rBlocks.length<=1){ toast('En az bir bolum olmali','err'); return; } _rBlocks.splice(bi,1); rRenderBlocks(); }
 // --- is kalemi (satir) islemleri: her zaman blok indeksi (bi) + satir indeksi (li) ---
+// Secilen kalemin KAT/KOT bilgisini rapor satirina tasir. Kat Ata ile kaleme atanan kat,
+// rapora o kalem secilince otomatik dolar - raporcu elle yazmaz. Lokasyon (oda) secilmisse
+// dokunulmaz: parcali binada kat lokasyondan gelir, o daha ozeldir.
+function _rApplySpecKat(line, sp){
+  if(!line || !sp || line.lokId) return line;
+  if(sp.kat!=null && String(sp.kat).trim()!=='') line.kat=String(sp.kat);
+  if(sp.kot!=null && String(sp.kot).trim()!=='') line.kot=String(sp.kot);
+  return line;
+}
+// kalemin kat etiketi: "3" -> "3. Kat", sayisal degilse oldugu gibi
+function _katEtiket(k){ k=String(k==null?'':k).trim(); if(!k)return ''; return /^\d+$/.test(k)?k+'. Kat':k; }
 function rLinePick(bi,li){
   const bk=_rBlocks[bi]; if(!bk)return;
   const el=document.getElementById('rl_mat_'+bi+'_'+li);
@@ -10543,7 +10554,7 @@ function rLinePick(bi,li){
   const specs=DB.proje.specs.filter(s=>!s.is_deleted && s.bina===bina && (!lockedCat||s.cat===lockedCat));
   // POZ NO (proje yerlesim kodu, orn. 00UYB12EM0051) da aranabilir ve listede gorunur:
   // raporcu sahada elindeki tekil yerlesim koduyla dogru kalemi bulur, yuzdeler o kaleme isler
-  const specSrc=specs.map(s=>({ad:s.name, alt:(s.code||'')+' '+(s.poz||'')+' '+(s.ozelNo||'')+' '+specGroupKey(s), sub:[s.ozelNo?'Özel '+s.ozelNo:'',s.poz?'Poz '+s.poz:'',s.code,specGroupKey(s),s.unit].filter(Boolean).join(' · '), img:specImgOf(s), obj:{specId:s.id,matId:s.matId||null,code:s.code||'',ad:s.name,name:s.name,unit:s.unit||'',cat:s.cat||'',bina:s.bina,grup:specGroupKey(s)}}));
+  const specSrc=specs.map(s=>({ad:s.name, alt:(s.code||'')+' '+(s.poz||'')+' '+(s.ozelNo||'')+' '+((s.ozelNolar||[]).join(' '))+' '+specGroupKey(s), sub:[s.ozelNo?'Özel '+s.ozelNo:'',s.kat?_katEtiket(s.kat):'',s.poz?'Poz '+s.poz:'',s.code,specGroupKey(s),s.unit].filter(Boolean).join(' · '), img:specImgOf(s), obj:{specId:s.id,matId:s.matId||null,code:s.code||'',ad:s.name,name:s.name,unit:s.unit||'',cat:s.cat||'',bina:s.bina,grup:specGroupKey(s)}}));
   const specMatIds=new Set(specs.map(s=>s.matId).filter(Boolean));
   const libSrc=matLibSrc().filter(m=>!specMatIds.has(m.obj.matId)).map(m=>({...m, obj:{...m.obj, specId:null, bina, grup:bk.sart||''}}));
   const src=[...specSrc, ...libSrc];
@@ -10553,6 +10564,8 @@ function rLinePick(bi,li){
       el.setAttribute('readonly',''); rRenderBlocks(); return;
     }
     bk.lines[li]={...(bk.lines[li]||{}),specId:it.specId||null,matId:it.matId||null,code:it.code||'',name:it.name||it.ad||'',grup:it.grup||bk.sart||''};
+    // KAT ATA -> RAPOR: secilen kalemin atanmis kati/kotu satira otomatik gelir (lok secili degilse)
+    if(it.specId){ const _sp=DB.proje.specs.find(s=>s.id===it.specId); if(_sp) _rApplySpecKat(bk.lines[li],_sp); }
     // BIRIM: once kutuphanedeki urunun birimi (tek kaynak), yoksa secilen kalemin birimi
     const _lu=rLineLibUnit(bk.lines[li]);
     if(_lu) bk.lines[li].unit=_lu; else if(it.unit && !bk.lines[li].unit) bk.lines[li].unit=it.unit;
