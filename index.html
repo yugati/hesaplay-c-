@@ -5756,13 +5756,30 @@ function renderKatPanel(){
    Geri alinabilir (mergeBatches, tip:'kat'). */
 let _KATA=null;
 function katAtaSpecs(){ return DB.proje.specs.filter(s=>!s.is_deleted&&s.bina===PBINA&&s.cat===PCAT&&specGroupKey(s)===PSPEC); }
+// Bir ozel kodun TAM olup olmadigi: bu sistemde tam kod "00UYB20EM0407" gibi iki harf grubu
+// tasir (bina harfleri + eleman harfleri: d-L-d-L-d). "00UYB18" (yalniz onek) ya da "EM0528"
+// (yalniz son ek) TAM degildir - bunlar bir kodun boslukla kopmus parcalaridir.
+function _ozelTam(s){ return /\d[A-Za-z]+\d+[A-Za-z]+\d/.test(String(s||'')); }
+// Bir ozel no ALANINI kodlara ayirir. AYRIM: parcalarin hepsi TAM kod ise (orn.
+// "00UYB20EM0407 00UYB20EM0408") ayri kodlardir -> ayrilir. Parcalar eksik ise (orn.
+// "00UYB18 EM0528") tek kodun boslukla kopmus halidir -> BIRLESTIRILIR ("00UYB18EM0528").
+function _ozelKodBol(field){
+  const parts=String(field||'').split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean);
+  if(parts.length<=1) return parts;
+  const out=[];
+  for(let i=0;i<parts.length;i++){
+    if(_ozelTam(parts[i])){ out.push(parts[i]); continue; }
+    let birlesik=parts[i]; // eksik parca: tam olana kadar sonrakilerle birlestir
+    while(i+1<parts.length && !_ozelTam(birlesik)){ birlesik+=parts[++i]; }
+    out.push(birlesik);
+  }
+  return out;
+}
 // bir kalemin tum ozel kodlari (tekil ozelNo + toplulastirmadan gelen ozelNolar).
-// ONEMLI: tek bir alanda birden fazla kod olabilir - ozel no hucresine iki kod bosluk/virgulle
-// yan yana girilmisse (orn. "00UYB20EM0407 00UYB20EM0408") her kod AYRI ayrilir; boylece tek
-// tek yapistirildiginda da eslesir (yoksa ktopKey bosluklari silip iki kodu birlestirirdi).
+// Tek alanda birden fazla TAM kod varsa ayrilir; boslukla kopmus tek kod ise birlestirilir.
 function katAtaKodlar(sp){
   const out=[];
-  [sp.ozelNo,...(sp.ozelNolar||[])].forEach(v=>String(v||'').split(/[\s,;]+/).forEach(p=>{ p=p.trim(); if(p)out.push(p); }));
+  [sp.ozelNo,...(sp.ozelNolar||[])].forEach(v=>_ozelKodBol(v).forEach(p=>{ if(p)out.push(p); }));
   return [...new Set(out)];
 }
 // ozel kod anahtari -> kalem id haritasi (bu sartname icin)
