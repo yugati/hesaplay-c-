@@ -722,6 +722,26 @@ tbody tr:hover{background:var(--hover)}
   .katp-mini{min-width:64px}
   .katp-head{flex-wrap:wrap}
 }
+.subnav-kat{margin-left:auto;display:inline-flex;align-items:center;gap:6px;background:rgba(168,85,247,.12);color:var(--violet);border:1px solid rgba(168,85,247,.35);border-radius:9px;padding:8px 14px;font-size:12.5px;font-weight:650;cursor:pointer;font-family:inherit;transition:background .13s}
+.subnav-kat:hover{background:rgba(168,85,247,.2)}
+.subnav-kat svg{width:15px;height:15px}
+/* KAT ATA: her kat icin ozel kodlarin yapistirildigi basit kart */
+.kata-intro{font-size:12.5px;color:var(--mute);line-height:1.6;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:14px}
+.kata-unassigned{margin-bottom:14px}
+.kata-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;max-height:120px;overflow:auto}
+.kata-chip{font-family:var(--mono);font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);color:var(--ink);cursor:pointer;transition:border-color .12s,background .12s}
+.kata-chip:hover{border-color:var(--violet);background:rgba(168,85,247,.1)}
+.kata-chip.done{opacity:.4;text-decoration:line-through}
+.kata-floors{display:flex;flex-direction:column;gap:11px}
+.kata-floor{border:1px solid var(--line);border-radius:11px;overflow:hidden;background:var(--panel)}
+.kata-floor-h{display:flex;align-items:center;gap:10px;padding:9px 13px;background:var(--panel2);border-bottom:1px solid var(--line)}
+.kata-floor-h b{font-size:13.5px;font-weight:800}
+.kata-floor-kot{font-family:var(--mono);font-size:10.5px;color:var(--mute);background:var(--panel);border:1px solid var(--line);padding:2px 7px;border-radius:5px}
+.kata-cnt{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--mute);white-space:nowrap}
+.kata-cnt b{font-weight:700}
+.kata-floor textarea{width:100%;border:none;background:transparent;padding:10px 13px;font-family:var(--mono);font-size:12px;line-height:1.6;resize:vertical;min-height:52px;color:var(--ink);outline:none}
+.kata-floor textarea::placeholder{color:var(--dim)}
+.kata-warn{font-size:11px;color:var(--amber);padding:0 13px 9px}
 /* "Tum Sartnameler" ozet bari - sel-card ile ayni gorsel dilde, tam genislikte bir varyant */
 .sart-all-bar{display:flex;align-items:center;gap:16px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 20px;cursor:pointer;transition:transform .22s cubic-bezier(.16,.8,.3,1),border-color .22s ease,box-shadow .22s ease;position:relative;overflow:hidden;box-shadow:var(--shadow-sm);margin-bottom:18px}
 .sart-all-bar::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--cc,var(--accent));opacity:0;transition:opacity .22s ease}
@@ -2320,10 +2340,15 @@ function pOrders(){ return (DB.proje.orders||[]).filter(o=>{ if((o.bina||'')!==P
 /* ---------- PROJE ---------- */
 function projeSubnav(){
   const ni=pItems().length, ns=pSpecs().length, no=pOrders().length;
+  // Kat Ata: tek bir sartname acikken (Tum Sartnameler degil) ve binada kat tanimliyken gorunur
+  const katAtaBtn=(PSPEC&&PSPEC!=='__all'&&binaKatlar(PBINA).length&&canEdit('proje'))
+    ? `<button class="subnav-kat" onclick="openKatAta()" title="Bu sartnamedeki ozel numaralari katlara ata - her katin altina ozel kodlari yapistir"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="1"/><path d="M4 8h16M4 13h16M4 18h16"/></svg>Kat Ata</button>`
+    : '';
   return `<div class="subnav">
     <button class="${TAB==='spec'?'on':''}" onclick="setTab('spec')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Sartname / Ilerleme <span class="badge">${ns}</span></button>
     <button class="${TAB==='orders'?'on':''}" onclick="setTab('orders')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>Siparisler <span class="badge">${no}</span></button>
     <button class="${TAB==='log'?'on':''}" onclick="setTab('log')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Hareketler / Stok <span class="badge">${ni}</span></button>
+    ${katAtaBtn}
   </div>`;
 }
 function setTab(t){ TAB=t; SEARCH=""; render(); }
@@ -5680,6 +5705,144 @@ function renderKatPanel(){
     </div>
   </div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
+}
+/* ============ KAT ATA (basit) =====================================
+   Acik bir sartnamedeyken: binadaki katlar alt alta listelenir, her katin
+   altina o kata ait OZEL NUMARALAR yapistirilir. Kaydedince eslesen kalemlere
+   kat (ve varsa kot) yazilir. Toplulastirma/tahmin yok - dogrudan yerlestirme.
+   Geri alinabilir (mergeBatches, tip:'kat'). */
+let _KATA=null;
+function katAtaSpecs(){ return DB.proje.specs.filter(s=>!s.is_deleted&&s.bina===PBINA&&s.cat===PCAT&&specGroupKey(s)===PSPEC); }
+// bir kalemin tum ozel kodlari (tekil ozelNo + toplulastirmadan gelen ozelNolar)
+function katAtaKodlar(sp){ return [...new Set([sp.ozelNo,...(sp.ozelNolar||[])].map(x=>String(x||'').trim()).filter(Boolean))]; }
+// ozel kod anahtari -> kalem id haritasi (bu sartname icin)
+function katAtaIndex(){ const idx={}; katAtaSpecs().forEach(sp=>katAtaKodlar(sp).forEach(k=>{ const kk=ktopKey(k); if(kk&&!idx[kk])idx[kk]=sp.id; })); return idx; }
+// serbest metni ozel kod anahtarlarina boler: virgul/bosluk/satir/noktali virgul ayirici
+function katAtaTokens(text){ return String(text||'').split(/[\s,;\n\r\t]+/).map(x=>ktopKey(x)).filter(Boolean); }
+function openKatAta(){
+  if(!canEdit('proje')){ toast('Duzenleme yetkiniz yok','err'); return; }
+  if(!PSPEC||PSPEC==='__all'){ toast('Once tek bir sartname acin','err'); return; }
+  const kats=binaKatlar(PBINA); if(!kats.length){ toast('Bu binada tanimli kat yok','err'); return; }
+  const specs=katAtaSpecs();
+  // katlar: yuksek kat ustte (tersten). her katin ilk ozel kodlarini onceden doldur.
+  const floors=kats.slice().reverse().map(k=>({id:k.id,name:k.name,no:parseKatNo(k.name),kot:(k.kot!=null&&k.kot!=='')?ktopKotFmt(k.kot):'',text:''}));
+  const floorByNo={}, floorByKot={}; floors.forEach(fl=>{ if(fl.no!=null)floorByNo[fl.no]=fl; if(fl.kot)floorByKot[ktopKotFmt(fl.kot)]=fl; });
+  // mevcut atamalar textarea'lara onden yazilir (gorsel + duzenlenebilir + geri alinabilir his)
+  specs.forEach(sp=>{ if(!sp.kat&&!sp.kot)return;
+    let fl=null; const kn=parseKatNo(sp.kat);
+    if(kn!=null&&floorByNo[kn])fl=floorByNo[kn];
+    else if(sp.kot&&floorByKot[ktopKotFmt(sp.kot)])fl=floorByKot[ktopKotFmt(sp.kot)];
+    else if(sp.kat&&floorByKot[ktopKotFmt(sp.kat)])fl=floorByKot[ktopKotFmt(sp.kat)];
+    if(fl){ const kod=katAtaKodlar(sp)[0]; if(kod)fl.text+=(fl.text?'\n':'')+kod; } });
+  _KATA={bina:PBINA,cat:PCAT,code:PSPEC,floors};
+  renderKatAta();
+}
+function renderKatAta(){
+  closeModal(); const f=_KATA; if(!f)return;
+  const specs=katAtaSpecs();
+  const atanmis=specs.filter(s=>s.kat).length;
+  // kat atanmamis ozel kodlar: yapistirmaya yardimci - tiklayinca panoya kopyalanir
+  const bosKodlar=[]; specs.forEach(sp=>{ if(sp.kat)return; katAtaKodlar(sp).forEach(k=>bosKodlar.push(k)); });
+  const uniqBos=[...new Set(bosKodlar)];
+  const chips=uniqBos.slice(0,200).map(k=>`<span class="kata-chip" data-key="${esc(ktopKey(k))}" onclick="katAtaCopy('${esc(k)}')" title="Panoya kopyala">${esc(k)}</span>`).join('');
+  const floorsHtml=f.floors.map((fl,i)=>`<div class="kata-floor">
+    <div class="kata-floor-h">
+      <b>${esc(fl.name)}</b>${fl.kot?`<span class="kata-floor-kot">Kot ${esc(fl.kot)}</span>`:''}
+      <span class="kata-cnt" id="kata-cnt-${i}"></span>
+    </div>
+    <textarea data-idx="${i}" placeholder="Bu kata ait ozel numaralari buraya yapistir - virgul, bosluk ya da alt alta" oninput="katAtaRecount()">${esc(fl.text)}</textarea>
+    <div class="kata-warn" id="kata-warn-${i}"></div>
+  </div>`).join('');
+  const son=ktopBatches().filter(b=>b.tip==='kat').slice(-1)[0];
+  const html=`<div class="modal-bg drawer-bg" onclick="if(event.target===this){_KATA=null;closeModal()}"><div class="modal wide drawer">
+    <div class="modal-head"><div><h3>Kat Ata · ${esc(f.code)}</h3>
+      <div class="t-meta" style="margin-top:2px">${esc(f.bina)} · ${esc(f.cat)} — her katin altina ozel numaralari yapistirin</div></div>
+      <button class="mini-btn" onclick="_KATA=null;closeModal()">x</button></div>
+    <div class="modal-body">
+      <div class="kata-intro">Binadaki katlar asagida. <b>Her katin kutusuna o kata ait ozel numaralari</b> yapistirin (virgul, bosluk ya da alt alta fark etmez). Kaydedince yalnizca eslesen kalemlere kat${f.floors.some(x=>x.kot)?' ve kot':''} yazilir - hedef, siparis, montaj hicbir sey degismez. Bu sartnamede <b>${specs.length}</b> kalem var, <b>${atanmis}</b> tanesinin kati atanmis.</div>
+      ${uniqBos.length?`<div class="kata-unassigned"><div class="katp-sec">Kati Atanmamis Ozel Kodlar <span>${uniqBos.length}</span><i style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--dim)">tiklayinca kopyalanir</i></div><div class="kata-chips">${chips}${uniqBos.length>200?`<span class="t-meta">+${uniqBos.length-200} daha</span>`:''}</div></div>`:''}
+      <div class="katp-sec" style="margin-bottom:8px">Katlar <span>${f.floors.length}</span></div>
+      <div class="kata-floors">${floorsHtml}</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="margin-right:auto" onclick="_KATA=null;closeModal()">Kapat</button>
+      ${son?`<button class="btn btn-ghost" style="border-color:var(--amber)66;color:var(--amber)" onclick="katAtaUndo()" title="${esc(fmtDT(son.ts))} tarihli kat atamasini geri al">Son Atamayi Geri Al</button>`:''}
+      <button class="btn btn-add" id="kata-save" onclick="saveKatAta()">Kat Ata</button>
+    </div>
+  </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  katAtaRecount();
+}
+function katAtaCopy(kod){ try{ navigator.clipboard.writeText(kod); toast('Kopyalandi: '+kod); }catch(e){ toast(kod); } }
+// canli sayac: her katin kutusundaki kodlari okur, eslesme/yok/cakisma sayar - full render YOK
+function katAtaRecount(){
+  const f=_KATA; if(!f)return;
+  const idx=katAtaIndex();
+  const areas=[...document.querySelectorAll('.kata-floor textarea')];
+  const seen={}; // key -> ilk goruldugu kat index (cakisma tespiti)
+  let toplamSpec=new Set();
+  const perFloor=areas.map(a=>{ const i=Number(a.dataset.idx); f.floors[i].text=a.value;
+    const keys=katAtaTokens(a.value); const uniq=[...new Set(keys)];
+    let eslesen=0, yok=[], cak=[];
+    uniq.forEach(k=>{ if(idx[k]){ eslesen++; toplamSpec.add(idx[k]); if(seen[k]!=null&&seen[k]!==i)cak.push(k); else seen[k]=i; } else yok.push(k); });
+    return {i,eslesen,yok,cak}; });
+  perFloor.forEach(p=>{
+    const c=document.getElementById('kata-cnt-'+p.i);
+    if(c) c.innerHTML=p.eslesen?`<b style="color:var(--green)">${p.eslesen}</b> eslesti${p.yok.length?` · <span style="color:var(--amber)">${p.yok.length} bulunamadi</span>`:''}`:(p.yok.length?`<span style="color:var(--amber)">${p.yok.length} kod bu sartnamede yok</span>`:'');
+    const w=document.getElementById('kata-warn-'+p.i);
+    if(w) w.textContent=p.cak.length?('Baska katta da yazili: '+p.cak.slice(0,6).join(', ')+(p.cak.length>6?' …':'')+' — kaydedince SON kat gecerli olur'):'';
+  });
+  // atanmamis rozetleri: kutulara girilen kodlar ustu cizili gorunur
+  const assigned=new Set(Object.keys(seen));
+  document.querySelectorAll('.kata-chip').forEach(ch=>ch.classList.toggle('done',assigned.has(ch.dataset.key)));
+  const btn=document.getElementById('kata-save');
+  if(btn) btn.textContent=toplamSpec.size?`Kat Ata (${toplamSpec.size} kalem)`:'Kat Ata';
+}
+async function saveKatAta(){
+  const f=_KATA; if(!f)return;
+  if(!canEdit('proje')){ toast('Duzenleme yetkiniz yok','err'); return; }
+  const idx=katAtaIndex();
+  // son kat gecerli: kodu -> {kat,kot}. floors sirasi ekrandaki gibi; ayni kod birden fazla katta ise sonuncu kalir
+  const atama={}; // specId -> {kat,kot}
+  f.floors.forEach(fl=>{
+    const kat = fl.no!=null ? String(fl.no) : (fl.kot||fl.name);
+    const kot = fl.kot||'';
+    [...new Set(katAtaTokens(fl.text))].forEach(k=>{ const id=idx[k]; if(id) atama[id]={kat,kot}; });
+  });
+  // gercekten degisecek kalemler
+  const degis=[]; Object.keys(atama).forEach(id=>{ const sp=DB.proje.specs.find(s=>s.id===id); if(!sp)return;
+    const a=atama[id]; if(String(sp.kat||'')!==a.kat || (a.kot&&String(sp.kot||'')!==a.kot)) degis.push({sp,kat:a.kat,kot:a.kot}); });
+  if(!degis.length){ toast('Yeni kat atamasi yok - kutulardaki kodlar zaten atanmis','err'); return; }
+  if(!confirm(`${degis.length} kaleme kat bilgisi yazilacak.\n\nHedef, siparis, stok ve montaj degismez - yalnizca kat${f.floors.some(x=>x.kot)?'/kot':''} alani islenir.\n\nDevam edilsin mi?`)) return;
+  try{
+    const batch={id:uid(),ts:Date.now(),user:(CURRENT_USER&&CURRENT_USER.username)||'?',tip:'kat',groups:[]};
+    const up=[];
+    degis.forEach(x=>{ const sp=x.sp;
+      batch.groups.push({keepId:sp.id,
+        keepBefore:{target:Number(sp.target)||0,kat:sp.kat||'',kot:sp.kot||'',ozelNolar:(sp.ozelNolar||[]).slice(),lokTargets:(sp.lokTargets||[]).map(t=>({...t}))},
+        removed:[],moves:[]});
+      sp.kat=x.kat; if(x.kot)sp.kot=x.kot; up.push(sp); });
+    await sbUpsertProjeSpecs(up);
+    await ktopBatchSave([...ktopBatches(),batch].slice(-10));
+    logAction('editSpec',`Kat Ata: ${up.length} kalem (${f.code})`);
+    render(); renderKatAta();
+    toast(`${up.length} kaleme kat yazildi`);
+  }catch(err){ console.error(err); toast('Kat yazma hatasi: '+(err.message||err),'err'); }
+}
+async function katAtaUndo(){
+  const b=ktopBatches().filter(x=>x.tip==='kat').slice(-1)[0];
+  if(!b){ toast('Geri alinacak kat atamasi yok','err'); return; }
+  if(!confirm(`${fmtDT(b.ts)} tarihli kat atamasi geri alinacak (${b.groups.length} kalem eski haline donecek). Devam?`)) return;
+  try{
+    const up=[];
+    b.groups.forEach(g=>{ const sp=DB.proje.specs.find(s=>s.id===g.keepId); if(!sp)return;
+      sp.kat=g.keepBefore.kat||''; sp.kot=g.keepBefore.kot||''; up.push(sp); });
+    if(up.length) await sbUpsertProjeSpecs(up);
+    await ktopBatchSave(ktopBatches().filter(x=>x.id!==b.id));
+    logAction('editSpec',`Kat Ata geri alindi: ${up.length} kalem`);
+    render(); if(_KATA) renderKatAta();
+    toast(`Geri alindi · ${up.length} kalem`);
+  }catch(err){ console.error(err); toast('Geri alma hatasi: '+(err.message||err),'err'); }
 }
 function groupByMaterial(items){
   const map={};
