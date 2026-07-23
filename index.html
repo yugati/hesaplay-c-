@@ -5756,8 +5756,15 @@ function renderKatPanel(){
    Geri alinabilir (mergeBatches, tip:'kat'). */
 let _KATA=null;
 function katAtaSpecs(){ return DB.proje.specs.filter(s=>!s.is_deleted&&s.bina===PBINA&&s.cat===PCAT&&specGroupKey(s)===PSPEC); }
-// bir kalemin tum ozel kodlari (tekil ozelNo + toplulastirmadan gelen ozelNolar)
-function katAtaKodlar(sp){ return [...new Set([sp.ozelNo,...(sp.ozelNolar||[])].map(x=>String(x||'').trim()).filter(Boolean))]; }
+// bir kalemin tum ozel kodlari (tekil ozelNo + toplulastirmadan gelen ozelNolar).
+// ONEMLI: tek bir alanda birden fazla kod olabilir - ozel no hucresine iki kod bosluk/virgulle
+// yan yana girilmisse (orn. "00UYB20EM0407 00UYB20EM0408") her kod AYRI ayrilir; boylece tek
+// tek yapistirildiginda da eslesir (yoksa ktopKey bosluklari silip iki kodu birlestirirdi).
+function katAtaKodlar(sp){
+  const out=[];
+  [sp.ozelNo,...(sp.ozelNolar||[])].forEach(v=>String(v||'').split(/[\s,;]+/).forEach(p=>{ p=p.trim(); if(p)out.push(p); }));
+  return [...new Set(out)];
+}
 // ozel kod anahtari -> kalem id haritasi (bu sartname icin)
 function katAtaIndex(){ const idx={}; katAtaSpecs().forEach(sp=>katAtaKodlar(sp).forEach(k=>{ const kk=ktopKey(k); if(kk&&!idx[kk])idx[kk]=sp.id; })); return idx; }
 // serbest metni ozel kod anahtarlarina boler: virgul/bosluk/satir/noktali virgul ayirici
