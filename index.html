@@ -5762,6 +5762,27 @@ function katAtaKodlar(sp){ return [...new Set([sp.ozelNo,...(sp.ozelNolar||[])].
 function katAtaIndex(){ const idx={}; katAtaSpecs().forEach(sp=>katAtaKodlar(sp).forEach(k=>{ const kk=ktopKey(k); if(kk&&!idx[kk])idx[kk]=sp.id; })); return idx; }
 // serbest metni ozel kod anahtarlarina boler: virgul/bosluk/satir/noktali virgul ayirici
 function katAtaTokens(text){ return String(text||'').split(/[\s,;\n\r\t]+/).map(x=>ktopKey(x)).filter(Boolean); }
+// metni HAM parcalara boler (kullanicinin gordugu haliyle, normalize etmeden)
+function katAtaRaw(text){ return String(text||'').split(/[\s,;\n\r\t]+/).map(x=>x.trim()).filter(Boolean); }
+/* Ham parcalari kaleme cozer. Onemli: BOLUNMUS kodlari birlestirir - "00UYB16 EM0258"
+   gibi bosluk/satir yuzunden ikiye kopmus bir kod, TEK BASINA eslesmiyorsa ve BIR SONRAKI
+   parcayla BIRLESTIRILDIGINDE bu sartnamede gercek bir ozel no'ya denk geliyorsa tek koda
+   toplanir. Bitisik yazilip zaten eslesenlere (00UYB14EM0049) dokunulmaz - onlar tek basina
+   eslestigi icin birlestirme hic denenmez. Birlesmis hali de yoksa yine "bulunamadi" kalir. */
+function katAtaResolve(raw,idx){
+  const out=[];
+  for(let i=0;i<raw.length;i++){
+    const cur=raw[i], k=ktopKey(cur);
+    if(!k) continue;
+    if(idx[k]){ out.push({raw:cur,key:k,id:idx[k],joined:false}); continue; } // tek basina eslesti - dokunma
+    const nx=raw[i+1];
+    if(nx){ const nk=ktopKey(nx), jk=ktopKey(cur+nx);
+      // yalniz iki parca da TEK BASINA eslesmezken ve BIRLESIMI gercek bir ozel no iken birlestir
+      if(nk&&!idx[nk]&&jk&&idx[jk]){ out.push({raw:cur+' '+nx,key:jk,id:idx[jk],joined:true}); i++; continue; } }
+    out.push({raw:cur,key:k,id:null,joined:false}); // bulunamadi
+  }
+  return out;
+}
 function openKatAta(){
   if(!canEdit('proje')){ toast('Duzenleme yetkiniz yok','err'); return; }
   if(!PSPEC||PSPEC==='__all'){ toast('Once tek bir sartname acin','err'); return; }
@@ -5845,13 +5866,13 @@ function katAtaRecount(){
   const seen={}; // key -> ilk goruldugu kat index (cakisma tespiti)
   let toplamSpec=new Set();
   const perFloor=areas.map(a=>{ const i=Number(a.dataset.idx); f.floors[i].text=a.value;
-    // ham parcalar (kullanicinin yazdigi haliyle) + normalize anahtarlari birlikte tutulur;
-    // "bulunamadi" listesinde kullanicinin GORDUGU metin gosterilir, normalize hali degil
-    const ham=String(a.value||'').split(/[\s,;\n\r\t]+/).map(x=>x.trim()).filter(Boolean);
+    // ham parcalar cozulur (bolunmus kodlar birlestirilir); "bulunamadi" listesinde
+    // kullanicinin GORDUGU metin gosterilir, normalize hali degil
+    const cozum=katAtaResolve(katAtaRaw(a.value), idx);
     const gorulen={}; let eslesen=0, yok=new Set(), yokRaw=[], cak=[];
-    ham.forEach(raw=>{ const k=ktopKey(raw); if(!k||gorulen[k])return; gorulen[k]=1;
-      if(idx[k]){ eslesen++; toplamSpec.add(idx[k]); if(seen[k]!=null&&seen[k]!==i)cak.push(raw); else seen[k]=i; }
-      else if(!yok.has(k)){ yok.add(k); yokRaw.push(raw); } });
+    cozum.forEach(t=>{ const k=t.key; if(!k||gorulen[k])return; gorulen[k]=1;
+      if(t.id){ eslesen++; toplamSpec.add(t.id); if(seen[k]!=null&&seen[k]!==i)cak.push(t.raw); else seen[k]=i; }
+      else if(!yok.has(k)){ yok.add(k); yokRaw.push(t.raw); } });
     return {i,eslesen,yok:[...yok],yokRaw,cak}; });
   perFloor.forEach(p=>{
     const c=document.getElementById('kata-cnt-'+p.i);
@@ -5881,7 +5902,8 @@ async function saveKatAta(){
   f.floors.forEach(fl=>{
     const kat = fl.no!=null ? String(fl.no) : (fl.kot||fl.name);
     const kot = fl.kot||'';
-    [...new Set(katAtaTokens(fl.text))].forEach(k=>{ const id=idx[k]; if(id) atama[id]={kat,kot}; });
+    // recount ile ayni cozum: bolunmus kodlar burada da birlesir (gorunen = kaydedilen)
+    katAtaResolve(katAtaRaw(fl.text), idx).forEach(t=>{ if(t.id) atama[t.id]={kat,kot}; });
   });
   // gercekten degisecek kalemler
   const degis=[]; Object.keys(atama).forEach(id=>{ const sp=DB.proje.specs.find(s=>s.id===id); if(!sp)return;
