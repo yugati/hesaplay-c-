@@ -742,6 +742,19 @@ tbody tr:hover{background:var(--hover)}
 .kata-floor textarea{width:100%;border:none;background:transparent;padding:10px 13px;font-family:var(--mono);font-size:12px;line-height:1.6;resize:vertical;min-height:52px;color:var(--ink);outline:none}
 .kata-floor textarea::placeholder{color:var(--dim)}
 .kata-warn{font-size:11px;color:var(--amber);padding:0 13px 9px}
+/* KAT ATA TAM SAYFA: solda atanmamis kodlar (yapisik), sagda katlar; altta sabit islem cubugu */
+.kata-page{padding-bottom:76px}
+.kata-layout{display:grid;grid-template-columns:300px 1fr;gap:18px;align-items:start}
+.kata-side{position:sticky;top:70px;border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:13px 14px;max-height:calc(100vh - 170px);overflow:auto}
+.kata-side .kata-chips{max-height:none}
+.kata-main .kata-floor textarea{min-height:74px}
+.kata-page-foot{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;align-items:center;gap:10px;padding:12px 22px;background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(8px);border-top:1px solid var(--line)}
+/* masaustunde sidebar 264px yer kaplar - alt cubuk icerik alaniyla hizalanir */
+@media(min-width:1024px){ #app:not(.sb-none) .kata-page-foot{left:264px} }
+@media(max-width:980px){
+  .kata-layout{grid-template-columns:1fr}
+  .kata-side{position:static;max-height:240px}
+}
 /* OZEL NO MOTORU */
 .onm-files{display:flex;flex-wrap:wrap;gap:6px}
 .onm-file{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:7px;background:var(--panel2);border:1px solid var(--line)}
@@ -1933,7 +1946,7 @@ function migrate(){
 }
 
 let SEC="proje", TAB="spec", SEARCH="", GFILTER="", LOGVIEW="akis";
-let PBINA="", PCAT="", PSPEC="", PLIB=false, PDEF=false, PORD=false, PCOMP=false, PEKIP=false, PNEWORD=false, PBINAY=false, ORDBINA="";  // proje filtreleri + kutuphane + tanimlar + tum siparisler + sirketler + ekipler + siparis ekleme sayfasi + bina yonetimi
+let PBINA="", PCAT="", PSPEC="", PLIB=false, PDEF=false, PORD=false, PCOMP=false, PEKIP=false, PNEWORD=false, PBINAY=false, PKATA=false, ORDBINA="";  // proje filtreleri + kutuphane + tanimlar + tum siparisler + sirketler + ekipler + siparis ekleme sayfasi + bina yonetimi + kat ata sayfasi
 let ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:''}; // Tum Siparisler yapisal filtreleri (bolum/sartname/malzeme/kod/sirket/tarih/pdf) - ORDBINA ile birlikte calisir
 let ORDVIEW='orders'; // Tum Siparisler alt gorunumu: 'orders' (kesinlesmis) | 'drafts' (taslaklar)
 let SPECVIEW=localStorage.getItem('specview')==='list'?'list':'grid';     // sartname kalemleri gorunumu: 'grid' (kart) | 'list' (satir) - kullanicinin son secimi hatirlanir
@@ -2259,7 +2272,7 @@ function startClock(){
 }
 
 function switchSection(s){ if(!canSee(s)){ toast('Bu bolume erisim yetkiniz yok','err'); return; } SEC=s; TAB=(s==='proje'?'spec':'stok'); SEARCH=""; GFILTER="";
-  PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PNEWORD=false; PBINAY=false; // acik panelleri kapat
+  PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PNEWORD=false; PBINAY=false; PKATA=false; // acik panelleri kapat
   if(s==='saha'){ render(); initSaha(); } else render();
   playSectionTransition(); }
 // Baslangic: proje bolumune EN BASTAN doner - bina/bolum/sartname secimleri sifirlanir (ana ekran)
@@ -2324,7 +2337,7 @@ function exportBinaSpecExcel(){
 }
 function render(){
   const m=document.getElementById('mainArea');
-  const inPanel = (PUSERS&&isAdmin()) || (PAUDIT&&isAdmin()) || PLIB || PDEF || PORD || PCOMP || PEKIP || PNEWORD || PBINAY;
+  const inPanel = (PUSERS&&isAdmin()) || (PAUDIT&&isAdmin()) || PLIB || PDEF || PORD || PCOMP || PEKIP || PNEWORD || PBINAY || PKATA;
   renderSidebar();
   updateBinaExcelFab();
   // GENEL paneller: hangi bolumde olursak olalim acilabilir (SEC'ten bagimsiz)
@@ -2337,6 +2350,12 @@ function render(){
   if(PORD){ m.innerHTML=renderAllOrders(); wireToolbar(); return; }
   if(PCOMP){ m.innerHTML=renderCompanies(); wireToolbar(); return; }
   if(PEKIP){ m.innerHTML=renderEkipler(); wireToolbar(); return; }
+  // KAT ATA tam sayfasi: acik sartname baglami (bina+sartname) korunuyorsa gosterilir;
+  // baglam degistiyse (baska sartnameye/binaya gecildi) sayfa kendiliginden dusulur
+  if(PKATA){
+    if(_KATA && _KATA.bina===PBINA && _KATA.code===PSPEC){ m.innerHTML=renderKatAtaPage(); katAtaRecount(); return; }
+    PKATA=false;
+  }
   if(SEC==='proje'){
     if(!PBINA){ m.innerHTML=renderBinaSecim(); wireToolbar(); return; }
     if(!PCAT){ m.innerHTML=renderKategoriSecim(); wireToolbar(); return; }
@@ -5764,10 +5783,13 @@ function openKatAta(){
     else if(sp.kat&&floorByKot[ktopKotFmt(sp.kat)])fl=floorByKot[ktopKotFmt(sp.kat)];
     if(fl){ const kod=katAtaKodlar(sp)[0]; if(kod)fl.text+=(fl.text?'\n':'')+kod; } });
   _KATA={bina:PBINA,cat:PCAT,code:PSPEC,floors,kapsamli,tumKatN:tumKat.length};
-  renderKatAta();
+  PKATA=true; render();
 }
-function renderKatAta(){
-  closeModal(); const f=_KATA; if(!f)return;
+// Kat Ata sayfasindan sartnameye don
+function closeKatAta(){ PKATA=false; _KATA=null; render(); }
+// Kat Ata: tam sayfa govdesi (#mainArea icine). Modal degil - genis calisma alani.
+function renderKatAtaPage(){
+  const f=_KATA; if(!f) return '';
   const specs=katAtaSpecs();
   const atanmis=specs.filter(s=>s.kat).length;
   // kat atanmamis ozel kodlar: yapistirmaya yardimci - tiklayinca panoya kopyalanir
@@ -5783,26 +5805,34 @@ function renderKatAta(){
     <div class="kata-warn" id="kata-warn-${i}"></div>
   </div>`).join('');
   const son=ktopBatches().filter(b=>b.tip==='kat').slice(-1)[0];
-  const html=`<div class="modal-bg drawer-bg" onclick="if(event.target===this){_KATA=null;closeModal()}"><div class="modal wide drawer">
-    <div class="modal-head"><div><h3>Kat Ata · ${esc(f.code)}</h3>
-      <div class="t-meta" style="margin-top:2px">${esc(f.bina)} · ${esc(f.cat)} — her katin altina ozel numaralari yapistirin</div></div>
-      <button class="mini-btn" onclick="_KATA=null;closeModal()">x</button></div>
-    <div class="modal-body">
-      <div class="kata-intro"><b>Her katin kutusuna o kata ait ozel numaralari</b> yapistirin (virgul, bosluk ya da alt alta fark etmez). Kaydedince yalnizca eslesen kalemlere kat${f.floors.some(x=>x.kot)?' ve kot':''} yazilir - hedef, siparis, montaj hicbir sey degismez. Bu sartnamede <b>${specs.length}</b> kalem var, <b>${atanmis}</b> tanesinin kati atanmis.
-        ${f.kapsamli?`<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="cat-tag" style="background:rgba(59,130,246,.13);color:var(--blue)">Bu sartname yalnizca <b>${f.floors.length}</b> katta gecerli</span><span class="t-meta">(${f.tumKatN} kattan) - kapsam disi katlar gizli</span><button class="btn btn-ghost" style="padding:3px 10px;font-size:11px" onclick="_KATA=null;closeModal();openSartnameModal(_katAtaSrId())" title="Sartnamenin gecerli oldugu katlari degistir">Kapsami Duzenle</button></div>`:''}
-      </div>
-      ${uniqBos.length?`<div class="kata-unassigned"><div class="katp-sec">Kati Atanmamis Ozel Kodlar <span>${uniqBos.length}</span><i style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--dim)">tiklayinca kopyalanir</i></div><div class="kata-chips">${chips}${uniqBos.length>200?`<span class="t-meta">+${uniqBos.length-200} daha</span>`:''}</div></div>`:''}
-      <div class="katp-sec" style="margin-bottom:8px">Katlar <span>${f.floors.length}</span></div>
-      <div class="kata-floors">${floorsHtml}</div>
+  const bcol=buildingColor(f.bina);
+  return `<div class="kata-page">
+    <div class="sel-bc">
+      <button onclick="closeKatAta()">${esc(f.bina)}</button> ${icoChevron()}
+      <button onclick="closeKatAta()" style="color:${bcol}">${esc(f.cat)}</button> ${icoChevron()}
+      <button onclick="closeKatAta()">${esc(f.code)}</button> ${icoChevron()}
+      <b>Kat Ata</b>
     </div>
-    <div class="modal-foot">
-      <button class="btn btn-ghost" style="margin-right:auto" onclick="_KATA=null;closeModal()">Kapat</button>
+    <div class="page-head"><h1>Kat Ata</h1><p class="page-sub">${esc(f.bina)} · ${esc(f.cat)} · ${esc(f.code)} — her katin altina ait oldugu ozel numaralari yapistirin</p></div>
+    <div class="kata-intro"><b>Her katin kutusuna o kata ait ozel numaralari</b> yapistirin (virgul, bosluk ya da alt alta fark etmez). Kaydedince yalnizca eslesen kalemlere kat${f.floors.some(x=>x.kot)?' ve kot':''} yazilir - hedef, siparis, montaj hicbir sey degismez. Bu sartnamede <b>${specs.length}</b> kalem var, <b>${atanmis}</b> tanesinin kati atanmis.
+      ${f.kapsamli?`<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="cat-tag" style="background:rgba(59,130,246,.13);color:var(--blue)">Bu sartname yalnizca <b>${f.floors.length}</b> katta gecerli</span><span class="t-meta">(${f.tumKatN} kattan) - kapsam disi katlar gizli</span><button class="btn btn-ghost" style="padding:3px 10px;font-size:11px" onclick="closeKatAta();openSartnameModal(_katAtaSrId())" title="Sartnamenin gecerli oldugu katlari degistir">Kapsami Duzenle</button></div>`:''}
+    </div>
+    <div class="kata-layout">
+      <div class="kata-side">
+        <div class="katp-sec">Kati Atanmamis Ozel Kodlar <span>${uniqBos.length}</span></div>
+        ${uniqBos.length?`<div class="t-meta" style="font-size:10.5px;margin:4px 0 8px">Tiklayinca panoya kopyalanir. Bir kata yapistirilinca ustu cizilir.</div><div class="kata-chips">${chips}${uniqBos.length>200?`<span class="t-meta">+${uniqBos.length-200} daha</span>`:''}</div>`:`<p class="matd-empty" style="margin:8px 0 0">Bu sartnamedeki tum kalemlerin kati atanmis.</p>`}
+      </div>
+      <div class="kata-main">
+        <div class="katp-sec" style="margin-bottom:8px">Katlar <span>${f.floors.length}</span></div>
+        <div class="kata-floors">${floorsHtml}</div>
+      </div>
+    </div>
+    <div class="kata-page-foot">
+      <button class="btn btn-ghost" style="margin-right:auto" onclick="closeKatAta()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Sartnameye Don</button>
       ${son?`<button class="btn btn-ghost" style="border-color:var(--amber)66;color:var(--amber)" onclick="katAtaUndo()" title="${esc(fmtDT(son.ts))} tarihli kat atamasini geri al">Son Atamayi Geri Al</button>`:''}
       <button class="btn btn-add" id="kata-save" onclick="saveKatAta()">Kat Ata</button>
     </div>
-  </div></div>`;
-  document.body.insertAdjacentHTML('beforeend',html);
-  katAtaRecount();
+  </div>`;
 }
 function katAtaCopy(kod){ try{ navigator.clipboard.writeText(kod); toast('Kopyalandi: '+kod); }catch(e){ toast(kod); } }
 // Kapsami Duzenle dugmesi icin: acik sartnamenin id'si
@@ -5869,7 +5899,7 @@ async function saveKatAta(){
     await sbUpsertProjeSpecs(up);
     await ktopBatchSave([...ktopBatches(),batch].slice(-10));
     logAction('editSpec',`Kat Ata: ${up.length} kalem (${f.code})`);
-    render(); renderKatAta();
+    render(); // PKATA acik: sayfa yeniden cizilir (rozetler + sayaclar guncellenir)
     toast(`${up.length} kaleme kat yazildi`);
   }catch(err){ console.error(err); toast('Kat yazma hatasi: '+(err.message||err),'err'); }
 }
@@ -5884,7 +5914,7 @@ async function katAtaUndo(){
     if(up.length) await sbUpsertProjeSpecs(up);
     await ktopBatchSave(ktopBatches().filter(x=>x.id!==b.id));
     logAction('editSpec',`Kat Ata geri alindi: ${up.length} kalem`);
-    render(); if(_KATA) renderKatAta();
+    render(); // PKATA acik: sayfa yeniden cizilir
     toast(`Geri alindi · ${up.length} kalem`);
   }catch(err){ console.error(err); toast('Geri alma hatasi: '+(err.message||err),'err'); }
 }
