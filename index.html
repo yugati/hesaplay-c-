@@ -10423,8 +10423,11 @@ document.addEventListener('mousedown',e=>{ if(AC.drop && !e.target.closest('.ac-
    =================================================================== */
 let pOrderLines=[];
 function specLibSrc(){
-  // spesifikasyon kutuphanesi - spek no'ya gore aranabilir
-  return DB.proje.specs.map(s=>({ad:s.name, alt:(s.code||'')+' '+(s.cat||''), sub:[s.code,s.cat,s.unit].filter(Boolean).join(' · '), obj:{specId:s.id,code:s.code||'',ad:s.name,cat:s.cat||'',unit:s.unit||''}}));
+  // spesifikasyon kutuphanesi - spek no'ya VE ozel no'ya gore aranabilir (tum ozel kodlar dahil)
+  return DB.proje.specs.map(s=>{ const koz=katAtaKodlar(s);
+    return {ad:s.name, alt:(s.code||'')+' '+(s.poz||'')+' '+koz.join(' ')+' '+(s.cat||''),
+      sub:[koz.length>1?koz.length+' özel kod':(koz[0]?'Özel '+koz[0]:''),s.code,s.cat,s.unit].filter(Boolean).join(' · '),
+      obj:{specId:s.id,code:s.code||'',ad:s.name,cat:s.cat||'',unit:s.unit||''}};});
 }
 // MERKEZI MALZEME KUTUPHANESI arama kaynagi - tum bilgi (kod, ad, marka, birim, standart, etiket, FOTO)
 function matLibSrc(){
@@ -10450,7 +10453,7 @@ function openProjeOrderModal(){ modalPdf=null; _poDraftId=null; pOrderLines=[{sp
       <input id="po_newsirket" class="hidden" style="margin-top:7px" placeholder="Yeni sirket adi"></div>
     <div class="frow"><label>Varsayilan Sartname  <span class="t-meta">(opsiyonel - urunler ${esc(PCAT)} bolumundeki tum sartnamelerden secilir)</span></label>
       <select id="po_grup" onchange="poGrupChange(this.value)"><option value="">- secili degil -</option>${grps.map(g=>`<option ${g===PSPEC?'selected':''}>${esc(g)}</option>`).join('')}</select></div>
-    <div class="frow"><label>Malzeme Satirlari <span class="t-meta">(spek no veya ad ile ara)</span></label>
+    <div class="frow"><label>Malzeme Satirlari <span class="t-meta">(ozel no, spek no veya ad ile ara)</span></label>
       <div id="polines"></div>
       <button class="add-line" id="poAddBtn" onclick="addPLine()">+ Satir Ekle</button>
     </div>
@@ -10471,17 +10474,22 @@ function renderPLines(){ const c=document.getElementById('polines'); if(!c)retur
     const grpTag=picked&&l.grup?`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px;margin-left:6px">${esc(l.grup)}</span>`:'';
     const info=picked?`<div class="lib-match match-found">${esc(l.code)} · ${esc(l.cat)}${l.unit?' · '+esc(l.unit):''}${grpTag}</div>`:`<div class="lib-match match-new">${esc(PCAT)} bolumundeki tum sartnamelerden urun secin</div>`;
     return `<div class="oline" style="grid-template-columns:1fr 80px 34px">
-      <div class="ac-wrap"><input id="pl_ad_${i}" placeholder="Sartname no veya ad ara (tum sartnameler)..." value="${esc(picked?(l.code+' \u2014 '+l.ad):'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" ontouchstart="this.removeAttribute('readonly')" onclick="acProje(${i})" style="cursor:pointer"></div>
+      <div class="ac-wrap"><input id="pl_ad_${i}" placeholder="Ozel no, spek no veya ad ara..." value="${esc(picked?(l.code+' \u2014 '+l.ad):'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" ontouchstart="this.removeAttribute('readonly')" onclick="acProje(${i})" style="cursor:pointer"></div>
       <input type="number" step="any" placeholder="Miktar" value="${esc(l.qty)}" oninput="updPLine(${i},'qty',this.value)">
       <button class="mini-btn del" onclick="rmPLine(${i})">${icoTrash()}</button>
       ${info}</div>`;
   }).join('');
 }
-function specLibSrcGroup(grup){ return DB.proje.specs.filter(s=>specGroupKey(s)===grup).map(s=>({ad:s.name, alt:(s.code||'')+' '+(s.cat||''), sub:[s.code,s.cat,s.unit].filter(Boolean).join(' \u00b7 '), obj:{specId:s.id,code:s.code||'',ad:s.name,cat:s.cat||'',unit:s.unit||''}})); }
 function specLibSrcAll(){
+  // OZEL NO ILE DE ARANIR: welding box gibi ayni urunun onlarca kaleme dagildigi durumda
+  // dogru kalem ancak yerlesim koduyla (ozel no) secilebilir - tum ozel kodlar (ozelNo +
+  // ozelNolar listesi) aramaya dahil, kalemin kati da listede gorunur (rapor aramasiyla ayni)
   const specs=DB.proje.specs.filter(s=>!s.is_deleted && (s.bina||'')===PBINA && (s.cat||'')===PCAT)
     .map(s=>{ const mt=specMaterial(s); const img=specImgOf(s); const brand=(mt&&mt.brand)||s.brand||'';
-    return {ad:s.name, alt:(s.code||'')+' '+(s.cat||'')+' '+specGroupKey(s), sub:[s.code,brand,specGroupKey(s),s.unit].filter(Boolean).join(' \u00b7 '), img, obj:{specId:s.id,code:s.code||'',ad:s.name,cat:s.cat||'',unit:s.unit||'',grup:specGroupKey(s),img,brand}};});
+    const koz=katAtaKodlar(s);
+    return {ad:s.name, alt:(s.code||'')+' '+(s.poz||'')+' '+koz.join(' ')+' '+(s.cat||'')+' '+specGroupKey(s),
+      sub:[koz.length>1?koz.length+' \u00f6zel kod':(koz[0]?'\u00d6zel '+koz[0]:''),s.kat?_katEtiket(s.kat):'',s.code,brand,specGroupKey(s),s.unit].filter(Boolean).join(' \u00b7 '),
+      img, obj:{specId:s.id,code:s.code||'',ad:s.name,cat:s.cat||'',unit:s.unit||'',grup:specGroupKey(s),img,brand}};});
   // satin alinabilir alternatifler (bkz. activeAltsFor): secilirse alim ana urune sayilir
   const alts=activeAltsFor(PBINA).filter(({sp})=>(sp.cat||'')===PCAT).map(({alt:a,sp})=>{ const la=altLive(a); return {
     ad:la.name||la.code||'?',
@@ -10651,8 +10659,9 @@ function nordSetSart(v){ NORD.sart=v||''; render(); }
 function nordSpecSrc(){
   const specs=DB.proje.specs.filter(s=>!s.is_deleted && (s.bina||'')===(NORD.bina||'') && nordSartMatch(s))
     .map(s=>{ const mt=specMaterial(s); const img=specImgOf(s); const brand=(mt&&mt.brand)||s.brand||'';
-      return {ad:s.name||s.code||'?', alt:(s.code||'')+' '+(s.poz||'')+' '+(s.ozelNo||'')+' '+(s.cat||'')+' '+specGroupKey(s),
-        sub:[s.ozelNo?'Özel '+s.ozelNo:'',s.code,brand,s.cat,specGroupKey(s),s.unit].filter(Boolean).join(' · '), img,
+      const koz=katAtaKodlar(s); // TUM ozel kodlar aranabilir (yalniz birincil degil)
+      return {ad:s.name||s.code||'?', alt:(s.code||'')+' '+(s.poz||'')+' '+koz.join(' ')+' '+(s.cat||'')+' '+specGroupKey(s),
+        sub:[koz.length>1?koz.length+' özel kod':(koz[0]?'Özel '+koz[0]:''),s.kat?_katEtiket(s.kat):'',s.code,brand,s.cat,specGroupKey(s),s.unit].filter(Boolean).join(' · '), img,
         obj:{specId:s.id,code:s.code||'',ad:s.name,cat:s.cat||'',unit:s.unit||'',grup:specGroupKey(s),img,brand}};});
   const alts=activeAltsFor(NORD.bina).filter(({sp})=>nordSartMatch(sp)).map(({alt:a,sp})=>{ const la=altLive(a); return {
     ad:la.name||la.code||'?',
@@ -10685,6 +10694,17 @@ function _nordUniq(hits){
 function nordMatchSpec(cells){
   const specs=DB.proje.specs.filter(s=>!s.is_deleted && (s.bina||'')===(NORD.bina||'') && nordSartMatch(s));
   const texts=cells.map(c=>norm(c).trim()).filter(Boolean);
+  // ONCE OZEL NO: ayni urun bir sartnamede bircok kaleme dagilmis olabilir (welding box) -
+  // urun kodu hepsinde ayniyken OZEL NO tek kalemi isaret eder, en kesin eslesme budur.
+  // Indeks Kat Ata ile ayni tolerans: alan butun halde + birden fazla TAM koddan olusuyorsa
+  // her kod ayri anahtar (ktopKey bosluk/tire farklarini yutar).
+  const ozelIdx={};
+  specs.forEach(s=>{ katAtaKodlar(s).forEach(f=>{
+    const kk=ktopKey(f); if(kk&&!ozelIdx[kk])ozelIdx[kk]=s;
+    const parts=_ozelKodBol(f);
+    if(parts.length>1) parts.forEach(p=>{ const pk=ktopKey(p); if(pk&&!ozelIdx[pk])ozelIdx[pk]=s; });
+  });});
+  for(const c of cells){ const k=ktopKey(c); if(k&&ozelIdx[k]) return ozelIdx[k]; }
   for(const t of texts){ const sp=_nordUniq(specs.filter(s=>norm(s.code||'').trim()===t)); if(sp) return sp; }
   // ana kod eslesmediyse: malzemenin varyant kodlariyla dene (ayni urun, farkli kod)
   for(const t of texts){ const sp=_nordUniq(specs.filter(s=>{ const mt=specMaterial(s);
@@ -10815,7 +10835,7 @@ function nordLinesHtml(){
           ${l.img?`<img src="${l.img}" class="nord-thumb">`:''}
           <div class="nord-prod-txt"><b>${esc(l.ad)}</b><span>${esc([l.code,l.brand].filter(Boolean).join(' · '))}</span>${tags}</div></div>
        <div class="ac-wrap" style="display:none"><input id="nord_ad_${i}"></div>`
-      :`<div class="ac-wrap"><input id="nord_ad_${i}" placeholder="${l.raw?'Eslesme bulunamadi - urun secin':(NORD.sart?esc(NORD.sart)+' icinde ara...':'Spek no veya ad ara...')}" value="${esc(l.raw||'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" onclick="nordAc(${i})" style="cursor:pointer${l.raw?';border-color:var(--red)66':''}">${status}</div>`;
+      :`<div class="ac-wrap"><input id="nord_ad_${i}" placeholder="${l.raw?'Eslesme bulunamadi - urun secin':(NORD.sart?esc(NORD.sart)+' icinde ara...':'Ozel no, spek no veya ad ara...')}" value="${esc(l.raw||'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" onclick="nordAc(${i})" style="cursor:pointer${l.raw?';border-color:var(--red)66':''}">${status}</div>`;
     // parcali giris binasinda satir opsiyonel olarak bir lokasyona baglanabilir (toplu alimlar lokasyonsuz girilebilir)
     const lokSel=(ok&&binaParcali(NORD.bina))?`<span class="nord-loc${l.lokId?' has':''}"><select onchange="nordSetLok(${i},this)" onclick="event.stopPropagation()">${lokSelectOptions(NORD.bina,l.lokId||'','- lokasyon (opsiyonel) -')}</select></span>`:'';
     return `<div class="nord-row ${ok?(isDup?'dup':''):'open'}">
