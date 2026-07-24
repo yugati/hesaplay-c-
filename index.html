@@ -5777,6 +5777,17 @@ function _ozelKodBol(field){
 function katAtaKodlar(sp){
   return [...new Set([sp.ozelNo,...(sp.ozelNolar||[])].map(x=>String(x||'').trim()).filter(Boolean))];
 }
+/* SECILI KALEMIN OZEL NO ROZETI: ayni urun/kod bircok kaleme dagildiginda (welding box gibi)
+   secilen satirda "ne girildigi" ancak ozel no'dan anlasilir. Verilen specId'nin ozel kodlarini
+   (birincil + ozelNolar) kucuk turuncu rozet olarak dondurur; birden fazlaysa ilki + "+N",
+   tamami baslikta (hover) gorunur. Ozel no yoksa bos string doner (rozet cizilmez). */
+function specOzelBadge(specId,extra){
+  if(!specId) return '';
+  const sp=DB.proje.specs.find(s=>s.id===specId); if(!sp) return '';
+  const koz=katAtaKodlar(sp); if(!koz.length) return '';
+  const label=koz.length>1?`${esc(koz[0])} +${koz.length-1}`:esc(koz[0]);
+  return `<span class="cat-tag" style="background:var(--amber)22;color:var(--amber);font-family:var(--mono)${extra||''}" title="Özel No${koz.length>1?' ('+koz.length+' kod)':''}: ${esc(koz.join(', '))}">${label}</span>`;
+}
 // ESLESME icin anahtarlar: her ozel no alani icin (1) BUTUN alanin anahtari (bosluklar silinip
 // birlesik) + (2) alan birden fazla TAM koddan olusuyorsa HER TAM kodun anahtari ayri ayri.
 // Boylece "00UYB18EM0426 00UYB18EM0427" hem tek tek hem cift olarak yapistirildiginda eslesir;
@@ -9869,6 +9880,9 @@ function rLineHtml(bk,bi,l,li,bina,parcali){
   // (kucuk fotoyla) - ayri satir kaplamaz. Sadece bos satirda yardim metni asagida kalir.
   const libMat=(!linked&&l.matId)?(DB.proje.materials||[]).find(m=>m.id===l.matId):null;
   const libThumb=libMat&&libMat.img?`<img src="${libMat.img}" style="width:26px;height:26px;border-radius:5px;object-fit:contain;background:#fff;flex-shrink:0">`:'';
+  // OZEL NO ROZETI: ayni urun bircok kaleme dagildiginda (welding box) hangi kalemin secildigi
+  // ozel no'dan gorunur - kod rozetinin yaninda kucuk turuncu rozet olarak durur
+  const ozelChip=linked?specOzelBadge(l.specId,';font-size:9px'):'';
   const codeChip=linked
     ?`<span class="rl-code" title="${esc((l.code||'')+(bk.cat?' · '+bk.cat:''))}">${imgThumb}${esc(l.code||'')}${bk.cat?' · '+esc(bk.cat):''}</span>`
     :hasName
@@ -9892,7 +9906,7 @@ function rLineHtml(bk,bi,l,li,bina,parcali){
       ${libUnit
         ?`<input class="ro-auto" value="${esc(libUnit)}" readonly title="Birim Malzeme Kutuphanesindeki urunden otomatik gelir - degistirmek icin kutuphanede duzenleyin">`
         :`<input placeholder="Birim" value="${esc(l.unit||'')}" oninput="rUpdLine(${bi},${li},'unit',this.value)" title="Kutuphanede birim tanimli degil - elle girin">`}
-      ${codeChip}
+      ${ozelChip}${codeChip}
     </div>
     ${info}${barHtml}</div>`;
 }
@@ -10472,7 +10486,8 @@ function renderPLines(){ const c=document.getElementById('polines'); if(!c)retur
   c.innerHTML=pOrderLines.map((l,i)=>{
     const picked=l.specId&&l.ad;
     const grpTag=picked&&l.grup?`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px;margin-left:6px">${esc(l.grup)}</span>`:'';
-    const info=picked?`<div class="lib-match match-found">${esc(l.code)} · ${esc(l.cat)}${l.unit?' · '+esc(l.unit):''}${grpTag}</div>`:`<div class="lib-match match-new">${esc(PCAT)} bolumundeki tum sartnamelerden urun secin</div>`;
+    const ozelTag=picked?specOzelBadge(l.specId,';font-size:9px;margin-left:6px'):'';
+    const info=picked?`<div class="lib-match match-found">${esc(l.code)} · ${esc(l.cat)}${l.unit?' · '+esc(l.unit):''}${ozelTag}${grpTag}</div>`:`<div class="lib-match match-new">${esc(PCAT)} bolumundeki tum sartnamelerden urun secin</div>`;
     return `<div class="oline" style="grid-template-columns:1fr 80px 34px">
       <div class="ac-wrap"><input id="pl_ad_${i}" placeholder="Ozel no, spek no veya ad ara..." value="${esc(picked?(l.code+' \u2014 '+l.ad):'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" ontouchstart="this.removeAttribute('readonly')" onclick="acProje(${i})" style="cursor:pointer"></div>
       <input type="number" step="any" placeholder="Miktar" value="${esc(l.qty)}" oninput="updPLine(${i},'qty',this.value)">
@@ -10827,6 +10842,7 @@ function nordLinesHtml(){
     // sartname/bolum/durum artik ayri sutun degil: urun hucresinin altinda kucuk etiketler
     const tags=ok?`<div class="nord-tags">
         ${altBadge}
+        ${specOzelBadge(l.specId)}
         ${l.grup?`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(l.grup)}</span>`:''}
         ${l.cat?`<span class="cat-tag" style="background:var(--dim)33;color:var(--mute)">${esc(l.cat)}</span>`:''}
         ${dupBadge}${status}</div>`:'';
