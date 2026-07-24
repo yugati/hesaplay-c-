@@ -2562,7 +2562,7 @@ function renderSidebar(){
     mid+=it('Ekipler','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>','openEkipler()',PEKIP);
   }
   if(can('sync')) ops+=it('Full Sync (Excel)','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16"/></svg>',"document.getElementById('syncXlsx').click()",false,'','Excel ile tam senkronizasyon (tek kaynak)');
-  if(isAdmin()) ops+=it('Kayıt Temizliği','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>','dedupeProjeSpecs()',false,'','Mukerrer kayitlari ve binasiz (sahipsiz, orn. Tava Spek-1) kalemleri gosterir - onayladiklariniz silinir');
+  if(isAdmin()) ops+=it('Kayıt Temizliği','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>','dedupeProjeSpecs()',false,'','Mukerrer kayitlari, binasiz (sahipsiz) kalemleri ve kutuphanede sikismis eski ozel-kodlu malzemeleri gosterir - onayladiklariniz silinir');
   if(can('wipe')) danger+=it('Temizle','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg>','wipeAllData()',false,'danger','Girilen tum verileri sil');
   const groups=[top,mid,ops,danger].filter(Boolean).join('<div class="sb-sep"></div>');
   const app=document.getElementById('app'); if(app) app.classList.toggle('sb-none',!groups);
@@ -7181,7 +7181,7 @@ function uidTime(id){ if(!id||id.length<6) return null; const t=parseInt(id.slic
 // siparis ekraninda gorunmez, yalnizca malzeme kunyesinde kalabalik yapar. Bagli kaydi
 // (rapor/siparis/stok) OLMAYANLAR listelenir ve onayla silinir; bagli olanlar dokunulmadan
 // sayisi bildirilir.
-let _DEDUPE=null; // {groups:[{items:[spec,...], keepId, include}], orphans:{list:[{sp,include}], linked:n}}
+let _DEDUPE=null; // {groups:[{items:[spec,...], keepId, include}], orphans:{list:[{sp,include}], linked:n}, stale:{list:[{m,twin,include}]}}
 function findOrphanSpecs(){
   const orphans=DB.proje.specs.filter(s=>!s.is_deleted && !(s.bina||'').trim());
   if(!orphans.length) return {free:[],linked:0};
@@ -7192,13 +7192,44 @@ function findOrphanSpecs(){
   (DB.proje.orders||[]).forEach(o=>(o.lines||[]).forEach(l=>{ if(l.specId&&ids.has(l.specId)) linked.add(l.specId); }));
   return {free:orphans.filter(s=>!linked.has(s.id)), linked:linked.size};
 }
+/* ESKI KODLU MUKERRER MALZEMELER: ozel no sistemi gelmeden once yerlesim kodu (00UYB14GQ302
+   gibi) urun kodu sutununa dustugu icin ayni fiziksel urun kutuphanede her yerlesim basina
+   AYRI kayit olarak acilmisti. Simdi urun tek gercek kayitta (ozel no'lar kalemin uzerinde)
+   yasadigi icin eski kopyalar "kullanilmiyor" olarak sikismis durumda. Guvenli aday olcutu:
+   (1) urun kodu TAM ozel-kod deseninde (_ozelTam), (2) hicbir sartname kalemi / stok girisi /
+   siparis alternatifi / rapor kaydi bagli degil, (3) ayni isimde GERCEK bir kayit daha var
+   (kodu ozel-kod olmayan ya da fiilen kullanimda olan). Uc kosul birden saglanmazsa listeye
+   girmez. excludeSpecIds: ayni ekranda silinmeyi bekleyen sahipsiz kalemler kullanim sayilmaz -
+   boylece iki temizlik tek seferde yapilabilir. */
+function findStaleCodeMaterials(excludeSpecIds){
+  const ex=excludeSpecIds||new Set();
+  const mats=(DB.proje.materials||[]).filter(m=>!m.is_deleted);
+  const usedIds=new Set(), usedKeys=new Set();
+  (DB.proje.specs||[]).forEach(s=>{ if(s.is_deleted||ex.has(s.id))return; if(s.matId)usedIds.add(s.matId); usedKeys.add(matKey(s.code,s.name)); });
+  (DB.proje.items||[]).forEach(it=>{ if(it.matId)usedIds.add(it.matId); });
+  (DB.proje.alternatives||[]).forEach(a=>{ if(a.matId)usedIds.add(a.matId); });
+  ((DB.rapor&&DB.rapor.entries)||[]).forEach(e=>{ if(e.matId)usedIds.add(e.matId); });
+  const kullanimda=m=>usedIds.has(m.id)||usedKeys.has(matKey(m.code,m.name))||(m.altCodes||[]).some(c=>String(c).trim()&&usedKeys.has(matKey(c,'')));
+  const byName={}; mats.forEach(m=>{ const k=norm(m.name||'').trim(); if(k)(byName[k]=byName[k]||[]).push(m); });
+  const out=[];
+  mats.forEach(m=>{
+    if(!_ozelTam(m.code||'')) return;
+    if(kullanimda(m)) return;
+    const twin=(byName[norm(m.name||'').trim()]||[]).find(x=>x.id!==m.id&&(!_ozelTam(x.code||'')||kullanimda(x)));
+    if(!twin) return;
+    out.push({m,twin});
+  });
+  return out.sort((a,b)=>(a.m.name||'').localeCompare(b.m.name||'','tr')||(a.m.code||'').localeCompare(b.m.code||'','tr'));
+}
 async function dedupeProjeSpecs(){
   if(!isAdmin()){ toast('Bu islem sadece yoneticilere aittir','err'); return; }
   const dupGroups=findDuplicateSpecs();
   const orph=findOrphanSpecs();
-  if(!dupGroups.length && !orph.free.length && !orph.linked){ toast('Mukerrer ya da sahipsiz kayit bulunamadi - kayitlar temiz'); return; }
+  const stale=findStaleCodeMaterials(new Set(orph.free.map(s=>s.id)));
+  if(!dupGroups.length && !orph.free.length && !orph.linked && !stale.length){ toast('Mukerrer, sahipsiz ya da eski kodlu kayit bulunamadi - kayitlar temiz'); return; }
   _DEDUPE={groups:dupGroups.map(g=>{ const sorted=g.slice().sort((a,b)=>a.id<b.id?-1:1); return {items:sorted,keepId:sorted[0].id,include:true}; }),
-    orphans:{list:orph.free.map(sp=>({sp,include:true})), linked:orph.linked}};
+    orphans:{list:orph.free.map(sp=>({sp,include:true})), linked:orph.linked},
+    stale:{list:stale.map(x=>({...x,include:true}))}};
   renderDedupeModal();
 }
 function dedupeGroupHtml(g,gi){
@@ -7228,7 +7259,9 @@ function renderDedupeModal(){
   const includedGroups=groups.filter(g=>g.include);
   const orph=_DEDUPE.orphans||{list:[],linked:0};
   const orphSel=orph.list.filter(o=>o.include).length;
-  const toDeleteCount=includedGroups.reduce((n,g)=>n+g.items.length-1,0)+orphSel;
+  const stale=(_DEDUPE.stale&&_DEDUPE.stale.list)||[];
+  const staleSel=stale.filter(o=>o.include).length;
+  const toDeleteCount=includedGroups.reduce((n,g)=>n+g.items.length-1,0)+orphSel+staleSel;
   const dupHtml=groups.length?`
     <div class="matd-sec" style="margin-top:0">Mukerrer Kayitlar <span>${groups.length} grup</span></div>
     <p class="t-meta" style="margin-bottom:12px;line-height:1.5">Ayni urun + bina + bolum + sartname (+ poz) icin birden fazla kayit bulundu. Kalacak kaydi secmek icin karttaki satira tiklayin; bir grubu bu temizlikten cikarmak icin ustundeki kutuyu kaldirin.</p>
@@ -7252,10 +7285,25 @@ function renderDedupeModal(){
     </label>${orphRows}`:''}
     ${orph.linked?`<p class="t-meta" style="color:var(--amber);margin-top:8px">${orph.linked} sahipsiz kalem rapor/siparis/stok kaydi tasidigi icin listeye ALINMADI - once o kayitlari kontrol edin.</p>`:''}`
     :'';
+  // eski kodlu mukerrer malzemeler (kutuphane): urun kodu = ozel kod, kullanilmiyor, gercek esi var
+  const staleRows=stale.map((o,i)=>`<div class="matd-row" style="cursor:default;gap:9px">
+      <input type="checkbox" ${o.include?'checked':''} onclick="dedupeStaleToggle(${i},this.checked)" style="flex-shrink:0">
+      <span class="mono" style="font-size:11px;flex-shrink:0;color:var(--amber)">${esc(o.m.code||'')}</span>
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${esc(o.m.name)}</span>
+      <span class="t-meta" style="margin-left:auto;white-space:nowrap;font-size:10.5px" title="Ayni isimli gercek kayit kutuphanede kaliyor">gercek kayit: <b class="mono">${esc(o.twin.code||o.twin.name)}</b></span>
+    </div>`).join('');
+  const staleHtml=stale.length?`
+    <div class="matd-sec" style="margin-top:${(groups.length||orph.list.length||orph.linked)?'16px':'0'}">Eski Kodlu Mukerrer Malzemeler <span>${stale.length}</span><i>kutuphanede sikismis - kullanilmiyor</i></div>
+    <p class="t-meta" style="margin-bottom:10px;line-height:1.5">Ozel no sistemi oncesinde yerlesim kodu urun kodu sanildigi icin ayni urun her kod icin ayri malzeme olarak acilmisti. Buradakilerin <b>hicbirine</b> sartname/siparis/stok/rapor kaydi bagli degil ve ayni isimli <b>gercek kayit</b> kutuphanede duruyor - silinmeleri hicbir veriyi etkilemez.</p>
+    <label class="chk" style="display:flex;align-items:center;gap:8px;padding:6px 0;font-weight:600;border-bottom:1px solid var(--line);margin-bottom:6px">
+      <input type="checkbox" ${staleSel===stale.length?'checked':''} onclick="dedupeStaleToggleAll(this.checked)"> Tumunu sec (${staleSel}/${stale.length})
+    </label>${staleRows}`
+    :'';
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeDedupeModal()"><div class="modal dedupe-modal"><div class="modal-head"><h3>Kayit Temizligi</h3><button class="mini-btn" onclick="closeDedupeModal()">x</button></div><div class="modal-body">
     <p class="t-meta" style="margin-bottom:12px;line-height:1.5">Onayladiginiz disinda hicbir kayit silinmez.</p>
     ${dupHtml}
     ${orphHtml}
+    ${staleHtml}
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeDedupeModal()">Iptal</button><button class="btn btn-add" style="background:var(--red);border-color:var(--red)" ${toDeleteCount?'':'disabled'} onclick="confirmDedupe()">${toDeleteCount} Kaydi Sil</button></div></div></div>`;
   document.querySelectorAll('.modal-bg').forEach(m=>m.remove());
   document.body.insertAdjacentHTML('beforeend',html);
@@ -7265,21 +7313,28 @@ function dedupeToggleGroup(gi,checked){ _DEDUPE.groups[gi].include=checked; rend
 function dedupeToggleAll(checked){ _DEDUPE.groups.forEach(g=>g.include=checked); renderDedupeModal(); }
 function dedupeOrphToggle(i,checked){ if(_DEDUPE&&_DEDUPE.orphans&&_DEDUPE.orphans.list[i]) _DEDUPE.orphans.list[i].include=checked; renderDedupeModal(); }
 function dedupeOrphToggleAll(checked){ if(_DEDUPE&&_DEDUPE.orphans) _DEDUPE.orphans.list.forEach(o=>o.include=checked); renderDedupeModal(); }
+function dedupeStaleToggle(i,checked){ if(_DEDUPE&&_DEDUPE.stale&&_DEDUPE.stale.list[i]) _DEDUPE.stale.list[i].include=checked; renderDedupeModal(); }
+function dedupeStaleToggleAll(checked){ if(_DEDUPE&&_DEDUPE.stale) _DEDUPE.stale.list.forEach(o=>o.include=checked); renderDedupeModal(); }
 function closeDedupeModal(){ _DEDUPE=null; closeModal(); }
 async function confirmDedupe(){
   if(!isAdmin()){ toast('Bu islem sadece yoneticilere aittir','err'); return; }
   if(!_DEDUPE)return;
-  const toDelete=[]; let dupN=0, orphN=0;
-  _DEDUPE.groups.forEach(g=>{ if(!g.include)return; g.items.forEach(s=>{ if(s.id!==g.keepId){ toDelete.push(s.id); dupN++; } }); });
-  ((_DEDUPE.orphans&&_DEDUPE.orphans.list)||[]).forEach(o=>{ if(o.include){ toDelete.push(o.sp.id); orphN++; } });
-  if(!toDelete.length){ toast('Silinecek kayit secili degil','err'); return; }
-  const parca=[dupN?dupN+' mukerrer':'', orphN?orphN+' sahipsiz (binasiz)':''].filter(Boolean).join(' + ');
-  if(!confirm(`${parca} kayit onayladiginiz gibi silinecek. Bu islem geri alinamaz. Devam edilsin mi?`)) return;
-  await sbDeleteProjeSpecs(toDelete);
-  const idSet=new Set(toDelete);
-  DB.proje.specs=DB.proje.specs.filter(s=>!idSet.has(s.id));
-  logAction('delete','Kayit temizligi: '+(dupN?dupN+' mukerrer':'')+(dupN&&orphN?', ':'')+(orphN?orphN+' sahipsiz kalem':'')+' silindi');
-  _DEDUPE=null; closeModal(); render(); toast(toDelete.length+' kayit silindi');
+  const delSpecs=[]; let dupN=0, orphN=0;
+  _DEDUPE.groups.forEach(g=>{ if(!g.include)return; g.items.forEach(s=>{ if(s.id!==g.keepId){ delSpecs.push(s.id); dupN++; } }); });
+  ((_DEDUPE.orphans&&_DEDUPE.orphans.list)||[]).forEach(o=>{ if(o.include){ delSpecs.push(o.sp.id); orphN++; } });
+  const delMats=[]; ((_DEDUPE.stale&&_DEDUPE.stale.list)||[]).forEach(o=>{ if(o.include) delMats.push(o.m.id); });
+  if(!delSpecs.length&&!delMats.length){ toast('Silinecek kayit secili degil','err'); return; }
+  const parca=[dupN?dupN+' mukerrer kalem':'', orphN?orphN+' sahipsiz (binasiz) kalem':'', delMats.length?delMats.length+' eski kodlu malzeme':''].filter(Boolean).join(' + ');
+  if(!confirm(`${parca} onayladiginiz gibi silinecek. Bu islem geri alinamaz. Devam edilsin mi?`)) return;
+  await Promise.all([
+    ...(delSpecs.length?[sbDeleteProjeSpecs(delSpecs)]:[]),
+    ...(delMats.length?[sbDeleteProjeMaterials(delMats)]:[])
+  ]);
+  const sIds=new Set(delSpecs), mIds=new Set(delMats);
+  DB.proje.specs=DB.proje.specs.filter(s=>!sIds.has(s.id));
+  DB.proje.materials=(DB.proje.materials||[]).filter(m=>!mIds.has(m.id));
+  logAction('delete','Kayit temizligi: '+parca+' silindi');
+  _DEDUPE=null; closeModal(); render(); toast((delSpecs.length+delMats.length)+' kayit silindi');
 }
 
 // MALZEME KUTUPHANESI: tek/cok sayfali dosyayi oku, upsert et
