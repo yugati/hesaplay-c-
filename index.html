@@ -7149,6 +7149,12 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
       if(!grup){ report.errors.push(`Spek satir ${r+1}: sartname belirtilmemis`); continue; }
       if(!sartIndex[norm(insertBina)+'|'+norm(sec)+'|'+norm(grup)]){ report.errors.push(`Spek satir ${r+1}: "${grup}" sartnamesi ${insertBina}/${sec} icin tanimli degil - once Bolum & Sartname ekranindan tanimlayin`); continue; }
     }
+    // KAYNAK DUZELTMESI: sartname (grup) adi verilmemis satir icin ARTIK "Tava Spek-1" gibi
+    // uydurma bir ad URETILMEZ. Eski davranis (grup||(cat+' Spek-1')) her adsiz satir icin
+    // binasiz/placeholder "sahipsiz kalem" doguruyor, malzeme kunyesinde hayalet "X spek'te"
+    // sayilari birakiyordu. Artik adsiz satir kalem ACMAZ; rapora hata olarak duser (strict yol
+    // zaten yukarida 7149'da eler - bu, non-strict "Temiz Kurulum" yolu icin ayni korumadir).
+    if(!strict && !grup){ report.errors.push(`Spek satir ${r+1}: sartname (grup) belirtilmemis - kalem olusturulmadi (Spesifikasyon sayfasina "sartname" sutunu ekleyin)`); continue; }
     // anahtar: spec_external_id varsa o; yoksa URUN KODU (asil essizlik birimi) + POZ NO; kod yoksa ad + poz
     // essizlik urun kodu/adi VE Poz No birlikte kontrol edilir: ayni sartnamede ayni urun (ayni poz'da) tekrar edemez,
     // ama ayni urun FARKLI Poz No'larla birden fazla kez gecebilir (bkz. Sartname Kalemi modal aciklamasi).
@@ -7231,7 +7237,7 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
       report.specUpdated++; touched.add(existing.id); seen.set(skey,existing);
     } else { // INSERT — bina yoksa defaultBina'yi kullan
       const newId=uid();
-      const nsp={id:newId,extId:(useExt?ext:''),poz,ozelNo,code:code||mat.code,name:name||mat.name,target:tgt,unit,cat,bina:insertBina,grup:grup||(cat+' Spek-1'),
+      const nsp={id:newId,extId:(useExt?ext:''),poz,ozelNo,code:code||mat.code,name:name||mat.name,target:tgt,unit,cat,bina:insertBina,grup,
         standart:mat.standart||'',weight:mat.weight!=null?mat.weight:null,tags:(mat.tags||[]).slice(),img:mat.img||null,matId:mat.id,brand:mat.brand||'',exclude};
       DB.proje.specs.push(nsp);
       report.specCreated++; touched.add(newId); seen.set(skey,nsp);
