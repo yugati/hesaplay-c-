@@ -876,6 +876,12 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .specf-saved-row .m{color:var(--mute);font-family:var(--mono);font-size:11px;white-space:nowrap}
 .specf-note{font-size:11.5px;color:var(--dim);font-family:var(--mono);line-height:1.6;margin:12px 2px 0}
 @media(max-width:860px){ .specfg-head{grid-template-columns:1fr} }
+/* TOPLU GIRIS TASLAGI: acik taslak rozeti + kilit uyari kutusu */
+.sdraft-chip{border-color:rgba(240,160,32,.5)!important;color:var(--amber)!important;background:rgba(240,160,32,.08)!important}
+.sdraft-chip:hover{background:rgba(240,160,32,.16)!important}
+.sdraft-badge{display:inline-block;vertical-align:4px;margin-left:8px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.5px;padding:3px 8px;border-radius:6px;background:rgba(240,160,32,.16);border:1px solid rgba(240,160,32,.45);color:var(--amber)}
+.sdraft-box{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px dashed rgba(240,160,32,.5);border-radius:10px;padding:12px 14px}
+.sdraft-tag{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;font-weight:700;color:var(--amber);white-space:nowrap}
 /* lokasyon kirilimi calisma alani (Binalar yonetim ekrani) */
 .lokw-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px}
 .lokw-stat{display:inline-flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:7px 12px;font-size:12px;color:var(--mute)}
@@ -7526,7 +7532,9 @@ function importLibraryExcel(e){ if(!guard('import')){e.target.value='';return;} 
   r.readAsBinaryString(f);
 }
 // SPESIFIKASYON: tek/cok sayfali dosyayi oku, upsert et (once malzemeler, sonra spec'ler)
-function importSpecsUpsertExcel(e){ if(!guard('import')){e.target.value='';return;} const f=e.target.files[0]; if(!f)return;
+function importSpecsUpsertExcel(e){ if(!guard('import')){e.target.value='';return;}
+  if(specDraftBlocks('excel')){ e.target.value=''; return; } // acik taslak varken toplu aktarim da yapilamaz
+  const f=e.target.files[0]; if(!f)return;
   const r=new FileReader();
   r.onload=async ev=>{ try{
     const wb=XLSX.read(ev.target.result,{type:'binary'});
@@ -8062,6 +8070,7 @@ function renderSpec(){
   return `<div class="stats">${statHtml}</div>
     <div class="spec-toolbar"><div class="toolbar">${searchBox('Spesifikasyon kalemi ara...')}
       <div class="seg"><button class="${SPECVIEW==='grid'?'on':''}" onclick="setSpecView('grid')" title="Kart gorunumu">${icoGridSm()} Kart</button><button class="${SPECVIEW==='list'?'on':''}" onclick="setSpecView('list')" title="Satir gorunumu">${icoListSm()} Satir</button></div>
+      ${(()=>{ const d=myOpenSpecDraft(); return d?`<button class="btn btn-ghost sdraft-chip" onclick="openSpecDraft('${d.id}')" title="Yarim kalmis toplu giris taslaginiz - tamamlanana kadar yeni kalem eklenemez">${icoDoc()} Taslak (${(d.rows||[]).length} satir) · Devam Et</button>`:''; })()}
       <button class="btn btn-ghost" onclick="openSpecGridCtx()" title="Genis sayfada satir satir pes pese kalem girisi - her satir bir kalem">${icoListSm()} Toplu Giris</button>
       <button class="btn btn-add" onclick="openSpecModalCtx()">${icoPlus()} Kalem Ekle</button></div></div>
     ${sartOdaPanelHtml()}${mergedHtml}${sections}${offHtml}`;
@@ -8074,7 +8083,7 @@ async function renameSpecGroup(oldName){
   await Promise.all(affected.map(s=>sbUpdateProjeSpec(s.id,{...s})));
   render(); toast("Grup adi guncellendi");
 }
-function specFromOff(name,cat,unit){ openSpecModal(null,{name,cat,unit}); }
+function specFromOff(name,cat,unit){ if(specDraftBlocks('add'))return; openSpecModal(null,{name,cat,unit}); }
 
 /* ===================== SIPARISLER (fatura takip) ===================== */
 function renderProjeOrders(){
@@ -8479,7 +8488,9 @@ function itemPdf(it){ if(!it) return null; if(it.pdf) return it.pdf;
 function openProjePdf(id){ const it=DB.proje.items.find(i=>i.id===id); const pdf=itemPdf(it); if(!pdf)return; const w=window.open(); w.document.write(`<title>${esc(pdf.name)}</title><iframe src="${pdf.data}" style="width:100%;height:100%;border:0"></iframe>`); }
 
 /* ---------- SPEC modal ---------- */
-function openSpecModalCtx(){ openSpecModal(null,{bina:PBINA,cat:PCAT,grup:PSPEC&&PSPEC!=='__all'?PSPEC:''}); }
+// YENI kalem giris kapilari: acik taslak varken kilitlidir (bkz. TOPLU GIRIS TASLAGI kurali).
+// Mevcut kalemi duzenleme (openSpecModal(id)) kilitten etkilenmez.
+function openSpecModalCtx(){ if(specDraftBlocks('add'))return; openSpecModal(null,{bina:PBINA,cat:PCAT,grup:PSPEC&&PSPEC!=='__all'?PSPEC:''}); }
 function openSpecModal(idOrNull,prefill){ if(!guard('editSpec',{bina:(prefill&&prefill.bina)||PBINA}))return; const sp=(idOrNull&&typeof idOrNull==='string')?DB.proje.specs.find(s=>s.id===idOrNull):null;
   window._specEditId=sp?sp.id:null; // editSpecMaterial geri-donuste bu id ile ayni kalemi tekrar acar
   const pf=prefill||{}; modalImg=sp?specImgOf(sp):null;
@@ -8562,7 +8573,7 @@ function specModalToPage(){
   });
 }
 // sartname ekranindaki "Toplu Giris" butonu: bos gridle dogrudan ac
-function openSpecGridCtx(){ openSpecFormPage(null,{bina:PBINA,cat:PCAT,grup:PSPEC&&PSPEC!=='__all'?PSPEC:''}); }
+function openSpecGridCtx(){ if(specDraftBlocks('grid'))return; openSpecFormPage(null,{bina:PBINA,cat:PCAT,grup:PSPEC&&PSPEC!=='__all'?PSPEC:''}); }
 function openSpecFormPage(idOrNull,vals){
   const v=vals||{};
   const sp=(idOrNull&&typeof idOrNull==='string')?DB.proje.specs.find(s=>s.id===idOrNull):null;
@@ -8575,12 +8586,17 @@ function openSpecFormPage(idOrNull,vals){
     head:{ bina:v.bina!==undefined?(v.bina||''):((sp&&sp.bina)||PBINA||''),
            cat: v.cat !==undefined?(v.cat ||''):((sp&&sp.cat)||PCAT||''),
            grup:v.grup!==undefined?(v.grup||''):((sp&&sp.grup)||'') },
-    rows:[row], saved:[], _focusFirst:true };
+    rows:[row], saved:[], draftId:null, _focusFirst:true };
   if(!_SPECF.id && specfRowDolu(row)) _SPECF.rows.push(_specfEmptyRow());
   window._specEditId=sp?sp.id:null;
   PSPECF=true; closeModal(); render();
 }
-function closeSpecFormPage(){ PSPECF=false; _SPECF=null; window._specEditId=null; render(); }
+// force=true: soru sormadan cik (taslak kaydedildikten veya "Sil ve Cik" secildikten sonra)
+function closeSpecFormPage(force){
+  const f=_SPECF;
+  if(!force && f && !f.id && f.rows.some(specfRowDolu)){ openSpecLeaveModal(); return; }
+  PSPECF=false; _SPECF=null; window._specEditId=null; render();
+}
 // ust baglam degisimi: bina degisince satirlardaki dagilimlar yeni binaya gore ayiklanir,
 // bina/bolum degisince sartname listesi tazelenir (modaldeki specModalRefresh kuralinin aynisi)
 function specfHead(k,val){
@@ -8717,7 +8733,7 @@ function renderSpecFormPage(){
       <button onclick="closeSpecFormPage()">${esc(codeLbl)}</button> ${icoChevron()}
       <b>${f.id?'Kalem Duzenle':'Toplu Kalem Girisi'}</b>
     </div>
-    <div class="page-head"><h1>${f.id?'Sartname Kalemi Duzenle':'Toplu Kalem Girisi'}</h1>
+    <div class="page-head"><h1>${f.id?'Sartname Kalemi Duzenle':'Toplu Kalem Girisi'}${f.draftId?' <span class="sdraft-badge">TASLAK</span>':''}</h1>
       <p class="page-sub">${f.id?(sp?esc(sp.name)+(sp.code?` · <span style="font-family:var(--mono)">${esc(sp.code)}</span>`:''):''):'Her satir bir kalem - malzeme secince altta yeni satir acilir, Enter ile alt satira gecilir'}</p></div>
     <div class="kata-intro">${f.id
       ?'Modaldeki alanlarin aynisi - sutun duzeninde, genis calisma alaninda.'
@@ -8744,6 +8760,8 @@ function renderSpecFormPage(){
     <div class="kata-page-foot">
       <button class="btn btn-ghost" style="margin-right:auto" onclick="closeSpecFormPage()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Geri Don</button>
       <span class="specfg-cnt" id="specfgCount"></span>
+      ${f.id?'':`${f.draftId?`<button class="btn btn-ghost" style="border-color:var(--red)55;color:var(--red)" onclick="delSpecDraft('${f.draftId}')" title="Taslagi tamamen sil - kilit kalkar">${icoTrash()} Taslagi Sil</button>`:''}
+      <button class="btn btn-ghost" onclick="saveSpecDraft()" title="Satirlari taslak olarak sakla - sonra kaldiginiz yerden devam edersiniz (tamamlanana kadar yeni kalem eklenemez)">${icoDoc()} ${f.draftId?'Taslagi Guncelle':'Taslak Kaydet'}</button>`}
       <button class="btn btn-add" onclick="specfSaveAll()">${f.id?'Kaydet':'Tumunu Kaydet'}</button>
     </div>
   </div>`;
@@ -8784,12 +8802,124 @@ async function specfSaveAll(){
     f.rows.forEach(r=>{ delete r._saved; });
     if(!f.rows.length||specfRowDolu(f.rows[f.rows.length-1])) f.rows.push(_specfEmptyRow());
     if(!errC) f._focusFirst=true;
+    // TASLAK SENKRONU: acik taslak varsa - tum satirlar kaydedildiyse taslak TAMAMLANIR ve
+    // silinir (kilit kalkar), hatali satir kaldiysa taslak o satirlarla guncellenir
+    const bitti=f.draftId?await _specDraftSync(f):false;
     render();
-    if(okC&&!errC) toast(okC+' kalem kaydedildi - yeni satirla devam edebilirsiniz');
+    if(okC&&!errC) toast(okC+' kalem kaydedildi'+(bitti?' - taslak tamamlandi, kilit kalkti':' - yeni satirla devam edebilirsiniz'));
     else if(okC) toast(okC+' kalem kaydedildi, '+errC+' satir hatali - satirdaki uyariya bakin','err');
     else toast('Kaydedilemedi - satirdaki uyariya bakin','err');
     for(const s of savedSpecs) await autoLinkPendingRapor(s);
   } finally { f._busy=false; }
+}
+
+/* ===================================================================
+   TOPLU GIRIS TASLAGI  (depo: app_settings -> spec_drafts)
+   KRITIK KURAL: bir kullanicinin ayni anda EN FAZLA BIR acik taslagi olabilir.
+   Acik taslak varken (a) ikinci taslak kaydedilemez, (b) baska kalem eklenemez -
+   ne "Kalem Ekle" modalinden, ne yeni "Toplu Giris"ten, ne de Excel ice aktarmadan.
+   Kilit ancak taslak TAMAMLANINCA (tum satirlar kaydedilince) veya SILININCE kalkar.
+   Mevcut kalemleri duzenlemek/silmek kilitten etkilenmez - kural yalniz YENI kalem icindir.
+   =================================================================== */
+function specDraftUser(){ return (CURRENT_USER&&CURRENT_USER.username)||''; }
+// kullanicinin kendi acik taslagi (kural kisiye ozeldir: baskasinin taslagi sizi kilitlemez)
+function myOpenSpecDraft(){ const u=specDraftUser(); return draftsGet('spec').find(d=>d&&(d.savedBy||'')===u)||null; }
+// taslakta malzeme SLIM tutulur (foto tasinmaz - kutuphaneden tazelenir, ayar kaydi sismesin)
+function _specDraftSlimMat(m){ if(!m)return null; const {img,...rest}=m; return rest; }
+function _specDraftFatMat(m){ if(!m)return null;
+  const rec=m.matId?getMaterial(m.matId):null;
+  if(!rec) return {...m,img:null}; // kutuphaneden silinmisse girilen bilgi korunur
+  return {matId:rec.id,code:rec.code,ad:rec.name,brand:rec.brand||'',cat:rec.cat||'',unit:rec.unit||'',img:rec.img||null,
+    standart:rec.standart||'',weight:rec.weight!=null?rec.weight:null,tags:(rec.tags||[]).slice()};
+}
+function _specDraftRow(r){ return {mat:_specDraftSlimMat(r.mat),poz:r.poz||'',ozelNo:r.ozelNo||'',
+  target:String(r.target==null?'':r.target),unit:r.unit||'',open:!!r.open,
+  lokRows:(r.lokRows||[]).map(x=>({lokId:x.lokId,target:x.target}))}; }
+// kaydetme sonrasi taslagi guncelle/kapat. Doner: true = taslak tamamlandi (silindi)
+async function _specDraftSync(f){
+  const list=draftsGet('spec').slice();
+  const i=list.findIndex(x=>x.id===f.draftId);
+  const rows=f.rows.filter(specfRowDolu);
+  if(!rows.length){ if(i>=0){ list.splice(i,1); await draftsSet('spec',list); } f.draftId=null; return true; }
+  if(i>=0){ list[i]={...list[i],savedAt:Date.now(),bina:f.head.bina,cat:f.head.cat,grup:f.head.grup,rows:rows.map(_specDraftRow)};
+    await draftsSet('spec',list); }
+  return false;
+}
+// KILIT KAPISI: yeni kalem/ikinci taslak girisimlerinde cagrilir. true donerse islem DURDURULUR.
+function specDraftBlocks(what){
+  const d=myOpenSpecDraft(); if(!d) return false;
+  if(_SPECF&&_SPECF.draftId===d.id&&what==='draft') return false; // acik taslagin kendisini guncelliyor
+  openSpecDraftGuard(d,what); return true;
+}
+function specDraftOzet(d){
+  const n=(d.rows||[]).length;
+  return `${n} satir · ${esc(d.grup||'(sartname yok)')} · ${esc(d.bina||'-')} / ${esc(d.cat||'-')}`;
+}
+function openSpecDraftGuard(d,what){
+  const nedenler={ add:'yeni kalem ekleyemezsiniz', grid:'yeni bir toplu giris baslatamazsiniz',
+    draft:'ikinci bir taslak kaydedemezsiniz', excel:'Excel ile kalem aktaramazsiniz' };
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>Yarim kalmis taslaginiz var</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <div class="sdraft-box">
+      <div class="sdraft-tag">${icoDoc()} TASLAK</div>
+      <div style="flex:1;min-width:0"><b style="font-size:13px">${specDraftOzet(d)}</b>
+        <div class="t-meta" style="font-size:11px;margin-top:3px">${icoUserSm()} ${esc(d.savedBy||'-')} · ${fmtDT(d.savedAt)}</div></div>
+    </div>
+    <p style="font-size:12.5px;color:var(--mute);line-height:1.6;margin-top:12px">Kural geregi acik bir taslak varken <b>${nedenler[what]||'yeni kalem ekleyemezsiniz'}</b>. Once taslagi tamamlayin (Devam Et &rarr; Tumunu Kaydet) ya da silin; kilit o zaman kalkar.</p>
+  </div><div class="modal-foot"><button class="btn btn-ghost" style="margin-right:auto;border-color:var(--red)55;color:var(--red)" onclick="delSpecDraft('${d.id}')">${icoTrash()} Taslagi Sil</button><button class="btn btn-ghost" onclick="closeModal()">Vazgec</button><button class="btn btn-add" onclick="openSpecDraft('${d.id}')">Devam Et ${icoChevron()}</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+// GRIDDEN TASLAK KAYDET: dolu satirlar saklanir, sayfa kapanir - kilit devreye girer
+async function saveSpecDraft(){
+  const f=_SPECF; if(!f||f.id)return;
+  const rows=f.rows.filter(specfRowDolu);
+  if(!rows.length){ toast('Taslak icin en az bir satirda malzeme secin veya deger girin','err'); return; }
+  if(specDraftBlocks('draft')) return;
+  const d={ id:f.draftId||uid(), savedBy:specDraftUser(), savedAt:Date.now(),
+    bina:f.head.bina, cat:f.head.cat, grup:f.head.grup,
+    pbina:f.ctx.bina, pcat:f.ctx.cat, pspec:f.ctx.code,
+    rows:rows.map(_specDraftRow) };
+  const list=draftsGet('spec').slice(); const i=list.findIndex(x=>x.id===d.id);
+  if(i>=0)list[i]=d; else list.push(d);
+  await draftsSet('spec',list);
+  f.draftId=d.id;
+  logAction('editSpec','Toplu giris taslagi: '+rows.length+' satir / '+(d.grup||'-'));
+  closeSpecFormPage(true);
+  toast(rows.length+' satir taslakta saklandi - tamamlanana kadar yeni kalem eklenemez');
+}
+// TASLAGA DEVAM: kaydedildigi bina/bolum/sartname baglamina donup gridi doldurur
+function openSpecDraft(id){
+  const d=draftsGet('spec').find(x=>x.id===id); if(!d)return;
+  if(!guard('editSpec',{bina:d.bina||PBINA}))return;
+  closeModal();
+  if(d.pbina){ PBINA=d.pbina; PCAT=d.pcat||PCAT; PSPEC=d.pspec||PSPEC; TAB='spec'; }
+  const rows=(d.rows||[]).map(r=>({ mat:_specDraftFatMat(r.mat), poz:r.poz||'', ozelNo:r.ozelNo||'',
+    target:String(r.target==null?'':r.target), unit:r.unit||'', open:!!r.open,
+    lokRows:(r.lokRows||[]).filter(x=>{ const l=getLok(x.lokId); return l&&l.bina===d.bina; }), err:'' }));
+  if(!rows.length) rows.push(_specfEmptyRow());
+  _SPECF={ id:null, ctx:{bina:PBINA,cat:PCAT,code:PSPEC},
+    head:{bina:d.bina||PBINA,cat:d.cat||PCAT,grup:d.grup||''},
+    rows, saved:[], draftId:d.id, _focusFirst:true };
+  if(specfRowDolu(_SPECF.rows[_SPECF.rows.length-1])) _SPECF.rows.push(_specfEmptyRow());
+  PSPECF=true; render();
+}
+async function delSpecDraft(id){
+  const d=draftsGet('spec').find(x=>x.id===id); if(!d)return;
+  if(!confirm(`Bu taslak silinsin mi?\n\n${(d.rows||[]).length} satir · ${d.grup||'(sartname yok)'}\n\nTaslaktaki satirlar kaybolur (kayitli kalemler etkilenmez).`))return;
+  await draftsSet('spec',draftsGet('spec').filter(x=>x.id!==id));
+  if(_SPECF&&_SPECF.draftId===id) _SPECF.draftId=null;
+  logAction('delete','Toplu giris taslagi silindi: '+((d.rows||[]).length)+' satir');
+  closeModal(); toast('Taslak silindi - yeni kalem ekleyebilirsiniz'); render();
+}
+// SAYFADAN CIKIS: girilmis ama kaydedilmemis satir varsa veri kaybini onlemek icin sor
+function openSpecLeaveModal(){
+  const f=_SPECF; const n=f.rows.filter(specfRowDolu).length;
+  const dv=!!f.draftId; // taslak uzerinde mi calisiliyor - metinler buna gore netlesir
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:520px"><div class="modal-head"><h3>${dv?'Taslaktaki degisiklikler kaydedilmedi':`Kaydedilmemis ${n} satir var`}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <p style="font-size:12.5px;color:var(--mute);line-height:1.6">${dv
+      ?`Gridde <b>${n} dolu satir</b> var. Taslagi guncellerseniz bu haliyle saklanir; birakirsaniz taslak <b>son kaydedilen haliyle</b> yerinde kalir (silinmez).`
+      :'Girdiginiz satirlar henuz kaydedilmedi. Taslak olarak saklarsaniz kaldiginiz yerden devam edebilirsiniz - <b>taslak tamamlanana kadar yeni kalem eklenemez</b>.'}</p>
+  </div><div class="modal-foot"><button class="btn btn-ghost" style="margin-right:auto;border-color:var(--red)55;color:var(--red)" onclick="closeModal();closeSpecFormPage(true)">${dv?'Degisiklikleri Birak':'Sil ve Cik'}</button><button class="btn btn-ghost" onclick="closeModal()">Vazgec</button><button class="btn btn-add" onclick="closeModal();saveSpecDraft()">${dv?'Taslagi Guncelle':'Taslak Olarak Sakla'}</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
 }
 /* metraj dagilimi: parcali binada kalemin hedefi lokasyonlara bolunerek girilir;
    Hedef Miktar dagilim varken salt-okunur toplam olur. Dagilimsiz da kaydedilebilir (bina geneli). */
