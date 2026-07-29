@@ -1380,6 +1380,11 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .rline-grid.slim{grid-template-columns:minmax(90px,1fr) minmax(70px,.7fr) minmax(0,1.5fr);align-items:center}
 .rl-code{display:inline-flex;align-items:center;justify-content:flex-end;gap:5px;min-width:0;font-family:var(--mono);font-size:11px;color:var(--green);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rl-code.warn{color:var(--amber)}
+/* ANINDA KOPYALA dugmesi (ad/kod yanindaki kucuk kare) */
+.copy-btn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;padding:0;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--mute);cursor:pointer;flex-shrink:0;transition:color .13s,border-color .13s,background .13s}
+.copy-btn svg{width:12px;height:12px}
+.copy-btn:hover{color:var(--ink);border-color:var(--dim);background:var(--hover)}
+.copy-btn.ok{color:var(--green);border-color:rgba(34,197,94,.5);background:rgba(34,197,94,.12)}
 /* MALZEME KUNYESI cekmecesi */
 .mat-clk{cursor:pointer}
 .mat-clk:hover{text-decoration:underline;text-decoration-color:var(--dim);text-underline-offset:3px}
@@ -1388,8 +1393,12 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .matd-img{width:96px;height:96px;border-radius:12px;object-fit:contain;background:#fff;border:1px solid var(--line);cursor:pointer;flex-shrink:0}
 .matd-ph{display:flex;align-items:center;justify-content:center;color:var(--dim);cursor:default}
 .matd-name{font-weight:800;font-size:16px;line-height:1.35}
+.matd-name .copy-btn{margin-left:8px;vertical-align:2px}
 .matd-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
-.matd-chip{font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)}
+.matd-chip{display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--ink)}
+/* kod/ad yaninda aninda kopyalama dugmesi (kunye) - cip icinde daha kucuk ve cercevesiz durur */
+.matd-chip .copy-btn{width:16px;height:16px;border:none;background:transparent;margin-right:-3px}
+.matd-chip .copy-btn svg{width:11px;height:11px}
 .matd-chip.mono{font-family:var(--mono)}
 .matd-chip.dim{color:var(--mute)}
 .matd-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0}
@@ -5987,6 +5996,30 @@ function renderKatAtaPage(){
   </div>`;
 }
 function katAtaCopy(kod){ try{ navigator.clipboard.writeText(kod); toast('Kopyalandi: '+kod); }catch(e){ toast(kod); } }
+/* ANINDA KOPYALA butonu: metin data-copy'de durur (tirnak/ozel karakter sorunu olmaz),
+   tiklaninca panoya yazilir ve ikon kisa sure tike doner. navigator.clipboard yoksa
+   (eski tarayici veya https disi adres) gizli textarea ile yedek yol denenir. */
+function icoCopy(){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>'; }
+function icoCheckSm(){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M20 6L9 17l-5-5"/></svg>'; }
+function copyBtn(text,label){
+  const t=String(text==null?'':text).trim(); if(!t) return '';
+  return `<button class="copy-btn" type="button" data-copy="${esc(t)}" data-label="${esc(label||'')}" title="${esc(label||'Metni')} kopyala" onclick="event.stopPropagation();copyFromBtn(this)">${icoCopy()}</button>`;
+}
+function copyFromBtn(btn){
+  copyText(btn.getAttribute('data-copy')||'', btn.getAttribute('data-label')||'');
+  btn.classList.add('ok'); btn.innerHTML=icoCheckSm();
+  setTimeout(()=>{ btn.classList.remove('ok'); btn.innerHTML=icoCopy(); },1200);
+}
+async function copyText(txt,label){
+  const t=String(txt==null?'':txt); if(!t) return;
+  try{
+    if(navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(t);
+    else { const ta=document.createElement('textarea'); ta.value=t; ta.setAttribute('readonly','');
+      ta.style.cssText='position:fixed;top:0;left:0;opacity:0'; document.body.appendChild(ta);
+      ta.select(); document.execCommand('copy'); ta.remove(); }
+    toast((label?label+' kopyalandi: ':'Kopyalandi: ')+(t.length>60?t.slice(0,60)+'...':t));
+  }catch(e){ toast('Kopyalanamadi - metni elle secip kopyalayin','err'); }
+}
 // Kapsami Duzenle dugmesi icin: acik sartnamenin id'si
 function _katAtaSrId(){ const sr=sartOfSel(); return sr?sr.id:''; }
 // canli sayac: her katin kutusundaki kodlari okur, eslesme/yok/cakisma sayar - full render YOK
@@ -6933,8 +6966,8 @@ function _openMatDetail(matId){
     ?`<img class="matd-img" src="${m.img}" onclick="lightbox(${lbCall([m.img,m.img2])})" title="Buyutmek icin tikla">`
     :`<div class="matd-img matd-ph">${phIco()}</div>`;
   const chips=[
-    m.code?`<span class="matd-chip mono">${esc(m.code)}</span>`:'',
-    ...(m.altCodes||[]).map(c=>`<span class="matd-chip mono dim" title="Varyant kod">${esc(c)}</span>`),
+    m.code?`<span class="matd-chip mono">${esc(m.code)}${copyBtn(m.code,'Urun kodu')}</span>`:'',
+    ...(m.altCodes||[]).map(c=>`<span class="matd-chip mono dim" title="Varyant kod">${esc(c)}${copyBtn(c,'Varyant kod')}</span>`),
     m.brand?`<span class="matd-chip">${esc(m.brand)}</span>`:'',
     m.standart?`<span class="matd-chip dim" title="Standart">${esc(m.standart)}</span>`:'',
     m.weight!=null?`<span class="matd-chip dim">${fmtNum(m.weight)} kg</span>`:'',
@@ -6988,7 +7021,7 @@ function _openMatDetail(matId){
     <div class="modal-head"><h3>Malzeme Kunyesi</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">
       <div class="matd-top">${img}<div style="min-width:0">
-        <div class="matd-name">${esc(m.name)}</div>
+        <div class="matd-name">${esc(m.name)}${copyBtn(m.name,'Malzeme adi')}</div>
         <div class="matd-chips">${chips}</div>
       </div></div>
       <div class="matd-stats">
