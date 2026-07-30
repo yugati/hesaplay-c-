@@ -876,6 +876,10 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .specf-saved-row .m{color:var(--mute);font-family:var(--mono);font-size:11px;white-space:nowrap}
 .specf-note{font-size:11.5px;color:var(--dim);font-family:var(--mono);line-height:1.6;margin:12px 2px 0}
 @media(max-width:860px){ .specfg-head{grid-template-columns:1fr} }
+/* ISGUCU (ADAM/GUN) bolumu - gun modali */
+.rap-group-isg{border:1px dashed color-mix(in srgb,var(--violet,#a855f7) 45%,transparent)}
+.rap-group-isg .rap-group-h{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:12.5px}
+.isg-tag{font-family:var(--mono);font-size:9px;font-weight:800;letter-spacing:.5px;padding:2px 7px;border-radius:5px;background:color-mix(in srgb,var(--violet,#a855f7) 16%,transparent);color:var(--violet,#a855f7);border:1px solid color-mix(in srgb,var(--violet,#a855f7) 45%,transparent)}
 /* RAPOR EXCEL ICE AKTARMA inceleme sayfasi */
 .rimp-page{max-width:1240px}
 .rimp-group{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden}
@@ -886,6 +890,7 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .rimp-row.off{opacity:.45}
 .rimp-row.st-sug{background:rgba(240,160,32,.05);box-shadow:inset 3px 0 0 var(--amber)}
 .rimp-row.st-none{background:rgba(239,68,68,.05);box-shadow:inset 3px 0 0 var(--red)}
+.rimp-row.st-isg{background:rgba(168,85,247,.05);box-shadow:inset 3px 0 0 #a855f7}
 .rimp-row input[type=checkbox]{width:auto;cursor:pointer}
 .rimp-src{min-width:0}
 .rimp-src b{display:block;font-size:12.5px;line-height:1.35;word-break:break-word}
@@ -2794,9 +2799,11 @@ function renderUsers(){
     const secLabels=u.role==='admin'?'Tum bolumler':u.role==='saha_personeli'?Object.entries(u.permissions||{}).filter(([,p])=>p&&p.read).map(([m])=>SECTION_LABELS[m]||m).join(', ')||'-':(u.sections||[]).map(s=>SECTION_LABELS[s]||s).join(', ')||'-';
     const binLabels=u.role==='admin'?'Tum binalar':((u.buildings||[]).length?(u.buildings||[]).join(', '):'Tum binalar');
     const isMe=CURRENT_USER&&u.id===CURRENT_USER.id;
+    const uEkip=u.role==='admin'?'':userEkipOf(u.username);
     return `<tr>
       <td class="t-name">${esc(u.username)}${isMe?' <span class="t-meta">(siz)</span>':''}</td>
       <td>${roleBadge(u.role)}</td>
+      <td class="t-meta" style="font-size:11px">${uEkip?esc(shortEkip(uEkip))+' '+ekipBolumBadge(uEkip):'-'}</td>
       <td class="t-meta" style="font-size:11px">${esc(secLabels)}</td>
       <td class="t-meta" style="font-size:11px">${esc(binLabels)}</td>
       <td><div class="row-actions">
@@ -2809,7 +2816,7 @@ function renderUsers(){
     <div class="sel-head"><h2>Kullanici Yonetimi</h2><p>Kullanici ekleyin, rol atayin ve bina/bolum erisimi belirleyin. Veriler Supabase'de saklanir.</p></div>
     <div class="stats">${statRow([['Toplam Kullanici',users.length,'aktif','var(--blue)'],['Yonetici',admins.length,'tam yetki','#f59e0b'],['Saha Personeli',users.filter(u=>u.role==='saha_personeli').length,'moduler izin','var(--blue)'],['Izleyici',users.filter(u=>u.role==='izleyici'||u.role==='viewer'||u.role==='sef'||u.role==='saha').length,'salt goruntuleme','var(--dim)']])}</div>
     <div class="toolbar"><div style="flex:1"></div><button class="btn btn-add" onclick="openUserModal()">${icoPlus()} Kullanici Ekle</button></div>
-    <div class="tablewrap"><table><thead><tr><th>Kullanici Adi</th><th>Rol</th><th>Bolum Erisimi</th><th>Bina Erisimi</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="5" style="text-align:center;color:var(--mute);padding:30px">Kullanici bulunamadi</td></tr>'}</tbody></table></div>
+    <div class="tablewrap"><table><thead><tr><th>Kullanici Adi</th><th>Rol</th><th>Bagli Ekip</th><th>Bolum Erisimi</th><th>Bina Erisimi</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="6" style="text-align:center;color:var(--mute);padding:30px">Kullanici bulunamadi</td></tr>'}</tbody></table></div>
   </div>`;
 }
 function openUserModal(id){
@@ -2824,6 +2831,8 @@ function openUserModal(id){
     <div class="frow two"><div><label>Kullanici Adi *</label><input id="u_name" value="${u?esc(u.username):''}" placeholder="orn. ahmet" ${u?'readonly style="opacity:.6"':''}></div><div><label>Sifre ${u?'':'*'}</label><input type="password" id="u_pass" value="" placeholder="${u?'Degistirmek icin yeni sifre girin':'sifre'}" autocomplete="new-password"></div></div>
     <div class="frow"><label>Rol</label><select id="u_role" onchange="_userRoleChange()">${roleOpts}</select>
       <p class="t-meta" id="u_roleHint" style="font-size:11px;margin-top:6px"></p></div>
+    <div class="frow" id="u_ekipRow"><label>Bagli Ekip  <span class="t-meta">(opsiyonel - atanirsa raporda YALNIZ kendi ekibinin kaydini girer/duzenler)</span></label>
+      <select id="u_ekip"><option value="">- ekip atanmadi (tum ekipler) -</option>${(DB.rapor.ekipler||[]).slice().sort((a,b)=>a.localeCompare(b,'tr')).map(ek=>`<option value="${esc(ek)}" ${u&&userEkipOf(u.username)===ek?'selected':''}>${esc(ek)}${ekipBolumOf(ek)?' ('+ekipBolumLabel(ekipBolumOf(ek))+')':''}</option>`).join('')}</select></div>
     <div id="u_perms_izleyici" style="display:none">
       <div class="frow"><label>Gorebilecegi Moduller <span class="t-meta">(salt goruntuleme)</span></label><div class="chk-grid">${secOpts}</div></div>
       <div class="frow"><label>Bina Erisimi <span class="t-meta">(bos = tum binalar)</span></label><div class="chk-grid">${binOptsIzl}</div></div>
@@ -2854,6 +2863,9 @@ function _userRoleChange(){
   if(hint)hint.textContent=hints[role]||'';
   if(divIzl)divIzl.style.display=(role==='izleyici')?'':'none';
   if(divSaha)divSaha.style.display=(role==='saha_personeli')?'':'none';
+  // ekip atamasi yalniz kisitlanabilir roller icin anlamli (yonetici zaten her seye erisir)
+  const divEkip=document.getElementById('u_ekipRow');
+  if(divEkip)divEkip.style.display=(role==='admin')?'none':'';
 }
 async function saveUser(id){
   const name=(document.getElementById('u_name').value||'').trim();
@@ -2894,7 +2906,15 @@ async function saveUser(id){
     } else {
       updated=await sbCreateUser({username:name,password:pass,role,sections,buildings,permissions});
     }
-    logAction('user',(id?'Guncelleme: ':'Ekleme: ')+name+' ('+(ROLES[role]||role)+')');
+    // EKIP ATAMASI: kullanici API'si sabit alanli oldugundan app_settings > userEkip'te tutulur
+    // (kullanici adi anahtardir). Yalniz yonetici bu ekrani acabildigi icin atamayi da yalniz o yapar.
+    const ekipSel=document.getElementById('u_ekip');
+    const ekipVal=(role!=='admin'&&ekipSel)?ekipSel.value:'';
+    if(!DB.meta)DB.meta={};
+    DB.meta.userEkip={...(DB.meta.userEkip||{})};
+    if(ekipVal) DB.meta.userEkip[name]=ekipVal; else delete DB.meta.userEkip[name];
+    await sbSetSetting('userEkip',DB.meta.userEkip);
+    logAction('user',(id?'Guncelleme: ':'Ekleme: ')+name+' ('+(ROLES[role]||role)+')'+(ekipVal?' - ekip: '+ekipVal:''));
     await saveDB();
     SB_USERS=await sbGetAllUsers();
     closeModal(); render(); applyUserChrome();
@@ -3003,7 +3023,28 @@ async function delCompany(id){ if(!guard('delete'))return;
   DB.companies=(DB.companies||[]).filter(c=>c.id!==id);
   render(); toast("Sirket silindi");
 }
-/* ============ EKIPLER (gunluk saha raporunda secilir) ============ */
+/* ============ EKIPLER (gunluk saha raporunda secilir) ============
+   EKIP-BOLUM BAGI: her ekip Proje'ye ya da Gecici Elektrik'e baglanabilir (yalniz yonetici
+   atar; app_settings > ekipBolum). KULLANICI-EKIP BAGI: kullaniciya ekip atanirsa (yalniz
+   yonetici; app_settings > userEkip) o kullanici raporda YALNIZ kendi ekibinin kaydini
+   girer/duzenler - baska ekibin kaydina ve bu atamalarin kendisine dokunamaz. */
+function ekipBolumOf(ek){ return (DB.meta&&DB.meta.ekipBolum&&DB.meta.ekipBolum[ek])||''; }
+function ekipBolumLabel(b){ return b==='proje'?'Proje':b==='gecici'?'Gecici Elektrik':''; }
+function ekipBolumBadge(ek){ const b=ekipBolumOf(ek); if(!b)return'';
+  const col=b==='proje'?'var(--blue)':'var(--violet,#a855f7)';
+  return `<span class="cat-tag" style="background:${col}22;color:${col};font-size:9px" title="Ekibin bagli oldugu bolum">${ekipBolumLabel(b)}</span>`; }
+async function setEkipBolumUI(ek,v){
+  if(!isAdmin()){ toast('Ekip-bolum atamasini yalniz yonetici degistirebilir','err'); render(); return; }
+  if(!DB.meta)DB.meta={};
+  DB.meta.ekipBolum={...(DB.meta.ekipBolum||{})};
+  if(v) DB.meta.ekipBolum[ek]=v; else delete DB.meta.ekipBolum[ek];
+  await sbSetSetting('ekipBolum',DB.meta.ekipBolum);
+  logAction('define','Ekip bolumu: '+ek+' -> '+(ekipBolumLabel(v)||'bagsiz'));
+  render(); toast(v?ek+' -> '+ekipBolumLabel(v):'Ekip bolum bagi kaldirildi');
+}
+// kullanicinin atandigi ekip ('' = atanmamis). Yonetici hicbir kisita girmez.
+function userEkipOf(name){ const n=name||((CURRENT_USER&&CURRENT_USER.username)||''); return (n&&DB.meta&&DB.meta.userEkip&&DB.meta.userEkip[n])||''; }
+function myEkipKisiti(){ return isAdmin()?'':userEkipOf(); }
 function openEkipler(){ PEKIP=true; PCOMP=false; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PNEWORD=false; PBINAY=false; SEARCH=""; render(); }
 function closeEkipler(){ PEKIP=false; render(); }
 /* ============ BINALAR (bina ekle/yeniden adlandir/sil/aktif-pasif) ============ */
@@ -3141,19 +3182,27 @@ function renderEkipler(){
   if(list.length===0) rows=emptyRow(3,anyF?'Eslesen ekip yok':'Henuz ekip eklenmedi',anyF?'Filtreleri degistirin':'"Ekip Ekle" ile baslayin');
   else list.forEach(ek=>{
     const cnt=cntOf(ek);
-    rows+=`<tr><td><div class="t-name">${esc(ek)}</div></td><td class="t-meta">${cnt} kayit</td>
+    const bol=ekipBolumOf(ek);
+    const bolCell=isAdmin()
+      ?`<select onchange="setEkipBolumUI('${esc(ek)}',this.value)" style="background:var(--bg);border:1px solid var(--line);color:var(--ink);padding:6px 9px;border-radius:8px;font-size:12px">
+          <option value="">- bagli degil -</option>
+          <option value="proje" ${bol==='proje'?'selected':''}>Proje</option>
+          <option value="gecici" ${bol==='gecici'?'selected':''}>Gecici Elektrik</option>
+        </select>`
+      :(ekipBolumBadge(ek)||'<span class="t-meta">-</span>');
+    rows+=`<tr><td><div class="t-name">${esc(ek)}</div></td><td>${bolCell}</td><td class="t-meta">${cnt} kayit</td>
       <td><div class="row-actions">
         ${can('delete')?`<button class="mini-btn del" title="Sil" onclick="delEkip('${esc(ek)}')">${icoTrash()}</button>`:''}
       </div></td></tr>`;
   });
   return `<div class="sel-wrap" style="max-width:900px">
     <div class="sel-bc"><button onclick="closeEkipler()">${icoArr('left')} Binalara Don</button></div>
-    <div class="sel-head"><h2>Ekipler</h2><p>Gunluk saha raporunda secilecek ekip/vardiya listesi.</p></div>
+    <div class="sel-head"><h2>Ekipler</h2><p>Gunluk saha raporunda secilecek ekip listesi. Bagli Bolum atamasi (Proje / Gecici Elektrik) yalniz yonetici tarafindan yapilir; rapor ekranlarinda ekip bu rozetle gorunur.</p></div>
     <div class="def-sec-bar"><div class="def-sec-chips"></div>
       ${can('define')?`<button class="btn btn-add" onclick="addEkipPrompt()">${icoPlus()} Ekip Ekle</button>`:''}</div>
     ${filterbar}
     ${sumline}
-    <div class="tablewrap"><table><thead><tr><th>Ekip Adi</th><th>Kullanim</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tablewrap"><table><thead><tr><th>Ekip Adi</th><th>Bagli Bolum</th><th>Kullanim</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
 async function addEkipPrompt(){ if(!guard('define'))return;
@@ -10085,6 +10134,7 @@ function renderRapor(){
     <button class="btn btn-grid" onclick="exportRaporExcel()">${icoXls()} Plan Excel</button>
     <button class="btn btn-grid" onclick="document.getElementById('rimpFile').click()" title="Gunluk Plan formatindaki Excel'leri toplu yukle - satirlar sartname kalemleriyle otomatik eslestirilir, kaydetmeden once tek tek onaylarsiniz">${icoUp()} Excel'den Al</button>
     <input type="file" id="rimpFile" class="hidden" accept=".xlsx,.xls,.csv" multiple onchange="rimpPickFiles(event)">
+    <button class="btn btn-ghost" onclick="openIsgModal()" title="Malzemeye bagli olmayan adam/gun kaydi: ambar, genel saha elektrigi... Proje ilerlemesine karismaz">${icoUserSm()} Isgucu</button>
     <button class="btn btn-add" onclick="openRaporModal()">${icoPlus()} Saha Kaydi Ekle</button>
   </div>`;
   let body='';
@@ -10168,12 +10218,97 @@ function rAyKartlari(dates,byDate){
 function rGunAdam(items){
   const bloklar={};
   (items||[]).forEach(e=>{
-    const bk=(e.bina||'')+'|'+(e.projeKodu||'')+'|'+(e.cat||'')+'|'+(e.ekip||'');
+    // ISGUCU kayitlari (ambar/genel saha) kendi gorev+vardiyasiyla ayri blok sayilir -
+    // ayni ekibin malzeme blogu icinde erimesin, adam sayilari ayri ayri toplansin
+    const bk=(e.bina||'')+'|'+(e.projeKodu||'')+'|'+(e.cat||'')+'|'+(e.ekip||'')+(e.isgucu?('|ISG|'+norm(e.malzeme||'')+'|'+(e.vardiya||'')):'');
     const v=Number(e.adamSayisi)||0;
     // Ayni blogun kalemleri ayni sayiyi tasir; adami bos birakilmis satirlar blogu sifirlamasin
     if(!(bk in bloklar)||v>bloklar[bk]) bloklar[bk]=v;
   });
   return Object.values(bloklar).reduce((s,v)=>s+v,0);
+}
+/* ===== ISGUCU (ADAM/GUN) KAYITLARI =====
+   AMBAR, GENEL SAHA ELEKTRIK gibi malzemeye bagli olmayan gunluk isgucu kayitlari.
+   Ayni rapor tablosunda tutulur (isgucu:true) ama specId/matId tasimadigi icin proje
+   ilerlemesine, stok dusumune ve sartname yuzdelerine HIC karismaz; gun modalinde
+   kendi "Isgucu (Adam/Gun)" bolumunde listelenir. Excel'deki ADAM/GUN satirlari da buraya iner. */
+const ISG_GOREVLER=['AMBAR / СКЛАД','GENEL SAHA ELEKTRIK / ВРЕМЕННАЯ ЭЛЕКТРИКА'];
+function rIsgGroupHtml(items){
+  if(!items.length) return '';
+  const rows=items.map(e=>{
+    const bolB=e.ekip?ekipBolumBadge(e.ekip):'';
+    const meta=[e.bina?esc(e.bina):'', e.ekip?esc(shortEkip(e.ekip)):'', e.createdBy?`${icoUserSm()} ${esc(e.createdBy)}`:''].filter(Boolean).join(' · ');
+    return `<div class="rap-row">
+      <div style="flex:1;min-width:0"><div class="rap-mat">${esc(e.malzeme)} ${bolB}</div><div class="rap-meta">${meta}${e.notlar?` · <i title="${esc(e.notlar)}">not</i>`:''}</div></div>
+      <div class="rap-qty">${fmtNum(e.miktar)} <span>adam/gun</span></div>
+      ${e.adamSayisi?`<div class="rap-adam" title="Adam sayisi">${esc(e.adamSayisi)}<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z"/></svg></div>`:''}
+      <span class="vardiya-tag ${e.vardiya==='GECE'?'gece':''}">${esc(e.vardiya||'GUNDUZ')}</span>
+      ${canEditRaporEntry(e)?`<button class="mini-btn" onclick="openIsgModal('${e.id}')" title="Duzenle"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>`:''}
+      ${canDelRaporEntry(e)?`<button class="mini-btn del" onclick="delRaporEntry('${e.id}')" title="Kaydi sil">${icoTrash()}</button>`:''}
+    </div>`;
+  }).join('');
+  const adam=rGunAdam(items);
+  return `<div class="rap-group rap-group-isg">
+    <div class="rap-group-h"><span class="isg-tag">ISGUCU</span><b>Adam/Gun Kayitlari</b><span class="t-meta" style="margin-left:auto">${items.length} kayit${adam?` · ${adam} adam`:''}</span></div>
+    ${rows}</div>`;
+}
+// isgucu kaydi ekle/duzenle mini modali (tarih gun modalinden gelirse sabitlenir)
+function openIsgModal(idOrNull,presetDate){
+  const e=idOrNull?rEntries().find(x=>x.id===idOrNull):null;
+  if(e&&!canEditRaporEntry(e)){ toast('Baskasinin kaydini duzenleyemezsiniz','err'); return; }
+  if(!guard('define',{bina:(e&&e.bina)||PBINA}))return;
+  const kisit=myEkipKisiti();
+  const ekipler=(DB.rapor.ekipler||[]).slice().sort((a,b)=>a.localeCompare(b,'tr'));
+  const curEkip=e?(e.ekip||''):(kisit||'');
+  const binalar=[...new Set([...projBuildings(), ...rEntries().map(x=>x.bina)].filter(Boolean))];
+  const curBina=e?(e.bina||''):(binalar[0]||'');
+  const gorevler=[...new Set([...ISG_GOREVLER, ...rEntries().filter(x=>x.isgucu).map(x=>x.malzeme)])].filter(Boolean);
+  const curGorev=e?(e.malzeme||''):'';
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>${e?'Isgucu Kaydi Duzenle':'Isgucu Kaydi (Adam/Gun)'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <p class="t-meta" style="margin-bottom:12px">Malzemeye bagli olmayan gunluk isgucu: ambar, genel saha elektrigi... Proje ilerlemesine ve stoklara karismaz.</p>
+    <div class="frow two"><div><label>Tarih *</label><input id="isg_tarih" type="date" value="${esc(e?e.tarih:(presetDate||rISO(Date.now())))}" ${presetDate&&!e?'readonly class="ro-auto"':''}></div>
+      <div><label>Vardiya</label><select id="isg_vardiya">${VARDIYALAR.map(v=>`<option ${((e&&e.vardiya)||'GUNDUZ')===v?'selected':''}>${v}</option>`).join('')}</select></div></div>
+    <div class="frow"><label>Gorev *  <span class="t-meta">(listeden secin veya yenisini yazin)</span></label>
+      <input id="isg_gorev" list="isg_gorevList" value="${esc(curGorev)}" placeholder="orn. AMBAR / СКЛАД">
+      <datalist id="isg_gorevList">${gorevler.map(g=>`<option value="${esc(g)}">`).join('')}</datalist></div>
+    <div class="frow two"><div><label>Yer / Bina</label><input id="isg_bina" list="isg_binaList" value="${esc(curBina)}" placeholder="orn. DGR, 00UYB"><datalist id="isg_binaList">${binalar.map(b=>`<option value="${esc(b)}">`).join('')}</datalist></div>
+      <div><label>Ekip${kisit?' <span class="t-meta">(size atanan)</span>':''}</label>${kisit
+        ?`<select id="isg_ekip" disabled class="ro-auto" title="Ekibiniz atanmis"><option selected>${esc(kisit)}</option></select>`
+        :`<select id="isg_ekip"><option value="">- ekip secin -</option>${ekipler.map(ek=>`<option ${curEkip===ek?'selected':''}>${esc(ek)}${ekipBolumOf(ek)?' ('+ekipBolumLabel(ekipBolumOf(ek))+')':''}</option>`).join('')}</select>`}</div></div>
+    <div class="frow two"><div><label>Adam Sayisi *</label><input id="isg_adam" type="number" min="0" step="1" value="${e&&e.adamSayisi!=null?esc(e.adamSayisi):''}" placeholder="orn. 4"></div>
+      <div><label>Adam/Gun  <span class="t-meta">(genelde 1)</span></label><input id="isg_gun" type="number" min="0" step="any" value="${e?esc(e.miktar):'1'}"></div></div>
+    <div class="frow"><label>Not</label><textarea id="isg_not">${esc(e?(e.notlar||''):'')}</textarea></div>
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveIsgEntry(${e?`'${e.id}'`:'null'})">Kaydet</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function saveIsgEntry(id){
+  const _day=_rDayOpen;
+  const gv=x=>{ const el=document.getElementById(x); return el?el.value:''; };
+  const tarih=gv('isg_tarih'); if(!tarih){ toast('Tarih gerekli','err'); return; }
+  const gorev=gv('isg_gorev').trim(); if(!gorev){ toast('Gorev gerekli - orn. AMBAR','err'); return; }
+  const bina=gv('isg_bina').trim();
+  if(!guard('define',{bina}))return;
+  const kisit=myEkipKisiti();
+  const ekip=kisit||gv('isg_ekip');
+  const adam=Number(gv('isg_adam')); if(!(adam>0)){ toast('Adam sayisi girin','err'); return; }
+  const gun=Number(gv('isg_gun')); if(!(gun>0)){ toast('Adam/gun degeri gecersiz','err'); return; }
+  if(!DB.rapor.entries)DB.rapor.entries=[];
+  if(id){
+    const e=DB.rapor.entries.find(x=>x.id===id); if(!e)return;
+    if(!canEditRaporEntry(e)){ toast('Baskasinin kaydini duzenleyemezsiniz','err'); return; }
+    Object.assign(e,{tarih,bina,vardiya:gv('isg_vardiya'),ekip,adamSayisi:adam,malzeme:gorev,miktar:gun,notlar:gv('isg_not').trim()});
+    await sbUpdateRaporEntry(e.id,{...e});
+    logAction('define','Isgucu kaydi guncellendi: '+gorev+' / '+tarih);
+    closeModal(); render(); rDayReopen(_day); toast('Isgucu kaydi guncellendi'); return;
+  }
+  const entry={ id:uid(), groupId:null, tarih, bina, vardiya:gv('isg_vardiya'), notlar:gv('isg_not').trim(), stokDus:false,
+    ekip, adamSayisi:adam, projeKodu:'', cat:'', malzeme:gorev, code:'', specId:null, matId:null,
+    miktar:gun, birim:'ADAM/GÜN', kat:'', kot:'', lokId:null, isgucu:true,
+    createdBy:(CURRENT_USER&&CURRENT_USER.username)||'', created:Date.now() };
+  await sbInsertRaporEntries([entry]);
+  DB.rapor.entries.push(entry);
+  logAction('define','Isgucu kaydi: '+gorev+' / '+tarih+(ekip?' / '+shortEkip(ekip):''));
+  closeModal(); render(); rDayReopen(_day||tarih); toast('Isgucu kaydi eklendi');
 }
 // Bir bina|proje grubunun satirlarini ".rap-group" blogu olarak uretir (gun modalinde kullanilir).
 function rGroupHtml(g){
@@ -10215,18 +10350,22 @@ function openRaporDayModal(tarih){
   let items=rEntries().filter(e=>e.tarih===tarih);
   if(RV.filterBina) items=items.filter(e=>e.bina===RV.filterBina);
   items.sort((a,b)=>(a.bina||'').localeCompare(b.bina||'','tr')||(a.created||0)-(b.created||0));
+  // isgucu (adam/gun) kayitlari malzeme gruplarina karismaz - kendi bolumunde listelenir
+  const isgItems=items.filter(e=>e.isgucu);
+  const matItems=items.filter(e=>!e.isgucu);
   const groups={};
-  items.forEach(e=>{ const k=e.bina+'|'+(e.projeKodu||''); if(!groups[k])groups[k]={bina:e.bina,projeKodu:e.projeKodu,items:[]}; groups[k].items.push(e); });
+  matItems.forEach(e=>{ const k=e.bina+'|'+(e.projeKodu||''); if(!groups[k])groups[k]={bina:e.bina,projeKodu:e.projeKodu,items:[]}; groups[k].items.push(e); });
   const keys=Object.keys(groups);
-  const body = keys.length ? keys.map(k=>rGroupHtml(groups[k])).join('')
+  const body = (keys.length||isgItems.length)
+    ? keys.map(k=>rGroupHtml(groups[k])).join('')+rIsgGroupHtml(isgItems)
     : `<div class="empty-state" style="padding:30px 20px"><p>Bu gune ait kayit kalmadi.</p></div>`;
   const totAdam=rGunAdam(items);
   const binaSay=new Set(items.map(e=>e.bina).filter(Boolean)).size;
-  const sub=`${items.length} kalem${totAdam?` · ${totAdam} adam`:''}${binaSay>1?` · ${binaSay} bina`:''}`;
+  const sub=`${matItems.length} kalem${isgItems.length?` · ${isgItems.length} isgucu`:''}${totAdam?` · ${totAdam} adam`:''}${binaSay>1?` · ${binaSay} bina`:''}`;
   const html=`<div class="modal-bg rapday-bg" onclick="if(event.target===this)closeModal()"><div class="modal rapday-modal">
     <div class="modal-head"><div><h3>${fmtDate(tarih)}</h3><div class="t-meta" style="margin-top:2px">${sub}</div></div><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body rapday-body">${body}</div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Kapat</button><button class="btn btn-add" onclick="openRaporModal(null,'${esc(tarih)}')">${icoPlus()} Bu Gune Ekle</button></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Kapat</button><button class="btn btn-ghost" onclick="openIsgModal(null,'${esc(tarih)}')" title="Malzemeye bagli olmayan adam/gun kaydi: ambar, genel saha elektrigi...">+ Isgucu</button><button class="btn btn-add" onclick="openRaporModal(null,'${esc(tarih)}')">${icoPlus()} Bu Gune Ekle</button></div>
   </div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
 }
@@ -10238,7 +10377,7 @@ function rDayReopen(tarih){ if(!tarih)return; if(rEntries().some(e=>e.tarih===ta
 // pasiftir. Ayin TUM gunleri cizilir - kaydi olmayan gunler de takvimde yerini korur.
 function renderRaporOzet(list){
   const byDate={};
-  list.forEach(e=>{ if(!byDate[e.tarih])byDate[e.tarih]={tarih:e.tarih,binalar:new Set(),kalem:0,ekipler:new Set(),vardiyalar:new Set(),bolumler:new Set(),sartDisi:0,items:[]}; const d=byDate[e.tarih]; d.binalar.add(e.bina); d.kalem++; if(e.ekip)d.ekipler.add(e.ekip); if(e.vardiya)d.vardiyalar.add(e.vardiya); if(e.cat)d.bolumler.add(e.cat); if(!e.specId)d.sartDisi++; d.items.push(e); });
+  list.forEach(e=>{ if(!byDate[e.tarih])byDate[e.tarih]={tarih:e.tarih,binalar:new Set(),kalem:0,ekipler:new Set(),vardiyalar:new Set(),bolumler:new Set(),sartDisi:0,items:[]}; const d=byDate[e.tarih]; d.binalar.add(e.bina); d.kalem++; if(e.ekip)d.ekipler.add(e.ekip); if(e.vardiya)d.vardiyalar.add(e.vardiya); if(e.cat)d.bolumler.add(e.cat); if(!e.specId&&!e.isgucu)d.sartDisi++; d.items.push(e); });
   const tumGun=Object.keys(byDate);
   const gecerli=tumGun.filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d));
   const bozuk=tumGun.filter(d=>!/^\d{4}-\d{2}-\d{2}$/.test(d)); // tarihi okunamayan eski kayitlar
@@ -10318,7 +10457,12 @@ function rCreators(items){ return [...new Set((items||[]).map(e=>e.createdBy).fi
 function rOwnEntry(e){
   if(isAdmin()) return true;
   const me=(CURRENT_USER&&CURRENT_USER.username)||'';
-  return !!(e && e.createdBy && me && e.createdBy===me);
+  if(!(e && e.createdBy && me && e.createdBy===me)) return false;
+  // EKIP KISITI: ekibi atanmis kullanici baska ekibin kaydina dokunamaz (kendi girmis olsa bile
+  // kayit sonradan baska ekibe tasindiysa) - atamasiz kullanici ve ekipsiz kayit serbesttir
+  const my=myEkipKisiti();
+  if(my && e.ekip && norm(e.ekip)!==norm(my)) return false;
+  return true;
 }
 function canDelRaporEntry(e){ return rOwnEntry(e); }
 function canEditRaporEntry(e){ return rOwnEntry(e); }
@@ -10375,7 +10519,9 @@ function openRaporUserModal(name){
 // Admin tumunu silebilir; digerleri yalniz KENDI girdigi kayitlari silebilir - baskalarina ait
 // kayitlar gruba dokunulmadan kalir ve kac kaydin atlandigi acikca soylenir. Onaysiz silinmez.
 async function delRaporGrup(tarih,bina,projeKodu){
-  const grup=rEntries().filter(e=>e.tarih===tarih && e.bina===bina && (e.projeKodu||'')===(projeKodu||''));
+  // isgucu kayitlari malzeme gruplarina ait degildir (kendi bolumunde durur) - proje kodu bos
+  // bir grubun toplu silinmesiyle yanlislikla ucup gitmesinler
+  const grup=rEntries().filter(e=>!e.isgucu && e.tarih===tarih && e.bina===bina && (e.projeKodu||'')===(projeKodu||''));
   if(!grup.length)return;
   const mine=grup.filter(e=>canDelRaporEntry(e));
   if(!mine.length){ toast('Baskasinin raporunu silemezsiniz - sadece yonetici silebilir','err'); return; }
@@ -10499,10 +10645,14 @@ function rRenderBlocks(){
     // BIRIM TEK KAYNAK: kutuphanedeki urunun birimi varsa satirin birimi HER ZAMAN ondan gelir
     // (kutuphanede birim degisirse kayit da dogru birimle kaydedilir)
     const lu=rLineLibUnit(l); if(lu) l.unit=lu; }));
+  const ekipKisit=myEkipKisiti(); // ekibi atanmis kullanici yalniz kendi ekibi adina girer
   c.innerHTML=_rBlocks.map((bk,bi)=>{
+    if(ekipKisit) bk.ekip=ekipKisit;
     const sarts=(DB.proje.sartnames||[]).filter(s=>s.bina===bina && (!bk.cat||s.section===bk.cat));
     const secOpts='<option value="">- bolum secin -</option>'+sections.map(s=>`<option ${bk.cat===s?'selected':''}>${esc(s)}</option>`).join('');
-    const ekipOpts='<option value="">- ekip secin -</option>'+ekipler.map(ek=>`<option ${bk.ekip===ek?'selected':''}>${esc(ek)}</option>`).join('')+'<option value="__new">+ Yeni ekip ekle</option>';
+    const ekipOpts=ekipKisit
+      ?`<option selected>${esc(ekipKisit)}</option>`
+      :'<option value="">- ekip secin -</option>'+ekipler.map(ek=>`<option ${bk.ekip===ek?'selected':''}>${esc(ek)}${ekipBolumOf(ek)?' ('+ekipBolumLabel(ekipBolumOf(ek))+')':''}</option>`).join('')+'<option value="__new">+ Yeni ekip ekle</option>';
     const sartOpts='<option value="">- sartname (opsiyonel) -</option>'+sarts.map(s=>`<option value="${esc(s.code)}" ${bk.sart===s.code?'selected':''}>${esc(s.code)}${s.section?' ('+esc(s.section)+')':''}</option>`).join('');
     const linesHtml=bk.lines.map((l,li)=>rLineHtml(bk,bi,l,li,bina,parcali)).join('');
     return `<div class="rblock">
@@ -10512,7 +10662,7 @@ function rRenderBlocks(){
         <button class="mini-btn del" title="Bolumu kaldir" onclick="rRmBlock(${bi})" ${_rBlocks.length<=1?'style="opacity:.4"':''}>${icoTrash()}</button>
       </div>
       <div class="frow three" style="margin-bottom:9px">
-        <div><label>Ekip</label><select onchange="rSetBlockEkip(${bi},this.value,this)">${ekipOpts}</select></div>
+        <div><label>Ekip${ekipKisit?' <span class="t-meta">(size atanan)</span>':''}</label><select onchange="rSetBlockEkip(${bi},this.value,this)" ${ekipKisit?'disabled class="ro-auto" title="Ekibiniz atanmis - yalniz kendi ekibiniz adina kayit girebilirsiniz"':''}>${ekipOpts}</select></div>
         <div><label>Adam Sayisi</label><input type="number" min="0" value="${esc(bk.adam)}" placeholder="0" oninput="rUpdBlock(${bi},'adam',this.value)"></div>
         ${parcali
           ?`<div><label>Sartname</label><input class="ro-auto" value="${esc(bk.sart||'')}" readonly placeholder="kat secilince otomatik" title="Sartname elle secilmez - kalemde kat/lokasyon secilince otomatik dolar"></div>`
@@ -10798,6 +10948,12 @@ async function saveRaporEntry(){
     validLines.forEach(l=>flat.push({bk,l,cat}));
   }
   if(flat.length===0){ toast('En az bir bolumde is kalemi secip miktar girin','err'); return; }
+  // EKIP KISITI (form kilidine ek guvence): ekibi atanmis kullanici baska ekip adina kaydedemez
+  const _ekipKisit=myEkipKisiti();
+  if(_ekipKisit){
+    if(flat.some(({bk})=>bk.ekip && norm(bk.ekip)!==norm(_ekipKisit))){ toast('Yalniz kendi ekibiniz adina kayit girebilirsiniz: '+_ekipKisit,'err'); return; }
+    flat.forEach(({bk})=>{ bk.ekip=_ekipKisit; });
+  }
   // sahiplik denetimi (form kapisina ek guvence): baskasinin kaydi bu yoldan da degistirilemez.
   // _rSaving/buton kilidinden ONCE yapilir ki engellenen deneme formu kilitli birakmasin.
   if(_rEditId){
@@ -11156,14 +11312,26 @@ function rimpParseWb(wb,fname){
   });
   return out;
 }
-// satir durum bayraklari: adam/gun satirlari, taninmayan bina, eksik miktar/tarih, parcali kat kontrolu
+// satir durum bayraklari: adam/gun (isgucu) satirlari, taninmayan bina, eksik miktar/tarih,
+// parcali kat kontrolu, ekip kisiti (ekibi atanmis kullanici baska ekibin satirini aktaramaz)
 function rimpRowFlags(r){
   r.err='';
   const binalar=projBuildings();
-  if(/adam|чел/i.test(r.birim)){ r.status='skip'; r.include=false; r.err='Adam/gun satiri (malzeme degil)'; return; }
+  const kisit=myEkipKisiti();
+  if(/adam|чел/i.test(r.birim)){
+    // ISGUCU satiri: malzeme degil - isgucu kaydi olarak aktarilir. Bina serbesttir (DGR gibi
+    // proje disi yerler olabilir); adam/gun bos birakildiysa 1 kabul edilir.
+    r.status='isgucu'; r.specId=null; r.score=0;
+    if(!r.tarih){ r.include=false; r.err='Tarih okunamadi'; return; }
+    if(!r.bina){ r.include=false; r.err='Yer/bina okunamadi'; return; }
+    if(!(Number(r.miktar)>0)) r.miktar=1;
+    if(kisit&&r.ekip&&norm(r.ekip)!==norm(kisit)){ r.include=false; r.err=`Baska ekibin satiri - yalniz kendi ekibiniz (${kisit}) aktarilabilir`; return; }
+    r.include=true; return;
+  }
   if(!r.tarih){ r.include=false; r.err='Tarih okunamadi'; return; }
   if(!r.bina||!binalar.includes(r.bina)){ r.include=false; r.err=r.bina?`"${r.bina}" binasi sistemde yok`:'Bina okunamadi'; return; }
   if(!(Number(r.miktar)>0)){ r.include=false; r.err='Miktar yok/gecersiz'; return; }
+  if(kisit&&r.ekip&&norm(r.ekip)!==norm(kisit)){ r.include=false; r.err=`Baska ekibin satiri - yalniz kendi ekibiniz (${kisit}) aktarilabilir`; return; }
   if(binaParcali(r.bina)&&!String(r.kat||'').trim()){ r.err='Parcali binada Kat zorunlu - doldurun'; }
 }
 function closeRaporImport(){ PRIMP=false; _RIMP=null; render(); }
@@ -11181,6 +11349,7 @@ function renderRaporImportPage(){
   const nAuto=inc.filter(r=>r.status==='auto'||r.status==='manual').length;
   const nSug=inc.filter(r=>r.status==='suggest'&&!r.confirmed).length;
   const nNone=inc.filter(r=>r.status==='none').length;
+  const nIsg=inc.filter(r=>r.status==='isgucu').length;
   const nSkip=rows.length-inc.length;
   const groups=_rimpGroups().map(([key,idxs],gi)=>{
     const [tarih,bina]=key.split('¦');
@@ -11188,9 +11357,11 @@ function renderRaporImportPage(){
     const parcali=projBuildings().includes(bina)&&binaParcali(bina);
     const rowsHtml=idxs.map(i=>{
       const r=rows[i]; const sp=rimpSpecOf(r.specId);
-      const stCls=r.status==='none'?'st-none':(r.status==='suggest'&&!r.confirmed?'st-sug':'st-ok');
+      const stCls=r.status==='isgucu'?'st-isg':(r.status==='none'?'st-none':(r.status==='suggest'&&!r.confirmed?'st-sug':'st-ok'));
       const pct=Math.round((r.score||0)*100);
-      const matchHtml = sp
+      const matchHtml = r.status==='isgucu'
+        ? `<div class="rimp-mname"><b><span class="isg-tag">ISGUCU</span> Adam/Gun kaydi</b><span>proje ilerlemesine karismaz - gun gorunumunde kendi bolumunde${r.ekip&&ekipBolumOf(r.ekip)?' · ekip: '+esc(ekipBolumLabel(ekipBolumOf(r.ekip)))+' bagli':''}</span></div>`
+        : sp
         ? `<div class="rimp-mname"><b>${esc(sp.name)}</b><span>${[sp.code,specGroupKey(sp),sp.unit].filter(Boolean).map(esc).join(' · ')}</span></div>
            <span class="rimp-pct ${stCls}">${r.status==='manual'?'SECILDI':pct+'%'}</span>`
         : `<div class="rimp-mname none"><b>Eslesme yok</b><span>sartname disi kaydedilir - sonradan baglanabilir</span></div>`;
@@ -11202,12 +11373,12 @@ function renderRaporImportPage(){
           ${r.err?`<span class="rimp-err">${esc(r.err)}</span>`:''}
         </div>
         ${parcali?`<div class="rimp-kat"><label>Kat</label><input value="${esc(r.kat)}" oninput="_RIMP.rows[${i}].kat=this.value" placeholder="-"></div>`:''}
-        <div class="rimp-qty"><input type="number" step="any" min="0" value="${r.miktar!=null?esc(r.miktar):''}" oninput="_RIMP.rows[${i}].miktar=this.value===''?null:Number(this.value)"><span>${esc((sp&&sp.unit)||r.birim||'')}</span></div>
+        <div class="rimp-qty"><input type="number" step="any" min="0" value="${r.miktar!=null?esc(r.miktar):''}" oninput="_RIMP.rows[${i}].miktar=this.value===''?null:Number(this.value)"><span>${r.status==='isgucu'?'adam/gun':esc((sp&&sp.unit)||r.birim||'')}</span></div>
         <div class="rimp-arrow">${icoChevron()}</div>
         <div class="rimp-match">${matchHtml}</div>
         <div class="rimp-acts">
           ${r.status==='suggest'&&!r.confirmed?`<button class="btn btn-add" style="padding:5px 10px;font-size:11.5px" onclick="_RIMP.rows[${i}].confirmed=true;render()" title="Evet, bunu koymak istemistim">&#10003; Evet</button>`:''}
-          <button class="mini-btn" onclick="rimpPickSpec(${i})" title="Baska sartname kalemi sec">&#8981;</button>
+          ${r.status==='isgucu'?'':`<button class="mini-btn" onclick="rimpPickSpec(${i})" title="Baska sartname kalemi sec">&#8981;</button>`}
         </div>
       </div>`;
     }).join('');
@@ -11228,12 +11399,13 @@ function renderRaporImportPage(){
   return `<div class="kata-page rimp-page">
     <div class="sel-bc"><button onclick="closeRaporImport()">Saha Raporu</button> ${icoChevron()} <b>Excel'den Al</b></div>
     <div class="page-head"><h1>Excel'den Rapor Aktar</h1><p class="page-sub">${f.files.map(esc).join(', ')}</p></div>
-    <div class="kata-intro">Satirlar okundu ve sartname kalemleriyle eslestirildi. <b style="color:var(--green)">Yesil</b> otomatik esledi; <b style="color:var(--amber)">sari</b> satirlarda "bunu mu koymak istemistiniz?" - <b>&#10003; Evet</b>'e basin ya da &#8981; ile dogrusunu secin; <b style="color:var(--red)">kirmizi</b> eslesemedi (sartname disi kaydedilir). Miktar ve Kat kutulari duzeltilebilir. Kaydet, manuel girisle ayni yoldan yazar: ayni gun+urun tekrarinda miktar mevcut kayda birlesir.</div>
-    <div class="matd-stats" style="grid-template-columns:repeat(5,1fr)">
+    <div class="kata-intro">Satirlar okundu ve sartname kalemleriyle eslestirildi. <b style="color:var(--green)">Yesil</b> otomatik esledi; <b style="color:var(--amber)">sari</b> satirlarda "bunu mu koymak istemistiniz?" - <b>&#10003; Evet</b>'e basin ya da &#8981; ile dogrusunu secin; <b style="color:var(--red)">kirmizi</b> eslesemedi (sartname disi kaydedilir); <b style="color:#a855f7">mor</b> satirlar ADAM/GUN isgucu kaydidir (ambar, genel saha - proje ilerlemesine karismaz). Miktar ve Kat kutulari duzeltilebilir. Kaydet, manuel girisle ayni yoldan yazar: ayni gun+urun tekrarinda miktar mevcut kayda birlesir.</div>
+    <div class="matd-stats" style="grid-template-columns:repeat(6,1fr)">
       <div><b>${rows.length}</b><span>okunan satir</span></div>
       <div><b style="color:var(--green)">${nAuto}</b><span>eslesti</span></div>
       <div><b style="color:${nSug?'var(--amber)':''}">${nSug}</b><span>onay bekliyor</span></div>
       <div><b style="color:${nNone?'var(--red)':''}">${nNone}</b><span>eslesmedi</span></div>
+      <div><b style="color:${nIsg?'var(--violet,#a855f7)':''}">${nIsg}</b><span>isgucu (adam/gun)</span></div>
       <div><b>${nSkip}</b><span>atlanacak</span></div>
     </div>
     ${groups}
@@ -11271,7 +11443,8 @@ async function rimpSave(){
   if(!rows.length){ toast('Aktarilacak satir yok - en az bir satiri dahil edin','err'); return; }
   const bad=rows.filter(r=>!(Number(r.miktar)>0));
   if(bad.length){ toast(bad.length+' dahil satirda miktar eksik - duzeltin ya da satiri atlayin','err'); return; }
-  const katEksik=rows.filter(r=>binaParcali(r.bina)&&!String(r.kat||'').trim());
+  // isgucu satirlari kat/lokasyon tasimaz - parcali bina kurali yalniz malzeme satirlarina
+  const katEksik=rows.filter(r=>r.status!=='isgucu'&&binaParcali(r.bina)&&!String(r.kat||'').trim());
   if(katEksik.length){ toast(katEksik.length+' satirda Kat bos - parcali binada zorunlu (satirdaki Kat kutusunu doldurun)','err'); return; }
   const sup=rows.filter(r=>r.status==='suggest'&&!r.confirmed).length;
   if(sup && !confirm(sup+' sari (onay bekleyen) eslesme onaylanmadan kaydedilecek. Devam edilsin mi?')) return;
@@ -11286,9 +11459,17 @@ async function rimpSave(){
       const grpRows=idxs.map(i=>f.rows[i]).filter(r=>r.include);
       if(!grpRows.length) return;
       const [tarih,bina]=key.split('¦');
-      // 1) grup ici tekillestirme (ayni urun+kat+kot toplanir - saveRaporEntry ile ayni anahtar)
+      // 1) grup ici tekillestirme (ayni urun+kat+kot toplanir - saveRaporEntry ile ayni anahtar;
+      // isgucu satirlari kendi anahtariyla: ekip+vardiya+gorev)
+      const isgKey=(ekip,vardiya,gorev)=>'ISG¦'+norm(ekip||'')+'¦'+(vardiya||'')+'¦'+norm(gorev||'');
       const dedup=new Map(), flat=[];
       grpRows.forEach(r=>{
+        if(r.status==='isgucu'){
+          const it={ isg:true, tarih,bina, vardiya:r.vardiya, ekip:r.ekip, adam:r.adam, not:r.not, gorev:r.ad, miktar:Number(r.miktar)||0 };
+          const k=isgKey(it.ekip,it.vardiya,it.gorev);
+          const ex=dedup.get(k); if(ex){ ex.miktar+=it.miktar; return; }
+          dedup.set(k,it); flat.push(it); return;
+        }
         const sp=rimpSpecOf(r.specId);
         const it={ tarih,bina, vardiya:r.vardiya, ekip:r.ekip, adam:r.adam, not:r.not,
           cat:sp?(sp.cat||''):'', specId:sp?sp.id:null, matId:sp?(sp.matId||null):null,
@@ -11299,26 +11480,36 @@ async function rimpSave(){
         const ex=dedup.get(k); if(ex){ ex.miktar+=it.miktar; return; }
         dedup.set(k,it); flat.push(it);
       });
-      // 2) o gun+binadaki DUZENLENEBILIR mevcut kayitlara birlesme
+      // 2) o gun+binadaki DUZENLENEBILIR mevcut kayitlara birlesme (isgucu kendi anahtariyla)
       const pool=new Map();
       DB.rapor.entries.filter(e=>!e.is_deleted&&e.tarih===tarih&&e.bina===bina&&canEditRaporEntry(e))
         .slice().sort((a,b)=>(a.created||0)-(b.created||0))
-        .forEach(e=>{ const k=_rMergeKey(e.cat||'',e.specId,e.matId,e.malzeme,e.code,e.kat,e.kot,e.lokId); if(!pool.has(k)) pool.set(k,e); });
+        .forEach(e=>{ const k=e.isgucu?isgKey(e.ekip,e.vardiya,e.malzeme):_rMergeKey(e.cat||'',e.specId,e.matId,e.malzeme,e.code,e.kat,e.kot,e.lokId); if(!pool.has(k)) pool.set(k,e); });
       const newFlat=[];
       flat.forEach(it=>{
-        const k=_rMergeKey(it.cat,it.specId,it.matId,it.name,it.code,it.kat,it.kot,it.lokId);
+        const k=it.isg?isgKey(it.ekip,it.vardiya,it.gorev):_rMergeKey(it.cat,it.specId,it.matId,it.name,it.code,it.kat,it.kot,it.lokId);
         const ex=pool.get(k);
         if(ex){
           ex.miktar=(Number(ex.miktar)||0)+it.miktar; nMerged++;
-          if(ex._moveId){ const mv=DB.proje.items.find(x=>x.id===ex._moveId); if(mv){ mv.qty=ex.miktar; updMoves.push(mv); } }
-          else if(f.stokDus){ const moveId=uid(); ex._moveId=moveId; ex.stokDus=true;
-            allItems.push({id:moveId,name:ex.malzeme,qty:ex.miktar,unit:ex.birim,date:new Date(ex.tarih).getTime(),order:'SAHA-'+ex.tarih,note:'Sahada islendi'+(ex.ekip?' ('+shortEkip(ex.ekip)+')':''),cat:ex.cat,code:ex.code,specId:ex.specId,matId:ex.matId,grup:ex.projeKodu,bina:ex.bina,lokId:ex.lokId||null,type:'out',img:null,_fromRapor:ex.id}); }
+          if(!it.isg){
+            if(ex._moveId){ const mv=DB.proje.items.find(x=>x.id===ex._moveId); if(mv){ mv.qty=ex.miktar; updMoves.push(mv); } }
+            else if(f.stokDus){ const moveId=uid(); ex._moveId=moveId; ex.stokDus=true;
+              allItems.push({id:moveId,name:ex.malzeme,qty:ex.miktar,unit:ex.birim,date:new Date(ex.tarih).getTime(),order:'SAHA-'+ex.tarih,note:'Sahada islendi'+(ex.ekip?' ('+shortEkip(ex.ekip)+')':''),cat:ex.cat,code:ex.code,specId:ex.specId,matId:ex.matId,grup:ex.projeKodu,bina:ex.bina,lokId:ex.lokId||null,type:'out',img:null,_fromRapor:ex.id}); }
+          }
           updEntries.push(ex);
         } else newFlat.push(it);
       });
-      // 3) yeni kayitlar (grup basina ortak groupId)
+      // 3) yeni kayitlar (grup basina ortak groupId). Isgucu: stok dusumu YOK, spec bagi YOK.
       const groupId=newFlat.length>1?uid():null;
       newFlat.forEach(it=>{
+        if(it.isg){
+          allNew.push({ id:uid(), groupId, tarih, bina, vardiya:it.vardiya, notlar:it.not||'', stokDus:false,
+            ekip:it.ekip||'', adamSayisi:(it.adam!=null?Number(it.adam):null), projeKodu:'', cat:'',
+            malzeme:it.gorev, code:'', specId:null, matId:null,
+            miktar:it.miktar, birim:'ADAM/GÜN', kat:'', kot:'', lokId:null, isgucu:true,
+            createdBy, created:Date.now() });
+          return;
+        }
         const entry={ id:uid(), groupId,
           tarih, bina, vardiya:it.vardiya, notlar:it.not||'', stokDus:f.stokDus,
           ekip:it.ekip||'', adamSayisi:(it.adam!=null?Number(it.adam):null), projeKodu:it.grup||'', cat:it.cat,
