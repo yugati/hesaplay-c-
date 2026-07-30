@@ -879,13 +879,16 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 /* ISGUCU (ADAM/GUN) bolumu - gun modali */
 .rap-group-isg{border:1px dashed color-mix(in srgb,var(--violet,#a855f7) 45%,transparent)}
 .rap-group-isg .rap-group-h{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:12.5px}
-.isg-tag{font-family:var(--mono);font-size:9px;font-weight:800;letter-spacing:.5px;padding:2px 7px;border-radius:5px;background:color-mix(in srgb,var(--violet,#a855f7) 16%,transparent);color:var(--violet,#a855f7);border:1px solid color-mix(in srgb,var(--violet,#a855f7) 45%,transparent)}
+.isg-tag{font-family:var(--mono);font-size:9px;font-weight:800;letter-spacing:.5px;padding:2px 7px;border-radius:5px;white-space:nowrap;background:color-mix(in srgb,var(--violet,#a855f7) 16%,transparent);color:var(--violet,#a855f7);border:1px solid color-mix(in srgb,var(--violet,#a855f7) 45%,transparent)}
 /* RAPOR EXCEL ICE AKTARMA inceleme sayfasi */
 .rimp-page{max-width:1240px}
 .rimp-group{background:var(--panel);border:1px solid var(--line);border-radius:12px;margin-bottom:14px;overflow:hidden}
 .rimp-ghead{display:flex;align-items:center;gap:10px;padding:11px 14px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:13px;flex-wrap:wrap}
 .rimp-warn{font-size:11px;color:var(--amber);background:rgba(240,160,32,.1);border:1px solid rgba(240,160,32,.4);border-radius:7px;padding:3px 9px;cursor:help}
 .rimp-row{display:grid;grid-template-columns:26px minmax(0,1.1fr) auto 110px 20px minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 14px;border-bottom:1px solid var(--line)}
+/* parcali olmayan binada Kat kutusu cizilmez - sutun sayisi bire duser (yoksa eslesme sutunu
+   arrow'un 20px'ine sikisir ve yazi harf harf alt alta kirilir) */
+.rimp-row.nokat{grid-template-columns:26px minmax(0,1.1fr) 110px 20px minmax(0,1fr) auto}
 .rimp-row:last-child{border-bottom:none}
 .rimp-row.off{opacity:.45}
 .rimp-row.st-sug{background:rgba(240,160,32,.05);box-shadow:inset 3px 0 0 var(--amber)}
@@ -912,8 +915,11 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .rimp-pct{font-family:var(--mono);font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:6px;flex-shrink:0}
 .rimp-pct.st-ok{background:rgba(34,197,94,.14);color:var(--green)}
 .rimp-pct.st-sug{background:rgba(240,160,32,.14);color:var(--amber)}
+/* alternatif urunle eslesen satir: ad yaninda ALT rozeti, altinda ana kalem */
+.rimp-mname b .rimp-alt{display:inline-block;margin-left:6px;vertical-align:1px;font-family:var(--mono);font-size:9px;font-weight:800;letter-spacing:.5px;padding:1px 6px;border-radius:5px;background:rgba(240,160,32,.16);border:1px solid rgba(240,160,32,.45);color:var(--amber);white-space:nowrap}
+.rimp-mname span b.rimp-anaurun{color:var(--amber);font-weight:700}
 .rimp-acts{display:flex;gap:6px;align-items:center}
-@media(max-width:900px){ .rimp-row{grid-template-columns:24px minmax(0,1fr) auto;row-gap:6px} .rimp-arrow{display:none} .rimp-match{grid-column:2/4} .rimp-acts{grid-column:2/4;justify-content:flex-end} }
+@media(max-width:900px){ .rimp-row,.rimp-row.nokat{grid-template-columns:24px minmax(0,1fr) auto;row-gap:6px} .rimp-arrow{display:none} .rimp-match{grid-column:2/4} .rimp-acts{grid-column:2/4;justify-content:flex-end} }
 /* TOPLU GIRIS TASLAGI: acik taslak rozeti + kilit uyari kutusu */
 .sdraft-chip{border-color:rgba(240,160,32,.5)!important;color:var(--amber)!important;background:rgba(240,160,32,.08)!important}
 .sdraft-chip:hover{background:rgba(240,160,32,.16)!important}
@@ -9356,6 +9362,15 @@ function openSpecDetail(id){
               <div class="sd-stat"><div class="sd-lbl">Montaj</div><div class="sd-val" style="color:${montajDone?'var(--green)':'var(--amber)'}">${fmtNum(montajGot)} <span>${esc(sp.unit||'')}</span></div></div>
               <div class="sd-stat"><div class="sd-lbl">Kalan</div><div class="sd-val" style="color:${montajDone?'var(--green)':'var(--amber)'}">${montajDone?'Bitti':fmtNum(Math.max(0,Number(sp.target)-montajGot))} <span>${montajDone?'':esc(sp.unit||'')}</span></div></div>
             </div>
+            ${(()=>{ // montajin ne kadari ALTERNATIF urunlerle yapildi (ana kaleme sayilir, kaynagi gorunur olsun)
+              const byAlt=new Map();
+              (DB.rapor.entries||[]).forEach(e=>{ if(e.is_deleted||e.specId!==sp.id||!e.altId)return;
+                byAlt.set(e.altId,(byAlt.get(e.altId)||0)+(Number(e.miktar)||0)); });
+              if(!byAlt.size) return '';
+              const parts=[...byAlt.entries()].map(([aid,q])=>{ const a=(DB.proje.alternatives||[]).find(x=>x.id===aid);
+                return `${esc(a?(altLive(a).name||a.name||'?'):'silinmis alternatif')}: <b>${fmtNum(q)}</b>`; });
+              return `<div style="margin-top:8px;font-size:11.5px;color:var(--amber);line-height:1.6">Bu montajin bir kismi <b>alternatif urunle</b> yapildi &mdash; ${parts.join(' · ')} ${esc(sp.unit||'')}</div>`;
+            })()}
           </div>`:''}
         </div>
       </div>
@@ -10316,8 +10331,11 @@ function rGroupHtml(g){
   const grpCreators=rCreators(g.items); // gruptaki essiz olusturan kisiler
   let rows='';
   g.items.forEach(e=>{ const metaBits=[e.kat?`Kat ${esc(e.kat)}`:'', (e.kot!=null&&e.kot!=='')?`Kot ${esc(e.kot)}`:'', e.ekip?esc(shortEkip(e.ekip)):'', e.createdBy?`${icoUserSm()} ${esc(e.createdBy)}`:''].filter(Boolean).join(' · ');
+    // ALT: ana urun yerine alternatifi montajlanmis kayit - miktar ana kalemin montajina sayilir
+    const _altSp=e.altId?(DB.proje.specs||[]).find(s=>s.id===e.specId):null;
+    const altTag=e.altId?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)55" title="Alternatif urunle montaj${_altSp?' - ilerleme ana kaleme sayilir: '+esc(_altSp.name):''}">ALT</span>`:'';
     rows+=`<div class="rap-row">
-    <div style="flex:1;min-width:0"><div class="rap-mat">${esc(e.malzeme)} ${!e.specId?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber)">SARTNAME DISI</span>`:''}</div><div class="rap-meta">${metaBits}</div></div>
+    <div style="flex:1;min-width:0"><div class="rap-mat">${esc(e.malzeme)} ${altTag}${!e.specId?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber)">SARTNAME DISI</span>`:''}</div><div class="rap-meta">${metaBits}</div></div>
     <div class="rap-qty">${fmtNum(e.miktar)} <span>${esc(e.birim||'')}</span></div>
     ${e.adamSayisi?`<div class="rap-adam" title="Adam sayisi">${esc(e.adamSayisi)}<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8z"/></svg></div>`:''}
     <span class="vardiya-tag ${e.vardiya==='GECE'?'gece':''}">${esc(e.vardiya||'GUNDUZ')}</span>
@@ -10547,20 +10565,22 @@ async function delRaporGrup(tarih,bina,projeKodu){
 // BOLUM BLOKLU SAHA KAYDI: bir saha kaydi birden fazla BOLUM blogu icerebilir.
 // Her blok bir bolume (cat) aittir ve KENDI ekip + adam sayisi + sartname'sine sahiptir.
 // Ortak alanlar (tum kayit icin tek): tarih, bina, vardiya, notlar, stok dus.
-// blok = {cat, ekip, adam, sart, lines:[...]}; line = {specId,matId,code,name,unit,grup,miktar,kat,kot,lokId,_id}
+// blok = {cat, ekip, adam, sart, lines:[...]}; line = {specId,altId,matId,code,name,unit,grup,miktar,kat,kot,lokId,_id}
 let _rMat=null; let _rBlocks=[]; let _rEditId=null; let _rEditIsGroup=false; let _rSaving=false;
-function _rEmptyLine(){ return {specId:null,matId:null,code:'',name:'',unit:'',grup:'',miktar:'',kat:'',kot:'',lokId:'',_id:null}; }
+function _rEmptyLine(){ return {specId:null,altId:'',matId:null,code:'',name:'',unit:'',grup:'',miktar:'',kat:'',kot:'',lokId:'',_id:null}; }
 function _rEmptyBlock(){ return {cat:'',ekip:'',adam:'',sart:'',lines:[_rEmptyLine()]}; }
 // AYNI YER TEKILLESTIRME: rapor'da ayni bolum(cat) + ayni urun + ayni kat + kot (+ lokasyon)
 // birden fazla kez tutulmaz; tekrar girilirse ILK (en eski) kaydin miktarina eklenir.
 // urun kimligi: sartname baglantiliysa specId, degilse kutuphane matId, o da yoksa ad+kod.
-function _rProdKey(specId,matId,name,code){
-  if(specId) return 's:'+specId;
+// ALTERNATIF: ayni sartname kalemine bagli olsa da FIZIKSEL olarak baska urun montajlanmistir -
+// ana urunle ayni satirda toplanmaz (altId anahtara girer). Ilerleme yine ana kaleme sayilir.
+function _rProdKey(specId,matId,name,code,altId){
+  if(specId) return 's:'+specId+(altId?'/a:'+altId:'');
   if(matId)  return 'm:'+matId;
   return 'n:'+norm(name||'')+'|'+norm(code||'');
 }
-function _rMergeKey(cat,specId,matId,name,code,kat,kot,lokId){
-  return norm(cat||'')+'¦'+_rProdKey(specId,matId,name,code)
+function _rMergeKey(cat,specId,matId,name,code,kat,kot,lokId,altId){
+  return norm(cat||'')+'¦'+_rProdKey(specId,matId,name,code,altId)
     +'¦'+norm(String(kat||'').trim())+'¦'+norm(String(kot||'').trim())+'¦'+(lokId||'');
 }
 // SAYFA TABANLI SAHA KAYDI FORMU: modal degil, rapor bolumunun icinde tam sayfa acilir.
@@ -10579,7 +10599,9 @@ function openRaporModal(id,presetDate){
     siblings.forEach(s=>{ const k=s.cat||''; if(!byCat.has(k))byCat.set(k,[]); byCat.get(k).push(s); });
     _rBlocks=[...byCat.values()].map(grp=>({
       cat:grp[0].cat||'', ekip:grp[0].ekip||'', adam:grp[0].adamSayisi!=null?String(grp[0].adamSayisi):'', sart:grp[0].projeKodu||'',
-      lines:grp.map(s=>({specId:s.specId,matId:s.matId||null,code:s.code,name:s.malzeme,unit:s.birim,grup:s.projeKodu,miktar:s.miktar,kat:s.kat||'',kot:s.kot||'',lokId:s.lokId||'',_id:s.id}))
+      // altId: alternatif urunle yapilan montaj kaydinin kimligi - duzenlemede KORUNUR (form
+      // uzerinden degistirilmez; kaybolursa kayit ana urune donusur ve ilerleme yanlis okunur)
+      lines:grp.map(s=>({specId:s.specId,altId:s.altId||'',matId:s.matId||null,code:s.code,name:s.malzeme,unit:s.birim,grup:s.projeKodu,miktar:s.miktar,kat:s.kat||'',kot:s.kot||'',lokId:s.lokId||'',_id:s.id}))
     }));
   } else { _rBlocks=[_rEmptyBlock()]; }
   _rEditId = e ? (e.groupId||e.id) : null;
@@ -10983,10 +11005,10 @@ async function saveRaporEntry(){
     // 1) FORM ICI TEKILLESTIRME: ayni bolum+urun+kat+kot(+lokasyon) satirlari tek satira toplanir
     const dedup=new Map(); const flat2=[];
     flat.forEach(({bk,l,cat})=>{
-      const key=_rMergeKey(cat,l.specId,l.matId,l.name,l.code,l.kat,l.kot,l.lokId);
+      const key=_rMergeKey(cat,l.specId,l.matId,l.name,l.code,l.kat,l.kot,l.lokId,l.altId);
       const ex=dedup.get(key);
       if(ex){ ex.miktar+=Number(l.miktar)||0; return; }
-      const it={bk,cat, specId:l.specId||null, matId:l.matId||null, name:l.name, code:l.code||'',
+      const it={bk,cat, specId:l.specId||null, altId:l.altId||'', matId:l.matId||null, name:l.name, code:l.code||'',
         unit:(l.unit||'').trim(), kat:(l.kat||'').trim(), kot:(l.kot||'').trim(), lokId:l.lokId||null,
         grup:l.grup, miktar:Number(l.miktar)||0};
       dedup.set(key,it); flat2.push(it);
@@ -10998,10 +11020,10 @@ async function saveRaporEntry(){
     const pool=new Map();
     DB.rapor.entries.filter(e=>e.tarih===tarih && e.bina===bina && canEditRaporEntry(e))
       .slice().sort((a,b)=>(a.created||0)-(b.created||0))
-      .forEach(e=>{ const k=_rMergeKey(e.cat||'',e.specId,e.matId,e.malzeme,e.code,e.kat,e.kot,e.lokId); if(!pool.has(k)) pool.set(k,e); });
+      .forEach(e=>{ const k=_rMergeKey(e.cat||'',e.specId,e.matId,e.malzeme,e.code,e.kat,e.kot,e.lokId,e.altId); if(!pool.has(k)) pool.set(k,e); });
     const newFlat=[], mergeInto=[];
     flat2.forEach(it=>{
-      const k=_rMergeKey(it.cat,it.specId,it.matId,it.name,it.code,it.kat,it.kot,it.lokId);
+      const k=_rMergeKey(it.cat,it.specId,it.matId,it.name,it.code,it.kat,it.kot,it.lokId,it.altId);
       const ex=pool.get(k);
       if(ex) mergeInto.push({entry:ex, add:it.miktar}); else newFlat.push(it);
     });
@@ -11016,7 +11038,7 @@ async function saveRaporEntry(){
         id:uid(), groupId,
         tarih, bina, vardiya, notlar, stokDus,
         ekip, adamSayisi, projeKodu, cat:it.cat,
-        malzeme:it.name, code:it.code||'', specId:it.specId||null, matId:it.matId||null,
+        malzeme:it.name, code:it.code||'', specId:it.specId||null, altId:it.altId||'', matId:it.matId||null,
         miktar:it.miktar, birim:it.unit,
         kat:it.kat, kot:it.kot, lokId:it.lokId||null,
         createdBy:_createdBy,
@@ -11024,7 +11046,7 @@ async function saveRaporEntry(){
       };
       if(entry.stokDus){
         const moveId=uid(); entry._moveId=moveId;
-        newItems.push({id:moveId, name:entry.malzeme, qty:entry.miktar, unit:entry.birim, date:new Date(entry.tarih).getTime(), order:'SAHA-'+entry.tarih, note:'Sahada islendi'+(entry.ekip?' ('+shortEkip(entry.ekip)+')':''), cat:entry.cat, code:entry.code, specId:entry.specId, matId:entry.matId, grup:entry.projeKodu, bina:entry.bina, lokId:entry.lokId||null, type:'out', img:null, _fromRapor:entry.id});
+        newItems.push({id:moveId, name:entry.malzeme, qty:entry.miktar, unit:entry.birim, date:new Date(entry.tarih).getTime(), order:'SAHA-'+entry.tarih, note:'Sahada islendi'+(entry.ekip?' ('+shortEkip(entry.ekip)+')':''), cat:entry.cat, code:entry.code, specId:entry.specId, altId:entry.altId||'', matId:entry.matId, grup:entry.projeKodu, bina:entry.bina, lokId:entry.lokId||null, type:'out', img:null, _fromRapor:entry.id});
       }
       newEntries.push(entry);
     });
@@ -11071,7 +11093,17 @@ function linkRaporModal(id){
   // ayni malzemeye (matId) bagli bir sartname varsa en ust siraya al ve hizli baglama secenegi sun
   const exact=e.matId?specs.find(s=>s.matId===e.matId):null;
   const sorted=exact?[exact, ...specs.filter(s=>s.id!==exact.id)]:specs;
-  const src=sorted.map(s=>({ad:s.name, alt:(s.code||'')+' '+specGroupKey(s), sub:[s.code,specGroupKey(s),s.unit].filter(Boolean).join(' · ')+(s.id===(exact&&exact.id)?' · ONERILEN':''), img:specImgOf(s), obj:s}));
+  const src=sorted.map(s=>({ad:s.name, alt:(s.code||'')+' '+specGroupKey(s), sub:[s.code,specGroupKey(s),s.unit].filter(Boolean).join(' · ')+(s.id===(exact&&exact.id)?' · ONERILEN':''), img:specImgOf(s), obj:{id:s.id,altId:''}}));
+  // ALTERNATIFLER: sahada ana urun yerine alternatif montajlandiysa kayit onunla eslesir -
+  // secilirse bag ANA kaleme kurulur, altId ile hangi urun kullanildigi saklanir
+  const specIds=new Set(specs.map(s=>s.id));
+  (DB.proje.alternatives||[]).forEach(a=>{
+    if(!specIds.has(a.specId)) return;
+    const sp=specs.find(s=>s.id===a.specId); const la=altLive(a);
+    src.push({ad:la.name||a.name||'?', alt:[la.code,a.code,sp.code||'',specGroupKey(sp),'alternatif'].filter(Boolean).join(' '),
+      sub:'ALTERNATIF → '+(sp.name||sp.code||'')+' · '+altStatusLabel(a.status)+(la.code?' · '+la.code:''),
+      img:la.img, obj:{id:sp.id,altId:a.id}});
+  });
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>Sartnameye Bagla</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div style="margin-bottom:14px"><div class="t-name">${esc(e.malzeme)}</div><div class="t-meta">${esc(e.bina)}${e.cat?' · '+esc(e.cat):''} · ${fmtNum(e.miktar)} ${esc(e.birim||'')} · ${fmtDate(e.tarih)}</div></div>
     ${exact?`<button class="btn btn-add" style="width:100%;margin-bottom:12px" onclick="doLinkRapor('${e.id}','${exact.id}')">&#10003; Onerilen: ${esc(exact.code||exact.name)} - Otomatik Bagla</button>`:''}
@@ -11080,21 +11112,26 @@ function linkRaporModal(id){
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   const el=document.getElementById('lr_spec');
-  acOpen(el, src, (it,isNew)=>{ if(isNew)return; doLinkRapor(e.id, it.id); }, false);
+  acOpen(el, src, (it,isNew)=>{ if(isNew)return; doLinkRapor(e.id, it.id, it.altId||''); }, false);
 }
-async function doLinkRapor(entryId, specId){
+// altId verilirse: bag ana kaleme kurulur ama kod/malzeme kimligi alternatif urunden okunur
+async function doLinkRapor(entryId, specId, altId){
   const _day=_rDayOpen;
   const e=(DB.rapor.entries||[]).find(x=>x.id===entryId);
   const spec=(DB.proje.specs||[]).find(s=>s.id===specId);
   if(!e||!spec)return;
-  e.specId=spec.id; e.code=spec.code||''; e.cat=spec.cat||''; e.matId=spec.matId||e.matId||null;
+  const al=altId?(DB.proje.alternatives||[]).find(a=>a.id===altId&&a.specId===spec.id):null;
+  const la=al?altLive(al):null;
+  e.specId=spec.id; e.cat=spec.cat||''; e.altId=al?al.id:'';
+  e.code=la?(la.code||''):(spec.code||'');
+  e.matId=al?(al.matId||(altMaterial(al)||{}).id||e.matId||null):(spec.matId||e.matId||null);
   const ops=[sbUpdateRaporEntry(e.id,{...e})];
   if(e._moveId){
     const it=(DB.proje.items||[]).find(x=>x.id===e._moveId);
-    if(it){ it.specId=spec.id; it.code=spec.code||''; it.cat=spec.cat||''; it.matId=e.matId; ops.push(sbUpdateProjeItem(it.id,{...it})); }
+    if(it){ it.specId=spec.id; it.altId=e.altId; it.code=e.code; it.cat=spec.cat||''; it.matId=e.matId; ops.push(sbUpdateProjeItem(it.id,{...it})); }
   }
   await Promise.all(ops);
-  closeModal(); render(); rDayReopen(_day); toast('Sartnameye baglandi: '+(spec.code||spec.name));
+  closeModal(); render(); rDayReopen(_day); toast((al?'Alternatif urun olarak baglandi: ':'Sartnameye baglandi: ')+(spec.code||spec.name));
 }
 // Yeni sartname kaydedildiginde, ayni malzemeye (matId) bagli, ayni binadaki
 // bekleyen "sartname disi" saha kayitlarini otomatik olarak bu sartnameye baglar.
@@ -11207,23 +11244,64 @@ function rimpSim(a,b){
 }
 // urun adindaki sayi obekleri (3x1.5 / trassa-1a...): rakam uyusmazligi otomatik eslemeyi dusurur
 function rimpNums(s){ return (rimpTx(s).match(/\d+/g)||[]).sort().join(','); }
-// bir satir icin en iyi sartname kalemi adayi. Kod sutunu (spec.code) birebir tutarsa dogrudan kesin.
+/* ESLESTIRME HAVUZU: sartname kalemleri + o kalemlere tanimli ALTERNATIF urunler.
+   Sahada ana urun yerine onayli alternatif montajlanir ve Excel satiri alternatifin adiyla
+   gelir; havuzda yalniz ana urun adlari olsaydi satir "eslesme yok" duserdi. Eslesme
+   alternatife dusse bile kayit ANA kalemin specId'sine baglanir (montaj ilerlemesi ana
+   kaleme yazilir), altId ile gercekte kullanilan urun saklanir - siparis akisiyla ayni model. */
+let _rimpTargCache=null; // yalniz toplu okuma sirasinda yasar (altLive kutuphane taramasini tekrarlamasin)
+function rimpTargets(bina){
+  if(_rimpTargCache&&_rimpTargCache.has(bina)) return _rimpTargCache.get(bina);
+  const specs=(DB.proje.specs||[]).filter(s=>!s.is_deleted && s.bina===bina);
+  const out=specs.map(s=>({sp:s, alt:null, name:s.name||'', name2:'', code:s.code||'', unit:s.unit||''}));
+  const byId=new Map(specs.map(s=>[s.id,s]));
+  (DB.proje.alternatives||[]).forEach(a=>{
+    const sp=byId.get(a.specId); if(!sp) return;
+    const la=altLive(a); // ad/kod/birim kutuphaneden CANLI okunur (bkz. altLive)
+    // name2: alternatif kaydedildigi andaki ad - kutuphanede urun sonradan yeniden adlandirildiysa
+    // sahadaki Excel hala eski adi tasiyor olabilir, ikisi de denenir
+    out.push({sp, alt:a, name:la.name||a.name||'', name2:(a.name&&a.name!==la.name)?a.name:'', code:la.code||a.code||'', unit:la.unit||''});
+  });
+  if(_rimpTargCache) _rimpTargCache.set(bina,out);
+  return out;
+}
+// alternatif durumu: yalniz "kullanimda"/"onaylandi" ana urunle esdeger sayilip OTOMATIK eslesir.
+// "oneri" henuz onaylanmadi, "reddedildi" kullanilmamaliydi - ikisi de daima kullanici onayina duser.
+function rimpAltAuto(a){ return !a || a.status==='kullanımda' || a.status==='onaylandi'; }
+// hedefin satir adiyla benzerligi (alternatiflerde canli ad + kayit anindaki ad denenir)
+function rimpTargetSim(ad,t){ const s1=rimpSim(ad,t.name); return t.name2?Math.max(s1,rimpSim(ad,t.name2)):s1; }
+function _rimpRes(t,sc,status){
+  if(status==='auto' && !rimpAltAuto(t.alt)) status='suggest';
+  return {specId:t.sp.id, altId:t.alt?t.alt.id:'', score:sc, status};
+}
+// bir satir icin en iyi aday (sartname kalemi ya da onun alternatifi).
+// Kod sutunu (spec.code) birebir tutarsa dogrudan kesin.
 function rimpMatch(row){
   const bina=row.bina;
-  let cands=(DB.proje.specs||[]).filter(s=>!s.is_deleted && s.bina===bina);
-  if(!cands.length) return {specId:null,score:0,status:'none'};
+  let cands=rimpTargets(bina);
+  if(!cands.length) return {specId:null,altId:'',score:0,status:'none'};
   // proje kodu (sartname) satiri daraltir; o sartnamede aday yoksa tum binaya donulur
-  if(row.kod){ const sub=cands.filter(s=>specGroupKey(s)===row.kod); if(sub.length) cands=sub; }
-  if(row.specCode){ const byCode=cands.find(s=>s.code&&norm(String(s.code))===norm(String(row.specCode))); if(byCode) return {specId:byCode.id,score:1,status:'auto'}; }
+  if(row.kod){ const sub=cands.filter(t=>specGroupKey(t.sp)===row.kod); if(sub.length) cands=sub; }
+  if(row.specCode){
+    const sc=norm(String(row.specCode));
+    const byCode=cands.find(t=>!t.alt && t.sp.code && norm(String(t.sp.code))===sc);
+    if(byCode) return _rimpRes(byCode,1,'auto');
+    // "Sartname Kalemi" sutununa urun kodu yazilmis olabilir: alternatifin kendi kodu da denenir
+    const byAlt=cands.find(t=>t.alt && t.code && norm(String(t.code))===sc);
+    if(byAlt) return _rimpRes(byAlt,1,'auto');
+  }
   let best=null,best2=0;
-  cands.forEach(s=>{ const sc=rimpSim(row.ad,s.name); if(!best||sc>best.sc){ best2=best?best.sc:0; best={s,sc}; } else if(sc>best2) best2=sc; });
-  if(!best||best.sc<0.45) return {specId:null,score:best?best.sc:0,status:'none'};
+  cands.forEach(t=>{ const sc=rimpTargetSim(row.ad,t); if(!best||sc>best.sc){ best2=best?best.sc:0; best={t,sc}; } else if(sc>best2) best2=sc; });
+  if(!best||best.sc<0.45) return {specId:null,altId:'',score:best?best.sc:0,status:'none'};
   let status=best.sc>=0.85?'auto':'suggest';
   // guvenlik: rakamlar uyusmuyorsa (Trassa-1A vs 2A) veya iki aday cok yakinsa onaya dusur
-  if(status==='auto' && rimpNums(row.ad)!==rimpNums(best.s.name)) status='suggest';
+  const numOk=rimpNums(row.ad)===rimpNums(best.t.name)||(best.t.name2&&rimpNums(row.ad)===rimpNums(best.t.name2));
+  if(status==='auto' && !numOk) status='suggest';
   if(status==='auto' && best.sc-best2<0.04) status='suggest';
-  return {specId:best.s.id,score:best.sc,status};
+  return _rimpRes(best.t,best.sc,status);
 }
+// satirin eslestigi alternatif kaydi (yoksa null)
+function rimpAltOf(r){ return r&&r.altId?((DB.proje.alternatives||[]).find(a=>a.id===r.altId)||null):null; }
 // ---- dosya okuma ----
 function rimpPickFiles(e){
   if(!guard('define')){ e.target.value=''; return; }
@@ -11239,7 +11317,8 @@ function rimpPickFiles(e){
     list.forEach(x=>{ if(x.err){ badFiles.push(x.name+' ('+x.err+')'); return; }
       const got=rimpParseWb(x.wb,x.name); if(got.length) rows.push(...got); else badFiles.push(x.name+' (Plan formati bulunamadi)'); });
     if(!rows.length){ toast('Hicbir dosyadan satir okunamadi'+(badFiles.length?': '+badFiles[0]:''),'err'); return; }
-    rows.forEach(r=>{ Object.assign(r,rimpMatch(r)); rimpRowFlags(r); });
+    _rimpTargCache=new Map();
+    try{ rows.forEach(r=>{ Object.assign(r,rimpMatch(r)); rimpRowFlags(r); }); } finally { _rimpTargCache=null; }
     _RIMP={files:list.map(x=>x.name), badFiles, rows, stokDus:true};
     PRIMP=true; closeModal(); render();
     if(badFiles.length) toast(badFiles.length+' dosya/sayfa atlandi: '+badFiles.join(', '),'err');
@@ -11332,7 +11411,21 @@ function rimpRowFlags(r){
   if(!r.bina||!binalar.includes(r.bina)){ r.include=false; r.err=r.bina?`"${r.bina}" binasi sistemde yok`:'Bina okunamadi'; return; }
   if(!(Number(r.miktar)>0)){ r.include=false; r.err='Miktar yok/gecersiz'; return; }
   if(kisit&&r.ekip&&norm(r.ekip)!==norm(kisit)){ r.include=false; r.err=`Baska ekibin satiri - yalniz kendi ekibiniz (${kisit}) aktarilabilir`; return; }
-  if(binaParcali(r.bina)&&!String(r.kat||'').trim()){ r.err='Parcali binada Kat zorunlu - doldurun'; }
+  // YUMUSAK UYARILAR: satir aktarilabilir kalir, sadece dikkat cekilir
+  const w=[];
+  if(binaParcali(r.bina)&&!String(r.kat||'').trim()) w.push('Parcali binada Kat zorunlu - doldurun');
+  const aw=rimpAltWarn(r); if(aw) w.push(aw);
+  r.err=w.join(' · ');
+}
+// alternatife eslesen satirin uyarisi: onaysiz/reddedilmis alternatif ve ana kalemle
+// birim uyusmazligi (farkli birimdeki miktar ana kalemin montaj toplamini bozar)
+function rimpAltWarn(r){
+  const a=rimpAltOf(r); if(!a) return '';
+  if(a.status==='reddedildi') return 'Bu alternatif REDDEDILDI - dogruysa onaylayin, degilse dogru kalemi secin';
+  if(a.status==='oneri') return 'Alternatif henuz ONERI asamasinda - onaylanmadan montaj kaydi girilecek';
+  const sp=rimpSpecOf(r.specId); const la=altLive(a);
+  if(sp&&sp.unit&&la.unit&&norm(sp.unit)!==norm(la.unit)) return `Birim farkli: alternatif ${la.unit}, ana kalem ${sp.unit} - miktar ana kalemin montajina eklenir`;
+  return '';
 }
 function closeRaporImport(){ PRIMP=false; _RIMP=null; render(); }
 // grup anahtari: gun + bina (kayit birlesme havuzuyla ayni kapsam)
@@ -11350,6 +11443,7 @@ function renderRaporImportPage(){
   const nSug=inc.filter(r=>r.status==='suggest'&&!r.confirmed).length;
   const nNone=inc.filter(r=>r.status==='none').length;
   const nIsg=inc.filter(r=>r.status==='isgucu').length;
+  const nAlt=inc.filter(r=>r.altId).length; // ana urun yerine alternatifiyle eslesen satirlar
   const nSkip=rows.length-inc.length;
   const groups=_rimpGroups().map(([key,idxs],gi)=>{
     const [tarih,bina]=key.split('¦');
@@ -11357,15 +11451,21 @@ function renderRaporImportPage(){
     const parcali=projBuildings().includes(bina)&&binaParcali(bina);
     const rowsHtml=idxs.map(i=>{
       const r=rows[i]; const sp=rimpSpecOf(r.specId);
+      const al=rimpAltOf(r), la=al?altLive(al):null; // alternatif urunle eslesme
       const stCls=r.status==='isgucu'?'st-isg':(r.status==='none'?'st-none':(r.status==='suggest'&&!r.confirmed?'st-sug':'st-ok'));
       const pct=Math.round((r.score||0)*100);
+      const pctTag=`<span class="rimp-pct ${stCls}">${r.status==='manual'?'SECILDI':pct+'%'}</span>`;
       const matchHtml = r.status==='isgucu'
         ? `<div class="rimp-mname"><b><span class="isg-tag">ISGUCU</span> Adam/Gun kaydi</b><span>proje ilerlemesine karismaz - gun gorunumunde kendi bolumunde${r.ekip&&ekipBolumOf(r.ekip)?' · ekip: '+esc(ekipBolumLabel(ekipBolumOf(r.ekip)))+' bagli':''}</span></div>`
+        : (sp&&al)
+        ? `<div class="rimp-mname"><b>${esc(la.name||al.name||'')}<span class="rimp-alt" title="Alternatif urun - montaj miktari ana kaleme sayilir, kayitta kullanilan urun bu kalir">ALT · ${esc(altStatusLabel(al.status))}</span></b>
+             <span>ANA KALEM: <b class="rimp-anaurun">${esc(sp.name)}</b>${[la.code,sp.code,la.unit||sp.unit].filter(Boolean).map(esc).map(x=>' · '+x).join('')}</span></div>
+           ${pctTag}`
         : sp
         ? `<div class="rimp-mname"><b>${esc(sp.name)}</b><span>${[sp.code,specGroupKey(sp),sp.unit].filter(Boolean).map(esc).join(' · ')}</span></div>
-           <span class="rimp-pct ${stCls}">${r.status==='manual'?'SECILDI':pct+'%'}</span>`
+           ${pctTag}`
         : `<div class="rimp-mname none"><b>Eslesme yok</b><span>sartname disi kaydedilir - sonradan baglanabilir</span></div>`;
-      return `<div class="rimp-row ${stCls} ${r.include?'':'off'}">
+      return `<div class="rimp-row ${stCls} ${parcali?'':'nokat'} ${r.include?'':'off'}">
         <input type="checkbox" ${r.include?'checked':''} ${r.status==='skip'?'disabled':''} onchange="_RIMP.rows[${i}].include=this.checked;render()" title="Bu satiri aktar">
         <div class="rimp-src">
           <b>${esc(r.ad)}</b>
@@ -11399,12 +11499,13 @@ function renderRaporImportPage(){
   return `<div class="kata-page rimp-page">
     <div class="sel-bc"><button onclick="closeRaporImport()">Saha Raporu</button> ${icoChevron()} <b>Excel'den Al</b></div>
     <div class="page-head"><h1>Excel'den Rapor Aktar</h1><p class="page-sub">${f.files.map(esc).join(', ')}</p></div>
-    <div class="kata-intro">Satirlar okundu ve sartname kalemleriyle eslestirildi. <b style="color:var(--green)">Yesil</b> otomatik esledi; <b style="color:var(--amber)">sari</b> satirlarda "bunu mu koymak istemistiniz?" - <b>&#10003; Evet</b>'e basin ya da &#8981; ile dogrusunu secin; <b style="color:var(--red)">kirmizi</b> eslesemedi (sartname disi kaydedilir); <b style="color:#a855f7">mor</b> satirlar ADAM/GUN isgucu kaydidir (ambar, genel saha - proje ilerlemesine karismaz). Miktar ve Kat kutulari duzeltilebilir. Kaydet, manuel girisle ayni yoldan yazar: ayni gun+urun tekrarinda miktar mevcut kayda birlesir.</div>
-    <div class="matd-stats" style="grid-template-columns:repeat(6,1fr)">
+    <div class="kata-intro">Satirlar okundu ve sartname kalemleriyle eslestirildi. <b style="color:var(--green)">Yesil</b> otomatik esledi; <b style="color:var(--amber)">sari</b> satirlarda "bunu mu koymak istemistiniz?" - <b>&#10003; Evet</b>'e basin ya da &#8981; ile dogrusunu secin; <b style="color:var(--red)">kirmizi</b> eslesemedi (sartname disi kaydedilir); <b style="color:#a855f7">mor</b> satirlar ADAM/GUN isgucu kaydidir (ambar, genel saha - proje ilerlemesine karismaz). Eslestirme sartname kalemlerinin <b style="color:var(--amber)">ALTERNATIF</b> urunlerini de tarar: saha ana urun yerine alternatifi montajladiysa satir <b>ALT</b> rozetiyle gelir, miktar ana kalemin montajina sayilir, kayitta gercekte kullanilan urun gorunur. Miktar ve Kat kutulari duzeltilebilir. Kaydet, manuel girisle ayni yoldan yazar: ayni gun+urun tekrarinda miktar mevcut kayda birlesir.</div>
+    <div class="matd-stats" style="grid-template-columns:repeat(auto-fit,minmax(122px,1fr))">
       <div><b>${rows.length}</b><span>okunan satir</span></div>
       <div><b style="color:var(--green)">${nAuto}</b><span>eslesti</span></div>
       <div><b style="color:${nSug?'var(--amber)':''}">${nSug}</b><span>onay bekliyor</span></div>
       <div><b style="color:${nNone?'var(--red)':''}">${nNone}</b><span>eslesmedi</span></div>
+      <div title="Ana urun yerine sartname kalemine tanimli alternatif urunle eslesen satirlar"><b style="color:${nAlt?'var(--amber)':''}">${nAlt}</b><span>alternatif urun</span></div>
       <div><b style="color:${nIsg?'var(--violet,#a855f7)':''}">${nIsg}</b><span>isgucu (adam/gun)</span></div>
       <div><b>${nSkip}</b><span>atlanacak</span></div>
     </div>
@@ -11422,19 +11523,37 @@ function rimpGroupInc(gi,on){
   g[1].forEach(i=>{ const r=_RIMP.rows[i]; if(!r)return; if(on){ if(r.status!=='skip'&&!r.err.includes('binasi')&&r.err!=='Tarih okunamadi') r.include=true; } else r.include=false; });
   render();
 }
-// satir icin elle sartname kalemi secimi (linkRaporModal deseni)
+// "eslesme yok": bag koparilir (alternatif bagi dahil), satir sartname disi kaydedilir
+function rimpNoMatch(i){
+  const r=_RIMP.rows[i]; if(!r)return;
+  r.specId=null; r.altId=''; r.status='none'; r.confirmed=false;
+  r.err=r.err&&r.err.includes('Kat zorunlu')?'Parcali binada Kat zorunlu - doldurun':'';
+  closeModal(); render();
+}
+// satir icin elle secim (linkRaporModal deseni): liste sartname kalemlerini VE onlarin
+// alternatif urunlerini birlikte gosterir - alternatif secilirse kayit ana kaleme baglanir
 function rimpPickSpec(i){
   const r=_RIMP.rows[i]; if(!r)return;
-  const specs=(DB.proje.specs||[]).filter(s=>!s.is_deleted && s.bina===r.bina);
-  const src=specs.map(s=>({ad:s.name, alt:(s.code||'')+' '+specGroupKey(s), sub:[s.code,specGroupKey(s),s.unit].filter(Boolean).join(' · '), img:specImgOf(s), obj:s}));
+  const src=rimpTargets(r.bina).map(t=>({
+    ad:t.name||t.sp.name||t.sp.code||'?',
+    alt:[t.code,t.sp.code,specGroupKey(t.sp),t.alt?'alternatif alt '+(t.sp.name||''):''].filter(Boolean).join(' '),
+    sub:(t.alt?'ALTERNATIF → '+(t.sp.name||t.sp.code||'')+' · '+altStatusLabel(t.alt.status)+' · ':'')+[t.code,specGroupKey(t.sp),t.unit||t.sp.unit].filter(Boolean).join(' · '),
+    img:t.alt?altLive(t.alt).img:specImgOf(t.sp),
+    obj:{specId:t.sp.id, altId:t.alt?t.alt.id:''}
+  }));
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>Sartname Kalemi Sec</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div style="margin-bottom:12px"><div class="t-name">${esc(r.ad)}</div><div class="t-meta">${esc(r.bina)} · ${fmtNum(r.miktar||0)} ${esc(r.birim||'')} · ${fmtDate(r.tarih)}</div></div>
-    <div class="frow"><label>Sartname Kalemi</label><div class="ac-wrap"><input id="rimp_spec" placeholder="Sartname no veya malzeme adi ara..." autocomplete="off"></div></div>
-    <button class="btn btn-ghost" style="width:100%" onclick="const r=_RIMP.rows[${i}];r.specId=null;r.status='none';r.confirmed=false;closeModal();render()">Eslesme yok - sartname disi kaydet</button>
+    <div class="frow"><label>Sartname Kalemi <span class="t-meta">(alternatif urunler de listede - ALTERNATIF &rarr; ana kalem seklinde)</span></label><div class="ac-wrap"><input id="rimp_spec" placeholder="Sartname no, malzeme veya alternatif adi ara..." autocomplete="off"></div></div>
+    <button class="btn btn-ghost" style="width:100%" onclick="rimpNoMatch(${i})">Eslesme yok - sartname disi kaydet</button>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   const el=document.getElementById('rimp_spec'); el.focus();
-  acOpen(el, src, (it,isNew)=>{ if(isNew)return; r.specId=it.id; r.status='manual'; r.confirmed=true; r.include=true; if(r.err&&!r.err.includes('Kat'))r.err=''; closeModal(); render(); }, false);
+  acOpen(el, src, (it,isNew)=>{ if(isNew)return;
+    r.specId=it.specId; r.altId=it.altId||''; r.status='manual'; r.confirmed=true; r.include=true;
+    // uyarilari tazele: Kat uyarisi duruyorsa korunur, alternatif uyarisi yeni secime gore yeniden yazilir
+    const katW=r.err&&r.err.includes('Kat zorunlu')?'Parcali binada Kat zorunlu - doldurun':'';
+    r.err=[katW,rimpAltWarn(r)].filter(Boolean).join(' · ');
+    closeModal(); render(); }, false);
 }
 // KAYDET: manuel kayitla (saveRaporEntry) ayni model - form ici tekillestirme + mevcut kayda birlesme + stok dusumu
 async function rimpSave(){
@@ -11471,12 +11590,19 @@ async function rimpSave(){
           dedup.set(k,it); flat.push(it); return;
         }
         const sp=rimpSpecOf(r.specId);
+        // ALTERNATIF: kayit ana kalemin specId'sine baglanir (montaj ilerlemesi oraya yazilir),
+        // ad/kod/birim/matId ise GERCEKTE kullanilan alternatif urunden alinir
+        const al=sp?rimpAltOf(r):null, la=al?altLive(al):null;
+        const alMat=al?altMaterial(al):null;
         const it={ tarih,bina, vardiya:r.vardiya, ekip:r.ekip, adam:r.adam, not:r.not,
-          cat:sp?(sp.cat||''):'', specId:sp?sp.id:null, matId:sp?(sp.matId||null):null,
-          name:sp?sp.name:r.ad, code:sp?(sp.code||''):'', unit:(sp&&sp.unit)||r.birim||'',
+          cat:sp?(sp.cat||''):'', specId:sp?sp.id:null, altId:al?al.id:'',
+          matId:al?(al.matId||(alMat&&alMat.id)||null):(sp?(sp.matId||null):null),
+          name:la?(la.name||al.name||r.ad):(sp?sp.name:r.ad),
+          code:la?(la.code||''):(sp?(sp.code||''):''),
+          unit:(la&&la.unit)||(sp&&sp.unit)||r.birim||'',
           kat:String(r.kat||'').trim(), kot:String(r.kot||'').trim(), lokId:null,
           grup:sp?specGroupKey(sp):(r.kod||''), miktar:Number(r.miktar)||0 };
-        const k=_rMergeKey(it.cat,it.specId,it.matId,it.name,it.code,it.kat,it.kot,it.lokId);
+        const k=_rMergeKey(it.cat,it.specId,it.matId,it.name,it.code,it.kat,it.kot,it.lokId,it.altId);
         const ex=dedup.get(k); if(ex){ ex.miktar+=it.miktar; return; }
         dedup.set(k,it); flat.push(it);
       });
@@ -11484,17 +11610,17 @@ async function rimpSave(){
       const pool=new Map();
       DB.rapor.entries.filter(e=>!e.is_deleted&&e.tarih===tarih&&e.bina===bina&&canEditRaporEntry(e))
         .slice().sort((a,b)=>(a.created||0)-(b.created||0))
-        .forEach(e=>{ const k=e.isgucu?isgKey(e.ekip,e.vardiya,e.malzeme):_rMergeKey(e.cat||'',e.specId,e.matId,e.malzeme,e.code,e.kat,e.kot,e.lokId); if(!pool.has(k)) pool.set(k,e); });
+        .forEach(e=>{ const k=e.isgucu?isgKey(e.ekip,e.vardiya,e.malzeme):_rMergeKey(e.cat||'',e.specId,e.matId,e.malzeme,e.code,e.kat,e.kot,e.lokId,e.altId); if(!pool.has(k)) pool.set(k,e); });
       const newFlat=[];
       flat.forEach(it=>{
-        const k=it.isg?isgKey(it.ekip,it.vardiya,it.gorev):_rMergeKey(it.cat,it.specId,it.matId,it.name,it.code,it.kat,it.kot,it.lokId);
+        const k=it.isg?isgKey(it.ekip,it.vardiya,it.gorev):_rMergeKey(it.cat,it.specId,it.matId,it.name,it.code,it.kat,it.kot,it.lokId,it.altId);
         const ex=pool.get(k);
         if(ex){
           ex.miktar=(Number(ex.miktar)||0)+it.miktar; nMerged++;
           if(!it.isg){
             if(ex._moveId){ const mv=DB.proje.items.find(x=>x.id===ex._moveId); if(mv){ mv.qty=ex.miktar; updMoves.push(mv); } }
             else if(f.stokDus){ const moveId=uid(); ex._moveId=moveId; ex.stokDus=true;
-              allItems.push({id:moveId,name:ex.malzeme,qty:ex.miktar,unit:ex.birim,date:new Date(ex.tarih).getTime(),order:'SAHA-'+ex.tarih,note:'Sahada islendi'+(ex.ekip?' ('+shortEkip(ex.ekip)+')':''),cat:ex.cat,code:ex.code,specId:ex.specId,matId:ex.matId,grup:ex.projeKodu,bina:ex.bina,lokId:ex.lokId||null,type:'out',img:null,_fromRapor:ex.id}); }
+              allItems.push({id:moveId,name:ex.malzeme,qty:ex.miktar,unit:ex.birim,date:new Date(ex.tarih).getTime(),order:'SAHA-'+ex.tarih,note:'Sahada islendi'+(ex.ekip?' ('+shortEkip(ex.ekip)+')':''),cat:ex.cat,code:ex.code,specId:ex.specId,altId:ex.altId||'',matId:ex.matId,grup:ex.projeKodu,bina:ex.bina,lokId:ex.lokId||null,type:'out',img:null,_fromRapor:ex.id}); }
           }
           updEntries.push(ex);
         } else newFlat.push(it);
@@ -11513,12 +11639,12 @@ async function rimpSave(){
         const entry={ id:uid(), groupId,
           tarih, bina, vardiya:it.vardiya, notlar:it.not||'', stokDus:f.stokDus,
           ekip:it.ekip||'', adamSayisi:(it.adam!=null?Number(it.adam):null), projeKodu:it.grup||'', cat:it.cat,
-          malzeme:it.name, code:it.code||'', specId:it.specId, matId:it.matId,
+          malzeme:it.name, code:it.code||'', specId:it.specId, altId:it.altId||'', matId:it.matId,
           miktar:it.miktar, birim:it.unit,
           kat:it.kat, kot:it.kot, lokId:null,
           createdBy, created:Date.now() };
         if(f.stokDus){ const moveId=uid(); entry._moveId=moveId;
-          allItems.push({id:moveId,name:entry.malzeme,qty:entry.miktar,unit:entry.birim,date:new Date(entry.tarih).getTime(),order:'SAHA-'+entry.tarih,note:'Sahada islendi'+(entry.ekip?' ('+shortEkip(entry.ekip)+')':''),cat:entry.cat,code:entry.code,specId:entry.specId,matId:entry.matId,grup:entry.projeKodu,bina:entry.bina,lokId:null,type:'out',img:null,_fromRapor:entry.id}); }
+          allItems.push({id:moveId,name:entry.malzeme,qty:entry.miktar,unit:entry.birim,date:new Date(entry.tarih).getTime(),order:'SAHA-'+entry.tarih,note:'Sahada islendi'+(entry.ekip?' ('+shortEkip(entry.ekip)+')':''),cat:entry.cat,code:entry.code,specId:entry.specId,altId:entry.altId||'',matId:entry.matId,grup:entry.projeKodu,bina:entry.bina,lokId:null,type:'out',img:null,_fromRapor:entry.id}); }
         allNew.push(entry);
       });
     });
