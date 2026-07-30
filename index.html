@@ -919,6 +919,11 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .rimp-mname b .rimp-alt{display:inline-block;margin-left:6px;vertical-align:1px;font-family:var(--mono);font-size:9px;font-weight:800;letter-spacing:.5px;padding:1px 6px;border-radius:5px;background:rgba(240,160,32,.16);border:1px solid rgba(240,160,32,.45);color:var(--amber);white-space:nowrap}
 .rimp-mname span b.rimp-anaurun{color:var(--amber);font-weight:700}
 .rimp-acts{display:flex;gap:6px;align-items:center}
+/* isgucu baglama: satirdaki tek tik dugmesi + sayfa basindaki toplu baglama seridi */
+.btn-isg{padding:5px 10px;font-size:11.5px;border-radius:8px;cursor:pointer;font-weight:600;white-space:nowrap;background:color-mix(in srgb,var(--violet,#a855f7) 16%,transparent);color:var(--violet,#a855f7);border:1px solid color-mix(in srgb,var(--violet,#a855f7) 50%,transparent)}
+.btn-isg:hover{background:color-mix(in srgb,var(--violet,#a855f7) 26%,transparent)}
+.rimp-isgbar{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-bottom:14px;padding:11px 14px;border-radius:11px;font-size:12.5px;line-height:1.55;color:var(--mute);background:rgba(168,85,247,.06);border:1px dashed color-mix(in srgb,var(--violet,#a855f7) 45%,transparent)}
+.rimp-isgbar>span:nth-child(2){flex:1;min-width:220px}
 @media(max-width:900px){ .rimp-row,.rimp-row.nokat{grid-template-columns:24px minmax(0,1fr) auto;row-gap:6px} .rimp-arrow{display:none} .rimp-match{grid-column:2/4} .rimp-acts{grid-column:2/4;justify-content:flex-end} }
 /* TOPLU GIRIS TASLAGI: acik taslak rozeti + kilit uyari kutusu */
 .sdraft-chip{border-color:rgba(240,160,32,.5)!important;color:var(--amber)!important;background:rgba(240,160,32,.08)!important}
@@ -11276,7 +11281,7 @@ function _rimpRes(t,sc,status){
 }
 // bir satir icin en iyi aday (sartname kalemi ya da onun alternatifi).
 // Kod sutunu (spec.code) birebir tutarsa dogrudan kesin.
-function rimpMatch(row){
+function _rimpSpecMatch(row){
   const bina=row.bina;
   let cands=rimpTargets(bina);
   if(!cands.length) return {specId:null,altId:'',score:0,status:'none'};
@@ -11302,6 +11307,79 @@ function rimpMatch(row){
 }
 // satirin eslestigi alternatif kaydi (yoksa null)
 function rimpAltOf(r){ return r&&r.altId?((DB.proje.alternatives||[]).find(a=>a.id===r.altId)||null):null; }
+
+/* ===== ISGUCU BAGLAMA =====
+   Eski Excel'lerde isgucu satirlari serbest yazilmis olabilir ("Genel Saha Elektrik",
+   "Ambarci") ve birim sutununda ADAM/GUN yazmaz - bunlar eskiden "eslesme yok" duserdi.
+   Artik satir, sistemde DAHA ONCE kullanilmis isgucu gorevleriyle de karsilastirilir:
+   birebir tutan ad dogrudan baglanir, yaklasik tutan tek tikla ("Isgucu" dugmesi) veya
+   sayfa basindaki toplu dugmeyle baglanir. Excel'i duzeltip yeniden yuklemek gerekmez. */
+let _rimpIsgCache=null;
+function rimpIsgGorevler(){
+  if(_rimpIsgCache) return _rimpIsgCache;
+  const m=new Map();
+  ISG_GOREVLER.forEach(g=>m.set(rimpTx(g),{ad:g,n:0}));
+  ((DB.rapor&&DB.rapor.entries)||[]).forEach(e=>{
+    if(e.is_deleted||!e.isgucu||!e.malzeme) return;
+    const k=rimpTx(e.malzeme); const o=m.get(k);
+    if(o){ o.n++; o.ad=e.malzeme; } else m.set(k,{ad:e.malzeme,n:1});
+  });
+  const out=[...m.values()].sort((a,b)=>b.n-a.n||String(a.ad).localeCompare(String(b.ad),'tr'));
+  if(_rimpTargCache) _rimpIsgCache=out; // yalniz toplu okuma sirasinda onbelleklenir
+  return out;
+}
+// serbest yazim ile sistemdeki gorev adinin ortusmesi. Kisaltma/ek ("Ambarci" -> "AMBAR / СКЛАД")
+// ve tek dilli yazim ("Genel Saha Elektrik" -> "... / ВРЕМЕННАЯ ЭЛЕКТРИКА") bigramda dusuk cikar;
+// bas-ek ve kelime kapsamasi ayrica odullendirilir ama hicbiri 0.85'i (otomatik esigi) gecmez.
+function rimpIsgSim(ad,gorev){
+  const a=rimpTx(ad), b=rimpTx(gorev);
+  if(!a||!b) return 0;
+  const ax=a.replace(/ /g,''), bx=b.replace(/ /g,'');
+  if(ax===bx) return 1;
+  let sc=rimpSim(ad,gorev);
+  if(ax.length>=4&&bx.length>=4&&(ax.startsWith(bx)||bx.startsWith(ax))) sc=Math.max(sc,0.7);
+  const at=a.split(' ').filter(x=>x.length>2), bt=b.split(' ').filter(x=>x.length>2);
+  if(at.length&&bt.length){
+    const kisa=at.length<=bt.length?at:bt, uzun=at.length<=bt.length?b:a;
+    if(kisa.every(t=>uzun.includes(t))) sc=Math.max(sc,0.72);
+  }
+  return sc;
+}
+function rimpIsgMatch(ad){
+  let best=null;
+  rimpIsgGorevler().forEach(g=>{ const sc=rimpIsgSim(ad,g.ad); if(!best||sc>best.sc) best={g,sc}; });
+  return (best&&best.sc>=0.45)?{gorev:best.g.ad,score:best.sc,n:best.g.n}:null;
+}
+// satirda bekleyen isgucu onerisi var mi (kaydedilecek ad ile onerilen gorev farkliysa)
+function rimpIsgPending(r){ return !!(r&&r.isgOner&&(r.isgGorev||r.ad)!==r.isgOner); }
+// SARTNAME + ISGUCU katmanlarini birlestiren eslestirme
+function rimpMatch(row){
+  const res=_rimpSpecMatch(row);
+  const isgSatir=/adam|чел/i.test(row.birim||'');
+  if(!isgSatir && res.status!=='none') return res; // kalemle eslesti - isgucu aranmaz
+  const ig=rimpIsgMatch(row.ad);
+  if(!ig) return res;
+  // zaten ADAM/GUN satiri: yalnizca ADI sistemdekiyle ayni yazima cekilir (birebirse dogrudan)
+  if(isgSatir) return {...res, isgOner:ig.gorev, isgScore:ig.score, isgGorev:ig.score>=1?ig.gorev:''};
+  // kalemle eslesmeyen satir: cok yuksek benzerlikte dogrudan isgucu, digerlerinde tek tikla oneri
+  if(ig.score>=0.85) return {specId:null,altId:'',score:ig.score,status:'isgucu',isgOner:ig.gorev,isgScore:ig.score,isgGorev:ig.gorev};
+  return {...res, isgOner:ig.gorev, isgScore:ig.score, isgGorev:''};
+}
+// satiri isgucu kaydina cevir / sistemdeki goreve bagla
+function _rimpSetIsg(r,gorev){
+  if(!r) return;
+  r.specId=null; r.altId=''; r.status='isgucu'; r.confirmed=true;
+  r.isgGorev=gorev||r.isgOner||r.ad;
+  rimpRowFlags(r);
+}
+function rimpMakeIsg(i,gorev){ const r=_RIMP&&_RIMP.rows[i]; if(!r)return; _rimpSetIsg(r,gorev); closeModal(); render(); }
+// sayfadaki TUM bekleyen isgucu onerilerini tek seferde uygula
+function rimpApplyIsgAll(){
+  const rows=(_RIMP&&_RIMP.rows)||[]; let n=0;
+  rows.forEach(r=>{ if(rimpIsgPending(r)){ _rimpSetIsg(r,r.isgOner); n++; } });
+  render();
+  toast(n?n+' satir isgucu gorevine baglandi':'Bekleyen isgucu onerisi yok', n?'ok':'warn');
+}
 // ---- dosya okuma ----
 function rimpPickFiles(e){
   if(!guard('define')){ e.target.value=''; return; }
@@ -11317,8 +11395,8 @@ function rimpPickFiles(e){
     list.forEach(x=>{ if(x.err){ badFiles.push(x.name+' ('+x.err+')'); return; }
       const got=rimpParseWb(x.wb,x.name); if(got.length) rows.push(...got); else badFiles.push(x.name+' (Plan formati bulunamadi)'); });
     if(!rows.length){ toast('Hicbir dosyadan satir okunamadi'+(badFiles.length?': '+badFiles[0]:''),'err'); return; }
-    _rimpTargCache=new Map();
-    try{ rows.forEach(r=>{ Object.assign(r,rimpMatch(r)); rimpRowFlags(r); }); } finally { _rimpTargCache=null; }
+    _rimpTargCache=new Map(); _rimpIsgCache=null;
+    try{ rows.forEach(r=>{ Object.assign(r,rimpMatch(r)); rimpRowFlags(r); }); } finally { _rimpTargCache=null; _rimpIsgCache=null; }
     _RIMP={files:list.map(x=>x.name), badFiles, rows, stokDus:true};
     PRIMP=true; closeModal(); render();
     if(badFiles.length) toast(badFiles.length+' dosya/sayfa atlandi: '+badFiles.join(', '),'err');
@@ -11397,10 +11475,11 @@ function rimpRowFlags(r){
   r.err='';
   const binalar=projBuildings();
   const kisit=myEkipKisiti();
-  if(/adam|чел/i.test(r.birim)){
-    // ISGUCU satiri: malzeme degil - isgucu kaydi olarak aktarilir. Bina serbesttir (DGR gibi
+  // ISGUCU satiri: birim ADAM/GUN ise ya da satir isgucu gorevine baglandiysa (rimpMakeIsg)
+  if(r.status==='isgucu' || /adam|чел/i.test(r.birim)){
+    // malzeme degil - isgucu kaydi olarak aktarilir. Bina serbesttir (DGR gibi
     // proje disi yerler olabilir); adam/gun bos birakildiysa 1 kabul edilir.
-    r.status='isgucu'; r.specId=null; r.score=0;
+    r.status='isgucu'; r.specId=null; r.altId=''; r.score=0;
     if(!r.tarih){ r.include=false; r.err='Tarih okunamadi'; return; }
     if(!r.bina){ r.include=false; r.err='Yer/bina okunamadi'; return; }
     if(!(Number(r.miktar)>0)) r.miktar=1;
@@ -11444,6 +11523,7 @@ function renderRaporImportPage(){
   const nNone=inc.filter(r=>r.status==='none').length;
   const nIsg=inc.filter(r=>r.status==='isgucu').length;
   const nAlt=inc.filter(r=>r.altId).length; // ana urun yerine alternatifiyle eslesen satirlar
+  const nIsgPend=rows.filter(rimpIsgPending).length; // isgucu gorevine baglanmayi bekleyen satirlar
   const nSkip=rows.length-inc.length;
   const groups=_rimpGroups().map(([key,idxs],gi)=>{
     const [tarih,bina]=key.split('¦');
@@ -11455,8 +11535,12 @@ function renderRaporImportPage(){
       const stCls=r.status==='isgucu'?'st-isg':(r.status==='none'?'st-none':(r.status==='suggest'&&!r.confirmed?'st-sug':'st-ok'));
       const pct=Math.round((r.score||0)*100);
       const pctTag=`<span class="rimp-pct ${stCls}">${r.status==='manual'?'SECILDI':pct+'%'}</span>`;
+      const isgPend=rimpIsgPending(r); // sistemdeki isgucu gorevine baglama onerisi bekliyor
       const matchHtml = r.status==='isgucu'
-        ? `<div class="rimp-mname"><b><span class="isg-tag">ISGUCU</span> Adam/Gun kaydi</b><span>proje ilerlemesine karismaz - gun gorunumunde kendi bolumunde${r.ekip&&ekipBolumOf(r.ekip)?' · ekip: '+esc(ekipBolumLabel(ekipBolumOf(r.ekip)))+' bagli':''}</span></div>`
+        ? `<div class="rimp-mname"><b><span class="isg-tag">ISGUCU</span> ${esc(r.isgGorev||r.ad)}</b><span>${r.isgGorev?'sistemdeki goreve baglandi · ':''}proje ilerlemesine karismaz - gun gorunumunde kendi bolumunde${r.ekip&&ekipBolumOf(r.ekip)?' · ekip: '+esc(ekipBolumLabel(ekipBolumOf(r.ekip)))+' bagli':''}</span></div>`
+        : isgPend
+        ? `<div class="rimp-mname"><b><span class="isg-tag">ISGUCU?</span> ${esc(r.isgOner)}</b><span>daha once kullanilmis isgucu gorevi - baglamak icin <b>Isgucu</b> dugmesi</span></div>
+           <span class="rimp-pct st-sug">${Math.round((r.isgScore||0)*100)}%</span>`
         : (sp&&al)
         ? `<div class="rimp-mname"><b>${esc(la.name||al.name||'')}<span class="rimp-alt" title="Alternatif urun - montaj miktari ana kaleme sayilir, kayitta kullanilan urun bu kalir">ALT · ${esc(altStatusLabel(al.status))}</span></b>
              <span>ANA KALEM: <b class="rimp-anaurun">${esc(sp.name)}</b>${[la.code,sp.code,la.unit||sp.unit].filter(Boolean).map(esc).map(x=>' · '+x).join('')}</span></div>
@@ -11478,7 +11562,8 @@ function renderRaporImportPage(){
         <div class="rimp-match">${matchHtml}</div>
         <div class="rimp-acts">
           ${r.status==='suggest'&&!r.confirmed?`<button class="btn btn-add" style="padding:5px 10px;font-size:11.5px" onclick="_RIMP.rows[${i}].confirmed=true;render()" title="Evet, bunu koymak istemistim">&#10003; Evet</button>`:''}
-          ${r.status==='isgucu'?'':`<button class="mini-btn" onclick="rimpPickSpec(${i})" title="Baska sartname kalemi sec">&#8981;</button>`}
+          ${isgPend?`<button class="btn btn-isg" onclick="rimpMakeIsg(${i})" title="Isgucu kaydi yap ve sistemdeki goreve bagla: ${esc(r.isgOner)}">&#10003; Isgucu</button>`:''}
+          <button class="mini-btn" onclick="rimpPickSpec(${i})" title="Sartname kalemi, alternatif urun ya da isgucu gorevi sec">&#8981;</button>
         </div>
       </div>`;
     }).join('');
@@ -11499,7 +11584,7 @@ function renderRaporImportPage(){
   return `<div class="kata-page rimp-page">
     <div class="sel-bc"><button onclick="closeRaporImport()">Saha Raporu</button> ${icoChevron()} <b>Excel'den Al</b></div>
     <div class="page-head"><h1>Excel'den Rapor Aktar</h1><p class="page-sub">${f.files.map(esc).join(', ')}</p></div>
-    <div class="kata-intro">Satirlar okundu ve sartname kalemleriyle eslestirildi. <b style="color:var(--green)">Yesil</b> otomatik esledi; <b style="color:var(--amber)">sari</b> satirlarda "bunu mu koymak istemistiniz?" - <b>&#10003; Evet</b>'e basin ya da &#8981; ile dogrusunu secin; <b style="color:var(--red)">kirmizi</b> eslesemedi (sartname disi kaydedilir); <b style="color:#a855f7">mor</b> satirlar ADAM/GUN isgucu kaydidir (ambar, genel saha - proje ilerlemesine karismaz). Eslestirme sartname kalemlerinin <b style="color:var(--amber)">ALTERNATIF</b> urunlerini de tarar: saha ana urun yerine alternatifi montajladiysa satir <b>ALT</b> rozetiyle gelir, miktar ana kalemin montajina sayilir, kayitta gercekte kullanilan urun gorunur. Miktar ve Kat kutulari duzeltilebilir. Kaydet, manuel girisle ayni yoldan yazar: ayni gun+urun tekrarinda miktar mevcut kayda birlesir.</div>
+    <div class="kata-intro">Satirlar okundu ve sartname kalemleriyle eslestirildi. <b style="color:var(--green)">Yesil</b> otomatik esledi; <b style="color:var(--amber)">sari</b> satirlarda "bunu mu koymak istemistiniz?" - <b>&#10003; Evet</b>'e basin ya da &#8981; ile dogrusunu secin; <b style="color:var(--red)">kirmizi</b> eslesemedi (sartname disi kaydedilir); <b style="color:#a855f7">mor</b> satirlar ADAM/GUN isgucu kaydidir (ambar, genel saha - proje ilerlemesine karismaz). Eski Excel'lerde birim sutununda ADAM/GUN yazmasa bile satir daha once kullanilmis isgucu gorevlerine benziyorsa <b style="color:#a855f7">Isgucu</b> dugmesiyle (ya da yukaridaki toplu dugmeyle) tek tikla baglanir - dosyayi duzeltip yeniden yuklemek gerekmez. Eslestirme sartname kalemlerinin <b style="color:var(--amber)">ALTERNATIF</b> urunlerini de tarar: saha ana urun yerine alternatifi montajladiysa satir <b>ALT</b> rozetiyle gelir, miktar ana kalemin montajina sayilir, kayitta gercekte kullanilan urun gorunur. Miktar ve Kat kutulari duzeltilebilir. Kaydet, manuel girisle ayni yoldan yazar: ayni gun+urun tekrarinda miktar mevcut kayda birlesir.</div>
     <div class="matd-stats" style="grid-template-columns:repeat(auto-fit,minmax(122px,1fr))">
       <div><b>${rows.length}</b><span>okunan satir</span></div>
       <div><b style="color:var(--green)">${nAuto}</b><span>eslesti</span></div>
@@ -11509,6 +11594,11 @@ function renderRaporImportPage(){
       <div><b style="color:${nIsg?'var(--violet,#a855f7)':''}">${nIsg}</b><span>isgucu (adam/gun)</span></div>
       <div><b>${nSkip}</b><span>atlanacak</span></div>
     </div>
+    ${nIsgPend?`<div class="rimp-isgbar">
+      <span class="isg-tag">ISGUCU</span>
+      <span><b>${nIsgPend} satir</b> sistemde daha once kullanilmis isgucu gorevlerine benziyor (ambar, genel saha elektrigi...). Bagladiginizda malzeme degil <b>Adam/Gun</b> kaydi olurlar; Excel'i duzeltmeniz gerekmez.</span>
+      <button class="btn btn-isg" style="margin-left:auto;white-space:nowrap" onclick="rimpApplyIsgAll()">&#10003; ${nIsgPend} satiri isgucune bagla</button>
+    </div>`:''}
     ${groups}
     <div class="kata-page-foot">
       <button class="btn btn-ghost" style="margin-right:auto" onclick="closeRaporImport()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Vazgec</button>
@@ -11527,6 +11617,7 @@ function rimpGroupInc(gi,on){
 function rimpNoMatch(i){
   const r=_RIMP.rows[i]; if(!r)return;
   r.specId=null; r.altId=''; r.status='none'; r.confirmed=false;
+  r.isgGorev=''; r.isgOner=''; // isgucu onerisi de kaldirilir - bilincli "sartname disi" karari
   r.err=r.err&&r.err.includes('Kat zorunlu')?'Parcali binada Kat zorunlu - doldurun':'';
   closeModal(); render();
 }
@@ -11541,15 +11632,24 @@ function rimpPickSpec(i){
     img:t.alt?altLive(t.alt).img:specImgOf(t.sp),
     obj:{specId:t.sp.id, altId:t.alt?t.alt.id:''}
   }));
-  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>Sartname Kalemi Sec</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+  // ISGUCU GOREVLERI: satir malzeme degil de ambar/genel saha gibi bir isgucu kaydiysa
+  // sistemde daha once kullanilmis goreve baglanir (Excel'i duzeltmeye gerek yok)
+  rimpIsgGorevler().forEach(g=>src.push({
+    ad:g.ad, alt:'isgucu adam gun isci '+g.ad,
+    sub:'ISGUCU (ADAM/GUN)'+(g.n?' · daha once '+g.n+' kayitta kullanildi':' · sistem gorevi'),
+    img:null, obj:{isg:true, gorev:g.ad}
+  }));
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>Kalem / Gorev Sec</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div style="margin-bottom:12px"><div class="t-name">${esc(r.ad)}</div><div class="t-meta">${esc(r.bina)} · ${fmtNum(r.miktar||0)} ${esc(r.birim||'')} · ${fmtDate(r.tarih)}</div></div>
-    <div class="frow"><label>Sartname Kalemi <span class="t-meta">(alternatif urunler de listede - ALTERNATIF &rarr; ana kalem seklinde)</span></label><div class="ac-wrap"><input id="rimp_spec" placeholder="Sartname no, malzeme veya alternatif adi ara..." autocomplete="off"></div></div>
+    ${r.isgOner?`<button class="btn btn-isg" style="width:100%;margin-bottom:12px;padding:9px" onclick="rimpMakeIsg(${i})">&#10003; Isgucu kaydi yap: ${esc(r.isgOner)}</button>`:''}
+    <div class="frow"><label>Sartname Kalemi / Alternatif / Isgucu Gorevi <span class="t-meta">(alternatifler ALTERNATIF &rarr; ana kalem, isgucu gorevleri ISGUCU etiketiyle listelenir)</span></label><div class="ac-wrap"><input id="rimp_spec" placeholder="Sartname no, malzeme, alternatif veya gorev adi ara..." autocomplete="off"></div></div>
     <button class="btn btn-ghost" style="width:100%" onclick="rimpNoMatch(${i})">Eslesme yok - sartname disi kaydet</button>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   const el=document.getElementById('rimp_spec'); el.focus();
   acOpen(el, src, (it,isNew)=>{ if(isNew)return;
-    r.specId=it.specId; r.altId=it.altId||''; r.status='manual'; r.confirmed=true; r.include=true;
+    if(it.isg){ _rimpSetIsg(r,it.gorev); closeModal(); render(); return; }
+    r.specId=it.specId; r.altId=it.altId||''; r.status='manual'; r.confirmed=true; r.include=true; r.isgGorev='';
     // uyarilari tazele: Kat uyarisi duruyorsa korunur, alternatif uyarisi yeni secime gore yeniden yazilir
     const katW=r.err&&r.err.includes('Kat zorunlu')?'Parcali binada Kat zorunlu - doldurun':'';
     r.err=[katW,rimpAltWarn(r)].filter(Boolean).join(' · ');
@@ -11584,7 +11684,9 @@ async function rimpSave(){
       const dedup=new Map(), flat=[];
       grpRows.forEach(r=>{
         if(r.status==='isgucu'){
-          const it={ isg:true, tarih,bina, vardiya:r.vardiya, ekip:r.ekip, adam:r.adam, not:r.not, gorev:r.ad, miktar:Number(r.miktar)||0 };
+          // gorev adi: sistemdeki isgucu gorevine baglandiysa ONUN yazimi kullanilir -
+          // boylece eski Excel'in serbest yazimi ayri bir gorev acmaz, mevcutla birlesir
+          const it={ isg:true, tarih,bina, vardiya:r.vardiya, ekip:r.ekip, adam:r.adam, not:r.not, gorev:(r.isgGorev||r.ad), miktar:Number(r.miktar)||0 };
           const k=isgKey(it.ekip,it.vardiya,it.gorev);
           const ex=dedup.get(k); if(ex){ ex.miktar+=it.miktar; return; }
           dedup.set(k,it); flat.push(it); return;
