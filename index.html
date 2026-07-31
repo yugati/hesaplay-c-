@@ -1208,6 +1208,15 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .cal-cell.bos:hover .cal-d{color:var(--ink)}
 .cal-cell.bos .cal-add{opacity:0;font-size:10px;color:var(--mute);transition:opacity .13s}
 .cal-cell.bos:hover .cal-add{opacity:1}
+/* bos gun: iki giris yolu - is kalemi ya da YALNIZ isgucu (adam/gun) */
+.cal-add2{display:flex;flex-direction:column;gap:4px;margin-top:auto;opacity:0;transition:opacity .13s}
+.cal-cell.bos:hover .cal-add2,.cal-cell.bos:focus-within .cal-add2{opacity:1}
+.cal-addb{display:flex;align-items:center;justify-content:center;gap:4px;width:100%;padding:4px 6px;border-radius:7px;font-family:var(--mono);font-size:9.5px;letter-spacing:.3px;cursor:pointer;color:var(--mute);background:var(--panel2);border:1px solid var(--line);transition:background .12s,color .12s,border-color .12s}
+.cal-addb svg{width:10px;height:10px}
+.cal-addb:hover{color:var(--ink);border-color:var(--mc);background:var(--mcs)}
+.cal-addb.isg:hover{color:var(--violet,#a855f7);border-color:color-mix(in srgb,var(--violet,#a855f7) 55%,transparent);background:rgba(168,85,247,.1)}
+/* gunde gercek is kalemi yok, yalniz isgucu girilmis */
+.cal-isg{font-family:var(--mono);font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;background:color-mix(in srgb,var(--violet,#a855f7) 16%,transparent);color:var(--violet,#a855f7)}
 .cal-cell.gelecek{opacity:.35;pointer-events:none;border-style:dotted}
 .cal-cell.dolu{cursor:pointer;box-shadow:var(--shadow-sm);border-left:3px solid var(--mc);transition:border-color .15s,box-shadow .15s,transform .05s}
 .cal-cell.dolu:hover{border-color:var(--dim);border-left-color:var(--mc);box-shadow:var(--shadow-md)}
@@ -10266,6 +10275,8 @@ function rAyKartlari(dates,byDate){
     const totAdam=rGunAdam(d.items);
     const binaTags=[...d.binalar].map(b=>{ const c=buildingColor(b); return `<span class="bina-tag" style="background:${c}22;color:${c};border:1px solid ${c}55">${esc(b)}</span>`; }).join('');
     const vardTags=[...d.vardiyalar].map(v=>`<span class="vardiya-tag ${v==='GECE'?'gece':''}">${esc(v)}</span>`).join('');
+    // o gun gercek is kalemi yok, yalniz isgucu (adam/gun) girilmis
+    const isgTag=d.items.every(e=>e.isgucu)?`<span class="isg-tag" title="Bu gun is kalemi kaydi yok - yalniz isgucu (adam/gun)">ISGUCU</span>`:'';
     const creators=rCreators(d.items);
     const creatorTag = creators.length===1
       ? `<span class="rap-creator" title="Olusturan - girislerini gormek icin tikla" onclick="event.stopPropagation();openRaporUserModal('${esc(creators[0])}')">${icoUserSm()} ${esc(creators[0])}</span>`
@@ -10273,7 +10284,7 @@ function rAyKartlari(dates,byDate){
         ? `<span class="rap-creator" title="Olusturanlar: ${esc(creators.join(', '))} - tikla" onclick="event.stopPropagation();openRaporUserModal()">${icoUserSm()} ${creators.length} kisi</span>`
         : '';
     html+=`<button class="rap-day" onclick="openRaporDayModal('${esc(dt)}')" title="Gunun tum kayitlarini ac">
-      <div class="rap-day-l"><span class="rap-date">${fmtDate(dt)}</span><div class="rap-day-tags">${binaTags}${vardTags}${creatorTag}</div></div>
+      <div class="rap-day-l"><span class="rap-date">${fmtDate(dt)}</span><div class="rap-day-tags">${binaTags}${isgTag}${vardTags}${creatorTag}</div></div>
       <div class="rap-day-r"><span class="rap-day-sum">${d.items.length} kalem${totAdam?` · ${totAdam} adam`:''}${d.binalar.size>1?` · ${d.binalar.size} bina`:''}</span>
         <svg class="rap-day-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></div>
     </button>`;
@@ -10370,6 +10381,9 @@ function openIsgModal(idOrNull,presetDate){
   const e=idOrNull?rEntries().find(x=>x.id===idOrNull):null;
   if(e&&!canEditRaporEntry(e)){ toast('Baskasinin kaydini duzenleyemezsiniz','err'); return; }
   if(!guard('define',{bina:(e&&e.bina)||PBINA}))return;
+  // gun modalindan degil de takvimden/arac cubugundan acildiysa eski gun hatirasini birak -
+  // kayittan sonra yanlis gunun modali acilmasin (openRaporModal ile ayni desen)
+  if(!document.querySelector('.rapday-modal')) _rDayOpen=null;
   const kisit=myEkipKisiti();
   const ekipler=(DB.rapor.ekipler||[]).slice().sort((a,b)=>a.localeCompare(b,'tr'));
   const curEkip=e?(e.ekip||''):(kisit||'');
@@ -10509,7 +10523,7 @@ function rDayReopen(tarih){ if(!tarih)return; if(rEntries().some(e=>e.tarih===ta
 // pasiftir. Ayin TUM gunleri cizilir - kaydi olmayan gunler de takvimde yerini korur.
 function renderRaporOzet(list){
   const byDate={};
-  list.forEach(e=>{ if(!byDate[e.tarih])byDate[e.tarih]={tarih:e.tarih,binalar:new Set(),kalem:0,ekipler:new Set(),vardiyalar:new Set(),bolumler:new Set(),sartDisi:0,items:[]}; const d=byDate[e.tarih]; d.binalar.add(e.bina); d.kalem++; if(e.ekip)d.ekipler.add(e.ekip); if(e.vardiya)d.vardiyalar.add(e.vardiya); if(e.cat)d.bolumler.add(e.cat); if(!e.specId&&!e.isgucu)d.sartDisi++; d.items.push(e); });
+  list.forEach(e=>{ if(!byDate[e.tarih])byDate[e.tarih]={tarih:e.tarih,binalar:new Set(),kalem:0,isg:0,mat:0,ekipler:new Set(),vardiyalar:new Set(),bolumler:new Set(),sartDisi:0,items:[]}; const d=byDate[e.tarih]; d.binalar.add(e.bina); d.kalem++; if(e.isgucu)d.isg++; else d.mat++; if(e.ekip)d.ekipler.add(e.ekip); if(e.vardiya)d.vardiyalar.add(e.vardiya); if(e.cat)d.bolumler.add(e.cat); if(!e.specId&&!e.isgucu)d.sartDisi++; d.items.push(e); });
   const tumGun=Object.keys(byDate);
   const gecerli=tumGun.filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d));
   const bozuk=tumGun.filter(d=>!/^\d{4}-\d{2}-\d{2}$/.test(d)); // tarihi okunamayan eski kayitlar
@@ -10553,22 +10567,30 @@ function renderRaporOzet(list){
           +(binalar.length>2?`<span class="bina-tag" style="background:var(--panel2);color:var(--mute)">+${binalar.length-2}</span>`:'');
         const gece=d.vardiyalar.has('GECE')?`<span class="cal-nite" title="Gece vardiyasi var"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg></span>`:'';
         const warn=d.sartDisi?`<span class="cal-warn" title="Sartnameye baglanmamis kalem">${d.sartDisi} disi</span>`:'';
+        // o gun gercek is kalemi yok, yalniz isgucu (adam/gun) girilmis
+        const isgTag=(d.mat===0&&d.isg>0)?`<span class="cal-isg" title="Bu gun is kalemi kaydi yok - yalniz isgucu (adam/gun)">ISGUCU</span>`:'';
         const ppl=creators.length?`<div class="cal-ppl">${icoUserSm()} ${esc(creators[0])}${creators.length>1?` +${creators.length-1}`:''}</div>`:'';
         const tip=[fmtDate(iso),`${d.kalem} kalem`,`${totAdam} adam`,`${d.ekipler.size} ekip`,binalar.join(', '),
           d.sartDisi?`${d.sartDisi} sartname disi`:'',creators.join(', ')].filter(Boolean).join(' · ');
         cells+=`<button class="cal-cell dolu${hafta}${bgn}" style="${st}" onclick="openRaporDayModal('${esc(iso)}')" title="${esc(tip)}">
           <div class="cal-h"><span class="cal-d">${g}</span><span style="display:flex;align-items:center;gap:4px">${gece}<span class="cal-k">${d.kalem}</span></span></div>
           <div class="cal-sub">${totAdam} adam · ${d.ekipler.size} ekip</div>
-          <div class="cal-tags">${binaTags}${warn}</div>
+          <div class="cal-tags">${binaTags}${isgTag}${warn}</div>
           ${ppl}
         </button>`;
       } else {
         const ileri=iso>bugun;
         // silme modunda bos gunler pasiftir (yanlislikla kayit formu acilmasin)
-        if(RV.silMod){ cells+=`<div class="cal-cell bos${hafta}${bgn}" style="${st};opacity:.35"><div class="cal-h"><span class="cal-d">${g}</span></div></div>`; continue; }
-        cells+=`<button class="cal-cell bos${hafta}${bgn}${ileri?' gelecek':''}" style="${st}"${ileri?' disabled':` onclick="openRaporModal(null,'${esc(iso)}')" title="${esc(fmtDate(iso))} - bu gune saha kaydi ekle"`}>
-          <div class="cal-h"><span class="cal-d">${g}</span></div>${ileri?'':`<div class="cal-add">+ kayit</div>`}
-        </button>`;
+        if(RV.silMod||ileri){ cells+=`<div class="cal-cell bos${hafta}${bgn}${ileri?' gelecek':''}" style="${st}${RV.silMod?';opacity:.35':''}"><div class="cal-h"><span class="cal-d">${g}</span></div></div>`; continue; }
+        // BOS GUN IKI YOLLA DOLAR: is kalemi (malzeme) ya da YALNIZ ISGUCU - bazi gunlerde
+        // gercek is kalemi yapilamaz, yalniz ambar/genel saha adam/gun kaydi girilir
+        cells+=`<div class="cal-cell bos${hafta}${bgn}" style="${st}">
+          <div class="cal-h"><span class="cal-d">${g}</span></div>
+          <div class="cal-add2">
+            <button class="cal-addb" onclick="openRaporModal(null,'${esc(iso)}')" title="${esc(fmtDate(iso))} - is kalemi (malzeme) kaydi ekle">${icoPlus()} kalem</button>
+            <button class="cal-addb isg" onclick="openIsgModal(null,'${esc(iso)}')" title="${esc(fmtDate(iso))} - yalniz isgucu (adam/gun): o gun is kalemi yapilmadiysa ambar / genel saha gibi calismalari buraya girin">${icoUserSm()} isgucu</button>
+          </div>
+        </div>`;
       }
     }
     const kalan=(ilkKaydir+gunSay)%7;
