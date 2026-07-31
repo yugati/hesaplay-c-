@@ -925,6 +925,15 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .rimp-isgbar{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-bottom:14px;padding:11px 14px;border-radius:11px;font-size:12.5px;line-height:1.55;color:var(--mute);background:rgba(168,85,247,.06);border:1px dashed color-mix(in srgb,var(--violet,#a855f7) 45%,transparent)}
 .rimp-isgbar>span:nth-child(2){flex:1;min-width:220px}
 @media(max-width:900px){ .rimp-row,.rimp-row.nokat{grid-template-columns:24px minmax(0,1fr) auto;row-gap:6px} .rimp-arrow{display:none} .rimp-match{grid-column:2/4} .rimp-acts{grid-column:2/4;justify-content:flex-end} }
+/* RAPOR SIL: kapsam ozeti + gun listesi (tek tek cikarilabilir) */
+.rsil-ozet{margin:14px 0 4px;padding:10px 13px;border-radius:10px;font-size:12.5px;color:var(--ink);background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.35)}
+.rsil-ozet.bos{background:var(--panel2);border:1px solid var(--line);color:var(--mute)}
+.rsil-list{max-height:230px;overflow-y:auto;border:1px solid var(--line);border-radius:10px}
+.rsil-gun{display:flex;align-items:center;gap:9px;padding:8px 11px;border-bottom:1px solid var(--line);font-size:12.5px;cursor:pointer}
+.rsil-gun:last-child{border-bottom:none}
+.rsil-gun.off{opacity:.4}
+.rsil-gun input[type=checkbox]{width:auto;cursor:pointer}
+.rsil-gun b{font-family:var(--mono);white-space:nowrap}
 /* TOPLU GIRIS TASLAGI: acik taslak rozeti + kilit uyari kutusu */
 .sdraft-chip{border-color:rgba(240,160,32,.5)!important;color:var(--amber)!important;background:rgba(240,160,32,.08)!important}
 .sdraft-chip:hover{background:rgba(240,160,32,.16)!important}
@@ -10155,6 +10164,7 @@ function renderRapor(){
     <button class="btn btn-grid" onclick="document.getElementById('rimpFile').click()" title="Gunluk Plan formatindaki Excel'leri toplu yukle - satirlar sartname kalemleriyle otomatik eslestirilir, kaydetmeden once tek tek onaylarsiniz">${icoUp()} Excel'den Al</button>
     <input type="file" id="rimpFile" class="hidden" accept=".xlsx,.xls,.csv" multiple onchange="rimpPickFiles(event)">
     <button class="btn btn-ghost" onclick="openIsgModal()" title="Malzemeye bagli olmayan adam/gun kaydi: ambar, genel saha elektrigi... Proje ilerlemesine karismaz">${icoUserSm()} Isgucu</button>
+    ${isAdmin()?`<button class="btn btn-ghost" style="border-color:var(--red)55;color:var(--red)" onclick="openRaporSil()" title="Rapor kayitlarini toplu sil: bina/ay secilir, gunler listelenir, yonetici sifresi istenir. Silinen kayitlarin stok cikis hareketleri de geri alinir.">${icoTrash()} Rapor Sil</button>`:''}
     <button class="btn btn-add" onclick="openRaporModal()">${icoPlus()} Saha Kaydi Ekle</button>
   </div>`;
   let body='';
@@ -10586,6 +10596,128 @@ async function delRaporGrup(tarih,bina,projeKodu){
   logAction('delete',`Saha raporu bolum silme: ${tarih} ${bina}${projeKodu?' '+projeKodu:''} - ${ids.length} kayit`);
   render(); rDayReopen(_rDayOpen);
   toast(ids.length+' kayit silindi'+(skip?` (${skip} kayit baskasina ait, atlandi)`:''));
+}
+/* ===== RAPOR SIL (yonetici) =====
+   Toplu silme HER ZAMAN ayni sirayi izler: kapsam sec (bina / ay) -> silinecek GUNLER
+   listelenir (tek tek cikarilabilir) -> ne silinecegi rakamla gosterilir -> guvenlik
+   yedegi -> yonetici sifresi -> sil. Rapor kaydiyla birlikte o kaydin urettigi STOK
+   CIKIS hareketi de silinir (malzeme stoka geri doner) - tek kayit silmeyle ayni davranis. */
+let _RSIL=null;
+function openRaporSil(){
+  if(!isAdmin()){ toast('Rapor silme yalniz yonetici tarafindan yapilir','err'); return; }
+  if(!guard('wipe')) return;
+  _RSIL={bina:'', ay:'', off:new Set()};
+  _rsilRender();
+}
+function _rsilList(){
+  const f=_RSIL; if(!f) return [];
+  let list=rEntries();
+  if(f.bina) list=list.filter(e=>(e.bina||'')===f.bina);
+  if(f.ay) list=list.filter(e=>String(e.tarih||'').slice(0,7)===f.ay);
+  return list;
+}
+// kapsamdaki gunler: her gun icin kac kayit / isgucu / stok hareketi ve hangi binalar
+function _rsilGunler(){
+  const m=new Map();
+  _rsilList().forEach(e=>{
+    const d=e.tarih||'?';
+    if(!m.has(d)) m.set(d,{tarih:d,kayit:0,isg:0,stok:0,binalar:new Set(),kisiler:new Set()});
+    const o=m.get(d); o.kayit++; if(e.isgucu)o.isg++; if(e._moveId)o.stok++;
+    if(e.bina)o.binalar.add(e.bina); if(e.createdBy)o.kisiler.add(e.createdBy);
+  });
+  return [...m.values()].sort((a,b)=>String(b.tarih).localeCompare(String(a.tarih)));
+}
+function _rsilHedef(){
+  const sec=new Set(_rsilGunler().filter(g=>!_RSIL.off.has(g.tarih)).map(g=>g.tarih));
+  return _rsilList().filter(e=>sec.has(e.tarih||'?'));
+}
+function rsilSet(k,v){ _RSIL[k]=v; _RSIL.off=new Set(); _rsilRender(); }
+function rsilToggleGun(t){ if(_RSIL.off.has(t))_RSIL.off.delete(t); else _RSIL.off.add(t); _rsilRender(); }
+function rsilHepsi(on){ _RSIL.off=on?new Set():new Set(_rsilGunler().map(g=>g.tarih)); _rsilRender(); }
+function _rsilRender(){
+  const f=_RSIL; if(!f) return;
+  const gunler=_rsilGunler();
+  const hedef=_rsilHedef();
+  const stok=hedef.filter(e=>e._moveId).length;
+  const isg=hedef.filter(e=>e.isgucu).length;
+  const binalar=[...new Set(rEntries().map(e=>e.bina).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const aylar=[...new Set(rEntries().map(e=>String(e.tarih||'').slice(0,7)).filter(x=>/^\d{4}-\d{2}$/.test(x)))].sort().reverse();
+  const gunRows=gunler.map(g=>{
+    const on=!f.off.has(g.tarih);
+    return `<label class="rsil-gun ${on?'':'off'}">
+      <input type="checkbox" ${on?'checked':''} onchange="rsilToggleGun('${esc(g.tarih)}')">
+      <b>${fmtDate(g.tarih)}</b>
+      <span class="t-meta">${g.kayit} kayit${g.isg?` · ${g.isg} isgucu`:''}${g.stok?` · ${g.stok} stok hareketi`:''}</span>
+      <span style="margin-left:auto;display:flex;gap:5px;flex-wrap:wrap">${[...g.binalar].map(b=>`<span class="bina-tag" style="background:${buildingColor(b)}22;color:${buildingColor(b)};border:1px solid ${buildingColor(b)}55">${esc(b)}</span>`).join('')}</span>
+    </label>`;
+  }).join('');
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeRaporSil()"><div class="modal wide">
+    <div class="modal-head"><h3>Rapor Sil</h3><button class="mini-btn" onclick="closeRaporSil()">x</button></div>
+    <div class="modal-body">
+      <p class="t-meta" style="margin-bottom:12px">Once kapsami secin, sonra silinmesini istemediginiz gunlerin isaretini kaldirin. Silinen rapor kayitlarinin urettigi <b>stok cikis hareketleri de silinir</b> (malzeme stoka geri doner). Bu islem <b>GERI ALINAMAZ</b>.</p>
+      <div class="frow two">
+        <div><label>Bina</label><select onchange="rsilSet('bina',this.value)"><option value="">Tum binalar</option>${binalar.map(b=>`<option value="${esc(b)}" ${f.bina===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div>
+        <div><label>Ay</label><select onchange="rsilSet('ay',this.value)"><option value="">Tum aylar</option>${aylar.map(a=>`<option value="${esc(a)}" ${f.ay===a?'selected':''}>${esc(_rsilAyAd(a))}</option>`).join('')}</select></div>
+      </div>
+      <div class="rsil-ozet ${hedef.length?'':'bos'}">
+        ${hedef.length
+          ? `<b>${fmtNum(hedef.length)}</b> rapor kaydi · <b>${gunler.length-f.off.size}</b> gun${isg?` · <b>${isg}</b> isgucu kaydi`:''}${stok?` · <b>${fmtNum(stok)}</b> stok cikis hareketi`:''} silinecek`
+          : 'Bu kapsamda silinecek kayit yok'}
+      </div>
+      ${gunler.length?`<div class="matd-sec">Gunler <span>${gunler.length}</span>
+        <i><button class="mini-btn" onclick="rsilHepsi(true)">tumu</button> <button class="mini-btn" onclick="rsilHepsi(false)">hicbiri</button></i></div>
+        <div class="rsil-list">${gunRows}</div>`:''}
+      <label class="chk" style="display:flex;align-items:center;gap:8px;margin-top:12px">
+        <input type="checkbox" id="rsil-yedek" checked> Silmeden once guvenlik yedegi indir <span class="t-meta">(onerilir)</span>
+      </label>
+      <div class="frow" style="margin-top:10px"><label>Yonetici Sifresi *</label><input type="password" id="rsil-pass" placeholder="Sifrenizi girin" onkeydown="if(event.key==='Enter')confirmRaporSil()"></div>
+      <p id="rsil-err" style="color:var(--red);font-size:12px;min-height:16px;margin-top:6px"></p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeRaporSil()">Iptal</button>
+      <button class="btn btn-add" id="rsil-go" style="background:var(--red);border-color:var(--red)" ${hedef.length?'':'disabled'} onclick="confirmRaporSil()">Sil${hedef.length?` (${fmtNum(hedef.length)} kayit)`:''}</button>
+    </div>
+  </div></div>`;
+  const eski=document.querySelector('.rsil-bg'); if(eski)eski.remove();
+  document.body.insertAdjacentHTML('beforeend',html);
+  const bg=document.body.lastElementChild; if(bg)bg.classList.add('rsil-bg');
+}
+function _rsilAyAd(ym){ const [y,m]=String(ym).split('-'); return (TR_AYLAR[Number(m)-1]||m)+' '+y; }
+function closeRaporSil(){ _RSIL=null; document.querySelectorAll('.rsil-bg').forEach(m=>m.remove()); }
+async function confirmRaporSil(){
+  const errEl=document.getElementById('rsil-err'); if(!errEl||!_RSIL)return;
+  const hedef=_rsilHedef();
+  if(!hedef.length){ errEl.textContent='Silinecek kayit yok.'; return; }
+  const pass=(document.getElementById('rsil-pass')||{}).value||'';
+  if(!pass){ errEl.textContent='Yonetici sifresi gerekli.'; return; }
+  const btn=document.getElementById('rsil-go'); if(btn)btn.disabled=true;
+  errEl.style.color='var(--mute)'; errEl.textContent='Sifre dogrulaniyor...';
+  try{
+    const verified=await sbLoginUser(CURRENT_USER.username, pass);
+    if(!verified||verified.id!==CURRENT_USER.id||verified.role!=='admin'){
+      errEl.style.color='var(--red)'; errEl.textContent='Sifre yanlis.';
+      if(btn)btn.disabled=false; const p=document.getElementById('rsil-pass'); if(p){p.value='';p.focus();} return;
+    }
+    const yedek=document.getElementById('rsil-yedek');
+    if(yedek&&yedek.checked){ errEl.textContent='Guvenlik yedegi indiriliyor...'; downloadJSON(makeBackupEnvelope(),backupFname('_rapor-silmeden-once')); }
+    errEl.textContent='Siliniyor...';
+    const ids=hedef.map(e=>e.id);
+    const moveIds=hedef.filter(e=>e._moveId).map(e=>e._moveId);
+    // buyuk secimlerde istek boyutu sismesin diye parcali gonderilir
+    const parca=(a,n)=>{ const o=[]; for(let i=0;i<a.length;i+=n)o.push(a.slice(i,i+n)); return o; };
+    for(const p of parca(ids,200)) await sbDeleteRaporEntriesByIds(p);
+    for(const p of parca(moveIds,200)) await sbDeleteProjeItems(p);
+    const idSet=new Set(ids), mvSet=new Set(moveIds);
+    DB.rapor.entries=DB.rapor.entries.filter(x=>!idSet.has(x.id));
+    DB.proje.items=(DB.proje.items||[]).filter(it=>!mvSet.has(it.id));
+    const kapsam=[_RSIL.bina||'tum binalar', _RSIL.ay?_rsilAyAd(_RSIL.ay):'tum aylar'].join(' / ');
+    logAction('delete',`Saha raporu toplu silme (${kapsam}): ${ids.length} kayit${moveIds.length?', '+moveIds.length+' stok hareketi':''}`);
+    closeRaporSil(); closeModal(); render();
+    toast(`${ids.length} rapor kaydi silindi${moveIds.length?` · ${moveIds.length} stok hareketi geri alindi`:''}`);
+  }catch(e){
+    errEl.style.color='var(--red)'; errEl.textContent='Hata: '+((e&&e.message)||'Islem basarisiz');
+    if(btn)btn.disabled=false;
+  }
 }
 // BOLUM BLOKLU SAHA KAYDI: bir saha kaydi birden fazla BOLUM blogu icerebilir.
 // Her blok bir bolume (cat) aittir ve KENDI ekip + adam sayisi + sartname'sine sahiptir.
