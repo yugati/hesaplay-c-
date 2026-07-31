@@ -10231,16 +10231,16 @@ function rAyKartlari(dates,byDate){
   });
   return html;
 }
-// Adam sayisi BOLUM + EKIP bazinda girilir: bir bolumde bir ekip icin girilen sayi o blogun
-// tum is kalemlerini kapsar, her satirda yeniden sayilmaz. Ayni ekip baska bir bolume
-// gecerse orasi ayri bir giristir ve kendi adam sayisiyla ayrica toplanir.
-// Bloklar bina|proje kodu|bolum|ekip kirilimiyla tekillestirilir.
+// ADAM SAYISI = EKIP-GUN. Bir ekip o gun o binada kac sartname/bolum kaleminde calisirsa
+// calissin adam sayisi BIR KEZ toplanir: 33 kisilik ekip bir gunde 33 adamdir. (Eski kural
+// bina|proje|bolum|ekip kirilimindaydi; sartnameyle eslesmeyen satirlar bolumsuz kaydedildigi
+// icin ayni ekip ikinci kez sayilip toplami sisiriyordu.) Ayni ekibin BASKA binadaki
+// calismasi ayrica sayilir. ISGUCU kayitlari (ambar/genel saha) kendi gorev+vardiyasiyla
+// ayri blok sayilir - ayni ekibin malzeme blogu icinde erimesin.
 function rGunAdam(items){
   const bloklar={};
   (items||[]).forEach(e=>{
-    // ISGUCU kayitlari (ambar/genel saha) kendi gorev+vardiyasiyla ayri blok sayilir -
-    // ayni ekibin malzeme blogu icinde erimesin, adam sayilari ayri ayri toplansin
-    const bk=(e.bina||'')+'|'+(e.projeKodu||'')+'|'+(e.cat||'')+'|'+(e.ekip||'')+(e.isgucu?('|ISG|'+norm(e.malzeme||'')+'|'+(e.vardiya||'')):'');
+    const bk=(e.bina||'')+'|'+(e.ekip||'')+(e.isgucu?('|ISG|'+norm(e.malzeme||'')+'|'+(e.vardiya||'')):'');
     const v=Number(e.adamSayisi)||0;
     // Ayni blogun kalemleri ayni sayiyi tasir; adami bos birakilmis satirlar blogu sifirlamasin
     if(!(bk in bloklar)||v>bloklar[bk]) bloklar[bk]=v;
@@ -10362,7 +10362,7 @@ function rGroupHtml(g){
     ? `<button class="mini-btn del" title="Bu bolumun tum kayitlarini sil" onclick="delRaporGrup('${esc(tarih)}','${esc(g.bina)}','${esc(g.projeKodu||'')}')">${icoTrash()}</button>`
     : '';
   return `<div class="rap-group">
-    <div class="rap-group-head"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class="bina-tag" style="background:${bcol}22;color:${bcol};border:1px solid ${bcol}55">${esc(g.bina)}</span>${g.projeKodu?`<span class="rap-proj">${esc(g.projeKodu)}</span>`:''}${ortakVardiya?`<span class="vardiya-tag ${ortakVardiya==='GECE'?'gece':''}">${esc(ortakVardiya)}</span>`:''}${creatorTag}</div><div style="display:flex;align-items:center;gap:8px"><span class="t-meta">${g.items.length} kalem${adamGoster?` · ${adamGoster} adam`:''}</span>${delBtn}</div></div>
+    <div class="rap-group-head"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class="bina-tag" style="background:${bcol}22;color:${bcol};border:1px solid ${bcol}55">${esc(g.bina)}</span>${g.projeKodu?`<span class="rap-proj">${esc(g.projeKodu)}</span>`:''}${ortakVardiya?`<span class="vardiya-tag ${ortakVardiya==='GECE'?'gece':''}">${esc(ortakVardiya)}</span>`:''}${creatorTag}</div><div style="display:flex;align-items:center;gap:8px"><span class="t-meta"${adamGoster?' title="Bu blokta calisan ekibin adam sayisi. Ayni ekip gun icinde baska bir sartnamede de calistiysa gun toplaminda BIR KEZ sayilir - bu yuzden blok sayilari toplami gun toplamindan buyuk olabilir."':''}>${g.items.length} kalem${adamGoster?` · ${adamGoster} adam`:''}</span>${delBtn}</div></div>
     ${rows}</div>`;
 }
 // GUN MODALI: bir tarihe ait tum kayitlari bina|proje gruplariyla tek modalde toplar.
@@ -11655,32 +11655,21 @@ function rimpPickSpec(i){
     r.err=[katW,rimpAltWarn(r)].filter(Boolean).join(' · ');
     closeModal(); render(); }, false);
 }
-// KAYDET: manuel kayitla (saveRaporEntry) ayni model - form ici tekillestirme + mevcut kayda birlesme + stok dusumu
-async function rimpSave(){
-  const f=_RIMP; if(!f||f._busy)return;
-  const rows=f.rows.filter(r=>r.include);
-  if(!rows.length){ toast('Aktarilacak satir yok - en az bir satiri dahil edin','err'); return; }
-  const bad=rows.filter(r=>!(Number(r.miktar)>0));
-  if(bad.length){ toast(bad.length+' dahil satirda miktar eksik - duzeltin ya da satiri atlayin','err'); return; }
-  // isgucu satirlari kat/lokasyon tasimaz - parcali bina kurali yalniz malzeme satirlarina
-  const katEksik=rows.filter(r=>r.status!=='isgucu'&&binaParcali(r.bina)&&!String(r.kat||'').trim());
-  if(katEksik.length){ toast(katEksik.length+' satirda Kat bos - parcali binada zorunlu (satirdaki Kat kutusunu doldurun)','err'); return; }
-  const sup=rows.filter(r=>r.status==='suggest'&&!r.confirmed).length;
-  if(sup && !confirm(sup+' sari (onay bekleyen) eslesme onaylanmadan kaydedilecek. Devam edilsin mi?')) return;
-  for(const b of [...new Set(rows.map(r=>r.bina))]){ if(!guard('define',{bina:b})) return; }
-  f._busy=true;
-  try{
-    if(!DB.rapor.entries)DB.rapor.entries=[];
-    const createdBy=(CURRENT_USER&&CURRENT_USER.username)||'';
-    const allNew=[], allItems=[], updEntries=[], updMoves=[];
-    let nMerged=0;
-    _rimpGroups().forEach(([key,idxs])=>{
+/* KAYDET - UC ASAMA (bkz. rimpOnayModal):
+   1) _rimpPlan(): hicbir sey yazmadan ne olacagini hesaplar - hangi satir YENI kayit olur,
+      hangisi mevcut kayda eklenir (miktar eski -> yeni), hangi gunler zaten dolu.
+   2) rimpOnayModal(): plani kullaniciya gosterir; onaylamadan tek bir kayit bile yazilmaz.
+   3) rimpApply(): plani birebir uygular. Ekranda gorunen ile yazilan AYNI plandir. */
+function _rimpPlan(){
+  const f=_RIMP; if(!f) return null;
+  const isgKey=(ekip,vardiya,gorev)=>'ISG¦'+norm(ekip||'')+'¦'+(vardiya||'')+'¦'+norm(gorev||'');
+  const gruplar=[];
+  _rimpGroups().forEach(([key,idxs])=>{
       const grpRows=idxs.map(i=>f.rows[i]).filter(r=>r.include);
       if(!grpRows.length) return;
       const [tarih,bina]=key.split('¦');
       // 1) grup ici tekillestirme (ayni urun+kat+kot toplanir - saveRaporEntry ile ayni anahtar;
       // isgucu satirlari kendi anahtariyla: ekip+vardiya+gorev)
-      const isgKey=(ekip,vardiya,gorev)=>'ISG¦'+norm(ekip||'')+'¦'+(vardiya||'')+'¦'+norm(gorev||'');
       const dedup=new Map(), flat=[];
       grpRows.forEach(r=>{
         if(r.status==='isgucu'){
@@ -11709,27 +11698,113 @@ async function rimpSave(){
         dedup.set(k,it); flat.push(it);
       });
       // 2) o gun+binadaki DUZENLENEBILIR mevcut kayitlara birlesme (isgucu kendi anahtariyla)
+      const mevcutlar=DB.rapor.entries.filter(e=>!e.is_deleted&&e.tarih===tarih&&e.bina===bina);
       const pool=new Map();
-      DB.rapor.entries.filter(e=>!e.is_deleted&&e.tarih===tarih&&e.bina===bina&&canEditRaporEntry(e))
+      mevcutlar.filter(e=>canEditRaporEntry(e))
         .slice().sort((a,b)=>(a.created||0)-(b.created||0))
         .forEach(e=>{ const k=e.isgucu?isgKey(e.ekip,e.vardiya,e.malzeme):_rMergeKey(e.cat||'',e.specId,e.matId,e.malzeme,e.code,e.kat,e.kot,e.lokId,e.altId); if(!pool.has(k)) pool.set(k,e); });
-      const newFlat=[];
+      const yeni=[], birles=[];
       flat.forEach(it=>{
         const k=it.isg?isgKey(it.ekip,it.vardiya,it.gorev):_rMergeKey(it.cat,it.specId,it.matId,it.name,it.code,it.kat,it.kot,it.lokId,it.altId);
         const ex=pool.get(k);
-        if(ex){
-          ex.miktar=(Number(ex.miktar)||0)+it.miktar; nMerged++;
-          if(!it.isg){
-            if(ex._moveId){ const mv=DB.proje.items.find(x=>x.id===ex._moveId); if(mv){ mv.qty=ex.miktar; updMoves.push(mv); } }
-            else if(f.stokDus){ const moveId=uid(); ex._moveId=moveId; ex.stokDus=true;
-              allItems.push({id:moveId,name:ex.malzeme,qty:ex.miktar,unit:ex.birim,date:new Date(ex.tarih).getTime(),order:'SAHA-'+ex.tarih,note:'Sahada islendi'+(ex.ekip?' ('+shortEkip(ex.ekip)+')':''),cat:ex.cat,code:ex.code,specId:ex.specId,altId:ex.altId||'',matId:ex.matId,grup:ex.projeKodu,bina:ex.bina,lokId:ex.lokId||null,type:'out',img:null,_fromRapor:ex.id}); }
-          }
-          updEntries.push(ex);
-        } else newFlat.push(it);
+        if(ex) birles.push({ex,it}); else yeni.push(it);
       });
-      // 3) yeni kayitlar (grup basina ortak groupId). Isgucu: stok dusumu YOK, spec bagi YOK.
-      const groupId=newFlat.length>1?uid():null;
-      newFlat.forEach(it=>{
+      gruplar.push({tarih,bina,yeni,birles,mevcut:mevcutlar.length});
+  });
+  return { gruplar, stokDus:!!f.stokDus,
+    yeniSay:gruplar.reduce((s,g)=>s+g.yeni.length,0),
+    birlesSay:gruplar.reduce((s,g)=>s+g.birles.length,0) };
+}
+// ONAY EKRANI: yazmadan once "ne olacak" ozeti. Mevcut kayda eklenecek her satir
+// eski -> yeni miktariyla listelenir; adam sayisi farkliysa ayrica uyarilir.
+function rimpOnayModal(plan){
+  const f=_RIMP;
+  const inc=f.rows.filter(r=>r.include);
+  const sup=inc.filter(r=>r.status==='suggest'&&!r.confirmed).length;
+  const none=inc.filter(r=>r.status==='none').length;
+  const gunSay=new Set(plan.gruplar.map(g=>g.tarih)).size;
+  const dolu=plan.gruplar.filter(g=>g.mevcut>0);
+  const birlesRows=[]; plan.gruplar.forEach(g=>g.birles.forEach(b=>birlesRows.push({g,...b})));
+  // ADAM SAYISI: ayni gun+bina+ekip icin sistemdeki ve Excel'deki sayi farkliysa acikca soyle
+  const adamUyari=[];
+  plan.gruplar.forEach(g=>{
+    const yeniAdam=new Map();
+    g.yeni.forEach(it=>{ if(it.adam==null)return; const k=it.ekip||''; const v=Number(it.adam)||0; if(!yeniAdam.has(k)||v>yeniAdam.get(k)) yeniAdam.set(k,v); });
+    yeniAdam.forEach((v,ekip)=>{
+      const sistem=DB.rapor.entries.filter(e=>!e.is_deleted&&e.tarih===g.tarih&&e.bina===g.bina&&(e.ekip||'')===ekip&&!e.isgucu)
+        .reduce((s,e)=>Math.max(s,Number(e.adamSayisi)||0),0);
+      if(sistem&&sistem!==v) adamUyari.push(`${fmtDate(g.tarih)} · ${esc(g.bina)} · ${esc(shortEkip(ekip))}: sistemde <b>${sistem}</b>, Excel'de <b>${v}</b> - gun toplaminda ekip bir kez, en yuksek deger (<b>${Math.max(sistem,v)}</b>) ile sayilir`);
+    });
+  });
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide"><div class="modal-head"><h3>Aktarim Ozeti - Onay</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <p class="t-meta" style="margin-bottom:12px">Asagidakiler <b>henuz yazilmadi</b>. Onaylarsaniz birebir bu sekilde kaydedilir; geri donup satir kapatabilir ya da eslesmeleri duzeltebilirsiniz.</p>
+    <div class="matd-stats" style="grid-template-columns:repeat(auto-fit,minmax(118px,1fr))">
+      <div><b style="color:var(--green)">${plan.yeniSay}</b><span>yeni kayit</span></div>
+      <div><b style="color:${plan.birlesSay?'var(--amber)':''}">${plan.birlesSay}</b><span>mevcut kayda eklenecek</span></div>
+      <div><b>${gunSay}</b><span>gun</span></div>
+      <div><b style="font-size:13px">${plan.stokDus?'ACIK':'KAPALI'}</b><span>stok dusumu</span></div>
+    </div>
+    ${(sup||none)?`<div class="rimp-warn" style="display:block;margin-bottom:12px;cursor:default">${[sup?`${sup} satirda sari (onay bekleyen) eslesme onaylanmadi - yine de yazilacak`:'',none?`${none} satir sartname disi kaydedilecek`:''].filter(Boolean).join(' &middot; ')}</div>`:''}
+    ${adamUyari.length?`<div class="rimp-warn" style="display:block;margin-bottom:12px;cursor:default">ADAM SAYISI &mdash; ${adamUyari.join('<br>')}</div>`:''}
+    ${birlesRows.length?`<div class="matd-sec">Mevcut kayda eklenecekler <span>${birlesRows.length}</span></div>
+      <div style="overflow-x:auto"><table class="invoice-table"><thead><tr><th>Gun / Bina</th><th>Kalem</th><th style="text-align:right">Simdi</th><th style="text-align:right">Eklenecek</th><th style="text-align:right">Sonra</th></tr></thead><tbody>
+      ${birlesRows.map(({g,ex,it})=>`<tr>
+        <td class="mono" style="white-space:nowrap">${fmtDate(g.tarih)} · ${esc(g.bina)}</td>
+        <td>${esc(ex.malzeme)}${ex.isgucu?' <span class="isg-tag">ISGUCU</span>':''}${ex.altId?' <span class="cat-tag" style="background:var(--amber)22;color:var(--amber)">ALT</span>':''}${ex.kat?` <span class="t-meta">Kat ${esc(ex.kat)}</span>`:''}</td>
+        <td style="text-align:right">${fmtNum(ex.miktar)}</td>
+        <td style="text-align:right;color:var(--amber)">+${fmtNum(it.miktar)}</td>
+        <td style="text-align:right"><b>${fmtNum((Number(ex.miktar)||0)+it.miktar)}</b> <span class="t-meta">${esc(ex.birim||'')}</span></td></tr>`).join('')}
+      </tbody></table></div>`:''}
+    ${dolu.length?`<div class="matd-sec">Zaten kayit olan gunler <span>${dolu.length}</span></div>
+      <div class="t-meta" style="line-height:1.9">${dolu.map(g=>`${fmtDate(g.tarih)} · <b>${esc(g.bina)}</b> &mdash; sistemde ${g.mevcut} kayit var, ${g.yeni.length} yeni eklenecek${g.birles.length?`, ${g.birles.length} mevcut kayda islenecek`:''}`).join('<br>')}</div>`:''}
+  </div><div class="modal-foot">
+    <button class="btn btn-ghost" onclick="closeModal()">Geri don - duzelt</button>
+    <button class="btn btn-add" id="rimp_onay" onclick="rimpApply()">&#10003; Onayla ve Kaydet (${plan.yeniSay+plan.birlesSay} satir)</button>
+  </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+// KAYDET: dogrulamalar + plan + onay ekrani (yazma islemi rimpApply'de)
+async function rimpSave(){
+  const f=_RIMP; if(!f||f._busy)return;
+  const rows=f.rows.filter(r=>r.include);
+  if(!rows.length){ toast('Aktarilacak satir yok - en az bir satiri dahil edin','err'); return; }
+  const bad=rows.filter(r=>!(Number(r.miktar)>0));
+  if(bad.length){ toast(bad.length+' dahil satirda miktar eksik - duzeltin ya da satiri atlayin','err'); return; }
+  // isgucu satirlari kat/lokasyon tasimaz - parcali bina kurali yalniz malzeme satirlarina
+  const katEksik=rows.filter(r=>r.status!=='isgucu'&&binaParcali(r.bina)&&!String(r.kat||'').trim());
+  if(katEksik.length){ toast(katEksik.length+' satirda Kat bos - parcali binada zorunlu (satirdaki Kat kutusunu doldurun)','err'); return; }
+  for(const b of [...new Set(rows.map(r=>r.bina))]){ if(!guard('define',{bina:b})) return; }
+  const plan=_rimpPlan();
+  if(!plan||(!plan.yeniSay&&!plan.birlesSay)){ toast('Aktarilacak satir yok','err'); return; }
+  f._plan=plan;
+  rimpOnayModal(plan);
+}
+// ONAYLANDI: plani uygula - manuel kayitla (saveRaporEntry) ayni model
+async function rimpApply(){
+  const f=_RIMP; if(!f||f._busy)return;
+  const plan=f._plan; if(!plan){ toast('Aktarim plani bulunamadi - Kaydet\'e yeniden basin','err'); return; }
+  f._busy=true;
+  const btn=document.getElementById('rimp_onay'); if(btn)btn.disabled=true;
+  try{
+    if(!DB.rapor.entries)DB.rapor.entries=[];
+    const createdBy=(CURRENT_USER&&CURRENT_USER.username)||'';
+    const allNew=[], allItems=[], updEntries=[], updMoves=[];
+    let nMerged=0;
+    plan.gruplar.forEach(g=>{
+      const tarih=g.tarih, bina=g.bina;
+      // 1) mevcut kayitlara ekleme (+ bagli stok hareketinin guncellenmesi)
+      g.birles.forEach(({ex,it})=>{
+        ex.miktar=(Number(ex.miktar)||0)+it.miktar; nMerged++;
+        if(!it.isg){
+          if(ex._moveId){ const mv=DB.proje.items.find(x=>x.id===ex._moveId); if(mv){ mv.qty=ex.miktar; updMoves.push(mv); } }
+          else if(plan.stokDus){ const moveId=uid(); ex._moveId=moveId; ex.stokDus=true;
+            allItems.push({id:moveId,name:ex.malzeme,qty:ex.miktar,unit:ex.birim,date:new Date(ex.tarih).getTime(),order:'SAHA-'+ex.tarih,note:'Sahada islendi'+(ex.ekip?' ('+shortEkip(ex.ekip)+')':''),cat:ex.cat,code:ex.code,specId:ex.specId,altId:ex.altId||'',matId:ex.matId,grup:ex.projeKodu,bina:ex.bina,lokId:ex.lokId||null,type:'out',img:null,_fromRapor:ex.id}); }
+        }
+        updEntries.push(ex);
+      });
+      // 2) yeni kayitlar (grup basina ortak groupId). Isgucu: stok dusumu YOK, spec bagi YOK.
+      const groupId=g.yeni.length>1?uid():null;
+      g.yeni.forEach(it=>{
         if(it.isg){
           allNew.push({ id:uid(), groupId, tarih, bina, vardiya:it.vardiya, notlar:it.not||'', stokDus:false,
             ekip:it.ekip||'', adamSayisi:(it.adam!=null?Number(it.adam):null), projeKodu:'', cat:'',
@@ -11739,13 +11814,13 @@ async function rimpSave(){
           return;
         }
         const entry={ id:uid(), groupId,
-          tarih, bina, vardiya:it.vardiya, notlar:it.not||'', stokDus:f.stokDus,
+          tarih, bina, vardiya:it.vardiya, notlar:it.not||'', stokDus:plan.stokDus,
           ekip:it.ekip||'', adamSayisi:(it.adam!=null?Number(it.adam):null), projeKodu:it.grup||'', cat:it.cat,
           malzeme:it.name, code:it.code||'', specId:it.specId, altId:it.altId||'', matId:it.matId,
           miktar:it.miktar, birim:it.unit,
           kat:it.kat, kot:it.kot, lokId:null,
           createdBy, created:Date.now() };
-        if(f.stokDus){ const moveId=uid(); entry._moveId=moveId;
+        if(plan.stokDus){ const moveId=uid(); entry._moveId=moveId;
           allItems.push({id:moveId,name:entry.malzeme,qty:entry.miktar,unit:entry.birim,date:new Date(entry.tarih).getTime(),order:'SAHA-'+entry.tarih,note:'Sahada islendi'+(entry.ekip?' ('+shortEkip(entry.ekip)+')':''),cat:entry.cat,code:entry.code,specId:entry.specId,altId:entry.altId||'',matId:entry.matId,grup:entry.projeKodu,bina:entry.bina,lokId:null,type:'out',img:null,_fromRapor:entry.id}); }
         allNew.push(entry);
       });
@@ -11758,8 +11833,9 @@ async function rimpSave(){
     ]);
     allNew.forEach(e=>DB.rapor.entries.push(e));
     allItems.forEach(it=>DB.proje.items.push(it));
-    const gun=new Set(rows.map(r=>r.tarih)).size;
+    const gun=new Set(plan.gruplar.map(g=>g.tarih)).size;
     logAction('define',`Excel'den rapor aktarildi: ${allNew.length} yeni${nMerged?', '+nMerged+' birlesen':''} kalem / ${gun} gun (${f.files.join(', ')})`);
+    closeModal();
     PRIMP=false; _RIMP=null; SEC='rapor'; RV.form=null; RV.filterTarih=''; render();
     toast(`${allNew.length} kalem aktarildi${nMerged?`, ${nMerged} kalem mevcut kayda birlestirildi`:''} (${gun} gun)`);
   } finally { if(_RIMP)_RIMP._busy=false; }
