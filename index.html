@@ -925,6 +925,31 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .rimp-isgbar{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-bottom:14px;padding:11px 14px;border-radius:11px;font-size:12.5px;line-height:1.55;color:var(--mute);background:rgba(168,85,247,.06);border:1px dashed color-mix(in srgb,var(--violet,#a855f7) 45%,transparent)}
 .rimp-isgbar>span:nth-child(2){flex:1;min-width:220px}
 @media(max-width:900px){ .rimp-row,.rimp-row.nokat{grid-template-columns:24px minmax(0,1fr) auto;row-gap:6px} .rimp-arrow{display:none} .rimp-match{grid-column:2/4} .rimp-acts{grid-column:2/4;justify-content:flex-end} }
+/* SILME MODU: kirmizi secim seridi + sadelesmis takvim/liste kartlari */
+.rsil-mod-bar{background:rgba(239,68,68,.07);border:1px dashed rgba(239,68,68,.45);border-radius:11px;padding:9px 12px}
+.rsil-mod-tag{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;font-weight:800;letter-spacing:.6px;color:var(--red);background:rgba(239,68,68,.13);border:1px solid rgba(239,68,68,.4);border-radius:6px;padding:4px 9px;white-space:nowrap}
+.rsil-mod-tag svg{width:12px;height:12px}
+.rsil-mod-txt{font-size:12.5px;color:var(--mute);line-height:1.5}
+.rsil-ay-sec{display:flex;gap:6px;margin-left:auto}
+/* takvim hucresi - silme modu */
+.cal-cell.sil{cursor:pointer;justify-content:flex-start;gap:2px}
+.cal-cell.sil .cal-sil{display:flex;align-items:center;justify-content:center;margin:6px auto 0;width:26px;height:26px;border-radius:8px;color:var(--red);background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4)}
+.cal-cell.sil .cal-sil svg{width:14px;height:14px}
+.cal-cell.sil .cal-sil-txt{text-align:center;font-family:var(--mono);font-size:9px;letter-spacing:.5px;color:var(--red);opacity:.75;margin-top:3px}
+.cal-cell.sil:hover{border-color:rgba(239,68,68,.6)}
+.cal-cell.sil.sec{background:rgba(239,68,68,.14)!important;border-color:var(--red)!important}
+.cal-cell.sil.sec .cal-sil{background:var(--red);border-color:var(--red);color:#fff}
+.cal-cell.sil.sec .cal-sil-txt{opacity:1;font-weight:700}
+/* liste karti - silme modu */
+.rap-day.sil{cursor:pointer}
+.rap-day.sil .rap-day-sil{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;color:var(--red);background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.4);flex-shrink:0;margin-right:10px}
+.rap-day.sil .rap-day-sil svg{width:14px;height:14px}
+.rap-day.sil .rap-day-sil-txt{font-family:var(--mono);font-size:10px;letter-spacing:.5px;color:var(--red);margin-left:9px}
+.rap-day.sil.sec{background:rgba(239,68,68,.1);border-color:var(--red)}
+.rap-day.sil.sec .rap-day-sil{background:var(--red);border-color:var(--red);color:#fff}
+.rap-day.sil.sec .rap-day-sil-txt{font-weight:700}
+.rsil-kaynak{display:flex;align-items:center;gap:8px;margin-bottom:4px;padding:9px 12px;border-radius:10px;font-size:12.5px;color:var(--red);background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.35)}
+.rsil-kaynak svg{width:14px;height:14px}
 /* RAPOR SIL: kapsam ozeti + gun listesi (tek tek cikarilabilir) */
 .rsil-ozet{margin:14px 0 4px;padding:10px 13px;border-radius:10px;font-size:12.5px;color:var(--ink);background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.35)}
 .rsil-ozet.bos{background:var(--panel2);border:1px solid var(--line);color:var(--mute)}
@@ -2412,6 +2437,7 @@ function startClock(){
 
 function switchSection(s){ if(!canSee(s)){ toast('Bu bolume erisim yetkiniz yok','err'); return; } SEC=s; TAB=(s==='proje'?'spec':'stok'); SEARCH=""; GFILTER="";
   PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PNEWORD=false; PBINAY=false; PKATA=false; PODM=false; PSPECF=false; PRIMP=false; _RIMP=null; // acik panelleri kapat
+  RV.silMod=false; RV.silGun=new Set(); _RSIL=null; // silme modu bolum degisince kapanir
   if(s==='saha'){ render(); initSaha(); } else render();
   playSectionTransition(); }
 // Baslangic: proje bolumune EN BASTAN doner - bina/bolum/sartname secimleri sifirlanir (ana ekran)
@@ -10022,7 +10048,9 @@ function sahaSnapshot(){ const img=document.getElementById('siteImg'); if(!img)r
 const VARDIYALAR=["GUNDUZ","GECE"];
 // Acilis varsayilanlari: sayfa GUNLUK OZET gorunumuyle ve "Dun ve Bugun" (__son2) tarih
 // filtresiyle acilir - guncel is en onde olsun; gecmise Tum Tarihler ile inilir.
-let RV={ filterBina:"", filterTarih:"__son2", view:"ozet", form:null }; // form: acik saha kaydi formu {id,presetDate,returnDay} - modal degil SAYFA olarak cizilir
+// form: acik saha kaydi formu {id,presetDate,returnDay} - modal degil SAYFA olarak cizilir
+// silMod/silGun: silme modu ve takvimden/listeden secilen gunler (bkz. openRaporSil)
+let RV={ filterBina:"", filterTarih:"__son2", view:"ozet", form:null, silMod:false, silGun:new Set() };
 // yerel saate gore YYYY-AA-GG (entry.tarih ile ayni bicim)
 function rISO(d){ const x=new Date(d); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
 function rEntries(){ return (DB.rapor&&DB.rapor.entries||[]).filter(e=>!e.is_deleted); }
@@ -10151,7 +10179,8 @@ function renderRapor(){
   const stats=`<div class="rap-total">Toplam rapor <b>${entries.length}</b></div>`;
   const binaOpts=binas.map(b=>`<option value="${esc(b)}" ${RV.filterBina===b?'selected':''}>${esc(b)}</option>`).join('');
   const tarihOpts=tarihler.map(t=>`<option value="${esc(t)}" ${RV.filterTarih===t?'selected':''}>${esc(fmtDate(t))}</option>`).join('');
-  const filterBar=`<div class="toolbar" style="flex-wrap:wrap">
+  // SILME MODU: normal arac cubugu yerine kirmizi secim seridi gelir; takvim/liste sadelesir
+  const filterBar=RV.silMod?_rsilModBar():`<div class="toolbar" style="flex-wrap:wrap">
     <select onchange="RV.filterBina=this.value;render()" style="max-width:160px"><option value="">Tum Binalar</option>${binaOpts}</select>
     <select onchange="RV.filterTarih=this.value;render()" style="max-width:170px"><option value="__son2" ${RV.filterTarih==='__son2'?'selected':''}>Dun ve Bugun</option><option value="" ${RV.filterTarih===''?'selected':''}>Tum Tarihler</option>${tarihOpts}</select>
     <div class="seg" style="margin-left:auto">
@@ -10224,6 +10253,16 @@ function rAyBilgi(ym){
 function rAyKartlari(dates,byDate){
   let html='';
   dates.forEach(dt=>{ const d=byDate[dt];
+    // SILME MODU: kart sadelesir - tarih, kayit sayisi ve silme dugmesi (takvimle ayni davranis)
+    if(RV.silMod){
+      const sec=rsilModSecili(dt);
+      html+=`<button class="rap-day sil${sec?' sec':''}" onclick="rsilModGun('${esc(dt)}')" title="${esc(fmtDate(dt))} - ${sec?'secimden cikar':'silinecekler arasina ekle'}">
+        <span class="rap-day-sil">${sec?icoCheckSm():icoTrash()}</span>
+        <div class="rap-day-l"><span class="rap-date">${fmtDate(dt)}</span></div>
+        <div class="rap-day-r"><span class="rap-day-sum">${d.items.length} kalem</span><span class="rap-day-sil-txt">${sec?'SECILDI':'sil'}</span></div>
+      </button>`;
+      return;
+    }
     const totAdam=rGunAdam(d.items);
     const binaTags=[...d.binalar].map(b=>{ const c=buildingColor(b); return `<span class="bina-tag" style="background:${c}22;color:${c};border:1px solid ${c}55">${esc(b)}</span>`; }).join('');
     const vardTags=[...d.vardiyalar].map(v=>`<span class="vardiya-tag ${v==='GECE'?'gece':''}">${esc(v)}</span>`).join('');
@@ -10456,7 +10495,17 @@ function renderRaporOzet(list){
       const hafta=((ilkKaydir+g-1)%7)>=5 ? ' we' : '';
       const bgn=iso===bugun?' bugun':'';
       const d=byDate[iso];
-      if(d){
+      // SILME MODU: hucre sadelesir - gun numarasi, kayit sayisi ve silme dugmesi
+      if(d&&RV.silMod){
+        const sec=rsilModSecili(iso);
+        cells+=`<button class="cal-cell dolu sil${sec?' sec':''}${hafta}${bgn}" style="${st}" onclick="rsilModGun('${esc(iso)}')" title="${esc(fmtDate(iso))} · ${d.kalem} kalem - ${sec?'secimden cikar':'silinecekler arasina ekle'}">
+          <div class="cal-h"><span class="cal-d">${g}</span><span class="cal-k">${d.kalem}</span></div>
+          <span class="cal-sil">${sec?icoCheckSm():icoTrash()}</span>
+          <div class="cal-sil-txt">${sec?'SECILDI':'sil'}</div>
+        </button>`;
+        continue;
+      }
+      if(d&&!RV.silMod){
         const totAdam=rGunAdam(d.items);
         const creators=rCreators(d.items);
         const binalar=[...d.binalar].filter(Boolean);
@@ -10475,6 +10524,8 @@ function renderRaporOzet(list){
         </button>`;
       } else {
         const ileri=iso>bugun;
+        // silme modunda bos gunler pasiftir (yanlislikla kayit formu acilmasin)
+        if(RV.silMod){ cells+=`<div class="cal-cell bos${hafta}${bgn}" style="${st};opacity:.35"><div class="cal-h"><span class="cal-d">${g}</span></div></div>`; continue; }
         cells+=`<button class="cal-cell bos${hafta}${bgn}${ileri?' gelecek':''}" style="${st}"${ileri?' disabled':` onclick="openRaporModal(null,'${esc(iso)}')" title="${esc(fmtDate(iso))} - bu gune saha kaydi ekle"`}>
           <div class="cal-h"><span class="cal-d">${g}</span></div>${ileri?'':`<div class="cal-add">+ kayit</div>`}
         </button>`;
@@ -10486,7 +10537,9 @@ function renderRaporOzet(list){
       <span class="rap-mon-dot"></span><span class="rap-mon-name">${esc(m.ad)}</span><span class="rap-mon-yr">${esc(m.yil)}</span>
       ${ym===bugun.slice(0,7)?`<span class="rap-mon-now">BU AY</span>`:''}
       <span class="rap-mon-line"></span>
-      <span class="rap-mon-sum">${ayGunleri.length} gun · ${ayKalem} kalem${ortAdam?` · <span title="${esc(adamTip)}">ort. ${fmtNum(ortAdam)} adam/gun</span>`:''}</span>
+      ${RV.silMod
+        ? `<span class="rsil-ay-sec"><button class="mini-btn" onclick="rsilModAy('${ayGunleri.join(',')}',true)" title="Bu ayin tum kayitli gunlerini sec">ayin tumu</button><button class="mini-btn" onclick="rsilModAy('${ayGunleri.join(',')}',false)" title="Bu ayin secimini kaldir">birak</button></span>`
+        : `<span class="rap-mon-sum">${ayGunleri.length} gun · ${ayKalem} kalem${ortAdam?` · <span title="${esc(adamTip)}">ort. ${fmtNum(ortAdam)} adam/gun</span>`:''}</span>`}
     </div>
     <div class="cal"><div class="cal-wd">${wd.map((w,i)=>`<span class="${i>=5?'we':''}">${w}</span>`).join('')}</div>
       <div class="cal-grid">${cells}</div></div>`;
@@ -10603,15 +10656,72 @@ async function delRaporGrup(tarih,bina,projeKodu){
    yedegi -> yonetici sifresi -> sil. Rapor kaydiyla birlikte o kaydin urettigi STOK
    CIKIS hareketi de silinir (malzeme stoka geri doner) - tek kayit silmeyle ayni davranis. */
 let _RSIL=null;
+/* SILME MODU: "Rapor Sil"e basilinca takvim ve liste SADELESIR - her gunun uzerinde
+   silme dugmesi cikar, secilen gunler kirmizi isaretlenir. Secim bitince tek onay
+   ekraninda (ozet + guvenlik yedegi + yonetici sifresi) hepsi birden silinir.
+   Bina/ay kapsamiyla silmek isteyen "Bina / Ay ile sec" ile ayni onay ekranini acar. */
 function openRaporSil(){
   if(!isAdmin()){ toast('Rapor silme yalniz yonetici tarafindan yapilir','err'); return; }
   if(!guard('wipe')) return;
-  _RSIL={bina:'', ay:'', off:new Set()};
+  // Filtreler temizlenir: silme modunda gorunen gun = silinecek gun olmali. Bina filtresi
+  // acik kalsaydi ekranda gorunen sayi ile silinen kayit farkli olurdu (gun bir butun silinir).
+  RV.silMod=true; RV.silGun=new Set(); RV.filterBina=''; RV.filterTarih='';
+  render();
+  toast('Silme modu: silinecek gunleri secin');
+}
+function rsilModCik(){ RV.silMod=false; RV.silGun=new Set(); render(); }
+function rsilModGun(dt){
+  if(!RV.silGun) RV.silGun=new Set();
+  if(RV.silGun.has(dt)) RV.silGun.delete(dt); else RV.silGun.add(dt);
+  render();
+}
+// aydaki tum (kayitli) gunleri sec / birak
+function rsilModAy(gunler,on){
+  if(!RV.silGun) RV.silGun=new Set();
+  String(gunler||'').split(',').filter(Boolean).forEach(d=>{ if(on)RV.silGun.add(d); else RV.silGun.delete(d); });
+  render();
+}
+function rsilModSecili(dt){ return !!(RV.silGun&&RV.silGun.has(dt)); }
+function _rsilModSay(){
+  const s=RV.silGun||new Set();
+  const list=rEntries().filter(e=>s.has(e.tarih));
+  return {gun:s.size, kayit:list.length, isg:list.filter(e=>e.isgucu).length, stok:list.filter(e=>e._moveId).length};
+}
+function _rsilModBar(){
+  const n=_rsilModSay();
+  return `<div class="toolbar rsil-mod-bar">
+    <span class="rsil-mod-tag">${icoTrash()} SILME MODU</span>
+    <span class="rsil-mod-txt">${n.gun
+      ? `<b>${n.gun}</b> gun secildi &middot; <b>${fmtNum(n.kayit)}</b> kayit${n.isg?` &middot; ${n.isg} isgucu`:''}${n.stok?` &middot; ${fmtNum(n.stok)} stok hareketi`:''} silinecek`
+      : 'Silmek istediginiz gunleri takvimden (ya da listeden) secin - secilen gun butun binalariyla silinir, secmeden hicbir sey silinmez'}</span>
+    <div class="seg" style="margin-left:auto">
+      <button class="${RV.view==='liste'?'on':''}" onclick="RV.view='liste';render()">Liste</button>
+      <button class="${RV.view==='ozet'?'on':''}" onclick="RV.view='ozet';render()">Takvim</button>
+    </div>
+    <button class="btn btn-ghost" onclick="openRaporSilKapsam()" title="Bina ve/veya ay secerek toplu sil">Bina / Ay ile sec</button>
+    <button class="btn btn-ghost" onclick="rsilModCik()">Vazgec</button>
+    <button class="btn btn-add" style="background:var(--red);border-color:var(--red)" ${n.gun?'':'disabled'} onclick="rsilModSil()">${icoTrash()} Secilenleri Sil${n.gun?` (${fmtNum(n.kayit)} kayit)`:''}</button>
+  </div>`;
+}
+// secilen gunlerle onay ekranina gec
+function rsilModSil(){
+  const s=RV.silGun||new Set();
+  if(!s.size){ toast('Once silinecek gunleri secin','err'); return; }
+  _RSIL={bina:'', ay:'', off:new Set(), gunSec:new Set(s)};
+  _rsilRender();
+}
+// bina/ay kapsamiyla secim (silme modundan bagimsiz da calisir)
+function openRaporSilKapsam(){
+  if(!isAdmin()){ toast('Rapor silme yalniz yonetici tarafindan yapilir','err'); return; }
+  if(!guard('wipe')) return;
+  _RSIL={bina:'', ay:'', off:new Set(), gunSec:null};
   _rsilRender();
 }
 function _rsilList(){
   const f=_RSIL; if(!f) return [];
   let list=rEntries();
+  // takvimden/listeden secilmis gunler varsa kapsam yalniz onlardir
+  if(f.gunSec) return list.filter(e=>f.gunSec.has(e.tarih||'?'));
   if(f.bina) list=list.filter(e=>(e.bina||'')===f.bina);
   if(f.ay) list=list.filter(e=>String(e.tarih||'').slice(0,7)===f.ay);
   return list;
@@ -10655,10 +10765,12 @@ function _rsilRender(){
     <div class="modal-head"><h3>Rapor Sil</h3><button class="mini-btn" onclick="closeRaporSil()">x</button></div>
     <div class="modal-body">
       <p class="t-meta" style="margin-bottom:12px">Once kapsami secin, sonra silinmesini istemediginiz gunlerin isaretini kaldirin. Silinen rapor kayitlarinin urettigi <b>stok cikis hareketleri de silinir</b> (malzeme stoka geri doner). Bu islem <b>GERI ALINAMAZ</b>.</p>
-      <div class="frow two">
+      ${f.gunSec
+        ? `<div class="rsil-kaynak">${icoTrash()} Takvimden secilen <b>${f.gunSec.size}</b> gun</div>`
+        : `<div class="frow two">
         <div><label>Bina</label><select onchange="rsilSet('bina',this.value)"><option value="">Tum binalar</option>${binalar.map(b=>`<option value="${esc(b)}" ${f.bina===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div>
         <div><label>Ay</label><select onchange="rsilSet('ay',this.value)"><option value="">Tum aylar</option>${aylar.map(a=>`<option value="${esc(a)}" ${f.ay===a?'selected':''}>${esc(_rsilAyAd(a))}</option>`).join('')}</select></div>
-      </div>
+      </div>`}
       <div class="rsil-ozet ${hedef.length?'':'bos'}">
         ${hedef.length
           ? `<b>${fmtNum(hedef.length)}</b> rapor kaydi · <b>${gunler.length-f.off.size}</b> gun${isg?` · <b>${isg}</b> isgucu kaydi`:''}${stok?` · <b>${fmtNum(stok)}</b> stok cikis hareketi`:''} silinecek`
@@ -10710,9 +10822,11 @@ async function confirmRaporSil(){
     const idSet=new Set(ids), mvSet=new Set(moveIds);
     DB.rapor.entries=DB.rapor.entries.filter(x=>!idSet.has(x.id));
     DB.proje.items=(DB.proje.items||[]).filter(it=>!mvSet.has(it.id));
-    const kapsam=[_RSIL.bina||'tum binalar', _RSIL.ay?_rsilAyAd(_RSIL.ay):'tum aylar'].join(' / ');
+    const kapsam=_RSIL.gunSec?`secilen ${_RSIL.gunSec.size} gun`:[_RSIL.bina||'tum binalar', _RSIL.ay?_rsilAyAd(_RSIL.ay):'tum aylar'].join(' / ');
     logAction('delete',`Saha raporu toplu silme (${kapsam}): ${ids.length} kayit${moveIds.length?', '+moveIds.length+' stok hareketi':''}`);
-    closeRaporSil(); closeModal(); render();
+    closeRaporSil(); closeModal();
+    RV.silMod=false; RV.silGun=new Set(); // silme modundan cikilir
+    render();
     toast(`${ids.length} rapor kaydi silindi${moveIds.length?` · ${moveIds.length} stok hareketi geri alindi`:''}`);
   }catch(e){
     errEl.style.color='var(--red)'; errEl.textContent='Hata: '+((e&&e.message)||'Islem basarisiz');
