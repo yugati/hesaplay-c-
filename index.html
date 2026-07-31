@@ -10231,21 +10231,38 @@ function rAyKartlari(dates,byDate){
   });
   return html;
 }
-// ADAM SAYISI = EKIP-GUN. Bir ekip o gun o binada kac sartname/bolum kaleminde calisirsa
-// calissin adam sayisi BIR KEZ toplanir: 33 kisilik ekip bir gunde 33 adamdir. (Eski kural
-// bina|proje|bolum|ekip kirilimindaydi; sartnameyle eslesmeyen satirlar bolumsuz kaydedildigi
-// icin ayni ekip ikinci kez sayilip toplami sisiriyordu.) Ayni ekibin BASKA binadaki
-// calismasi ayrica sayilir. ISGUCU kayitlari (ambar/genel saha) kendi gorev+vardiyasiyla
-// ayri blok sayilir - ayni ekibin malzeme blogu icinde erimesin.
+/* ADAM SAYISI = GUNLUK PLAN BLOGU. Excel'de "Adam Sayisi" birlesik bir hucredir ve
+   bir bloga aittir: gun + bina + sartname (proje kodu) + ekip + vardiya. Blok anahtari
+   birebir bunu izler; blogun tum kalemleri ayni sayiyi tasidigi icin bir kez sayilir,
+   farkli bloklar (baska sartname / baska ekip / baska vardiya) ayri isci gorevlendirmesidir
+   ve toplanir. BOLUM (cat) anahtarda YOKTUR: sartnameyle eslesmeyen satirlar bolumsuz
+   kaydedildiginden ayni blok ikiye bolunup adam sayisi cift sayiliyordu.
+   ISGUCU kayitlari (ambar/genel saha) kendi goreviyle ayri blok sayilir - ayni ekibin
+   malzeme blogu icinde erimesin. Boylece gun modalindaki blok basliklari gun toplamini verir. */
+function _rAdamBlok(e){
+  return (e.bina||'')+'|'+(e.projeKodu||'')+'|'+(e.ekip||'')+'|'+(e.vardiya||'')+(e.isgucu?('|ISG|'+norm(e.malzeme||'')):'');
+}
 function rGunAdam(items){
   const bloklar={};
   (items||[]).forEach(e=>{
-    const bk=(e.bina||'')+'|'+(e.ekip||'')+(e.isgucu?('|ISG|'+norm(e.malzeme||'')+'|'+(e.vardiya||'')):'');
+    const bk=_rAdamBlok(e);
     const v=Number(e.adamSayisi)||0;
     // Ayni blogun kalemleri ayni sayiyi tasir; adami bos birakilmis satirlar blogu sifirlamasin
     if(!(bk in bloklar)||v>bloklar[bk]) bloklar[bk]=v;
   });
   return Object.values(bloklar).reduce((s,v)=>s+v,0);
+}
+// Toplamin dokumu: hangi blok kac adam sayildi. Sayi tutmuyor sanildiginda tek bakista
+// gorulsun diye gun basligina ipucu (title) olarak asilir.
+function rGunAdamDokum(items){
+  const bloklar=new Map();
+  (items||[]).forEach(e=>{
+    const bk=_rAdamBlok(e); const v=Number(e.adamSayisi)||0;
+    const etiket=[e.bina||'?', e.isgucu?'ISGUCU '+(e.malzeme||''):(e.projeKodu||'sartnamesiz'), shortEkip(e.ekip||'')||'ekipsiz', e.vardiya||''].filter(Boolean).join(' · ');
+    const o=bloklar.get(bk);
+    if(!o||v>o.v) bloklar.set(bk,{etiket,v});
+  });
+  return [...bloklar.values()].filter(o=>o.v>0);
 }
 /* ===== ISGUCU (ADAM/GUN) KAYITLARI =====
    AMBAR, GENEL SAHA ELEKTRIK gibi malzemeye bagli olmayan gunluk isgucu kayitlari.
@@ -10362,7 +10379,7 @@ function rGroupHtml(g){
     ? `<button class="mini-btn del" title="Bu bolumun tum kayitlarini sil" onclick="delRaporGrup('${esc(tarih)}','${esc(g.bina)}','${esc(g.projeKodu||'')}')">${icoTrash()}</button>`
     : '';
   return `<div class="rap-group">
-    <div class="rap-group-head"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class="bina-tag" style="background:${bcol}22;color:${bcol};border:1px solid ${bcol}55">${esc(g.bina)}</span>${g.projeKodu?`<span class="rap-proj">${esc(g.projeKodu)}</span>`:''}${ortakVardiya?`<span class="vardiya-tag ${ortakVardiya==='GECE'?'gece':''}">${esc(ortakVardiya)}</span>`:''}${creatorTag}</div><div style="display:flex;align-items:center;gap:8px"><span class="t-meta"${adamGoster?' title="Bu blokta calisan ekibin adam sayisi. Ayni ekip gun icinde baska bir sartnamede de calistiysa gun toplaminda BIR KEZ sayilir - bu yuzden blok sayilari toplami gun toplamindan buyuk olabilir."':''}>${g.items.length} kalem${adamGoster?` · ${adamGoster} adam`:''}</span>${delBtn}</div></div>
+    <div class="rap-group-head"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class="bina-tag" style="background:${bcol}22;color:${bcol};border:1px solid ${bcol}55">${esc(g.bina)}</span>${g.projeKodu?`<span class="rap-proj">${esc(g.projeKodu)}</span>`:''}${ortakVardiya?`<span class="vardiya-tag ${ortakVardiya==='GECE'?'gece':''}">${esc(ortakVardiya)}</span>`:''}${creatorTag}</div><div style="display:flex;align-items:center;gap:8px"><span class="t-meta"${adamGoster?' title="Bu bloktaki (bina + sartname + ekip + vardiya) adam sayisi. Blogun tum kalemleri ayni sayiyi tasir, bir kez sayilir; gun basligindaki toplam bu bloklarin toplamidir."':''}>${g.items.length} kalem${adamGoster?` · ${adamGoster} adam`:''}</span>${delBtn}</div></div>
     ${rows}</div>`;
 }
 // GUN MODALI: bir tarihe ait tum kayitlari bina|proje gruplariyla tek modalde toplar.
@@ -10384,7 +10401,10 @@ function openRaporDayModal(tarih){
     : `<div class="empty-state" style="padding:30px 20px"><p>Bu gune ait kayit kalmadi.</p></div>`;
   const totAdam=rGunAdam(items);
   const binaSay=new Set(items.map(e=>e.bina).filter(Boolean)).size;
-  const sub=`${matItems.length} kalem${isgItems.length?` · ${isgItems.length} isgucu`:''}${totAdam?` · ${totAdam} adam`:''}${binaSay>1?` · ${binaSay} bina`:''}`;
+  // adam sayisi dokumu: hangi blok kac adam - toplam tutmuyor sanildiginda uzerine gelince gorunur
+  const dokum=rGunAdamDokum(items);
+  const adamTip=dokum.length?`${totAdam} adam = `+dokum.map(o=>`${o.etiket}: ${o.v}`).join('  +  '):'';
+  const sub=`${matItems.length} kalem${isgItems.length?` · ${isgItems.length} isgucu`:''}${totAdam?` · <span title="${esc(adamTip)}" style="border-bottom:1px dotted currentColor;cursor:help">${totAdam} adam</span>`:''}${binaSay>1?` · ${binaSay} bina`:''}`;
   const html=`<div class="modal-bg rapday-bg" onclick="if(event.target===this)closeModal()"><div class="modal rapday-modal">
     <div class="modal-head"><div><h3>${fmtDate(tarih)}</h3><div class="t-meta" style="margin-top:2px">${sub}</div></div><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body rapday-body">${body}</div>
