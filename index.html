@@ -10280,38 +10280,65 @@ function rAyKartlari(dates,byDate){
   });
   return html;
 }
-/* ADAM SAYISI = GUNLUK PLAN BLOGU. Excel'de "Adam Sayisi" birlesik bir hucredir ve
-   bir bloga aittir: gun + bina + sartname (proje kodu) + ekip + vardiya. Blok anahtari
-   birebir bunu izler; blogun tum kalemleri ayni sayiyi tasidigi icin bir kez sayilir,
-   farkli bloklar (baska sartname / baska ekip / baska vardiya) ayri isci gorevlendirmesidir
-   ve toplanir. BOLUM (cat) anahtarda YOKTUR: sartnameyle eslesmeyen satirlar bolumsuz
-   kaydedildiginden ayni blok ikiye bolunup adam sayisi cift sayiliyordu.
+/* ADAM SAYISI = ISCI GOREVLENDIRMESI. Bir ekip bir gunde bir binada bir BOLUMDE
+   (elektrik, kuvvet...) tek bir gorevlendirmedir; o bolumde kac SARTNAMEYE dokundugu
+   fark etmez - Excel'de ayni birlesik "Adam Sayisi" hucresi birden fazla sartname
+   satirini kapsar. Blok anahtari: bina + bolum + ekip + vardiya.
+     AKU.0179...EK.TB0002 ve AKU.0179...EK.TB0003 -> ayni bolum, TEK blok
+     AKU.0179...EK.*      ve AKU.0130...EW.*      -> ayri bolum, AYRI blok (toplanir)
+   Bolum dogrudan cat'ten, yoksa proje kodunun sartnamesinden cozulur (bkz. _rAdamBolum):
+   sartnameyle eslesmeyen satirlar cat tasimaz, cozumleme olmasa ayni ekip cift sayilirdi.
    ISGUCU kayitlari (ambar/genel saha) kendi goreviyle ayri blok sayilir - ayni ekibin
-   malzeme blogu icinde erimesin. Boylece gun modalindaki blok basliklari gun toplamini verir. */
+   malzeme blogu icinde erimesin. */
+// Kaydin BOLUMU: dogrudan cat, yoksa proje kodunun bagli oldugu sartnamenin bolumu,
+// o da bulunamazsa proje kodundaki bolum eki (AKU.0179.00UYB.0.EK.TB0003 -> EK).
+// Sartnameyle eslesmeyen satirlar cat tasimadigi icin bu cozumleme sart: yoksa ayni
+// ekip ikinci bir blok gibi gorunup adam sayisini sisirir.
+function _rAdamBolum(e){
+  if(e.cat) return norm(e.cat);
+  const pk=String(e.projeKodu||'');
+  if(pk){
+    const sr=(DB.proje.sartnames||[]).find(x=>x.code===pk && (x.bina||'')===(e.bina||''));
+    if(sr&&sr.section) return norm(sr.section);
+    const p=pk.split('.'); if(p.length>=6&&p[4]) return 'kod:'+norm(p[4]);
+  }
+  return '';
+}
 function _rAdamBlok(e){
-  return (e.bina||'')+'|'+(e.projeKodu||'')+'|'+(e.ekip||'')+'|'+(e.vardiya||'')+(e.isgucu?('|ISG|'+norm(e.malzeme||'')):'');
+  return e.isgucu
+    ? 'ISG|'+(e.bina||'')+'|'+(e.ekip||'')+'|'+(e.vardiya||'')+'|'+norm(e.malzeme||'')
+    : (e.bina||'')+'|'+_rAdamBolum(e)+'|'+(e.ekip||'')+'|'+(e.vardiya||'');
 }
-function rGunAdam(items){
-  const bloklar={};
+// Bloklarin adam sayilari: {blokAnahtari: adam}. Blogun tum kalemleri ayni sayiyi tasir,
+// adami bos birakilmis satirlar blogu sifirlamasin diye en yuksek deger alinir.
+function rAdamBloklari(items){
+  const bloklar={}, bolumlu={}, belirsiz={};
   (items||[]).forEach(e=>{
-    const bk=_rAdamBlok(e);
     const v=Number(e.adamSayisi)||0;
-    // Ayni blogun kalemleri ayni sayiyi tasir; adami bos birakilmis satirlar blogu sifirlamasin
+    const ek=(e.bina||'')+'|'+(e.ekip||'')+'|'+(e.vardiya||'');
+    if(!e.isgucu && !_rAdamBolum(e)){ if(!(ek in belirsiz)||v>belirsiz[ek]) belirsiz[ek]=v; return; }
+    const bk=_rAdamBlok(e);
     if(!(bk in bloklar)||v>bloklar[bk]) bloklar[bk]=v;
+    if(!e.isgucu) bolumlu[ek]=true;
   });
-  return Object.values(bloklar).reduce((s,v)=>s+v,0);
+  // bolumu hic cozulemeyen kayitlar: ayni bina+ekip+vardiyada bolumlu bir blok varsa
+  // onun parcasi sayilir (yeni blok ACMAZ), yoksa kendi blogunu olusturur
+  Object.keys(belirsiz).forEach(ek=>{ if(!bolumlu[ek]) bloklar['?|'+ek]=belirsiz[ek]; });
+  return bloklar;
 }
+function rGunAdam(items){ return Object.values(rAdamBloklari(items)).reduce((s,v)=>s+v,0); }
 // Toplamin dokumu: hangi blok kac adam sayildi. Sayi tutmuyor sanildiginda tek bakista
 // gorulsun diye gun basligina ipucu (title) olarak asilir.
 function rGunAdamDokum(items){
-  const bloklar=new Map();
+  const degerler=rAdamBloklari(items);
+  const etiketler={};
   (items||[]).forEach(e=>{
-    const bk=_rAdamBlok(e); const v=Number(e.adamSayisi)||0;
-    const etiket=[e.bina||'?', e.isgucu?'ISGUCU '+(e.malzeme||''):(e.projeKodu||'sartnamesiz'), shortEkip(e.ekip||'')||'ekipsiz', e.vardiya||''].filter(Boolean).join(' · ');
-    const o=bloklar.get(bk);
-    if(!o||v>o.v) bloklar.set(bk,{etiket,v});
+    const bk=(!e.isgucu&&!_rAdamBolum(e))?('?|'+(e.bina||'')+'|'+(e.ekip||'')+'|'+(e.vardiya||'')):_rAdamBlok(e);
+    if(etiketler[bk]) return;
+    const bolum=e.isgucu?('ISGUCU '+(e.malzeme||'')):(e.cat||_rAdamBolum(e)||'bolumsuz');
+    etiketler[bk]=[e.bina||'?', bolum, shortEkip(e.ekip||'')||'ekipsiz', e.vardiya||''].filter(Boolean).join(' · ');
   });
-  return [...bloklar.values()].filter(o=>o.v>0);
+  return Object.entries(degerler).filter(([,v])=>v>0).map(([bk,v])=>({etiket:etiketler[bk]||bk, v}));
 }
 /* ===== ISGUCU (ADAM/GUN) KAYITLARI =====
    AMBAR, GENEL SAHA ELEKTRIK gibi malzemeye bagli olmayan gunluk isgucu kayitlari.
@@ -10414,7 +10441,10 @@ function rGroupHtml(g){
     ${canEditRaporEntry(e)?`<button class="mini-btn" onclick="openRaporModal('${e.id}')" title="Duzenle"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>`:''}
     ${canDelRaporEntry(e)?`<button class="mini-btn del" onclick="delRaporEntry('${e.id}')" title="Kaydi sil">${icoTrash()}</button>`:''}
   </div>`; });
-  const adamGoster=rGunAdam(g.items); // bolum+ekip bazinda tekillestirilmis toplam
+  // adam: gun modali onceden hesaplar (ayni gorevlendirme iki sartnamede gecerse ikincide
+  // tekrar yazilmaz); tek basina cagrildiginda kendi blogundan hesaplanir
+  const adamGoster=(g.adam!=null)?g.adam:rGunAdam(g.items);
+  const adamTekrar=!!g.adamTekrar;
   const ortakVardiya=g.items[0]?g.items[0].vardiya:'';
   // olusturan kisi rozeti: tek kisi ise adi, birden fazla ise "N kisi" - tiklaninca kullanici girisleri acilir
   const creatorTag = grpCreators.length===1
@@ -10428,7 +10458,7 @@ function rGroupHtml(g){
     ? `<button class="mini-btn del" title="Bu bolumun tum kayitlarini sil" onclick="delRaporGrup('${esc(tarih)}','${esc(g.bina)}','${esc(g.projeKodu||'')}')">${icoTrash()}</button>`
     : '';
   return `<div class="rap-group">
-    <div class="rap-group-head"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class="bina-tag" style="background:${bcol}22;color:${bcol};border:1px solid ${bcol}55">${esc(g.bina)}</span>${g.projeKodu?`<span class="rap-proj">${esc(g.projeKodu)}</span>`:''}${ortakVardiya?`<span class="vardiya-tag ${ortakVardiya==='GECE'?'gece':''}">${esc(ortakVardiya)}</span>`:''}${creatorTag}</div><div style="display:flex;align-items:center;gap:8px"><span class="t-meta"${adamGoster?' title="Bu bloktaki (bina + sartname + ekip + vardiya) adam sayisi. Blogun tum kalemleri ayni sayiyi tasir, bir kez sayilir; gun basligindaki toplam bu bloklarin toplamidir."':''}>${g.items.length} kalem${adamGoster?` · ${adamGoster} adam`:''}</span>${delBtn}</div></div>
+    <div class="rap-group-head"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap"><span class="bina-tag" style="background:${bcol}22;color:${bcol};border:1px solid ${bcol}55">${esc(g.bina)}</span>${g.projeKodu?`<span class="rap-proj">${esc(g.projeKodu)}</span>`:''}${ortakVardiya?`<span class="vardiya-tag ${ortakVardiya==='GECE'?'gece':''}">${esc(ortakVardiya)}</span>`:''}${creatorTag}</div><div style="display:flex;align-items:center;gap:8px"><span class="t-meta"${adamGoster?' title="Bu isci gorevlendirmesinin (bina + bolum + ekip + vardiya) adam sayisi. Ayni bolumdeki tum sartnameler tek gorevlendirmedir; gun basligindaki toplam bu sayilarin toplamidir."':(adamTekrar?' title="Bu ekip ayni bolumde yukaridaki sartnamede zaten sayildi - gun toplamina bir kez girer"':'')}>${g.items.length} kalem${adamGoster?` · ${adamGoster} adam`:(adamTekrar?' · <i style="font-style:normal;opacity:.65">adam yukarida sayildi</i>':'')}</span>${delBtn}</div></div>
     ${rows}</div>`;
 }
 // GUN MODALI: bir tarihe ait tum kayitlari bina|proje gruplariyla tek modalde toplar.
@@ -10445,6 +10475,16 @@ function openRaporDayModal(tarih){
   const groups={};
   matItems.forEach(e=>{ const k=e.bina+'|'+(e.projeKodu||''); if(!groups[k])groups[k]={bina:e.bina,projeKodu:e.projeKodu,items:[]}; groups[k].items.push(e); });
   const keys=Object.keys(groups);
+  // ADAM SAYISI grup basliklarinda BIR KEZ gosterilir: ayni bolumde iki sartname varsa
+  // (ayni isci gorevlendirmesi) sayi ilk grupta yazilir, digerinde "yukarida sayildi" denir.
+  // Boylece baslik sayilarinin toplami gun basligindaki toplama esit kalir.
+  const _gorulen=new Set();
+  keys.forEach(k=>{ const g=groups[k]; g.adam=0; g.adamTekrar=false;
+    Object.entries(rAdamBloklari(g.items)).forEach(([bk,v])=>{
+      if(_gorulen.has(bk)){ if(v>0)g.adamTekrar=true; return; }
+      _gorulen.add(bk); g.adam+=v;
+    });
+  });
   const body = (keys.length||isgItems.length)
     ? keys.map(k=>rGroupHtml(groups[k])).join('')+rIsgGroupHtml(isgItems)
     : `<div class="empty-state" style="padding:30px 20px"><p>Bu gune ait kayit kalmadi.</p></div>`;
