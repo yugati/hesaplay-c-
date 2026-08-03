@@ -1006,6 +1006,14 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .floww-node.sel{border-color:var(--cc,var(--amber));box-shadow:0 0 0 2.5px color-mix(in srgb,var(--cc,var(--amber)) 28%,transparent)}
 .floww-node.bina{border-left:3px solid var(--cc)}
 .floww-node.pasif{opacity:.5}
+/* idari dal (Sartname > Ozel No): fiziksel kirilimden sol serit ve zeminle ayrilir */
+.floww-node.srt{border-left:3px solid var(--cc)}
+.floww-node.srt.open{background:color-mix(in srgb,var(--cc) 8%,var(--panel))}
+.floww-node.ozel{border-left:3px solid var(--amber);background:color-mix(in srgb,var(--amber) 5%,var(--panel))}
+.floww-node.more{border-style:dashed;background:transparent}
+.fw-ozel-code{font-size:11.5px;font-family:var(--mono);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fw-caret{font-size:12px;font-weight:800;line-height:1;color:var(--mute);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 5px;flex-shrink:0}
+.fw-caret.on{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 45%,transparent)}
 .fw-name{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fw-bina-name{font-size:14px;font-weight:800;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fw-sub{font-size:10px;color:var(--mute);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
@@ -1014,6 +1022,9 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .fw-use{font-size:9px;font-family:var(--mono);color:var(--mute);flex-shrink:0}
 /* sartname-kat kapsami: kat dugumundeki sartname rozeti + kat panelindeki sartname satirlari */
 .fw-sart{display:inline-flex;align-items:center;gap:3px;font-size:9px;font-family:var(--mono);font-weight:700;color:var(--amber);background:color-mix(in srgb,var(--amber) 14%,transparent);border-radius:5px;padding:1.5px 5px;flex-shrink:0}
+.fw-sart.clk{cursor:pointer;transition:background .12s,color .12s}
+.fw-sart.clk:hover{background:color-mix(in srgb,var(--amber) 30%,transparent)}
+.fw-sart.on{background:var(--amber);color:#fff}
 /* paylasimli dugum rozeti: ayni oda birden fazla fragmente bagliysa */
 .fw-shared{display:inline-flex;align-items:center;gap:3px;font-size:9px;font-family:var(--mono);font-weight:700;color:var(--green);background:color-mix(in srgb,var(--green) 14%,transparent);border-radius:5px;padding:1.5px 5px;flex-shrink:0}
 .fw-srt{display:flex;align-items:center;gap:7px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;background:var(--bg)}
@@ -4869,7 +4880,46 @@ async function lokwGenKats(bina){
    yeniden adlandirma, kot, coklu/seri alt ekleme, dal kopyalama, silme, bina
    islemleri (pasif, giris modeli, 3D, sil). Liste gorunumuyle ayni veriyi kullanir. */
 let BINAYVIEW=localStorage.getItem('binayview')==='list'?'list':'flow'; // kullanicinin son secimi
-let FLOWW={pan:{x:30,y:20},zoom:1,sel:null,moved:false};
+// exp: kat id -> sartname dali acik mi | expS: "katId|srId" -> ozel no dali acik mi.
+// Dallar LAZY'dir: kapali dal icin hic dugum uretilmez, kapaliyken tuval eskisiyle birebir ayni.
+let FLOWW={pan:{x:30,y:20},zoom:1,sel:null,moved:false,exp:{},expS:{}};
+/* ===== AKIS GORUNUMU - IDARI DAL (Bina > Kat > Sartname > Ozel No) =====================
+   Lokasyon agaci FIZIKSEL kirilimdir (Aks/Fragment/Oda); bunun yaninda kat dugumunden
+   IDARI dal da acilir. flowKatSrt bir kat icin IKI BAGI birlikte dondurur:
+     all  = sartnamenin TUM kalemleri  (KAPSAM  - sr.katIds bu kati kapsiyor)
+     here = kati FIILEN bu dugume cozulen kalemler (YERLESIM - sp.kat/kot -> binaKatNodeOf)
+   Ozel no dugumleri yalnizca "here" icin cizilir; fark sartname dugumunde "150 kalem ·
+   27 bu katta" olarak gorunur - boylece Kat Ata bosluğu da bir bakista anlasilir. */
+const FLOW_OZEL_MAX=60; // tek dalda cizilecek en fazla ozel no dugumu (gerisi "+N daha")
+function flowKatSrt(bina,katId){
+  const srts=katSartnameleri(bina,katId);
+  if(!srts.length) return [];
+  const specs=DB.proje.specs.filter(s=>!s.is_deleted&&s.bina===bina);
+  return srts.map(sr=>{
+    const all=specs.filter(s=>(s.cat||'')===(sr.section||'')&&specGroupKey(s)===sr.code);
+    // kati hic girilmemis kalem icin dugum cozumu denenmez (binaKatNodeOf her cagrida kat
+    // listesini suzup siralar) - Kat Ata yapilmamis buyuk sartnamelerde asil maliyet budur
+    const here=all.filter(s=>{
+      if(!String(s.kat||'').trim() && !String(s.kot||'').trim()) return false;
+      const n=binaKatNodeOf(bina,s.kat,s.kot); return n&&n.id===katId; })
+      .sort((a,b)=>String(katAtaKodlar(a)[0]||a.name||'').localeCompare(String(katAtaKodlar(b)[0]||b.name||''),'tr',{numeric:true}));
+    return {sr,all,here};
+  });
+}
+function flowSrtKey(katId,srId){ return katId+'|'+srId; }
+// kat dugumundeki sartname rozeti: idari dali acar/kapatir. Kat kapaninca altindaki acik
+// ozel no dallari da birakilir - kapali dal yeniden acildiginda sade baslar.
+function flowToggleSrt(katId){
+  FLOWW.exp[katId]=!FLOWW.exp[katId];
+  if(!FLOWW.exp[katId]) Object.keys(FLOWW.expS).forEach(k=>{ if(k.split('|')[0]===katId) delete FLOWW.expS[k]; });
+  render();
+}
+// sartname dugumu: ozel no dalini acar/kapatir ve dugumu secer (sag panel ayrintiyi gosterir)
+function flowToggleOzel(katId,srId){
+  const k=flowSrtKey(katId,srId);
+  FLOWW.expS[k]=!FLOWW.expS[k];
+  FLOWW.sel='s:'+k; render();
+}
 function setBinaYView(v){
   BINAYVIEW=v; try{localStorage.setItem('binayview',v);}catch(e){}
   render();
@@ -4879,11 +4929,49 @@ function setBinaYView(v){
 // alt alta dizilir, ara dugumler cocuklarinin ortasina oturur (klasik agac yerlesimi)
 function flowLayout(binas){
   const NW=170,NH=46,HG=64,VG=10,BW=228,BH=84,BGAP=42,X0=24;
+  const SRW=190,OZW=206; // idari dal dugumleri daha genis: sartname kodu ve ozel no okunakli kalsin
   const nodes=[],edges=[],byId={};
   let yCur=24,maxX=X0+BW;
   binas.forEach(b=>{
     const parcali=binaParcali(b);
     const use=parcali?lokwUsageMap(b):null;
+    /* IDARI DAL yerlesimi: acik kat dugumunun altina sartname, acik sartnamenin altina
+       ozel no dugumleri. Fiziksel dalla ayni kolonlari kullanir (depth), yalnizca y
+       akisina eklenir. Kapali dal hic dugum uretmez - dolayisiyla maliyeti sifirdir. */
+    const placeSrt=(l,depth)=>{
+      if(!FLOWW.exp[l.id]) return null;
+      const groups=flowKatSrt(b,l.id);
+      if(!groups.length) return null;
+      const mids=[];
+      groups.forEach(g=>{
+        const key=flowSrtKey(l.id,g.sr.id);
+        let ozMid=null;
+        if(FLOWW.expS[key] && g.here.length){
+          const oMids=[], gosterilen=g.here.slice(0,FLOW_OZEL_MAX);
+          gosterilen.forEach(sp=>{
+            const y=yCur; yCur+=NH+VG;
+            const x=X0+BW+HG+(depth+1)*(NW+HG);
+            const n={type:'ozel',sp,katId:l.id,srId:g.sr.id,x,y,w:OZW,h:NH};
+            nodes.push(n); maxX=Math.max(maxX,x+OZW); oMids.push(y+NH/2);
+          });
+          if(g.here.length>gosterilen.length){ // tasma: kalanlar Kat Paneli'nde
+            const y=yCur; yCur+=NH+VG;
+            const x=X0+BW+HG+(depth+1)*(NW+HG);
+            const n={type:'more',bina:b,katId:l.id,srId:g.sr.id,n:g.here.length-gosterilen.length,x,y,w:OZW,h:NH};
+            nodes.push(n); maxX=Math.max(maxX,x+OZW); oMids.push(y+NH/2);
+          }
+          ozMid=(oMids[0]+oMids[oMids.length-1])/2;
+        }
+        let y;
+        if(ozMid==null){ y=yCur; yCur+=NH+VG; }
+        else y=ozMid-NH/2;
+        const x=X0+BW+HG+depth*(NW+HG);
+        const n={type:'srt',sr:g.sr,katId:l.id,all:g.all.length,here:g.here,x,y,w:SRW,h:NH};
+        nodes.push(n); byId['s:'+key]=n;
+        maxX=Math.max(maxX,x+SRW); mids.push(y+NH/2);
+      });
+      return (mids[0]+mids[mids.length-1])/2;
+    };
     const place=(parentId,depth)=>{
       // Paylasimli dugum (ayni oda birden fazla fragmentte) yerlesimde SADECE birincil
       // ebeveyninin altina konur; diger ebeveynlerine yalnizca kenar cizilir. Boylece dugum
@@ -4892,10 +4980,13 @@ function flowLayout(binas){
       if(!kids.length)return null;
       const mids=[];
       kids.forEach(l=>{
+        // IDARI dal once (ustte), sonra FIZIKSEL dal - kat dugumu ikisinin ortasina oturur
+        const srtMid=l.level==='kat'?placeSrt(l,depth+1):null;
         const childMid=place(l.id,depth+1);
+        const dal=[srtMid,childMid].filter(v=>v!=null);
         let y;
-        if(childMid==null){ y=yCur; yCur+=NH+VG; } // yaprak: siradaki bos slota otur
-        else y=childMid-NH/2;                      // ara dugum: cocuklarinin ortasina
+        if(!dal.length){ y=yCur; yCur+=NH+VG; }        // yaprak: siradaki bos slota otur
+        else y=(Math.min(...dal)+Math.max(...dal))/2-NH/2; // ara dugum: dallarinin ortasina
         const x=X0+BW+HG+depth*(NW+HG);
         const n={type:'lok',lok:l,x,y,w:NW,h:NH,use:use&&use.sub[l.id]};
         nodes.push(n); byId[l.id]=n;
@@ -4915,11 +5006,18 @@ function flowLayout(binas){
   // kenarlar: her lokasyon dugumu ebeveynine (yoksa binasina) baglanir.
   // Paylasimli dugumden ebeveynlerinin HER BIRINE ayri kenar cikar.
   nodes.forEach(n=>{
-    if(n.type!=='lok')return;
-    lokParentIds(n.lok).forEach(pid=>{
-      const p=pid?byId[pid]:byId['b:'+n.lok.bina];
-      if(p)edges.push({x1:p.x+p.w,y1:p.y+p.h/2,x2:n.x,y2:n.y+n.h/2,shared:lokIsShared(n.lok)});
-    });
+    if(n.type==='lok'){
+      lokParentIds(n.lok).forEach(pid=>{
+        const p=pid?byId[pid]:byId['b:'+n.lok.bina];
+        if(p)edges.push({x1:p.x+p.w,y1:p.y+p.h/2,x2:n.x,y2:n.y+n.h/2,shared:lokIsShared(n.lok)});
+      });
+      return;
+    }
+    // idari dal kenarlari: kat -> sartname -> ozel no (fiziksel daldan renkle ayrilir)
+    if(n.type==='srt'){ const p=byId[n.katId];
+      if(p)edges.push({x1:p.x+p.w,y1:p.y+p.h/2,x2:n.x,y2:n.y+n.h/2,idari:1}); return; }
+    if(n.type==='ozel'||n.type==='more'){ const p=byId['s:'+flowSrtKey(n.katId,n.srId)];
+      if(p)edges.push({x1:p.x+p.w,y1:p.y+p.h/2,x2:n.x,y2:n.y+n.h/2,idari:1}); }
   });
   return {nodes,edges,W:maxX+60,H:yCur+30};
 }
@@ -4928,7 +5026,8 @@ function renderBinaFlow(){
   const {nodes,edges,W,H}=flowLayout(binas);
   const edgeHtml=edges.map(e=>{ const c=Math.max(24,(e.x2-e.x1)/2);
     // paylasimli dugumun baglantilari (ayni oda birden fazla fragmentte) kesikli ve renkli
-    return `<path d="M${e.x1} ${e.y1} C${e.x1+c} ${e.y1}, ${e.x2-c} ${e.y2}, ${e.x2} ${e.y2}" fill="none" stroke="${e.shared?'var(--green)':'var(--line)'}" stroke-width="${e.shared?2:1.5}"${e.shared?' stroke-dasharray="5 4"':''}/>`; }).join('');
+    const col=e.shared?'var(--green)':e.idari?'color-mix(in srgb,var(--amber) 55%,transparent)':'var(--line)';
+    return `<path d="M${e.x1} ${e.y1} C${e.x1+c} ${e.y1}, ${e.x2-c} ${e.y2}, ${e.x2} ${e.y2}" fill="none" stroke="${col}" stroke-width="${e.shared?2:1.5}"${e.shared?' stroke-dasharray="5 4"':''}/>`; }).join('');
   const nodeHtml=nodes.map(n=>{
     if(n.type==='bina'){
       const b=n.bina, col=buildingColor(b), pasif=isBinaPasif(b);
@@ -4942,6 +5041,32 @@ function renderBinaFlow(){
         <div class="sel-card-bar" style="margin:7px 0 0"><div class="scb-track"><i style="width:${specs.length?pct:0}%;background:${col}"></i></div><span class="scb-pct" style="min-width:30px;font-size:10.5px;color:${specs.length?col:'var(--dim)'}">${specs.length?pct.toFixed(0)+'%':'—'}</span></div>
       </div>`;
     }
+    /* IDARI DAL DUGUMLERI ------------------------------------------------------------
+       SARTNAME: iki bagi birlikte gosterir - "N kalem" (kapsam) + "M bu katta" (yerlesim).
+       Tiklayinca ozel no dali acilir/kapanir ve dugum secilir.
+       OZEL NO: tiklayinca dogrudan URUN DETAYI acilir (openSpecDetail). */
+    if(n.type==='srt'){
+      const sr=n.sr, cc=catColor(sr.section), key=flowSrtKey(n.katId,sr.id);
+      const open=!!FLOWW.expS[key], sel=FLOWW.sel==='s:'+key, hn=n.here.length;
+      return `<div class="floww-node srt ${sel?'sel':''} ${open?'open':''}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:${cc}" onclick="event.stopPropagation();flowToggleOzel('${esc(n.katId)}','${esc(sr.id)}')" title="${esc(sr.code)}${sr.name&&sr.name!==sr.code?' — '+esc(sr.name):''} · ${n.all} kalem, ${hn} tanesi bu kata atanmis${hn?' · ozel no dalini ac/kapat':' · bu kata atanmis kalem yok (Kat Ata yapilmamis olabilir)'}">
+        <div class="fw-row"><span class="lokw-lvl" style="--lc:${cc}">SARTNAME</span><span class="fw-name" style="flex:1">${esc(sr.code)}</span>${hn?`<span class="fw-caret ${open?'on':''}">${open?'−':'+'}</span>`:''}</div>
+        <div class="fw-sub">${n.all} kalem · <b style="color:${hn?'var(--green)':'var(--dim)'}">${hn}</b> bu katta</div>
+      </div>`;
+    }
+    if(n.type==='ozel'){
+      const sp=n.sp, koz=katAtaKodlar(sp), mp=specMontajProgress(sp), tgt=Number(sp.target)||0;
+      const lbl=koz.length?koz[0]:(sp.poz?'Poz '+sp.poz:(sp.code||sp.name||'—'));
+      return `<div class="floww-node ozel" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:var(--amber)" onclick="event.stopPropagation();openSpecDetail('${esc(sp.id)}')" title="${esc(sp.name||'')}${koz.length?' · Ozel No: '+esc(koz.join(', ')):''} · Montaj ${fmtNum(mp.installed)}/${fmtNum(tgt)} ${esc((sp.unit||'').split('/')[0].trim())} — urun detayi icin tiklayin">
+        <div class="fw-row"><span class="fw-ozel-code" style="flex:1">${esc(lbl)}</span>${koz.length>1?`<span class="fw-sart" title="${esc(koz.join(', '))}">+${koz.length-1}</span>`:''}</div>
+        <div class="fw-sub">${esc(sp.name||'')} · ${fmtNum(mp.installed)}/${fmtNum(tgt)}</div>
+      </div>`;
+    }
+    if(n.type==='more'){
+      return `<div class="floww-node more" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:var(--amber)" onclick="event.stopPropagation();openKatPanel('${esc(n.bina)}')" title="Tuvalde en fazla ${FLOW_OZEL_MAX} ozel no cizilir - kalanini Kat Paneli'nde gorun">
+        <div class="fw-row"><span class="fw-name" style="flex:1;color:var(--mute)">+${n.n} ozel no daha</span></div>
+        <div class="fw-sub">Kat Paneli'nde ac</div>
+      </div>`;
+    }
     const l=n.lok, lc=lokwLevelColor(l.level), sel=FLOWW.sel===l.id;
     const u=n.use, uTxt=u?lokwUseLabel(u):'';
     // kat dugumu: bu kati kapsayan sartnameler rozet olarak gorunur (detay ve atama sag panelde)
@@ -4952,7 +5077,7 @@ function renderBinaFlow(){
     const sharedNames=shared?lokParentIds(l).map(p=>{const x=p?getLok(p):null;return x?x.name:'';}).filter(Boolean):[];
     const sharedTip=shared?'Ayni oda '+sharedNames.length+' parcaya bagli: '+sharedNames.join(' + '):'';
     return `<div class="floww-node ${sel?'sel':''}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:${lc}" onclick="event.stopPropagation();flowSel('${l.id}')" title="${esc(lokPath(l.id))}${uTxt?' · '+esc(uTxt):''}${srtTip?' · '+esc(srtTip):''}${sharedTip?' · '+esc(sharedTip):''}">
-      <div class="fw-row"><span class="lokw-lvl" style="--lc:${lc}">${lokLevelLabel(l.level).toUpperCase()}</span><span class="fw-name" style="flex:1">${esc(l.name)}</span>${shared?`<span class="fw-shared" title="${esc(sharedTip)}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M10 13a5 5 0 007.07 0l2.83-2.83a5 5 0 00-7.07-7.07L11.5 4.5"/><path d="M14 11a5 5 0 00-7.07 0L4.1 13.83a5 5 0 007.07 7.07L12.5 19.5"/></svg>${sharedNames.length}</span>`:''}${srts.length?`<span class="fw-sart"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>${srts.length}</span>`:''}</div>
+      <div class="fw-row"><span class="lokw-lvl" style="--lc:${lc}">${lokLevelLabel(l.level).toUpperCase()}</span><span class="fw-name" style="flex:1">${esc(l.name)}</span>${shared?`<span class="fw-shared" title="${esc(sharedTip)}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M10 13a5 5 0 007.07 0l2.83-2.83a5 5 0 00-7.07-7.07L11.5 4.5"/><path d="M14 11a5 5 0 00-7.07 0L4.1 13.83a5 5 0 007.07 7.07L12.5 19.5"/></svg>${sharedNames.length}</span>`:''}${srts.length?`<span class="fw-sart clk ${FLOWW.exp[l.id]?'on':''}" onclick="event.stopPropagation();flowToggleSrt('${l.id}')" title="Sartname dalini ac/kapat - kat altinda sartnameler, onlarin altinda ozel no'lar cikar"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>${srts.length}</span>`:''}</div>
       <div class="fw-row" style="margin-top:3px">${l.level==='kat'&&l.kot!=null&&l.kot!==''?`<span class="fw-kot">Kot ${esc(l.kot)}</span>`:''}${uTxt?`<span class="fw-use">${uTxt}</span>`:''}</div>
     </div>`;
   }).join('');
@@ -5042,6 +5167,12 @@ function flowSidePanel(){
     const b=sel.slice(2);
     if(projBuildings().includes(b))return flowBinaPanel(b);
   }
+  // SARTNAME dugumu paneli (idari dal): kat + sartname kesisiminin ayrintisi
+  if(sel&&sel.slice(0,2)==='s:'){
+    const p=sel.slice(2).split('|'); const l=getLok(p[0]);
+    const sr=(DB.proje.sartnames||[]).find(x=>x.id===p[1]);
+    if(l&&sr) return flowSrtPanel(l,sr);
+  }
   // LOKASYON paneli
   if(sel){ const l=getLok(sel); if(l)return flowLokPanel(l); }
   // genel bakis
@@ -5055,6 +5186,36 @@ function flowSidePanel(){
     <div class="fw-stat"><span>Lokasyon dugumu</span><b>${lokTotal}</b></div>
     <div class="fw-sec">Kisayollar</div>
     <p class="fw-path" style="margin-bottom:0">Surukle: tuvali kaydir · Tekerlek: yakinlastir · Sigdir: tumunu goster.<br>Coklu ekleme: adlari virgulle ayirin. Seri: "Oda 1..8".</p>`;
+}
+/* SARTNAME dugumu paneli: secili kat + sartname kesisimi. Tuvalde yalnizca kati BU kata
+   atanmis kalemler dugum olarak cizildigi icin, panel farki acikca yazar - "kapsamda 150,
+   bu kata atanmis 27, 123 kalemin kati hic girilmemis" gibi. Bu fark dogrudan Kat Ata
+   eksigini gosterir; panelden Kat Paneli ve sartname duzenleme acilir. */
+function flowSrtPanel(l,sr){
+  const b=l.bina, cc=catColor(sr.section), key=flowSrtKey(l.id,sr.id);
+  const g=flowKatSrt(b,l.id).find(x=>x.sr.id===sr.id);
+  const all=g?g.all:[], here=g?g.here:[];
+  const katsiz=all.filter(s=>!String(s.kat||'').trim()&&!String(s.kot||'').trim()).length;
+  const baskaKat=all.length-here.length-katsiz;
+  let tt=0,mm=0; here.forEach(s=>{ if(s.exclude)return; tt+=Number(s.target)||0; mm+=specMontajProgress(s).installed; });
+  const pct=tt>0?Math.min(100,mm/tt*100):0;
+  const ozelN=here.reduce((n,s)=>n+katAtaKodlar(s).length,0);
+  const open=!!FLOWW.expS[key];
+  return `<h3><span class="lokw-lvl" style="--lc:${cc};vertical-align:2px">SARTNAME</span> ${esc(sr.code)}</h3>
+    <div class="fw-path">${esc(b)} / ${esc(lokPath(l.id))}${sr.name&&sr.name!==sr.code?' · '+esc(sr.name):''}</div>
+    <div class="fw-sec">Bu Katta</div>
+    <div class="fw-stat"><span>Kapsamdaki kalem</span><b>${all.length}</b></div>
+    <div class="fw-stat" title="Kati Kat Ata ile bu kat dugumune cozulen kalemler"><span>Bu kata atanmis</span><b style="color:${here.length?'var(--green)':'var(--dim)'}">${here.length}</b></div>
+    <div class="fw-stat" title="Bu kalemlerin uzerindeki toplam ozel no sayisi"><span>Ozel no</span><b>${ozelN}</b></div>
+    <div class="fw-stat"><span>Montaj</span><b>${tt>0?'%'+pct.toFixed(0):'—'}</b></div>
+    ${katsiz?`<p class="fw-path" style="margin:9px 0 0;color:var(--amber)">${katsiz} kalemin kati hic girilmemis - sartnameyi acip "Kat Ata" ile yerlestirin, sonra bu dalda gorunurler.</p>`:''}
+    ${baskaKat>0?`<p class="fw-path" style="margin:6px 0 0">${baskaKat} kalem bu sartnamenin baska katlarina atanmis.</p>`:''}
+    <div class="fw-sec">Islemler</div>
+    <div class="fw-actions">
+      ${here.length?`<button class="btn btn-ghost" onclick="flowToggleOzel('${esc(l.id)}','${esc(sr.id)}')">${open?'Ozel No Dalini Kapat':'Ozel No Dalini Ac ('+here.length+')'}</button>`:''}
+      <button class="btn btn-ghost" onclick="openKatPanel('${esc(b)}')">Kat Paneli</button>
+      ${can('define')?`<button class="btn btn-ghost" onclick="openSartnameModal('${esc(sr.id)}')">Sartnameyi Duzenle</button>`:''}
+    </div>`;
 }
 function flowBinaPanel(b){
   const col=buildingColor(b), pasif=isBinaPasif(b), parcali=binaParcali(b);
@@ -5866,9 +6027,21 @@ function katpKey(lbl){
   const m=s.match(/^(-?\d{1,3})(\s*\.?\s*kat)?$/i); if(m) return 'n:'+parseInt(m[1],10);
   return 'k:'+ktopKotFmt(s);
 }
-function katpLabel(key){
+// ad: lokasyon agacindaki kat dugumunun kendi adi (varsa). Numarasiz katlar ("CATI" gibi)
+// "Kot CATI" diye degil kendi adiyla gorunur.
+function katpLabel(key,ad){
   if(key==='__none') return 'Kat bilgisi girilmemis';
-  return key.charAt(0)==='n' ? key.slice(2)+'. Kat' : 'Kot '+key.slice(2);
+  if(key.charAt(0)==='n') return key.slice(2)+'. Kat';
+  return ad?String(ad):'Kot '+key.slice(2);
+}
+/* Bir KAT DUGUMUNUN panel anahtari. Kat Ata'nin kaleme yazdigi degerle AYNI kuraldan
+   uretilir (saveKatAta: kat no varsa o, yoksa kot, o da yoksa ad) - boylece kalemden
+   dogan grup ile lokasyon agacindan gelen kat ayni satirda bulusur, kat ikiye bolunmez. */
+function katpNodeKey(kn){
+  const no=parseKatNo(kn.name);
+  if(no!=null) return 'n:'+no;
+  const kot=(kn.kot!=null&&kn.kot!=='')?ktopKotFmt(kn.kot):'';
+  return katpKey(kot||kn.name);
 }
 // siralama: yukaridan asagiya (yuksek kat/kot ustte); kat numarasi kotla karismasin diye n: oncelikli
 function katpSira(key){
@@ -5890,17 +6063,32 @@ function katpData(bina){
     k.montaj+=specMontajProgress(sp).installed;
     (sp.lokTargets||[]).forEach(t=>{ const l=getLok(t.lokId); if(l&&l.level==='oda') k.odaIds.add(l.id); });
   });
-  // lokasyon agacindaki odalar: kat dugumu numarayla eslesen gruba baglanir
+  /* BINANIN KATLARI: kalem atanmamis olsa bile kat satiri acilir. Onceden gruplar YALNIZ
+     kalemlerden dogdugu icin, hicbir kalemi atanmamis bir kat panelde HIC gorunmuyordu -
+     o kata girilmis saha raporlari ve odalar da sessizce dusuyordu ("6. kat bos" degil,
+     "6. kat yok" gibi okunuyordu). Artik agactaki kat dugumleri de grup acar; kalemsiz kat
+     "0 kalem" satiri olarak durur ve Kat Ata eksigi acikca gorunur.
+     ARAMA yapiliyorken bos katlar acilmaz - arama sonucu bos satirlarla gurultulenmesin. */
+  const katNodes=binaLoklar(bina).filter(l=>l.level==='kat');
+  if(!q) katNodes.forEach(kn=>{
+    const key=katpNodeKey(kn); if(!key) return;
+    const k=K(key); k.ad=kn.name;
+    if(kn.kot!=null&&kn.kot!=='') k.kotlar.add(ktopKotFmt(kn.kot));
+  });
+  // lokasyon agacindaki odalar: kat dugumu ayni anahtar kuraliyla eslesen gruba baglanir
   const odalar=binaLoklar(bina).filter(l=>l.level==='oda');
-  binaLoklar(bina).filter(l=>l.level==='kat').forEach(kn=>{
-    const no=parseKatNo(kn.name); if(no==null) return;
-    const k=kats['n:'+no]; if(!k) return;
+  katNodes.forEach(kn=>{
+    const k=kats[katpNodeKey(kn)]; if(!k) return;
     odalar.forEach(o=>{ const ok=lokKatOf(o.id); if(ok&&ok.id===kn.id) k.odaIds.add(o.id); });
   });
-  // raporlar: once kalem bagiyla (kesin), kalem bagi yoksa kayittaki kat etiketiyle
+  /* raporlar: once kalem bagiyla (kesin), kalem bagi yoksa kayittaki kat etiketiyle.
+     Kat etiketi binada TANIMLI OLMAYAN bir kata isaret ediyorsa (yazim hatasi ya da
+     agactan sonradan silinmis kat) kayit artik sessizce dusmez - kendi satirini acar,
+     boylece gorunur ve duzeltilebilir. Arama sirasinda yeni satir acilmaz. */
   rEntries().filter(e=>e.bina===bina).forEach(e=>{
     const key=(e.specId&&specKat[e.specId])||katpKey(e.kat);
-    if(!key||!kats[key]) return;
+    if(!key) return;
+    if(!kats[key]){ if(q) return; K(key); }
     const k=kats[key]; if(!k.raps[e.tarih])k.raps[e.tarih]=[]; k.raps[e.tarih].push(e);
   });
   return Object.values(kats).sort((a,b)=>katpSira(b.key)-katpSira(a.key));
@@ -5954,7 +6142,7 @@ function renderKatPanel(){
     return `<div class="katp-kat ${acik?'on':''}">
       <button class="katp-head" onclick="katpToggle(${i})">
         <svg class="katp-chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
-        <span class="katp-name">${esc(katpLabel(k.key))}</span>
+        <span class="katp-name">${esc(katpLabel(k.key,k.ad))}</span>
         <span class="katp-meta">${kotTag}
           <span class="cat-tag" style="background:var(--panel2);color:var(--mute);border:1px solid var(--line)">${k.specs.length} kalem</span>
           ${k.odaIds.size?`<span class="cat-tag" style="background:rgba(59,130,246,.13);color:var(--blue)">${k.odaIds.size} oda</span>`:''}
