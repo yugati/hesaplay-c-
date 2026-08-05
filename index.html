@@ -1692,6 +1692,15 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .ac-item .ac-name{font-weight:600}
 .ac-item .ac-name mark{background:var(--amber);color:#1a1200;border-radius:2px;padding:0 1px}
 .ac-item .ac-sub{font-size:11px;color:var(--mute);font-family:var(--mono);margin-top:2px}
+/* siparis aramasinda "baska bina" satirlari: yanlislikla secilmesin diye acikca ayrisir */
+.ac-item .ac-sub[data-x],.nxb-src-h{letter-spacing:.4px}
+.nxb-src{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+.nxb-src-h{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--amber);font-family:var(--mono);margin-bottom:5px}
+.nxb-name{font-size:13px;font-weight:700;line-height:1.35;overflow-wrap:anywhere}
+.nxb-sub{font-size:11px;color:var(--mute);font-family:var(--mono);margin-top:3px;overflow-wrap:anywhere}
+.nxb-list{margin-top:9px;max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.nxb-row{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:9px 11px;background:var(--panel);border:1px solid var(--line);border-radius:9px;cursor:pointer;font-family:inherit;transition:border-color .12s,background .12s}
+.nxb-row:hover{border-color:var(--green);background:color-mix(in srgb,var(--green) 7%,var(--panel))}
 .ac-new{padding:9px 11px;cursor:pointer;font-size:12px;color:var(--amber);font-weight:600;background:var(--bg)}
 .ac-new:hover{background:var(--panel)}
 
@@ -12882,7 +12891,114 @@ function nordSpecSrc(){
     img:la.img,
     obj:{specId:sp.id,altId:a.id,code:la.code,ad:la.name,cat:sp.cat||'',unit:la.unit||sp.unit||'',grup:specGroupKey(sp),img:la.img,brand:la.brand}
   };});
-  return specs.concat(alts);
+  return specs.concat(alts).concat(nordXbinaSrc());
+}
+/* BASKA BINADA TANIMLI URUNLER (siparis satiri kisayolu) --------------------------------
+   Bir urun BU binanin sartnamesinde yoksa ama BASKA bir binada tanimliysa, arama listesinin
+   SONUNDA "baska bina" olarak gorunur. Secilince satira dogrudan YAZILMAZ: once bu binadaki
+   hangi kaleme ALTERNATIF olarak baglanacagi sorulur (nordXbinaOpen). Boylece siparis bu
+   binaya atanmis kalir - ilerleme/stok/montaj buraya sayilir - faturada ise gercekte alinan
+   urun gorunur (siparis satirinin cift kimligi: specId = ana kalem, altId/ad/kod = alinan).
+   URUN BAZINDA TEKILLESTIRILIR: ayni urun karsi binada 20 kaleme dagilmis olsa da TEK satir
+   cikar; kullaniciyi ilgilendiren urunun kendisidir, karsi binadaki hangi kalem oldugu degil.
+   Bu binada ZATEN tanimli urunler listeye hic girmez - normal arama onlari buluyor. */
+function nordXbinaSrc(){
+  const bina=NORD.bina||''; if(!bina) return [];
+  const varOlan=new Set();
+  (DB.proje.specs||[]).forEach(s=>{ if(!s.is_deleted&&(s.bina||'')===bina) varOlan.add(matKey(s.code,s.name)); });
+  const gorulen=new Set(), out=[];
+  (DB.proje.specs||[]).forEach(s=>{
+    if(s.is_deleted||(s.bina||'')===bina) return;
+    if(typeof canSeeBuilding==='function' && !canSeeBuilding(s.bina)) return;
+    const k=matKey(s.code,s.name);
+    if(varOlan.has(k)||gorulen.has(k)) return;
+    gorulen.add(k);
+    const mt=specMaterial(s), img=specImgOf(s), brand=(mt&&mt.brand)||s.brand||'';
+    out.push({ad:s.name||s.code||'?',
+      alt:(s.code||'')+' '+(s.name||'')+' '+brand+' '+(s.bina||'')+' baska bina',
+      sub:'BASKA BINA: '+(s.bina||'')+' · '+[s.code,brand,s.unit].filter(Boolean).join(' · ')+' — secince bu binaya baglanir',
+      img,
+      obj:{xbina:1,srcSpecId:s.id,code:s.code||'',ad:s.name,unit:s.unit||'',brand,img}});
+  });
+  return out;
+}
+/* Secilen "baska bina" urununu bu binadaki bir kaleme ALTERNATIF olarak baglar.
+   Alternatif kaydi burada olusur ve durumu dogrudan 'kullanımda' yazilir: varsayilan 'oneri'
+   birakilirsa activeAltsFor onu siparis aramasina KOYMAZ ve kullanici "yine bulamadim" der -
+   elle kurulumdaki asil tuzak buydu. */
+let _NXB=null;
+function nordXbinaOpen(lineIdx,srcSpecId){
+  if(!canEdit('proje')){ toast('Alternatif baglamak icin duzenleme yetkisi gerekir','err'); return; }
+  const src=(DB.proje.specs||[]).find(s=>s.id===srcSpecId); if(!src) return;
+  _NXB={i:lineIdx,srcSpecId,q:''}; nordXbinaRender();
+}
+function nordXbinaSet(v){ if(_NXB){ _NXB.q=v; nordXbinaRender(); } }
+function nordXbinaClose(){ _NXB=null; closeModal(); }
+function nordXbinaRender(){
+  closeModal(); const f=_NXB; if(!f) return;
+  const src=(DB.proje.specs||[]).find(s=>s.id===f.srcSpecId); if(!src) return;
+  const bina=NORD.bina||'', q=norm(f.q||'').trim();
+  let list=(DB.proje.specs||[]).filter(s=>!s.is_deleted&&(s.bina||'')===bina&&nordSartMatch(s));
+  if(q) list=list.filter(s=>norm((s.name||'')+' '+(s.code||'')+' '+(s.poz||'')+' '+katAtaKodlar(s).join(' ')+' '+specGroupKey(s)).indexOf(q)>=0);
+  const toplam=list.length, gosterilen=list.slice(0,40);
+  const rows=gosterilen.map(s=>{
+    const koz=katAtaKodlar(s);
+    const sub=[koz.length>1?koz.length+' özel kod':(koz[0]?'Özel '+koz[0]:''),s.kat?_katEtiket(s.kat):'',s.code,specGroupKey(s),s.unit].filter(Boolean).map(esc).join(' · ');
+    return `<button class="nxb-row" onclick="nordXbinaBind('${s.id}')">
+      <div style="flex:1;min-width:0"><div class="nxb-name">${esc(s.name||s.code||'?')}</div><div class="nxb-sub">${sub}</div></div>
+      <span class="cat-tag" style="background:color-mix(in srgb,var(--green) 16%,transparent);color:var(--green);flex-shrink:0">Bagla</span>
+    </button>`; }).join('')||`<p class="matd-empty" style="margin:10px 0">${q?'Aramaya uyan kalem yok.':'Bu binada kalem yok.'}</p>`;
+  const html=`<div class="modal-bg" onclick="if(event.target===this)nordXbinaClose()"><div class="modal wide"><div class="modal-head">
+    <h3>Baska Binadaki Urunu Bagla</h3><button class="mini-btn" onclick="nordXbinaClose()">x</button></div><div class="modal-body">
+    <div class="nxb-src">
+      <div class="nxb-src-h">SECILEN URUN · ${esc(src.bina||'')} / ${esc(specGroupKey(src))}</div>
+      <div class="nxb-name">${esc(src.name||src.code||'?')}</div>
+      <div class="nxb-sub">${[src.code,src.unit].filter(Boolean).map(esc).join(' · ')}</div>
+    </div>
+    <p class="t-meta" style="margin:12px 0 10px;line-height:1.65">Bu urun <b>${esc(bina)}</b> sartnamesinde tanimli degil. Asagidan <b>${esc(bina)}</b>'deki hangi kaleme <b>alternatif</b> olarak baglanacagini secin.<br>
+      Siparis <b>${esc(bina)}</b>'ye yazilir (ilerleme, stok ve montaj buraya sayilir); faturada ise gercekte alinan urun gorunur. Alternatif <b>kullanimda</b> durumuyla olusur, bir daha sormaz.</p>
+    <input placeholder="${esc(bina)} kalemlerinde ara (ad, kod, ozel no, poz) - Enter" value="${esc(f.q)}" onchange="nordXbinaSet(this.value)">
+    <div class="nxb-list">${rows}</div>
+    ${toplam>gosterilen.length?`<p class="t-meta" style="margin:8px 0 0">${toplam} kalemden ilk ${gosterilen.length} tanesi gosteriliyor - aramayla daraltin.</p>`:''}
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="nordXbinaClose()">Vazgec</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function nordXbinaBind(hedefSpecId){
+  const f=_NXB; if(!f) return;
+  if(!canEdit('proje')){ toast('Duzenleme yetkiniz yok','err'); return; }
+  const src=(DB.proje.specs||[]).find(s=>s.id===f.srcSpecId);
+  const hedef=(DB.proje.specs||[]).find(s=>s.id===hedefSpecId);
+  if(!src||!hedef) return;
+  try{
+    // ayni urun bu kaleme zaten alternatif olarak bagliysa YENISINI ACMA; yalnizca durumu
+    // siparis aramasina girmiyorsa duzelt
+    let alt=(DB.proje.alternatives||[]).find(a=>a.specId===hedefSpecId&&matKey(a.code,a.name)===matKey(src.code,src.name));
+    if(alt){
+      if(alt.status!=='kullanımda'&&alt.status!=='onaylandi'){ alt.status='kullanımda'; await sbUpdateProjeAlternative(alt.id,{...alt}); }
+    } else {
+      const mt=specMaterial(src);
+      alt={id:uid(),specId:hedefSpecId,matId:(mt&&mt.id)||src.matId||null,
+        name:src.name||'',code:src.code||'',brand:(mt&&mt.brand)||src.brand||'',
+        unit:src.unit||(mt&&mt.unit)||'',img:specImgOf(src)||null,
+        standart:(mt&&mt.standart)||src.standart||'',
+        weight:(mt&&mt.weight!=null)?mt.weight:(src.weight!=null?src.weight:null),
+        tags:(((mt&&mt.tags)||src.tags||[])).slice(),
+        reason:'tedarik',note:`${src.bina} / ${specGroupKey(src)} sartnamesinden alindi`,
+        status:'kullanımda',createdBy:(CURRENT_USER&&CURRENT_USER.username)||'?',createdAt:Date.now(),
+        approvedBy:null,approvedAt:null};
+      if(!DB.proje.alternatives) DB.proje.alternatives=[];
+      DB.proje.alternatives.push(alt);
+      await sbInsertProjeAlternative(alt);
+    }
+    // satiri doldur: ilerleme HEDEF kaleme, fatura gercekte alinan urune
+    const i=f.i, cur=NORD.lines[i]||{};
+    NORD.lines[i]={specId:hedefSpecId,altId:alt.id,code:alt.code,ad:alt.name,cat:hedef.cat||'',
+      unit:alt.unit||hedef.unit||'',grup:specGroupKey(hedef),img:alt.img||null,brand:alt.brand||'',
+      qty:cur.qty,lokId:cur.lokId,raw:''};
+    logAction('editSpec',`Baska bina alternatifi: "${alt.name}" (${src.bina}) -> ${hedef.name} (${NORD.bina})`);
+    nordXbinaClose(); nordRenderLines();
+    toast(`Baglandi - siparis ${NORD.bina}'ye yazilacak`);
+  }catch(err){ console.error(err); toast('Baglanamadi: '+(err.message||err),'err'); }
 }
 // Turkce/Excel sayi bicimini cozer: "1.234,56" -> 1234.56 ; "5" -> 5 ; gecersiz -> NaN
 function nordParseQty(s){
@@ -13012,6 +13128,8 @@ function nordAc(i){
   el.removeAttribute('readonly'); el.value=NORD.lines[i].raw||''; el.focus(); el.select();
   acOpen(el, nordSpecSrc(), (it,isNew)=>{
     if(isNew){ nordRenderLines(); return; }
+    // baska binada tanimli urun: satira YAZILMAZ, once bu binadaki bir kaleme baglanir
+    if(it.xbina){ nordRenderLines(); nordXbinaOpen(i,it.srcSpecId); return; }
     const keepQty=NORD.lines[i].qty, keepLok=NORD.lines[i].lokId;
     NORD.lines[i]={specId:it.specId,altId:it.altId||'',code:it.code,ad:it.ad,cat:it.cat,unit:it.unit,grup:it.grup||'',img:it.img||null,brand:it.brand||'',qty:keepQty,lokId:keepLok,raw:''};
     const dupKey=nordDupKey(NORD.lines[i]);
