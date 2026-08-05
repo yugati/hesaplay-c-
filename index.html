@@ -1023,14 +1023,17 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 /* idari dal (Sartname > Ozel No): fiziksel kirilimden sol serit ve zeminle ayrilir */
 .floww-node.srt{border-left:3px solid var(--cc)}
 .floww-node.srt.open{background:color-mix(in srgb,var(--cc) 8%,var(--panel))}
-.floww-node.ozel{border-left:3px solid var(--amber);background:color-mix(in srgb,var(--amber) 5%,var(--panel))}
-.floww-node.more{border-style:dashed;background:transparent}
-.fw-ozel-code{font-size:11.5px;font-family:var(--mono);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* ozel no KOMPAKT KART: izgarada dizilir, yalniz kod + durum tasir (urun adi ipucunda).
+   Yuzlerce kart birlikte gorulebilsin diye ic bosluklar ve yazi boylari kucuk tutulur. */
+.floww-node.ozel{border-left:3px solid var(--amber);background:color-mix(in srgb,var(--amber) 5%,var(--panel));padding:6px 8px}
+.floww-node.more{border-style:dashed;background:transparent;padding:6px 8px}
+.fw-ozel-code{font-size:10.5px;font-family:var(--mono);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fw-sipdot{width:6px;height:6px;border-radius:50%;background:var(--blue);flex-shrink:0}
 /* ozel no dugumundeki DURUM rozetleri: teslimat (stok girisi) ve montaj (saha raporu).
    Nokta rengi tek bakista durumu verir: gri = hic yok, amber = kismi, yesil = tamam. */
-.fw-stats{display:flex;align-items:center;gap:5px;margin-top:5px;overflow:hidden}
-.fw-st{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-family:var(--mono);font-weight:700;padding:2px 6px;border-radius:5px;white-space:nowrap;flex-shrink:0}
-.fw-st::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
+.fw-stats{display:flex;align-items:center;gap:4px;margin-top:4px;overflow:hidden}
+.fw-st{display:inline-flex;align-items:center;gap:3px;font-size:9px;font-family:var(--mono);font-weight:700;padding:1.5px 5px;border-radius:4px;white-space:nowrap;flex-shrink:0}
+.fw-st::before{content:'';width:5px;height:5px;border-radius:50%;background:currentColor;flex-shrink:0}
 .fw-st.none{color:var(--mute);background:color-mix(in srgb,var(--mute) 13%,transparent)}
 .fw-st.part{color:var(--amber);background:color-mix(in srgb,var(--amber) 15%,transparent)}
 .fw-st.ok{color:var(--green);background:color-mix(in srgb,var(--green) 16%,transparent)}
@@ -4935,7 +4938,7 @@ let FLOWW={pan:{x:30,y:20},zoom:1,sel:null,moved:false,exp:{},expS:{}};
      here = kati FIILEN bu dugume cozulen kalemler (YERLESIM - sp.kat/kot -> binaKatNodeOf)
    Ozel no dugumleri yalnizca "here" icin cizilir; fark sartname dugumunde "150 kalem ·
    27 bu katta" olarak gorunur - boylece Kat Ata bosluğu da bir bakista anlasilir. */
-const FLOW_OZEL_MAX=60; // tek dalda cizilecek en fazla ozel no dugumu (gerisi "+N daha")
+const FLOW_OZEL_MAX=500; // tek dalda cizilecek en fazla ozel no dugumu (gerisi "+N daha")
 function flowKatSrt(bina,katId){
   const srts=katSartnameleri(bina,katId);
   if(!srts.length) return [];
@@ -5019,25 +5022,30 @@ function flowLayout(binas){
      tam metin zaten dugumun baslik ipucunda durur). */
   const _srtCache={};
   const srtOf=(b,katId)=>{ const k=b+'|'+katId; if(!_srtCache[k])_srtCache[k]=flowKatSrt(b,katId); return _srtCache[k]; };
-  // ozel no dugumu 3 satirdir (kod / urun adi / durum rozetleri) - digerlerinden yuksek
-  const OZH=68;
-  let SRW=190,OZW=250; // taban genislik durum rozetleri satirini kaldiracak kadar
+  /* OZEL NO DUGUMU: kompakt kart (kod + durum), IZGARA halinde dizilir. Once her kart tam
+     genislikte ve tek kolonda alt alta duruyordu; bir sartnamede yuzlerce ozel no olunca
+     bu on binlerce piksel yukseklik demekti ve hicbiri birlikte gorulemiyordu. Ayrica urun
+     adi neredeyse her kartta AYNI tekrar ediyordu - asil yer kaybi oradaydi; ad artik
+     kartta degil ipucunda (hover) durur, kimlik zaten ozel kodun kendisidir. */
+  const OZH=44, OZGAP=10, OZCOLMAX=10;
+  let SRW=190,OZW=148;
   binas.forEach(b=>{
     if(!binaParcali(b))return;
     binaLoklar(b).filter(l=>l.level==='kat'&&FLOWW.exp[l.id]).forEach(l=>{
       srtOf(b,l.id).forEach(g=>{
         SRW=Math.max(SRW,118+String(g.sr.code||'').length*7.2); // SARTNAME cipi + kod + caret
         if(!FLOWW.expS[flowSrtKey(l.id,g.sr.id)])return;
+        // kompakt kart: kod satiri + "T x/y  M x/y" durum satiri. Urun adi karta girmez.
         g.here.slice(0,FLOW_OZEL_MAX).forEach(sp=>{
           const koz=katAtaKodlar(sp);
           const kod=koz[0]||(sp.poz?'Poz '+sp.poz:(sp.code||sp.name||''));
-          const alt=String(sp.name||'')+' · 000/000';
-          OZW=Math.max(OZW, 24+String(kod).length*7.2+(koz.length>1?28:0), 22+alt.length*6.1);
+          const hane=String(fmtNum(Number(sp.target)||0)).length;
+          OZW=Math.max(OZW, 18+String(kod).length*6.8+(koz.length>1?24:0), 96+hane*11);
         });
       });
     });
   });
-  SRW=Math.min(SRW,430); OZW=Math.min(OZW,580);
+  SRW=Math.min(SRW,430); OZW=Math.min(OZW,260);
   binas.forEach(b=>{
     const parcali=binaParcali(b);
     const use=parcali?lokwUsageMap(b):null;
@@ -5052,21 +5060,26 @@ function flowLayout(binas){
       groups.forEach(g=>{
         const key=flowSrtKey(l.id,g.sr.id);
         let ozMid=null;
+        let ozX=0;
         if(FLOWW.expS[key] && g.here.length){
-          const oMids=[], gosterilen=g.here.slice(0,FLOW_OZEL_MAX);
-          gosterilen.forEach(sp=>{
-            const y=yCur; yCur+=OZH+VG;
-            const x=X0+BW+HG+(depth+1)*(NW+HG);
-            const n={type:'ozel',sp,katId:l.id,srId:g.sr.id,x,y,w:OZW,h:OZH};
-            nodes.push(n); maxX=Math.max(maxX,x+OZW); oMids.push(y+OZH/2);
-          });
-          if(g.here.length>gosterilen.length){ // tasma: kalanlar Kat Paneli'nde
-            const y=yCur; yCur+=NH+VG;
-            const x=X0+BW+HG+(depth+1)*(NW+HG);
-            const n={type:'more',bina:b,katId:l.id,srId:g.sr.id,n:g.here.length-gosterilen.length,x,y,w:OZW,h:NH};
-            nodes.push(n); maxX=Math.max(maxX,x+OZW); oMids.push(y+NH/2);
-          }
-          ozMid=(oMids[0]+oMids[oMids.length-1])/2;
+          /* IZGARA: kartlar alt alta degil satir/sutun halinde dizilir. Sutun sayisi blok
+             kabaca KARE gorunsun diye secilir - hem cok uzun bir serit, hem asiri genis bir
+             bant olusmaz; boylece 200+ ozel no tek bakista birlikte gorulebilir. */
+          const gosterilen=g.here.slice(0,FLOW_OZEL_MAX);
+          const tasma=g.here.length-gosterilen.length;
+          const adet=gosterilen.length+(tasma>0?1:0);
+          const cols=Math.max(1,Math.min(OZCOLMAX,Math.ceil(Math.sqrt(adet*(OZH+VG)/(OZW+OZGAP)))));
+          const satir=Math.ceil(adet/cols);
+          ozX=X0+BW+HG+(depth+1)*(NW+HG);
+          const y0=yCur;
+          const koy=(k,node)=>{ const c=k%cols, r=Math.floor(k/cols);
+            node.x=ozX+c*(OZW+OZGAP); node.y=y0+r*(OZH+VG); node.w=OZW; node.h=OZH;
+            nodes.push(node); maxX=Math.max(maxX,node.x+OZW); };
+          gosterilen.forEach((sp,k)=>koy(k,{type:'ozel',sp,katId:l.id,srId:g.sr.id}));
+          if(tasma>0) koy(gosterilen.length,{type:'more',bina:b,katId:l.id,srId:g.sr.id,n:tasma});
+          const blokH=satir*(OZH+VG)-VG;
+          yCur=y0+satir*(OZH+VG);
+          ozMid=y0+blokH/2;
         }
         let y;
         if(ozMid==null){ y=yCur; yCur+=NH+VG; }
@@ -5074,6 +5087,9 @@ function flowLayout(binas){
         const x=X0+BW+HG+depth*(NW+HG);
         const n={type:'srt',sr:g.sr,katId:l.id,all:g.all.length,here:g.here,x,y,w:SRW,h:NH};
         nodes.push(n); byId['s:'+key]=n;
+        // TEK kenar: sartname -> izgara blogunun sol ortasi. Kart basina kenar cizmek
+        // yuzlerce egriden olusan okunmaz bir yumak yapiyordu.
+        if(ozMid!=null) edges.push({x1:x+SRW,y1:y+NH/2,x2:ozX,y2:ozMid,idari:1});
         maxX=Math.max(maxX,x+SRW); mids.push(y+NH/2);
       });
       return (mids[0]+mids[mids.length-1])/2;
@@ -5119,10 +5135,9 @@ function flowLayout(binas){
       });
       return;
     }
-    // idari dal kenarlari: kat -> sartname -> ozel no (fiziksel daldan renkle ayrilir)
+    // idari dal kenari: kat -> sartname. Sartname -> ozel no izgarasi kenari placeSrt'te
+    // TEK egri olarak cizilir (kart basina kenar okunmaz bir yumak yapiyordu).
     if(n.type==='srt'){ const p=byId[n.katId];
-      if(p)edges.push({x1:p.x+p.w,y1:p.y+p.h/2,x2:n.x,y2:n.y+n.h/2,idari:1}); return; }
-    if(n.type==='ozel'||n.type==='more'){ const p=byId['s:'+flowSrtKey(n.katId,n.srId)];
       if(p)edges.push({x1:p.x+p.w,y1:p.y+p.h/2,x2:n.x,y2:n.y+n.h/2,idari:1}); }
   });
   return {nodes,edges,W:maxX+60,H:yCur+30};
@@ -5170,19 +5185,17 @@ function renderBinaFlow(){
         du.siparis?`${du.siparis} siparis/fatura satiri`:'Henuz siparis yok',
         'Urun detayi icin tiklayin'].filter(Boolean).join(' · ');
       return `<div class="floww-node ozel" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:var(--amber)" onclick="event.stopPropagation();openSpecDetail('${esc(sp.id)}')" title="${ipucu}">
-        <div class="fw-row"><span class="fw-ozel-code" style="flex:1">${esc(lbl)}</span>${koz.length>1?`<span class="fw-sart" title="${esc(koz.join(', '))}">+${koz.length-1}</span>`:''}</div>
-        <div class="fw-sub">${esc(sp.name||'')}</div>
+        <div class="fw-row"><span class="fw-ozel-code" style="flex:1">${esc(lbl)}</span>${koz.length>1?`<span class="fw-sart" title="${esc(koz.join(', '))}">+${koz.length-1}</span>`:''}${du.siparis?`<span class="fw-sipdot" title="${du.siparis} siparis/fatura"></span>`:''}</div>
         <div class="fw-stats">
-          <span class="fw-st ${flowDurumSinif(du.teslim,du.hedef)}">Teslim ${fmtNum(du.teslim)}${hed}</span>
-          <span class="fw-st ${flowDurumSinif(du.montaj,du.hedef)}">Montaj ${fmtNum(du.montaj)}${hed}</span>
-          ${du.siparis?`<span class="fw-st sip">${du.siparis} sip</span>`:''}
+          <span class="fw-st ${flowDurumSinif(du.teslim,du.hedef)}" title="Teslim (stok girisi)">T ${fmtNum(du.teslim)}${hed}</span>
+          <span class="fw-st ${flowDurumSinif(du.montaj,du.hedef)}" title="Montaj (saha raporu)">M ${fmtNum(du.montaj)}${hed}</span>
         </div>
       </div>`;
     }
     if(n.type==='more'){
-      return `<div class="floww-node more" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:var(--amber)" onclick="event.stopPropagation();openKatPanel('${esc(n.bina)}')" title="Tuvalde en fazla ${FLOW_OZEL_MAX} ozel no cizilir - kalanini Kat Paneli'nde gorun">
-        <div class="fw-row"><span class="fw-name" style="flex:1;color:var(--mute)">+${n.n} ozel no daha</span></div>
-        <div class="fw-sub">Kat Paneli'nde ac</div>
+      return `<div class="floww-node more" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:var(--amber)" onclick="event.stopPropagation();openKatPanel('${esc(n.bina)}')" title="Tuvalde en fazla ${FLOW_OZEL_MAX} ozel no cizilir - kalan ${n.n} tanesini Kat Paneli'nde gorun">
+        <div class="fw-ozel-code" style="color:var(--mute)">+${n.n} daha</div>
+        <div class="fw-sub" style="margin-top:3px">Kat Paneli</div>
       </div>`;
     }
     const l=n.lok, lc=lokwLevelColor(l.level), sel=FLOWW.sel===l.id;
