@@ -4929,9 +4929,33 @@ function setBinaYView(v){
 // alt alta dizilir, ara dugumler cocuklarinin ortasina oturur (klasik agac yerlesimi)
 function flowLayout(binas){
   const NW=170,NH=46,HG=64,VG=10,BW=228,BH=84,BGAP=42,X0=24;
-  const SRW=190,OZW=206; // idari dal dugumleri daha genis: sartname kodu ve ozel no okunakli kalsin
   const nodes=[],edges=[],byId={};
   let yCur=24,maxX=X0+BW;
+  /* IDARI DAL GENISLIKLERI: sartname kodu ve urun adi KISALTILMADAN sigsin diye, ACIK
+     dallardaki en uzun metne gore hesaplanir. Tek bir genislik kullanilir (her dal kendi
+     genisligini secseydi kolonlar tirtikli olurdu). Yazi tipleri mono oldugu icin karakter
+     genisligi sabit sayilabilir: 11.5px kod ~7.2px/karakter, 10px alt satir ~6.1px/karakter.
+     Ust sinir, tek bir uzun adin tuvali asiri genisletmesini engeller (kalani ... olur,
+     tam metin zaten dugumun baslik ipucunda durur). */
+  const _srtCache={};
+  const srtOf=(b,katId)=>{ const k=b+'|'+katId; if(!_srtCache[k])_srtCache[k]=flowKatSrt(b,katId); return _srtCache[k]; };
+  let SRW=190,OZW=206;
+  binas.forEach(b=>{
+    if(!binaParcali(b))return;
+    binaLoklar(b).filter(l=>l.level==='kat'&&FLOWW.exp[l.id]).forEach(l=>{
+      srtOf(b,l.id).forEach(g=>{
+        SRW=Math.max(SRW,118+String(g.sr.code||'').length*7.2); // SARTNAME cipi + kod + caret
+        if(!FLOWW.expS[flowSrtKey(l.id,g.sr.id)])return;
+        g.here.slice(0,FLOW_OZEL_MAX).forEach(sp=>{
+          const koz=katAtaKodlar(sp);
+          const kod=koz[0]||(sp.poz?'Poz '+sp.poz:(sp.code||sp.name||''));
+          const alt=String(sp.name||'')+' · 000/000';
+          OZW=Math.max(OZW, 24+String(kod).length*7.2+(koz.length>1?28:0), 22+alt.length*6.1);
+        });
+      });
+    });
+  });
+  SRW=Math.min(SRW,430); OZW=Math.min(OZW,580);
   binas.forEach(b=>{
     const parcali=binaParcali(b);
     const use=parcali?lokwUsageMap(b):null;
@@ -4940,7 +4964,7 @@ function flowLayout(binas){
        akisina eklenir. Kapali dal hic dugum uretmez - dolayisiyla maliyeti sifirdir. */
     const placeSrt=(l,depth)=>{
       if(!FLOWW.exp[l.id]) return null;
-      const groups=flowKatSrt(b,l.id);
+      const groups=srtOf(b,l.id); // genislik on-hesabiyla ayni onbellek - ikinci kez suzulmez
       if(!groups.length) return null;
       const mids=[];
       groups.forEach(g=>{
