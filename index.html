@@ -1026,6 +1026,16 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .floww-node.ozel{border-left:3px solid var(--amber);background:color-mix(in srgb,var(--amber) 5%,var(--panel))}
 .floww-node.more{border-style:dashed;background:transparent}
 .fw-ozel-code{font-size:11.5px;font-family:var(--mono);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* ozel no dugumundeki DURUM rozetleri: teslimat (stok girisi) ve montaj (saha raporu).
+   Nokta rengi tek bakista durumu verir: gri = hic yok, amber = kismi, yesil = tamam. */
+.fw-stats{display:flex;align-items:center;gap:5px;margin-top:5px;overflow:hidden}
+.fw-st{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-family:var(--mono);font-weight:700;padding:2px 6px;border-radius:5px;white-space:nowrap;flex-shrink:0}
+.fw-st::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
+.fw-st.none{color:var(--mute);background:color-mix(in srgb,var(--mute) 13%,transparent)}
+.fw-st.part{color:var(--amber);background:color-mix(in srgb,var(--amber) 15%,transparent)}
+.fw-st.ok{color:var(--green);background:color-mix(in srgb,var(--green) 16%,transparent)}
+.fw-st.sip{color:var(--blue);background:color-mix(in srgb,var(--blue) 14%,transparent)}
+.fw-st.sip::before{display:none}
 .fw-caret{font-size:12px;font-weight:800;line-height:1;color:var(--mute);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 5px;flex-shrink:0}
 .fw-caret.on{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 45%,transparent)}
 .fw-name{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -4942,6 +4952,41 @@ function flowKatSrt(bina,katId){
   });
 }
 function flowSrtKey(katId,srId){ return katId+'|'+srId; }
+/* KALEM DURUM OZETI (ozel no dugumleri icin): her kalemin TESLIMAT ve MONTAJ durumu,
+   programdaki dogru birimlerden okunur - uydurma/tahmin yok:
+     siparis -> DB.proje.orders    kaleme bagli siparis/fatura sayisi
+     teslim  -> DB.proje.items     stok girisi. Siparis kaydedilince satirlari otomatik stok
+                girisi olusturur (nordSave), elle stok girisi de buraya duser; specProgress
+                ile AYNI kaynak ve ayni kural (type==='out' haric).
+     montaj  -> DB.rapor.entries   saha raporu; specMontajProgress ile ayni kaynak.
+   Tek seferde indekslenir: dugum basina tum tablolari taramak 60 dugumde pahaliya gelirdi.
+   specId'siz ESKI alim kayitlari icin specProgress'in cat+ad yedegi aynen korunur. */
+let _FLOWDUR=null;
+function flowMatKey(sp){ return (sp.cat||'')+'|'+String(sp.name||'').trim().toLowerCase(); }
+function flowDurumIndex(){
+  if(_FLOWDUR) return _FLOWDUR;
+  const alim={},alimKey={},mont={},sip={};
+  (DB.proje.items||[]).forEach(it=>{
+    if(it.is_deleted||it.type==='out')return;
+    const q=Number(it.qty)||0;
+    if(it.specId) alim[it.specId]=(alim[it.specId]||0)+q;
+    else { const k=(it.cat||'')+'|'+String(it.name||'').trim().toLowerCase(); alimKey[k]=(alimKey[k]||0)+q; }
+  });
+  ((DB.rapor&&DB.rapor.entries)||[]).forEach(e=>{ if(e.is_deleted||!e.specId)return;
+    mont[e.specId]=(mont[e.specId]||0)+(Number(e.miktar)||0); });
+  (DB.proje.orders||[]).forEach(o=>{ if(o.is_deleted)return;
+    [...new Set((o.lines||[]).map(l=>l.specId).filter(Boolean))].forEach(id=>{ sip[id]=(sip[id]||0)+1; }); });
+  _FLOWDUR={alim,alimKey,mont,sip};
+  return _FLOWDUR;
+}
+// bir kalemin durum sayilari (indeksten okunur)
+function flowDurum(sp){
+  const d=flowDurumIndex();
+  return { teslim:(d.alim[sp.id]||0)+(d.alimKey[flowMatKey(sp)]||0),
+           montaj:d.mont[sp.id]||0, siparis:d.sip[sp.id]||0, hedef:Number(sp.target)||0 };
+}
+// durum -> renk sinifi: hedef varsa tamamlanma oranina, yoksa "hic var mi" sorusuna gore
+function flowDurumSinif(v,hedef){ return hedef>0 ? (v>=hedef?'ok':(v>0?'part':'none')) : (v>0?'ok':'none'); }
 // kat dugumundeki sartname rozeti: idari dali acar/kapatir. Kat kapaninca altindaki acik
 // ozel no dallari da birakilir - kapali dal yeniden acildiginda sade baslar.
 function flowToggleSrt(katId){
@@ -4974,7 +5019,9 @@ function flowLayout(binas){
      tam metin zaten dugumun baslik ipucunda durur). */
   const _srtCache={};
   const srtOf=(b,katId)=>{ const k=b+'|'+katId; if(!_srtCache[k])_srtCache[k]=flowKatSrt(b,katId); return _srtCache[k]; };
-  let SRW=190,OZW=206;
+  // ozel no dugumu 3 satirdir (kod / urun adi / durum rozetleri) - digerlerinden yuksek
+  const OZH=68;
+  let SRW=190,OZW=250; // taban genislik durum rozetleri satirini kaldiracak kadar
   binas.forEach(b=>{
     if(!binaParcali(b))return;
     binaLoklar(b).filter(l=>l.level==='kat'&&FLOWW.exp[l.id]).forEach(l=>{
@@ -5008,10 +5055,10 @@ function flowLayout(binas){
         if(FLOWW.expS[key] && g.here.length){
           const oMids=[], gosterilen=g.here.slice(0,FLOW_OZEL_MAX);
           gosterilen.forEach(sp=>{
-            const y=yCur; yCur+=NH+VG;
+            const y=yCur; yCur+=OZH+VG;
             const x=X0+BW+HG+(depth+1)*(NW+HG);
-            const n={type:'ozel',sp,katId:l.id,srId:g.sr.id,x,y,w:OZW,h:NH};
-            nodes.push(n); maxX=Math.max(maxX,x+OZW); oMids.push(y+NH/2);
+            const n={type:'ozel',sp,katId:l.id,srId:g.sr.id,x,y,w:OZW,h:OZH};
+            nodes.push(n); maxX=Math.max(maxX,x+OZW); oMids.push(y+OZH/2);
           });
           if(g.here.length>gosterilen.length){ // tasma: kalanlar Kat Paneli'nde
             const y=yCur; yCur+=NH+VG;
@@ -5081,6 +5128,7 @@ function flowLayout(binas){
   return {nodes,edges,W:maxX+60,H:yCur+30};
 }
 function renderBinaFlow(){
+  _FLOWDUR=null; // durum indeksi her cizimde tazelenir (siparis/alim/rapor degismis olabilir)
   const binas=projBuildings();
   const {nodes,edges,W,H}=flowLayout(binas);
   const edgeHtml=edges.map(e=>{ const c=Math.max(24,(e.x2-e.x1)/2);
@@ -5113,11 +5161,22 @@ function renderBinaFlow(){
       </div>`;
     }
     if(n.type==='ozel'){
-      const sp=n.sp, koz=katAtaKodlar(sp), mp=specMontajProgress(sp), tgt=Number(sp.target)||0;
+      const sp=n.sp, koz=katAtaKodlar(sp), du=flowDurum(sp), br=(sp.unit||'').split('/')[0].trim();
       const lbl=koz.length?koz[0]:(sp.poz?'Poz '+sp.poz:(sp.code||sp.name||'—'));
-      return `<div class="floww-node ozel" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:var(--amber)" onclick="event.stopPropagation();openSpecDetail('${esc(sp.id)}')" title="${esc(sp.name||'')}${koz.length?' · Ozel No: '+esc(koz.join(', ')):''} · Montaj ${fmtNum(mp.installed)}/${fmtNum(tgt)} ${esc((sp.unit||'').split('/')[0].trim())} — urun detayi icin tiklayin">
+      const hed=du.hedef?'/'+fmtNum(du.hedef):'';
+      const ipucu=[esc(sp.name||''), koz.length?'Ozel No: '+esc(koz.join(', ')):'',
+        `Teslim (stok girisi): ${fmtNum(du.teslim)}${hed} ${esc(br)}`,
+        `Montaj (saha raporu): ${fmtNum(du.montaj)}${hed} ${esc(br)}`,
+        du.siparis?`${du.siparis} siparis/fatura satiri`:'Henuz siparis yok',
+        'Urun detayi icin tiklayin'].filter(Boolean).join(' · ');
+      return `<div class="floww-node ozel" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:var(--amber)" onclick="event.stopPropagation();openSpecDetail('${esc(sp.id)}')" title="${ipucu}">
         <div class="fw-row"><span class="fw-ozel-code" style="flex:1">${esc(lbl)}</span>${koz.length>1?`<span class="fw-sart" title="${esc(koz.join(', '))}">+${koz.length-1}</span>`:''}</div>
-        <div class="fw-sub">${esc(sp.name||'')} · ${fmtNum(mp.installed)}/${fmtNum(tgt)}</div>
+        <div class="fw-sub">${esc(sp.name||'')}</div>
+        <div class="fw-stats">
+          <span class="fw-st ${flowDurumSinif(du.teslim,du.hedef)}">Teslim ${fmtNum(du.teslim)}${hed}</span>
+          <span class="fw-st ${flowDurumSinif(du.montaj,du.hedef)}">Montaj ${fmtNum(du.montaj)}${hed}</span>
+          ${du.siparis?`<span class="fw-st sip">${du.siparis} sip</span>`:''}
+        </div>
       </div>`;
     }
     if(n.type==='more'){
