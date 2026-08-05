@@ -848,6 +848,13 @@ tbody tr:hover{background:var(--hover)}
 .specf-req{color:var(--amber)}
 .specfg-head{display:grid;grid-template-columns:220px 220px minmax(0,1fr);gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:14px}
 .specfg-head .frow{margin-bottom:0}
+/* TOPLU GIRIS - SAYFA USTU ARAMA: gridin uzerinde sabit duran ana giris kutusu */
+.specf-topsearch{display:flex;align-items:center;gap:12px;margin:0 0 12px;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:12px;flex-wrap:wrap}
+.specf-topsearch .ac-wrap{flex:1;min-width:240px;display:flex;align-items:center;gap:9px;background:var(--bg);border:1.5px solid var(--line);border-radius:10px;padding:0 12px;transition:border-color .13s}
+.specf-topsearch .ac-wrap:focus-within{border-color:var(--amber)}
+.specf-topsearch svg{width:17px;height:17px;color:var(--mute);flex-shrink:0}
+.specf-topsearch input{flex:1;min-width:0;background:none;border:none;outline:none;padding:11px 0;font-size:14px;color:var(--ink);font-family:inherit}
+.specf-topsearch-hint{font-size:11.5px;color:var(--mute);font-family:var(--mono);flex-shrink:0}
 .specfg-wrap{border:1px solid var(--line);border-radius:12px;overflow-x:auto;background:var(--panel)}
 .specfg{width:100%;border-collapse:collapse;font-size:13px;min-width:960px}
 .specfg th{background:var(--panel2);text-align:left;padding:9px 10px;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--mute);border-bottom:1px solid var(--line);white-space:nowrap}
@@ -1654,7 +1661,15 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 
 /* akilli autocomplete */
 .ac-wrap{position:relative}
-.ac-drop{position:absolute;left:0;right:0;top:calc(100% + 3px);z-index:50;background:var(--panel2);border:1px solid var(--dim);border-radius:9px;max-height:230px;overflow:auto;box-shadow:0 14px 36px rgba(0,0,0,.5)}
+/* Acilir liste GOVDEYE tasinir ve position:fixed ile girdinin altina konumlanir (acPos).
+   Eskiden .ac-wrap icinde position:absolute duruyordu ve iki ayri sorun yasiyordu:
+   (1) overflow'lu bir kapsayicida (orn. .specfg-wrap overflow-x:auto - bir eksen gorunur
+       degilse tarayici digerini de auto sayar) dikey olarak KIRPILIYORDU;
+   (2) <table> icindeyken sayfadaki position:fixed cubuklarin ARKASINDA kaliyordu - z-index
+       ne yapilirsa yapilsin (bilinen katmanlama hatasi; Siparis Ekle sayfasi bu yuzden
+       tablo yerine div satir kullaniyor).
+   Govdeye tasininca iki sorun da kokten kalkar; z-index modallerin de ustunde (400). */
+.ac-drop{position:fixed;z-index:400;background:var(--panel2);border:1px solid var(--dim);border-radius:9px;max-height:280px;overflow:auto;box-shadow:0 14px 36px rgba(0,0,0,.5)}
 .ac-item{padding:9px 11px;cursor:pointer;border-bottom:1px solid var(--line);font-size:13px}
 .ac-item:last-child{border-bottom:none}
 .ac-item:hover,.ac-item.hl{background:var(--bg)}
@@ -9064,6 +9079,22 @@ function specfNewMat(i){
   };
   openMaterialModal(null,true);
 }
+/* SAYFA USTU MALZEME ARAMASI: toplu girisin ana giris noktasi. Satir ici arama tablo
+   hucresinde kucuk kaliyor ve her seferinde dogru satira tiklamayi gerektiriyordu; bu kutu
+   sabit yerde durur. Secilen malzeme ILK BOS satira yazilir (bos satir yoksa yenisi acilir),
+   kutu temizlenir ve odak aramada KALIR - arka arkaya malzeme eklenebilir. Satir ici arama
+   kaldirilmadi: var olan bir satirin malzemesini degistirmek icin hala kullanilir. */
+function specfTopAc(el){ acOpen(el, matLibSrc(), specfTopPick, false); }
+function specfTopPick(it,isNew){
+  if(isNew)return; const f=_SPECF; if(!f)return;
+  let i=f.rows.findIndex(r=>!r.mat);
+  if(i<0){ f.rows.push(_specfEmptyRow()); i=f.rows.length-1; }
+  const r=f.rows[i]; r.mat={...it}; r.unit=it.unit||''; r.err='';
+  specfGhost(); specfDraw();
+  toast(`${i+1}. satir: ${it.ad}`);
+  const inp=document.getElementById('specfTopSearch');
+  if(inp){ inp.value=''; inp.focus(); specfTopAc(inp); }
+}
 function specfDelRow(i){ const f=_SPECF; if(!f)return; f.rows.splice(i,1); if(!f.rows.length)f.rows.push(_specfEmptyRow()); specfDraw(); }
 function specfAddRow(){ const f=_SPECF; if(!f)return; f.rows.push(_specfEmptyRow()); specfDraw();
   const m=document.querySelector('#specfr_'+(f.rows.length-1)+' .specfg-mat-inp'); if(m)m.focus(); }
@@ -9166,6 +9197,13 @@ function renderSpecFormPage(){
       <div class="frow"><label>Bolum</label><select onchange="specfHead('cat',this.value)">${(DB.proje.sections||PROJ_CATS).map(c=>`<option ${f.head.cat===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
       <div class="frow"><label>Sartname <span class="specf-req">*</span></label><select onchange="specfHead('grup',this.value)">${grps.length?grps.map(g=>`<option ${f.head.grup===g?'selected':''}>${esc(g)}</option>`).join(''):'<option value="">- once Bolum & Sartname ekranindan tanimlayin -</option>'}</select></div>
     </div>
+    ${f.id?'':`<div class="specf-topsearch">
+      <div class="ac-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <input id="specfTopSearch" placeholder="Kutuphaneden malzeme ara - secince asagiya satir olarak eklenir" autocomplete="off" onfocus="specfTopAc(this)">
+      </div>
+      <span class="specf-topsearch-hint">sec &rarr; satir eklenir &rarr; arama hazir kalir</span>
+    </div>`}
     <div class="specfg-wrap"><table class="specfg"><thead><tr>
       <th></th>
       <th class="c-mat"><span class="specfg-num">1</span>Malzeme <span class="specf-req">*</span></th>
@@ -12461,12 +12499,27 @@ let AC={el:null,drop:null,src:[],onPick:null,allowNew:true,hl:-1,q:''};
 function acOpen(inputEl, src, onPick, allowNew){
   acClose();
   AC={el:inputEl,src,onPick,allowNew:allowNew!==false,hl:-1,q:inputEl.value,drop:null};
-  const wrap=inputEl.closest('.ac-wrap')||inputEl.parentElement;
   const drop=document.createElement('div'); drop.className='ac-drop'; AC.drop=drop;
-  wrap.appendChild(drop);
-  acRender();
+  document.body.appendChild(drop); // GOVDEYE portal - kirpilma ve katmanlama sorunlari icin
+  acPos(); acRender();
   inputEl.addEventListener('input',acInput);
   inputEl.addEventListener('keydown',acKey);
+  // girdi kaydirilinca/pencere degisince liste onunla birlikte tasinir (capture: ic
+  // kaydirma kapsayicilari da yakalanir)
+  window.addEventListener('scroll',acPos,true);
+  window.addEventListener('resize',acPos);
+}
+// listeyi girdinin altina (yer yoksa ustune) konumlandirir; ekran disina tasmaz
+function acPos(){
+  if(!AC||!AC.drop||!AC.el||!AC.el.isConnected) return;
+  const r=AC.el.getBoundingClientRect(), d=AC.drop;
+  const altBos=window.innerHeight-r.bottom-10, ustBos=r.top-10;
+  const asagi=altBos>=160||altBos>=ustBos;
+  d.style.width=Math.max(240,r.width)+'px';
+  d.style.left=Math.max(8,Math.min(r.left,window.innerWidth-Math.max(240,r.width)-8))+'px';
+  d.style.maxHeight=Math.max(120,Math.min(300,asagi?altBos:ustBos))+'px';
+  if(asagi){ d.style.top=(r.bottom+3)+'px'; d.style.bottom='auto'; }
+  else { d.style.bottom=(window.innerHeight-r.top+3)+'px'; d.style.top='auto'; }
 }
 function acInput(e){ AC.q=e.target.value; AC.hl=-1; acRender(); }
 function acRender(){
@@ -12479,6 +12532,7 @@ function acRender(){
     html+=`<div class="ac-new" onmousedown="acPickNew()">+ "${esc(AC.q.trim())}" yeni olarak ekle</div>`;
   if(!html) html=`<div class="ac-item" style="color:var(--mute)">Sonuc yok</div>`;
   AC._list=list; AC.drop.innerHTML=html;
+  acPos(); // icerik degisince yukseklik/yon yeniden hesaplanir
 }
 function acKey(e){
   if(!AC.drop)return;
@@ -12490,7 +12544,9 @@ function acKey(e){
 }
 function acPick(i){ const it=AC._list[i]; if(!it)return; const cb=AC.onPick, el=AC.el; acClose(); cb(it.obj||it, false); }
 function acPickNew(){ const q=AC.q.trim(); const cb=AC.onPick; acClose(); cb({ad:q}, true); }
-function acClose(){ if(AC.el){ AC.el.removeEventListener('input',acInput); AC.el.removeEventListener('keydown',acKey); } if(AC.drop)AC.drop.remove(); AC={el:null,drop:null,src:[],onPick:null,allowNew:true,hl:-1,q:''}; }
+function acClose(){ if(AC.el){ AC.el.removeEventListener('input',acInput); AC.el.removeEventListener('keydown',acKey); }
+  window.removeEventListener('scroll',acPos,true); window.removeEventListener('resize',acPos);
+  if(AC.drop)AC.drop.remove(); AC={el:null,drop:null,src:[],onPick:null,allowNew:true,hl:-1,q:''}; }
 document.addEventListener('mousedown',e=>{ if(AC.drop && !e.target.closest('.ac-drop') && e.target!==AC.el) acClose(); });
 
 /* ===================================================================
