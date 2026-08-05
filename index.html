@@ -463,7 +463,16 @@ main{flex:1;padding:clamp(16px,2vw,28px);max-width:1600px;width:100%;margin:0 au
    ayri sutun degil, urun hucresinin altinda kucuk etiketler - boylece dar pencerede
    (orn. CAD yaninda docked tarayici) "Urun" alani sifira sikismiyor. */
 .nord-rows-wrap{overflow:visible;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm)}
-.nord-row{display:grid;grid-template-columns:28px minmax(0,1fr) 120px 36px;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line)}
+.nord-row{display:grid;grid-template-columns:22px 28px minmax(0,1fr) 120px 36px;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line)}
+/* SIRA TUTAMAGI: satirda input/select oldugu icin TUM satir draggable yapilamaz (metin
+   secimi bozulur) - yalnizca tutamaga basilinca satir gecici olarak draggable olur. */
+.nord-grip{display:flex;align-items:center;justify-content:center;cursor:grab;color:var(--dim);border-radius:5px;padding:4px 0;transition:color .12s,background .12s;-webkit-user-select:none;user-select:none}
+.nord-grip:hover{color:var(--mute);background:color-mix(in srgb,var(--dim) 22%,transparent)}
+.nord-grip:active{cursor:grabbing}
+.nord-grip svg{width:13px;height:13px;pointer-events:none}
+.nord-row.drag{opacity:.4}
+.nord-row.drop-ust{box-shadow:inset 0 3px 0 var(--amber)}
+.nord-row.drop-alt{box-shadow:inset 0 -3px 0 var(--amber)}
 .nord-row:last-child{border-bottom:none}
 .nord-row:not(.nord-row-head):hover{background:var(--dim)08}
 .nord-row-head{padding:10px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--mute);font-weight:700;background:var(--panel2);border-radius:var(--radius) var(--radius) 0 0}
@@ -13193,6 +13202,47 @@ function nordAc(i){
 // kadar yukseltilirse yukseltilsin acilir liste sabit cubugun ARKASINDA kaliyor. Div tabanli
 // satirlarda bu sorun olusmuyor (uygulamadaki eski .oline satir editoru de bu yuzden tablo
 // kullanmiyor).
+function icoGrip(){ return '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.7"/><circle cx="15" cy="6" r="1.7"/><circle cx="9" cy="12" r="1.7"/><circle cx="15" cy="12" r="1.7"/><circle cx="9" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/></svg>'; }
+/* SATIR SIRALAMASI (surukle-birak) - hem yeni sipariste hem duzenlemede calisir (ikisi de
+   ayni NORD.lines dizisini kullanir). Satir sirasi kaydedilen faturanin satir sirasidir.
+   Tum satir draggable YAPILMAZ: icinde input/select var, metin secimi bozulurdu. Tutamaga
+   basilinca satir gecici olarak draggable olur, birakinca geri alinir. Birakma noktasi
+   satirin ust/alt yarisina gore belirlenir ve o kenarda amber cizgi olarak gosterilir. */
+let _NDRAG=null;
+function nordDragArm(el){ const r=el.closest('.nord-row'); if(r) r.draggable=true; }
+function nordDragDisarm(el){ const r=el.closest('.nord-row'); if(r) r.draggable=false; }
+function nordDragStart(ev,i){
+  _NDRAG=i;
+  try{ ev.dataTransfer.effectAllowed='move'; ev.dataTransfer.setData('text/plain',String(i)); }catch(e){}
+  const r=ev.currentTarget; setTimeout(()=>{ if(r) r.classList.add('drag'); },0);
+}
+function _nordUstYari(ev,r){ const b=r.getBoundingClientRect(); return (ev.clientY-b.top)<b.height/2; }
+function nordDragOver(ev,i){
+  if(_NDRAG==null||_NDRAG===i) return;
+  ev.preventDefault();
+  try{ ev.dataTransfer.dropEffect='move'; }catch(e){}
+  const r=ev.currentTarget, ust=_nordUstYari(ev,r);
+  r.classList.toggle('drop-ust',ust); r.classList.toggle('drop-alt',!ust);
+}
+function nordDragLeave(ev){ ev.currentTarget.classList.remove('drop-ust','drop-alt'); }
+function nordDrop(ev,i){
+  ev.preventDefault();
+  const from=_NDRAG, r=ev.currentTarget, ust=_nordUstYari(ev,r);
+  r.classList.remove('drop-ust','drop-alt'); _NDRAG=null;
+  if(from==null||from===i) return;
+  let to=ust?i:i+1;
+  if(from<to) to--;            // kendi yerinden cikinca hedef indeks bir geri kayar
+  if(to===from) return;
+  const [tasinan]=NORD.lines.splice(from,1);
+  NORD.lines.splice(to,0,tasinan);
+  nordRenderLines();
+  toast(`${from+1}. satir -> ${to+1}. sira`);
+}
+function nordDragEnd(){
+  _NDRAG=null;
+  document.querySelectorAll('#nordLinesWrap .nord-row').forEach(r=>{
+    r.classList.remove('drag','drop-ust','drop-alt'); r.draggable=false; });
+}
 function nordLinesHtml(){
   const dupCounts=nordDupCounts();
   const rows=NORD.lines.map((l,i)=>{
@@ -13218,14 +13268,15 @@ function nordLinesHtml(){
       :`<div class="ac-wrap"><input id="nord_ad_${i}" placeholder="${l.raw?'Eslesme bulunamadi - urun secin':(NORD.sart?esc(NORD.sart)+' icinde ara...':'Ozel no, spek no veya ad ara...')}" value="${esc(l.raw||'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" onclick="nordAc(${i})" style="cursor:pointer${l.raw?';border-color:var(--red)66':''}">${status}</div>`;
     // parcali giris binasinda satir opsiyonel olarak bir lokasyona baglanabilir (toplu alimlar lokasyonsuz girilebilir)
     const lokSel=(ok&&binaParcali(NORD.bina))?`<span class="nord-loc${l.lokId?' has':''}"><select onchange="nordSetLok(${i},this)" onclick="event.stopPropagation()">${lokSelectOptions(NORD.bina,l.lokId||'','- lokasyon (opsiyonel) -')}</select></span>`:'';
-    return `<div class="nord-row ${ok?(isDup?'dup':''):'open'}">
+    return `<div class="nord-row ${ok?(isDup?'dup':''):'open'}" ondragstart="nordDragStart(event,${i})" ondragover="nordDragOver(event,${i})" ondragleave="nordDragLeave(event)" ondrop="nordDrop(event,${i})" ondragend="nordDragEnd()">
+      <span class="nord-grip" title="Surukleyerek sirayi degistir" onmousedown="nordDragArm(this)" onmouseup="nordDragDisarm(this)">${icoGrip()}</span>
       <span class="nord-idx t-meta">${i+1}</span>
       <div class="nord-prod-col">${prodCell}${lokSel}</div>
       <div class="nord-qty-col"><input type="number" step="any" min="0" placeholder="0" value="${esc(l.qty)}" oninput="nordUpd(${i},'qty',this.value)">${ok&&l.unit?`<span class="nord-unit">${esc(l.unit)}</span>`:''}</div>
       <button class="mini-btn del" onclick="nordRm(${i})">${icoTrash()}</button>
     </div>`;
   }).join('');
-  return `<div class="nord-row nord-row-head"><span class="t-meta">#</span><span class="t-meta">Urun</span><span class="t-meta" style="text-align:right">Miktar</span><span></span></div>${rows}`;
+  return `<div class="nord-row nord-row-head"><span></span><span class="t-meta">#</span><span class="t-meta">Urun</span><span class="t-meta" style="text-align:right">Miktar</span><span></span></div>${rows}`;
 }
 function nordSummaryHtml(){
   const ok=NORD.lines.filter(l=>l.specId&&Number(l.qty)>0);
