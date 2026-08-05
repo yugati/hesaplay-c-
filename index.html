@@ -1368,6 +1368,20 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
    kalem tablosu SABIT sutun genislikli (table-layout:fixed) - uzun malzeme adi/spek kodu
    sutunlari itip kaydiramaz, her satir ayni hizada kalir */
 .modal.drawer.inv-drawer{max-width:780px}
+/* FATURA DUZENLEME GECMISI: hangi urun eklendi/cikti/miktari degisti, ne zaman, kim */
+.inv-hist{margin-top:14px;border-top:1px dashed var(--line);padding-top:12px}
+.inv-hist-h{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--mute);font-family:var(--mono);margin-bottom:9px;display:flex;align-items:center;gap:7px}
+.inv-hist-h span{background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:1px 8px;font-size:10px}
+.inv-hist-row{border-left:2px solid var(--line);padding:0 0 10px 11px;margin-left:3px}
+.inv-hist-row:last-child{padding-bottom:0}
+.inv-hist-ts{font-size:11px;font-family:var(--mono);color:var(--mute);margin-bottom:5px}
+.ih-line{display:flex;align-items:baseline;gap:7px;font-size:12px;padding:2px 0;flex-wrap:wrap}
+.ih-ad{flex:1;min-width:120px;overflow-wrap:anywhere}
+.ih-tag{font-size:9px;font-weight:700;font-family:var(--mono);letter-spacing:.3px;padding:1.5px 6px;border-radius:5px;flex-shrink:0}
+.ih-tag.ek{color:var(--green);background:color-mix(in srgb,var(--green) 15%,transparent)}
+.ih-tag.ck{color:var(--red);background:color-mix(in srgb,var(--red) 15%,transparent)}
+.ih-tag.dg{color:var(--amber);background:color-mix(in srgb,var(--amber) 15%,transparent)}
+.ih-tag.bas{color:var(--blue);background:color-mix(in srgb,var(--blue) 14%,transparent)}
 /* FATURA TAM SAYFA: modal 780px'de uzun malzeme adlarini kiriyordu; sayfada govde genisler,
    satirlar ferahlar. Alt islem cubugu sabit oldugu icin (kata-page-foot) altta bosluk kalir. */
 .inv-page-wrap{max-width:1180px;margin:0 auto;padding-bottom:74px}
@@ -8659,6 +8673,43 @@ function renderProjeOrders(){
       <button class="btn btn-order" onclick="openProjeOrderModal()">${icoDoc()} Siparis / Fatura Gir</button></div>
     ${cards}`;
 }
+/* SIPARIS DEGISIKLIK GECMISI: duzenleme yapildiginda NE degistigi kaydedilir - hangi urun
+   eklendi/cikarildi, hangisinin miktari degisti, ne zaman ve kim tarafindan. Satirlar
+   specId+altId ile eslestirilir: ayni urunun ALTERNATIFI ayri bir satirdir, karistirilmaz.
+   Ayni anahtarli birden fazla satir varsa miktarlari toplanir (mukerrer satir girilebiliyor).
+   Kayit siparisin uzerinde (o.history) durur, son 20 duzenleme saklanir. */
+function orderLineKey(l){ return (l.specId||'')+'|'+(l.altId||''); }
+function orderLineDiff(eski,yeni){
+  const topla=(arr)=>{ const m={}; (arr||[]).forEach(l=>{ const k=orderLineKey(l);
+    if(!m[k]) m[k]={ad:l.ad||l.code||'?',unit:l.unit||'',qty:0};
+    m[k].qty+=Number(l.qty)||0; }); return m; };
+  const E=topla(eski), Y=topla(yeni), eklenen=[], cikan=[], degisen=[];
+  Object.keys(Y).forEach(k=>{
+    if(!E[k]) eklenen.push({ad:Y[k].ad,qty:Y[k].qty,unit:Y[k].unit});
+    else if(E[k].qty!==Y[k].qty) degisen.push({ad:Y[k].ad,eski:E[k].qty,yeni:Y[k].qty,unit:Y[k].unit});
+  });
+  Object.keys(E).forEach(k=>{ if(!Y[k]) cikan.push({ad:E[k].ad,qty:E[k].qty,unit:E[k].unit}); });
+  return {eklenen,cikan,degisen};
+}
+function orderHistoryHtml(o){
+  const gec=(o.history||[]).slice().reverse();
+  // gecmis kaydi olmayan ESKI duzenlemeler icin en azindan tarih/kullanici gosterilir
+  if(!gec.length){
+    return o.updated?`<div class="inv-hist"><div class="inv-hist-h">DUZENLEME GECMISI</div>
+      <div class="inv-hist-row"><div class="inv-hist-ts">${fmtDT(o.updated)}${o.updatedBy?' · '+esc(o.updatedBy):''}</div>
+      <div class="inv-hist-body"><div class="ih-line"><span class="ih-tag bas">BILGI</span>Bu duzenleme, degisiklik gecmisi ozelligi eklenmeden once yapildi - ayrinti kaydedilmemis.</div></div></div></div>`:'';
+  }
+  const sat=(h)=>[
+    ...(h.bas||[]).map(t=>`<div class="ih-line"><span class="ih-tag bas">BILGI</span>${esc(t)}</div>`),
+    ...(h.eklenen||[]).map(x=>`<div class="ih-line"><span class="ih-tag ek">EKLENDI</span><span class="ih-ad">${esc(x.ad)}</span><b>${fmtNum(x.qty)}</b> ${esc(x.unit||'')}</div>`),
+    ...(h.degisen||[]).map(x=>`<div class="ih-line"><span class="ih-tag dg">MIKTAR</span><span class="ih-ad">${esc(x.ad)}</span><b>${fmtNum(x.eski)} → ${fmtNum(x.yeni)}</b> ${esc(x.unit||'')}</div>`),
+    ...(h.cikan||[]).map(x=>`<div class="ih-line"><span class="ih-tag ck">CIKARILDI</span><span class="ih-ad">${esc(x.ad)}</span><b>${fmtNum(x.qty)}</b> ${esc(x.unit||'')}</div>`),
+  ].join('')||`<div class="ih-line"><span class="ih-tag bas">BILGI</span>Urun degisikligi yok (yalniz belge/satir duzeni guncellendi).</div>`;
+  return `<div class="inv-hist"><div class="inv-hist-h">DUZENLEME GECMISI <span>${gec.length}</span></div>
+    ${gec.map(h=>`<div class="inv-hist-row">
+      <div class="inv-hist-ts">${fmtDT(h.ts)}${h.user?' · '+esc(h.user):''}</div>
+      <div class="inv-hist-body">${sat(h)}</div></div>`).join('')}</div>`;
+}
 /* FATURA GOVDESI - modal ve TAM SAYFA tek kaynaktan uretilir: ayni satirlar, ayni toplamlar,
    ayni alternatif rozeti. Fark yalnizca kapsayici genisligidir; sayfada uzun malzeme adlari
    icin kolonlar ferahlar (inv-page sinifi) ve satirlarda ozel no rozeti de gosterilir. */
@@ -8700,6 +8751,7 @@ function orderInvoiceHtml(o,genis){
           <tfoot><tr><td colspan="3" style="text-align:right;font-weight:700">TOPLAM</td><td class="num" style="font-weight:800">${fmtNum(qty)}</td><td style="color:var(--mute)">birim</td></tr></tfoot>
         </table>
         </div>
+        ${orderHistoryHtml(o)}
         <div class="invoice-footer">${o.lines.length} kalem · ${fmtNum(qty)} toplam birim · ${esc(o.bina||'')} binasi${o.company?' · '+esc(o.company):''}</div>
       </div>`;
 }
@@ -13403,6 +13455,13 @@ async function saveNewOrder(){
     // DUZENLEME: siparise bagli eski stok girisleri komple yenilenir, siparis kaydi guncellenir.
     // Ilerleme/stok/rapor ekranlari DB.proje.items + orders'tan okudugu icin degisiklik her yere yansir.
     order.updated=Date.now(); order.updatedBy=CURRENT_USER.username;
+    // NE degistigi kaydedilir - detayda "Duzenleme Gecmisi" olarak gorunur
+    const _d=orderLineDiff(exOrder.lines,lines), _bas=[];
+    if(norm(exOrder.no||'')!==norm(no)) _bas.push(`Fatura no: ${exOrder.no||'-'} → ${no}`);
+    if(Number(exOrder.date)!==Number(date)) _bas.push(`Tarih: ${fmtDate(exOrder.date)} → ${fmtDate(date)}`);
+    if((exOrder.company||'')!==(companyName||'')) _bas.push(`Sirket: ${exOrder.company||'-'} → ${companyName||'-'}`);
+    order.history=[...(exOrder.history||[]),
+      {ts:order.updated,user:CURRENT_USER.username,bas:_bas,..._d}].slice(-20);
     const oldItemIds=DB.proje.items.filter(it=>it.orderId===editId).map(it=>it.id);
     DB.proje.items=DB.proje.items.filter(it=>it.orderId!==editId);
     newItems.forEach(it=>DB.proje.items.push(it));
