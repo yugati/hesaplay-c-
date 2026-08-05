@@ -1384,7 +1384,7 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .ih-tag.bas{color:var(--blue);background:color-mix(in srgb,var(--blue) 14%,transparent)}
 /* FATURA TAM SAYFA: modal 780px'de uzun malzeme adlarini kiriyordu; sayfada govde genisler,
    satirlar ferahlar. Alt islem cubugu sabit oldugu icin (kata-page-foot) altta bosluk kalir. */
-.inv-page-wrap{max-width:1180px;margin:0 auto;padding-bottom:74px}
+.inv-page-wrap{max-width:1320px;margin:0 auto;padding-bottom:74px}
 .invoice.inv-page{max-width:none}
 .invoice.inv-page .inv-lines td,.invoice.inv-page .inv-lines th{padding:11px 13px;font-size:13px}
 .invoice.inv-page .inv-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
@@ -2602,6 +2602,15 @@ function render(){
   const inPanel = (PUSERS&&isAdmin()) || (PAUDIT&&isAdmin()) || PLIB || PDEF || PORD || PCOMP || PEKIP || PNEWORD || PBINAY || PKATA || PODM || PSPECF || PRIMP || PINV;
   renderSidebar();
   updateBinaExcelFab();
+  /* FATURA tam sayfasi: bir LISTE sayfasindan (Tum Siparisler / kutuphane vb.) icine girilen
+     DETAY oldugu icin diger panellerden ONCE bakilir - yoksa arkadaki liste bayragi (PORD)
+     hala acik oldugundan liste kazanir ve "Detay Sayfasi" kullaniciyi listeye geri atardi.
+     Geri Don ile PINV kapaninca arkadaki liste kaldigi yerden gorunur.
+     Siparis silinmisse sayfa kendiliginden dusulur. */
+  if(PINV){
+    if(_INV && (DB.proje.orders||[]).some(x=>x.id===_INV.id)){ m.innerHTML=renderOrderPage(); return; }
+    PINV=false; _INV=null;
+  }
   // GENEL paneller: hangi bolumde olursak olalim acilabilir (SEC'ten bagimsiz)
   if(PUSERS && isAdmin()){ m.innerHTML=renderUsers(); wireToolbar&&wireToolbar(); return; }
   if(PAUDIT && isAdmin()){ m.innerHTML=renderAudit(); wireToolbar&&wireToolbar(); return; }
@@ -2612,11 +2621,6 @@ function render(){
   if(PORD){ m.innerHTML=renderAllOrders(); wireToolbar(); return; }
   if(PCOMP){ m.innerHTML=renderCompanies(); wireToolbar(); return; }
   if(PEKIP){ m.innerHTML=renderEkipler(); wireToolbar(); return; }
-  // FATURA tam sayfasi: siparis hala duruyorsa gosterilir, silindiyse sayfa kendiliginden duser
-  if(PINV){
-    if(_INV && (DB.proje.orders||[]).some(x=>x.id===_INV.id)){ m.innerHTML=renderOrderPage(); return; }
-    PINV=false; _INV=null;
-  }
   // KAT ATA tam sayfasi: acik sartname baglami (bina+sartname) korunuyorsa gosterilir;
   // baglam degistiyse (baska sartnameye/binaya gecildi) sayfa kendiliginden dusulur
   if(PKATA){
@@ -12899,7 +12903,9 @@ function openNewOrderPage(){
   if(DB.proje.specs.filter(s=>!s.is_deleted).length===0){ toast("Once sartname kalemleri tanimlanmali","err"); return; }
   const bins=binaOptsFor('').filter(b=>canSeeBuilding(b));
   NORD={no:'',date:new Date().toISOString().slice(0,10),bina:bins[0]||'',sart:'',companyId:'',newCompany:'',pdf:null,imzaYok:false,lines:[_nordEmptyLine()],editId:null,draftId:null};
-  PNEWORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PBINAY=false; SEARCH="";
+  // PINV: fatura detay sayfasindan gelinmis olabilir - o sayfa render sirasinda panellerden
+  // ONCE bakildigi icin burada kapatilmazsa siparis ekrani hic gorunmez
+  PNEWORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PBINAY=false; PINV=false; _INV=null; SEARCH="";
   render();
 }
 // ── SIPARIS DUZENLEME (yonetici sifresiyle) ──
@@ -12955,7 +12961,9 @@ function openEditOrderPage(orderId){
   });
   NORD={no:o.no||'',date:o.date?new Date(o.date).toISOString().slice(0,10):new Date().toISOString().slice(0,10),
     bina:o.bina||'',sart:'',companyId,newCompany,pdf:o.pdf||null,imzaYok:!!o.imzaYok,lines:lines.length?lines:[_nordEmptyLine()],editId:orderId,draftId:null};
-  PNEWORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PBINAY=false; SEARCH="";
+  // PINV: fatura detay sayfasindan gelinmis olabilir - o sayfa render sirasinda panellerden
+  // ONCE bakildigi icin burada kapatilmazsa siparis ekrani hic gorunmez
+  PNEWORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PBINAY=false; PINV=false; _INV=null; SEARCH="";
   render();
 }
 function closeNewOrderPage(){
