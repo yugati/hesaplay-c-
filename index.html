@@ -7846,6 +7846,21 @@ function upsertMaterialsFromRows(rows, report){
 // SPESIFIKASYON UPSERT (key: spec_external_id, FK: material_code)
 // opts.strict: bina/bolum/sartname "Bolum & Sartname" ekranindan kayitli olmali (dogrulanir, otomatik olusturulmaz)
 // opts.defaultCat / opts.defaultGrup: satirda bolum/sartname sutunu bos ise kullanilacak varsayilan (mevcut ekran baglami)
+/* SILINMEZ KALEM KORUMASI: bir sartname kalemine bagli stok girisi / siparis satiri / saha
+   raporu varsa, o kalem Excel'de BULUNMASA BILE silinmez. Silinirse bagli kayitlarin specId'si
+   oluye duser; kalem ne sipariş sayacinda (flowDurumIndex), ne montajda, ne de sartnamenin
+   siparis listesinde (orderMatchesSpec) gorunur - fatura satiri sahipsiz kalir.
+   Gercek olay: 07.08.2026'da AKU.0120.00UKS.0.EK.TB0001 sartnamesine eksik bir Excel yuklendi,
+   replaceScope 106 kalemi sildi, 72 siparis satiri + 11 rapor kaydi sahipsiz kaldi. */
+function buildSpecRefIndex(){
+  const m=new Map();
+  const add=(id,k)=>{ if(!id)return; const o=m.get(id)||{items:0,ordLines:0,raps:0}; o[k]++; m.set(id,o); };
+  (DB.proje.items||[]).forEach(it=>{ if(!it.is_deleted) add(it.specId,'items'); });
+  (DB.proje.orders||[]).forEach(o=>{ if(o.is_deleted)return; (o.lines||[]).forEach(l=>add(l.specId,'ordLines')); });
+  ((DB.rapor&&DB.rapor.entries)||[]).forEach(e=>{ if(!e.is_deleted) add(e.specId,'raps'); });
+  return m;
+}
+function specRefLabel(r){ if(!r)return ''; return [r.ordLines?r.ordLines+' siparis satiri':'', r.raps?r.raps+' rapor kaydi':'', r.items?r.items+' stok hareketi':''].filter(Boolean).join(', '); }
 function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
   if(!rows||rows.length<2) return;
   const strict=!!opts.strict;
@@ -7877,6 +7892,7 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
   const sartIndex={}; (DB.proje.sartnames||[]).forEach(sr=>{ sartIndex[norm(sr.bina)+'|'+norm(sr.section)+'|'+norm(sr.code)]=sr; });
   const seen=new Map(); // skey -> bu calistirmada islenen kalem (ayni ozel no tekrarlarinda miktar toplamak icin)
   const touched=new Set(); // replaceScope: bu import'ta Excel'de gorulen spec id'leri
+  const refIdx=buildSpecRefIndex(); // bagli siparis/rapor/stok kayitlari (import boyunca sabit)
   for(let r=h+1;r<rows.length;r++){
     const row=rows[r]; if(!row || row.every(c=>String(c).trim()==='')) continue;
     const ext=useExt?String(row[iExt]??'').trim():'';
@@ -7955,12 +7971,21 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
     // fazla kayit olusmus olabilir (bkz dedupeProjeSpecs). Ilkini "existing" olarak kullan,
     // geri kalanini mukerrer sayip sil - boylece her import kendi kapsamini kendiliginden onarir.
     if(existing){
-      const dupMatch=DB.proje.specs.filter(s=>s.id!==existing.id && matKey(s.code,s.name)===matKey(existing.code,existing.name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup && (s.ozelNo||'').trim().toLowerCase()===ozelKey && (s.poz||'').trim().toLowerCase()===pozKey);
+      let dupMatch=DB.proje.specs.filter(s=>s.id!==existing.id && matKey(s.code,s.name)===matKey(existing.code,existing.name) && (s.bina||'')===insertBina && (s.cat||'')===sec && specGroupKey(s)===grup && (s.ozelNo||'').trim().toLowerCase()===ozelKey && (s.poz||'').trim().toLowerCase()===pozKey);
       if(dupMatch.length){
-        const dupIds=dupMatch.map(s=>s.id);
-        DB.proje.specs=DB.proje.specs.filter(s=>!dupIds.includes(s.id));
-        report.specDeleted+=dupIds.length;
-        (report.deletedSpecIds=report.deletedSpecIds||[]).push(...dupIds);
+        // ANA KAYIT, BAGLI OLANDIR: mukerrerlerden birinde siparis/rapor/stok kaydi varsa Excel
+        // guncellemesi ONA yazilir; boylece kalan kayit bagli veriyi de tasir.
+        if(!refIdx.has(existing.id)){
+          const refli=dupMatch.find(s=>refIdx.has(s.id));
+          if(refli){ const eski=existing; existing=refli; dupMatch=dupMatch.filter(s=>s.id!==refli.id).concat(eski); }
+        }
+        // referansli mukerrer SILINMEZ - bagli fatura/rapor satiri sahipsiz kalmasin
+        const dupIds=dupMatch.filter(s=>!refIdx.has(s.id)).map(s=>s.id);
+        if(dupIds.length){
+          DB.proje.specs=DB.proje.specs.filter(s=>!dupIds.includes(s.id));
+          report.specDeleted+=dupIds.length;
+          (report.deletedSpecIds=report.deletedSpecIds||[]).push(...dupIds);
+        }
       }
     }
     if(action==='delete'){ if(existing){ DB.proje.specs=DB.proje.specs.filter(s=>s.id!==existing.id); report.specDeleted++; (report.deletedSpecIds=report.deletedSpecIds||[]).push(existing.id); } continue; }
@@ -8011,11 +8036,18 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
   // urunler otomatik silinir, boylece "excel'e ne yuklendiyse mevcut liste onunla degisir".
   if(opts.replaceScope && defaultBina && defaultCat && defaultGrup){
     const stale=DB.proje.specs.filter(s=>s.bina===defaultBina && s.cat===defaultCat && specGroupKey(s)===defaultGrup && !touched.has(s.id));
-    if(stale.length){
-      const staleIds=stale.map(s=>s.id);
+    // KORUMA: siparis / saha raporu / stok kaydi olan kalem, Excel'de bulunmasa bile silinmez.
+    // Sadece hicbir yere baglanmamis kalemler temizlenir; korunanlar rapora ayri liste olarak duser.
+    const korunan=stale.filter(s=>refIdx.has(s.id));
+    const silinecek=stale.filter(s=>!refIdx.has(s.id));
+    if(silinecek.length){
+      const staleIds=silinecek.map(s=>s.id);
       DB.proje.specs=DB.proje.specs.filter(s=>!staleIds.includes(s.id));
-      report.specDeleted+=stale.length;
+      report.specDeleted+=silinecek.length;
       (report.deletedSpecIds=report.deletedSpecIds||[]).push(...staleIds);
+    }
+    if(korunan.length){
+      report.kept=(report.kept||[]).concat(korunan.map(s=>`${s.code||s.name} - ${specRefLabel(refIdx.get(s.id))}`));
     }
   }
 }
@@ -8619,6 +8651,12 @@ function showImportReport(rep,baslik){
   if(rep.errors.length){
     errHtml=`<div style="margin-top:14px"><b style="color:var(--red);font-size:13px">${rep.errors.length} uyari/hata</b><div style="max-height:200px;overflow:auto;margin-top:8px;font-size:12px;font-family:var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px">${rep.errors.slice(0,50).map(e=>`<div style="color:var(--amber);padding:2px 0">• ${esc(e)}</div>`).join('')}${rep.errors.length>50?`<div style="color:var(--mute)">... +${rep.errors.length-50} daha</div>`:''}</div></div>`;
   }
+  // KORUNAN KALEMLER: Excel'de yoktu ama bagli siparis/rapor/stok kaydi oldugu icin silinmedi.
+  // Gercekten cikarilmalarini istiyorsaniz once bagli kayitlar baska kaleme tasinmali/silinmeli.
+  const kept=rep.kept||[];
+  const keptHtml=kept.length?`<div style="margin-top:14px"><b style="color:var(--green);font-size:13px">${kept.length} kalem korundu (Excel'de yoktu, silinmedi)</b>
+    <div style="font-size:11px;color:var(--mute);margin:4px 0 6px">Bu kalemlere bagli fatura/rapor kaydi var - silinselerdi o kayitlar sahipsiz kalirdi. Listeden gercekten cikarmak icin once bagli kayitlari tasiyin.</div>
+    <div style="max-height:180px;overflow:auto;font-size:12px;font-family:var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px">${kept.slice(0,50).map(k=>`<div style="color:var(--green);padding:2px 0">• ${esc(k)}</div>`).join('')}${kept.length>50?`<div style="color:var(--mute)">... +${kept.length-50} daha</div>`:''}</div></div>`:'';
   const total=rep.matCreated+rep.matUpdated+rep.matDeleted+rep.specCreated+rep.specUpdated+rep.specDeleted;
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>${esc(baslik)} - Ice Aktarma Sonucu</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div style="text-align:center;padding:10px 0 16px"><div style="font-size:34px">${ok?'✓':'⚠'}</div><div style="color:${ok?'var(--green)':'var(--amber)'};font-weight:700;margin-top:4px">${total} kayit islendi${ok?'':' ('+rep.errors.length+' uyari)'}</div></div>
@@ -8630,8 +8668,10 @@ function showImportReport(rep,baslik){
       ${stat('Guncellenen spesifikasyon',rep.specUpdated,'var(--blue)')}
       ${stat('Silinen spesifikasyon',rep.specDeleted,'var(--red)')}
       ${rep.ozelMerged?stat('Ayni ozel no ile birlesen satir (miktarlari toplandi)',rep.ozelMerged,'var(--amber)'):''}
+      ${kept.length?stat('Korunan kalem (bagli kaydi var, silinmedi)',kept.length,'var(--green)'):''}
     </div>
-    ${total===0&&!rep.errors.length?'<p style="color:var(--mute);text-align:center;font-size:13px">Islenecek yeni veri bulunamadi.</p>':''}
+    ${total===0&&!rep.errors.length&&!kept.length?'<p style="color:var(--mute);text-align:center;font-size:13px">Islenecek yeni veri bulunamadi.</p>':''}
+    ${keptHtml}
     ${errHtml}
   </div><div class="modal-foot"><button class="btn btn-add" onclick="closeModal()">Tamam</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
