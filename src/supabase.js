@@ -299,6 +299,17 @@ export async function sbDeleteRaporEkip(name) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Tutanak (malzeme teslim tutanağı — TR/RU)
+// Rapor modülünün yetkisiyle çalışır; kayıtlar 'tutanaklar' tablosunda durur.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function sbGetTutanaklar() { return sbGetAll('tutanaklar') }
+export async function sbInsertTutanak(e) { return sbInsertEntity('tutanaklar', e) }
+export async function sbUpdateTutanak(id, e) { return sbUpdateEntity('tutanaklar', id, e) }
+export async function sbDeleteTutanak(id) { return sbDeleteEntity('tutanaklar', id) }
+export async function sbWipeTutanakData() { await sbDeleteAll('tutanaklar') }
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Geçici modülü
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -546,6 +557,13 @@ export async function sbLoadAllData(scope) {
   if (need('rapor')) {
     tasks.raporEntries = sbGetAll('rapor_entries')
     tasks.raporEkiplerRes = supabase.from('rapor_ekipler').select('name').order('created_at', { ascending: true })
+    // tutanaklar tablosu supabase_schema.sql'in yeni bölümüyle oluşturulur; migration
+    // henüz çalıştırılmamışsa TÜM yüklemeyi kilitlememesi için hataya toleranslı.
+    // Eksikse uygulamaya haber verilir: Tutanak ekrani "once SQL'i calistirin" uyarisi gosterir.
+    tasks.tutanaklar = sbGetAll('tutanaklar').catch(() => {
+      if (typeof window !== 'undefined') window.__tutanakTableMissing = true
+      return []
+    })
   }
   if (needProjeCore) {
     tasks.projeBuildingsRes = supabase.from('proje_buildings').select('code').order('sort_order, created_at', { ascending: true })
@@ -603,6 +621,7 @@ export async function sbLoadAllData(scope) {
 
   return {
     companies: r.companies || [],
+    tutanaklar: r.tutanaklar || [],
     alet: { items: r.aletItems || [] },
     saha: {
       bg: (r.sahaSettings && r.sahaSettings.bg) || null,
@@ -677,6 +696,8 @@ export async function sbMigrateLocalDB(localDB) {
     push('Saha Raporu Kayitlari', sbInsertEntities('rapor_entries', localDB.rapor.entries))
   if (localDB.rapor?.ekipler?.length)
     push('Ekipler', sbInsertRaporEkipler(localDB.rapor.ekipler))
+  if (localDB.tutanaklar?.length)
+    push('Tutanaklar', sbInsertEntities('tutanaklar', localDB.tutanaklar))
   if (localDB.gecici?.lib?.length)
     push('Gecici Elektrik Kutuphanesi', sbInsertEntities('gecici_lib', localDB.gecici.lib))
   if (localDB.gecici?.moves?.length)
@@ -742,7 +763,7 @@ export async function sbWipeAllData() {
     'proje_materials', 'proje_specs', 'proje_items', 'proje_orders', 'proje_sartnames',
     'proje_bina_modelleri', 'proje_lokasyonlar', 'proje_alternatives', 'companies',
     'alet_items', 'saha_panels', 'saha_lines', 'saha_sockets',
-    'rapor_entries', 'gecici_lib', 'gecici_moves', 'gecici_orders',
+    'rapor_entries', 'tutanaklar', 'gecici_lib', 'gecici_moves', 'gecici_orders',
   ]
   await Promise.allSettled([
     ...textIdTables.map(t => sbDeleteAll(t)),

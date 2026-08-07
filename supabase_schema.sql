@@ -702,3 +702,32 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.proje_lokasyonlar TO anon, authen
 DROP TRIGGER IF EXISTS proje_lokasyonlar_updated_at ON public.proje_lokasyonlar;
 CREATE TRIGGER proje_lokasyonlar_updated_at BEFORE UPDATE ON public.proje_lokasyonlar
   FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+
+-- ─── 25. TUTANAKLAR (Malzeme Teslim Tutanağı — TR/RU) ────────────
+-- Rapor bölümünün altındaki "Tutanak Aç" ekranının kayıtları.
+-- data: {no, tarih, bina, eden:{firma,ad,gorev}, alan:{firma,ad,gorev},
+--        lines:[{id,matId,code,ad,marka,birim,qty,barkod,renk,img}],
+--        aciklama, createdBy, createdAt, updatedAt}
+-- Satırdaki görsel, malzeme kütüphanesinden matId ile çözülür; kayıt küçük kalır.
+CREATE TABLE IF NOT EXISTS public.tutanaklar (
+  id          TEXT        NOT NULL PRIMARY KEY,
+  data        JSONB       NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS tutanaklar_created_at_idx ON public.tutanaklar (created_at);
+CREATE INDEX IF NOT EXISTS tutanaklar_no_idx         ON public.tutanaklar ((data->>'no'));
+
+ALTER TABLE public.tutanaklar ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "tutanaklar_anon_all"  ON public.tutanaklar;
+CREATE POLICY "tutanaklar_anon_all"  ON public.tutanaklar FOR ALL TO anon        USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "tutanaklar_auth_all"  ON public.tutanaklar;
+CREATE POLICY "tutanaklar_auth_all"  ON public.tutanaklar FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.tutanaklar TO anon, authenticated;
+
+DROP TRIGGER IF EXISTS tutanaklar_updated_at ON public.tutanaklar;
+CREATE TRIGGER tutanaklar_updated_at BEFORE UPDATE ON public.tutanaklar
+  FOR EACH ROW EXECUTE PROCEDURE set_updated_at();

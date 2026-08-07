@@ -28,6 +28,7 @@ import {
   sbWipeSahaData,
   sbWipeGeciciData,
   sbWipeRaporData,
+  sbWipeTutanakData,
   // Settings & Audit
   sbGetSetting,
   sbSetSetting,
@@ -64,6 +65,11 @@ import {
   sbInsertRaporEkip,
   sbInsertRaporEkipler,
   sbDeleteRaporEkip,
+  // Tutanak
+  sbGetTutanaklar,
+  sbInsertTutanak,
+  sbUpdateTutanak,
+  sbDeleteTutanak,
   // Gecici
   sbGetGeciciLib,
   sbInsertGeciciLibItem,
@@ -218,6 +224,7 @@ window.sbWipeAletData      = sbWipeAletData
 window.sbWipeSahaData      = sbWipeSahaData
 window.sbWipeGeciciData    = sbWipeGeciciData
 window.sbWipeRaporData     = sbWipeRaporData
+window.sbWipeTutanakData   = sbWipeTutanakData
 
 // ─── Settings & Audit ────────────────────────────────────────────────────────
 window.sbGetSetting        = sbGetSetting
@@ -258,6 +265,14 @@ window.sbGetRaporEkipler          = sbGetRaporEkipler
 window.sbInsertRaporEkip          = guardedSafe('rapor', 'create', sbInsertRaporEkip)
 window.sbInsertRaporEkipler       = guardedSafe('rapor', 'create', sbInsertRaporEkipler)
 window.sbDeleteRaporEkip          = guardedSafe('rapor', 'delete', sbDeleteRaporEkip)
+
+// ─── Tutanak (malzeme teslim tutanagi) ───────────────────────────────────────
+// Rapor modulunun yetkisini kullanir: Rapor'u gorebilen tutanagi gorur,
+// Rapor'a yazabilen tutanak acar.
+window.sbGetTutanaklar     = sbGetTutanaklar
+window.sbInsertTutanak     = guardedSafe('rapor', 'create', sbInsertTutanak)
+window.sbUpdateTutanak     = guardedSafe('rapor', 'update', sbUpdateTutanak)
+window.sbDeleteTutanak     = guardedSafe('rapor', 'delete', sbDeleteTutanak)
 
 // ─── Gecici ──────────────────────────────────────────────────────────────────
 window.sbGetGeciciLib          = sbGetGeciciLib
