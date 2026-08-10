@@ -1375,6 +1375,9 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .order-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
 /* IMZALI KAGIT ELDE DEGIL: siparis karesinde kucuk kirmizi unlem (evrak eksigi tek bakista gorunur) */
 .ord-imza-warn{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:50%;background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.6);color:var(--red);font-size:11px;font-weight:800;line-height:1;margin-left:6px;flex-shrink:0;cursor:help}
+/* AS = ATANMIS SIPARIS. Siparis atamasiyla girilen faturalar listede bir bakista ayirt
+   edilsin diye. Renk, satir ve fatura icindeki ATAMA rozetleriyle ayni aile (mavi). */
+.ord-as{display:inline-flex;align-items:center;justify-content:center;height:17px;padding:0 5px;border-radius:5px;background:color-mix(in srgb,var(--blue) 16%,transparent);border:1px solid color-mix(in srgb,var(--blue) 55%,transparent);color:var(--blue);font-size:10px;font-weight:800;letter-spacing:.5px;font-family:var(--mono);line-height:1;margin-left:6px;flex-shrink:0;cursor:help}
 .inv-imza-warn{display:flex;align-items:center;gap:10px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.4);border-radius:10px;padding:11px 13px;margin-bottom:14px;font-size:12.5px;line-height:1.5}
 .inv-imza-warn b{color:var(--red)}
 .inv-imza-warn .ord-imza-warn{width:22px;height:22px;font-size:13px;margin:0;cursor:default}
@@ -2324,7 +2327,7 @@ function migrate(){
 
 let SEC="proje", TAB="spec", SEARCH="", GFILTER="", LOGVIEW="akis";
 let PBINA="", PCAT="", PSPEC="", PLIB=false, PDEF=false, PORD=false, PCOMP=false, PEKIP=false, PNEWORD=false, PBINAY=false, PKATA=false, PODM=false, PSPECF=false, PRIMP=false, PINV=false, PTUT=false, ORDBINA="";  // proje filtreleri + kutuphane + tanimlar + tum siparisler + sirketler + ekipler + siparis ekleme sayfasi + bina yonetimi + kat ata sayfasi + oda metraji sayfasi + sartname kalemi detay sayfasi + rapor excel ice aktarma sayfasi + tutanak sayfasi
-let ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:''}; // Tum Siparisler yapisal filtreleri (bolum/sartname/malzeme/kod/sirket/tarih/pdf) - ORDBINA ile birlikte calisir
+let ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:'',tur:''}; // Tum Siparisler yapisal filtreleri (bolum/sartname/malzeme/kod/sirket/tarih/pdf/siparis turu) - ORDBINA ile birlikte calisir
 let ORDVIEW='orders'; // Tum Siparisler alt gorunumu: 'orders' (kesinlesmis) | 'drafts' (taslaklar)
 let SPECVIEW=localStorage.getItem('specview')==='list'?'list':'grid';     // sartname kalemleri gorunumu: 'grid' (kart) | 'list' (satir) - kullanicinin son secimi hatirlanir
 function setSpecView(v){ SPECVIEW=v; try{localStorage.setItem('specview',v);}catch(e){} render(); }
@@ -3531,7 +3534,7 @@ async function delEkip(name){ if(!guard('delete'))return;
 }
 function setOrdBina(b){ ORDBINA=b; render(); }
 function setOrdF(k,v){ ORDF[k]=v; render(); }
-function clearOrdF(){ ORDBINA=''; ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:''}; SEARCH=''; render(); }
+function clearOrdF(){ ORDBINA=''; ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:'',tur:''}; SEARCH=''; render(); }
 // bir siparis satirinin bagli oldugu sartname kalemi (bolum filtresi specId uzerinden cozer)
 function orderLineSpec(l){ return l&&l.specId?DB.proje.specs.find(s=>s.id===l.specId):null; }
 // TEK KAYNAK: Tum Siparisler listesi + Excel disa aktarma AYNI filtreden gecer
@@ -3545,6 +3548,10 @@ function allOrdersFiltered(){
     if(ORDF.to){ const t=new Date(ORDF.to).getTime()+86399999; if(!(o.date<=t)) return false; } // gun sonu dahil
     if(ORDF.pdf==='var' && !o.pdf) return false;
     if(ORDF.pdf==='yok' && o.pdf) return false;
+    // SIPARIS TURU: 'atama' = AS rozetli atanmis siparisler, 'normal' = digerleri.
+    // Eski kayitlarda o.tur hic yazilmamis olabilir - yoklugu 'normal' sayilir.
+    if(ORDF.tur==='atama' && o.tur!=='atama') return false;
+    if(ORDF.tur==='normal' && o.tur==='atama') return false;
     const lines=o.lines||[];
     if(ORDF.sart && !((o.grup||'')===ORDF.sart || lines.some(l=>(l.grup||'')===ORDF.sart))) return false;
     if(ORDF.sec && !lines.some(l=>{ const sp=orderLineSpec(l); return sp&&(sp.cat||'')===ORDF.sec; })) return false;
@@ -3581,10 +3588,16 @@ function renderAllOrders(){
   const sarts=[...new Set(all.flatMap(o=>[(o.grup||''),...(o.lines||[]).map(l=>l.grup||'')]).filter(g=>g&&!g.startsWith('Karma (')))].sort((a,b)=>a.localeCompare(b,'tr'));
   const comps=[...new Set(all.map(o=>o.company||'').filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
   const secs=DB.proje.sections||[];
-  const anyFilter=ORDBINA||ORDF.sec||ORDF.sart||ORDF.mat||ORDF.code||ORDF.comp||ORDF.from||ORDF.to||ORDF.pdf||SEARCH;
+  const anyFilter=ORDBINA||ORDF.sec||ORDF.sart||ORDF.mat||ORDF.code||ORDF.comp||ORDF.from||ORDF.to||ORDF.pdf||ORDF.tur||SEARCH;
+  const atamaSayi=all.filter(o=>o.tur==='atama').length; // secenek etiketinde kac tane oldugu gorunsun
   const filterbar=`<div class="ord-filterbar">
     <div class="ord-f"><label>Bina</label><select onchange="setOrdBina(this.value)"><option value="">Tumu</option>${binas.map(b=>`<option ${ORDBINA===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div>
     <div class="ord-f"><label>Bolum</label><select onchange="setOrdF('sec',this.value)"><option value="">Tumu</option>${secs.map(s=>`<option ${ORDF.sec===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
+    <div class="ord-f"><label>Siparis Turu</label><select onchange="setOrdF('tur',this.value)">
+      <option value="">Tumu</option>
+      <option value="atama" ${ORDF.tur==='atama'?'selected':''}>Yalniz atanmis (AS)${atamaSayi?' · '+atamaSayi:''}</option>
+      <option value="normal" ${ORDF.tur==='normal'?'selected':''}>Yalniz normal</option>
+    </select></div>
     <div class="ord-f" style="min-width:210px"><label>Sartname</label><select onchange="setOrdF('sart',this.value)"><option value="">Tumu</option>${sarts.map(g=>`<option ${ORDF.sart===g?'selected':''}>${esc(g)}</option>`).join('')}</select></div>
     <div class="ord-f"><label>Malzeme</label><input value="${esc(ORDF.mat)}" placeholder="ad ile ara..." onchange="setOrdF('mat',this.value.trim())"></div>
     <div class="ord-f"><label>Urun Kodu</label><input value="${esc(ORDF.code)}" placeholder="kod ile ara..." onchange="setOrdF('code',this.value.trim())"></div>
@@ -3609,7 +3622,7 @@ function renderAllOrders(){
       const urunOzet=(o.lines||[]).slice(0,3).map(l=>esc(l.ad.split('/').pop().trim())).join(', ')+((o.lines||[]).length>3?` +${o.lines.length-3} urun`:'');
       cards+=`<div class="order-card" onclick="openOrderDetail('${o.id}')">
         <div class="order-card-top">
-          <div class="order-no">${icoDoc()} <b>${esc(o.no)}</b>${imzaWarnBadge(o)}</div>
+          <div class="order-no">${icoDoc()} <b>${esc(o.no)}</b>${atamaBadge(o)}${imzaWarnBadge(o)}</div>
           <span class="order-date">${fmtDate(o.date)}</span>
         </div>
         <div class="order-spekno">Spek No: ${codes.length?esc(codes.slice(0,5).join(', '))+(codes.length>5?` +${codes.length-5}`:''):'-'}</div>
@@ -3656,7 +3669,7 @@ function renderOrderDrafts(tabs,drafts){
       const urunOzet=named.slice(0,3).map(l=>esc(String(l.ad).split('/').pop().trim())).join(', ')+(named.length>3?` +${named.length-3} urun`:'');
       cards+=`<div class="order-card" style="border-style:dashed" onclick="nordOpenDraftRoute('${d.src}','${d.id}')">
         <div class="order-card-top">
-          <div class="order-no">${icoDoc()} <b>${esc(d.no||'(no yok)')}</b>${imzaWarnBadge(d)} <span class="cat-tag" style="background:var(--amber)22;color:var(--amber);margin-left:4px">TASLAK</span>${d.src==='modal'?'<span class="cat-tag" style="background:var(--dim)33;color:var(--mute);margin-left:3px">eski form</span>':''}</div>
+          <div class="order-no">${icoDoc()} <b>${esc(d.no||'(no yok)')}</b>${atamaBadge(d)}${imzaWarnBadge(d)} <span class="cat-tag" style="background:var(--amber)22;color:var(--amber);margin-left:4px">TASLAK</span>${d.src==='modal'?'<span class="cat-tag" style="background:var(--dim)33;color:var(--mute);margin-left:3px">eski form</span>':''}</div>
           <span class="order-date">${d.savedAt?fmtDate(d.savedAt):''}</span>
         </div>
         <div class="order-meta" style="margin-top:8px">
@@ -8896,7 +8909,7 @@ function renderProjeOrders(){
       const urunOzet=o.lines.slice(0,3).map(l=>esc(l.ad.split('/').pop().trim())).join(', ')+(o.lines.length>3?` +${o.lines.length-3} urun`:'');
       cards+=`<div class="order-card" onclick="openOrderDetail('${o.id}')">
         <div class="order-card-top">
-          <div class="order-no">${icoDoc()} <b>${esc(o.no)}</b>${imzaWarnBadge(o)}</div>
+          <div class="order-no">${icoDoc()} <b>${esc(o.no)}</b>${atamaBadge(o)}${imzaWarnBadge(o)}</div>
           <span class="order-date">${fmtDate(o.date)}</span>
         </div>
         <div class="order-spekno">Spek No: ${codes.length?esc(codes.slice(0,5).join(', '))+(codes.length>5?` +${codes.length-5}`:''):'-'}</div>
@@ -9065,6 +9078,15 @@ function openOrderDetail(id){
    Siparis/taslak karesinde kucuk kirmizi unlem olarak gorunur; detayda uyari seridi + tek
    dugumle durum degistirilir. Yalniz evrak takibi icindir - stok/ilerleme hesaplarina KARISMAZ. */
 function imzaWarnBadge(o){ return (o&&o.imzaYok)?`<span class="ord-imza-warn" title="Imzali kagit elde degil - asil evrak henuz teslim alinmadi">!</span>`:''; }
+/* AS = ATANMIS SIPARIS. Siparis atamasiyla girilen fatura, listede tek bakista ayirt edilsin
+   diye. Kaynak/hedef bilgisi ipucunda durur - kart yuzeyi kalabaliklasmasin. Taslaklarda da
+   ayni rozet cikar (o.tur taslak kaydinda da tasinir). */
+function atamaBadge(o){
+  if(!o||o.tur!=='atama') return '';
+  const yon=[(o.kaynakBina||'?')+(o.kaynakSart?' / '+o.kaynakSart:''),'→',(o.bina||'?')+(o.hedefSart?' / '+o.hedefSart:'')].join(' ');
+  const ted=o.tedarikBina?tedarikEtiket({bina:o.tedarikBina,sart:o.tedarikSart}):'';
+  return `<span class="ord-as" title="Atanmis siparis&#10;${esc(yon)}&#10;Kaynak sartnameden dusum yapilmaz - alim, stok ve montaj hedef binaya sayilir.${ted?`&#10;Fiilen tedarik: ${esc(ted)}`:''}">AS</span>`;
+}
 async function toggleOrderImza(id){
   const o=(DB.proje.orders||[]).find(x=>x.id===id); if(!o)return;
   if(!guard('order',{bina:o.bina}))return;
