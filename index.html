@@ -1782,6 +1782,21 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .nat-row .nat-qty{width:104px;flex-shrink:0;margin:0;text-align:right}
 .nat-row .nat-qty:disabled{opacity:.42;cursor:not-allowed}
 .nat-row .nat-unit{width:44px;flex-shrink:0;font-size:11px;color:var(--mute);font-family:var(--mono)}
+/* miktari kalemlere dagit: ozel kodsuz alimi ozel kodlu kalemlere paylastirma ekrani.
+   Satirin kimligi OZEL KOD oldugu icin (adlar birebir ayni) kod monospace ve one cikar. */
+.ndg-row{display:flex;align-items:center;gap:10px;width:100%;padding:8px 11px;background:var(--panel);border:1px solid var(--line);border-radius:9px;transition:border-color .12s,background .12s}
+.ndg-row.on{border-color:var(--green);background:color-mix(in srgb,var(--green) 8%,var(--panel))}
+.ndg-row.asim{border-color:var(--amber);background:color-mix(in srgb,var(--amber) 9%,var(--panel))}
+.ndg-kod{flex:1;min-width:0;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--amber);overflow-wrap:anywhere}
+.ndg-kod span{display:block;font-size:10.5px;font-weight:400;color:var(--mute);margin-top:2px}
+.ndg-kalan{width:120px;flex-shrink:0;text-align:right;font-size:11px;color:var(--mute);font-family:var(--mono)}
+.ndg-row input[type=number]{width:96px;flex-shrink:0;margin:0;text-align:right}
+.ndg-unit{width:44px;flex-shrink:0;font-size:11px;color:var(--mute);font-family:var(--mono)}
+.ndg-sayac{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-size:12px;margin:11px 0 8px}
+.ndg-sayac b{font-family:var(--mono)}
+.nord-dagit>button:first-child:hover{border-color:var(--green);color:var(--green)}
+.nord-dagit.has>button:first-child{border-style:solid;border-color:color-mix(in srgb,var(--green) 45%,transparent);background:color-mix(in srgb,var(--green) 10%,transparent);color:var(--ink)}
+.nord-dagit.has>button:first-child b{color:var(--green)}
 /* faturada atama kunyesi: siparisin hangi sartnameden referans aldigi bir bakista okunur */
 .inv-atama{background:color-mix(in srgb,var(--blue) 8%,var(--panel2));border:1px solid color-mix(in srgb,var(--blue) 35%,transparent);border-radius:10px;padding:11px 13px;margin-bottom:12px}
 .inv-atama-h{font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--blue);font-family:var(--mono);margin-bottom:5px}
@@ -2365,6 +2380,12 @@ function canSee(mod){ return _getModulePerms(mod).read; }
 // once tanimli kullanicilar proje ile siparisi birlikte goruyordu - taslama (migration)
 // tamamlanana kadar (DB.meta.siparisSectionV) proje yetkisi siparisi de acar; tamamlaninca bagimsiz olur.
 function canSeeOrders(){ if(canSee('siparis'))return true; if(!(DB&&DB.meta&&DB.meta.siparisSectionV))return canSee('proje'); return false; }
+// SIPARIS OLUSTURMA: canSeeOrders() ile ayni mantik. Eskiden siparis eklemek 'proje' modulunun
+// create iznine bagliydi; bu, "yalnizca siparis girsin" (ambarci) gibi bir kullaniciyi imkansiz
+// kiliyordu - proje create'i vermek ayni zamanda sartname kalemi acma/duzenleme yetkisi de
+// veriyordu (bkz. asagidaki 'editSpec'). Artik yetki 'siparis' modulunden gelir; tasima
+// tamamlanana kadar (DB.meta.siparisSectionV) eski kullanicilar icin proje create'i de gecerli.
+function canCreateOrder(){ if(canCreate('siparis'))return true; if(!(DB&&DB.meta&&DB.meta.siparisSectionV))return canCreate('proje'); return false; }
 function canCreate(mod){ return _getModulePerms(mod).create; }
 function canUpdate(mod){ return _getModulePerms(mod).update; }
 function canDelete(mod){ return _getModulePerms(mod).delete; }
@@ -2385,7 +2406,7 @@ function can(action, ctx){
       case 'editMaterial': return canCreate('kutuphane')||canUpdate('kutuphane');
       case 'editSpec':     return canCreate('proje')||canUpdate('proje');
       case 'stock':        return canCreate('gecici')||canUpdate('gecici');
-      case 'order':        return mod==='gecici'?canCreate('gecici'):canCreate('proje');
+      case 'order':        return mod==='gecici'?canCreate('gecici'):canCreateOrder();
       case 'delete':       return canDelete(mod);
       default:             return false;
     }
@@ -2704,14 +2725,16 @@ function exportBinaSpecExcel(){
   if(!PBINA||!PCAT||!PSPEC||PSPEC==='__all'){ toast("Once tek bir sartname acin","err"); return; }
   const specs=(DB.proje.specs||[]).filter(s=>!s.is_deleted && s.bina===PBINA && s.cat===PCAT && specGroupKey(s)===PSPEC).slice()
     .sort((a,b)=>(Number(a.poz)||0)-(Number(b.poz)||0)||(a.poz||'').localeCompare(b.poz||'','tr')||a.name.localeCompare(b.name,'tr'));
-  const rows=[["Poz No","Özel No","Malzeme Ismi","Standart No","Urun Kodu","Marka","Birim","Miktar","Urun Agirligi (kg)","Not","Resim URL"]];
+  // "Acik Kalem" sutunu: miktari heniz belli olmayan kalem EVET tasir ve Miktar 0 yazilir.
+  // Import bu sutunu okudugu icin dosya kayipsiz geri yuklenir (eskiden 0'li satir siliniyordu).
+  const rows=[["Poz No","Özel No","Malzeme Ismi","Standart No","Urun Kodu","Marka","Birim","Miktar","Acik Kalem","Urun Agirligi (kg)","Not","Resim URL"]];
   specs.forEach(sp=>{ const mt=sp.matId?getMaterial(sp.matId):null;
     const img=(mt&&mt.img&&/^https?:\/\//i.test(mt.img))?mt.img:'';
-    rows.push([sp.poz||'', sp.ozelNo||'', sp.name||'', sp.standart||'', sp.code||'', sp.brand||'', sp.unit||(mt?mt.unit:'')||'', Number(sp.target)||0, sp.weight!=null?sp.weight:'', (mt?mt.note:'')||'', img]); });
-  if(specs.length===0) rows.push(['','','','','','','','','','','']);
+    rows.push([sp.poz||'', sp.ozelNo||'', sp.name||'', sp.standart||'', sp.code||'', sp.brand||'', sp.unit||(mt?mt.unit:'')||'', Number(sp.target)||0, sp.openQty?'EVET':'', sp.weight!=null?sp.weight:'', (mt?mt.note:'')||'', img]); });
+  if(specs.length===0) rows.push(['','','','','','','','','','','','']);
   const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:10},{wch:16},{wch:26},{wch:18},{wch:16},{wch:16},{wch:10},{wch:10},{wch:16},{wch:28},{wch:40}];
-  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:10}})};
+  ws['!cols']=[{wch:10},{wch:16},{wch:26},{wch:18},{wch:16},{wch:16},{wch:10},{wch:10},{wch:11},{wch:16},{wch:28},{wch:40}];
+  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:11}})};
   XLSX.utils.book_append_sheet(wb,ws,"Spesifikasyonlar");
   XLSX.writeFile(wb,`${PBINA}_${PCAT}_${PSPEC}_${new Date().toISOString().slice(0,10)}.xlsx`.replace(/[\\/:*?"<>|]/g,'-'));
   toast("Excel ciktisi indirildi");
@@ -7931,6 +7954,9 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
   const iTags=pick('etiket','etiketler','tags','tag');
   const iImg=pick('image_url','imageurl','resim linki','resim_linki','resim url','resim_url','resim','foto linki','foto_linki','fotograf linki','fotograf_linki','fotograf url','fotograf','foto','photo url','photo_url','photo','image','gorsel','gorsel linki','gorsel url');
   const iInc=pick('include_in_progress','includeinprogress','ilerlemeye dahil','dahil');
+  // ACIK KALEM sutunu: miktari heniz belli olmayan kalem EVET ile acikca isaretlenir.
+  // Sutun yoksa eski kural gecerli kalir (Miktar 0/bos -> acik kalem varsayilir).
+  const iOpen=pick('acik kalem','acik_kalem','acikkalem','açık kalem','acik','open_qty','openqty','open');
   const iAct=pick('action','islem');
   if(iTgt<0 || (iCode<0&&iName<0)){ report.errors.push('Spesifikasyon sayfasi: en az "material_code"/"malzeme" ve "target_qty"/"hedef" sutunlari gerekli'); return; }
   const useExt=iExt>=0;
@@ -8037,7 +8063,35 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
     }
     if(action==='delete'){ if(existing){ DB.proje.specs=DB.proje.specs.filter(s=>s.id!==existing.id); report.specDeleted++; (report.deletedSpecIds=report.deletedSpecIds||[]).push(existing.id); } continue; }
     const tgt=Number(tgtRaw);
-    if(!tgtRaw||isNaN(tgt)||tgt<=0){ report.errors.push(`Spek satir ${r+1}: gecersiz hedef miktar`); continue; }
+    // MIKTARI BELLI OLMAYAN KALEM (Miktar sutunu bos ya da 0):
+    // Eskiden bu satir "gecersiz hedef miktar" deyip ATLANIYORDU. Atlanan satir touched'a
+    // girmedigi icin asagidaki replaceScope onu "Excel'de yok" sayip SILIYORDU - yani miktari
+    // heniz belli olmayan kalem, dosyada acikca yazili oldugu halde iceri atarken kayboluyordu.
+    // Ustelik bu bir ROUND-TRIP kaybiydi: disa aktarim acik kalemi Miktar=0 olarak yaziyor,
+    // ayni dosya geri yuklenince kalem siliniyordu.
+    // Artik 0/bos, modaldaki "acik kalem" ile AYNI anlama gelir (openQty + exclude, hedef 0):
+    // kalem yasar, yuzde hesabina girmez, miktar sonradan yazilinca kendiliginden normale doner.
+    // ACIK KALEM sutunu doldurulduysa NIYET ACIKTIR ve miktardan once gelir: EVET ise kalem
+    // acik olur (miktar yazsa bile), HAYIR ise kapali kalem istenmis demektir. Sutun yoksa
+    // ya da bos birakildiysa eski varsayim surer: miktar 0/bos -> acik kalem.
+    const openRaw=iOpen>=0?String(row[iOpen]??'').trim():'';
+    const openSet=openRaw!=='';
+    // norm() ile karsilastirilir: JS'in /i bayragi Turkce I/ı katlamasini yapmadigi icin
+// duz regex "AÇIK" yazimini kaciriyordu. norm() hepsini ayni yazima indirger.
+const openEvet=['evet','e','var','acik','yes','y','true','x','1'].includes(norm(openRaw));
+    const acik=openSet?openEvet:(!tgtRaw||tgt===0);
+    // "Acik Kalem: HAYIR" denmis ama miktar da yoksa hedef bilinmiyor demektir - kalem yine
+    // acik acilir (satiri dusurmek onu replaceScope'a silduruyordu), rapora not duser.
+    const acikCeliski=openSet&&!openEvet&&(!tgtRaw||tgt===0);
+    if(acikCeliski) report.errors.push(`Spek satir ${r+1}: "Acik Kalem" HAYIR ama miktar bos/0 - kalem acik kalem olarak alindi`);
+    const acikSon=acik||acikCeliski;
+    if(!acikSon && (isNaN(tgt)||tgt<0)){
+      // Bozuk miktar (harf, negatif) kalemi SILDIRMEZ: satir Excel'de gorulmustur, mevcut
+      // kayit oldugu gibi korunur ve touched'a yazilir; kullanici hatayi raporda gorur.
+      report.errors.push(`Spek satir ${r+1}: gecersiz hedef miktar ("${tgtRaw}") - kalem degistirilmeden korundu`);
+      if(existing) touched.add(existing.id);
+      continue;
+    }
     const brand=iBrand>=0?String(row[iBrand]??'').trim():'';
     const note=iNote>=0?String(row[iNote]??'').trim():'';
     const standart=iStd>=0?String(row[iStd]??'').trim():'';
@@ -8057,24 +8111,36 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
     if(existing){ // UPDATE — bina yalnizca Excel'de acikca belirtilmisse guncellenir
       existing.code=code||existing.code; existing.name=name||existing.name; existing.unit=unit;
       if(insertBina)existing.bina=insertBina; if(grup)existing.grup=grup; existing.cat=cat; existing.matId=mat.id; existing.brand=mat.brand||'';
-      // acik kalem (openQty) korunur: Excel'de hedef girildiyse acik kalem normale doner,
-      // girilmediyse (0/bos) kalem acik kalir ve exclude degismezi bozulmaz
-      if(existing.openQty && tgt>0){ existing.openQty=false; existing.target=tgt; existing.exclude=exclude; }
-      else if(existing.openQty){ existing.exclude=true; }
-      else if((existing.lokTargets||[]).length){
+      if((existing.lokTargets||[]).length){
         // oda/lokasyon dagilimi girilen kalemde hedefin kaynagi DAGILIMDIR - Excel hedefi
         // sessizce ezilmez; fark varsa rapora uyari dusulur (dagilim sartname ici oda ekranindan guncellenir)
         existing.exclude=exclude;
-        if(Number(existing.target)!==tgt) report.errors.push(`${existing.code||existing.name}: Excel hedefi (${tgt}) yok sayildi - kalemin oda dagilimi toplami (${existing.target}) korundu`);
+        if(acikSon) report.errors.push(`${existing.code||existing.name}: oda dagilimi olan kalem acik kaleme cevrilmez - dagilim toplami (${fmtNum(existing.target)}) korundu`);
+        else if(Number(existing.target)!==tgt) report.errors.push(`${existing.code||existing.name}: Excel hedefi (${tgt}) yok sayildi - kalemin oda dagilimi toplami (${existing.target}) korundu`);
       }
+      else if(acikSon){
+        // NIYET ACIKSA (Acik Kalem sutunu EVET) mevcut hedef de sifirlanir - kullanici bunu
+        // bilerek istemistir. Yalnizca "miktar 0/bos" TAHMINIYLE gelindiyse mevcut GERCEK hedef
+        // silinmez: orada 0, "belli degil" demektir, "sifir adet" degil (disa aktarip geri
+        // yukleme hedefleri sifirlamasin diye).
+        if(openSet&&openEvet){ existing.openQty=true; existing.exclude=true; existing.target=0; }
+        else if(Number(existing.target)>0){
+          report.errors.push(`${existing.code||existing.name}: Excel'de miktar bos/0 - mevcut hedef (${fmtNum(existing.target)} ${existing.unit||''}) korundu ("Acik Kalem" sutununa EVET yazarsaniz acik kaleme cevrilir)`);
+        } else { existing.openQty=true; existing.exclude=true; existing.target=0; }
+      }
+      // acik kalem (openQty) korunur: Excel'de hedef girildiyse acik kalem normale doner
+      else if(existing.openQty && tgt>0){ existing.openQty=false; existing.target=tgt; existing.exclude=exclude; }
       else { existing.target=tgt; existing.exclude=exclude; }
       if(useExt&&ext)existing.extId=ext; if(poz)existing.poz=poz; if(ozelNo)existing.ozelNo=ozelNo;
       existing.standart=mat.standart||''; existing.weight=mat.weight!=null?mat.weight:null; existing.tags=(mat.tags||[]).slice(); existing.img=mat.img||null;
       report.specUpdated++; touched.add(existing.id); seen.set(skey,existing);
     } else { // INSERT — bina yoksa defaultBina'yi kullan
       const newId=uid();
-      const nsp={id:newId,extId:(useExt?ext:''),poz,ozelNo,code:code||mat.code,name:name||mat.name,target:tgt,unit,cat,bina:insertBina,grup,
-        standart:mat.standart||'',weight:mat.weight!=null?mat.weight:null,tags:(mat.tags||[]).slice(),img:mat.img||null,matId:mat.id,brand:mat.brand||'',exclude};
+      // ACIK KALEM degismezi (_specSaveCore ile ayni): openQty ise hedef 0 ve exclude true olur -
+      // tum yuzde hesaplari exclude'u atladigi icin miktari bilinmeyen kalem oranlari bozmaz.
+      const nsp={id:newId,extId:(useExt?ext:''),poz,ozelNo,code:code||mat.code,name:name||mat.name,target:acikSon?0:tgt,unit,cat,bina:insertBina,grup,
+        standart:mat.standart||'',weight:mat.weight!=null?mat.weight:null,tags:(mat.tags||[]).slice(),img:mat.img||null,matId:mat.id,brand:mat.brand||'',
+        openQty:acikSon,exclude:acikSon?true:exclude};
       DB.proje.specs.push(nsp);
       report.specCreated++; touched.add(newId); seen.set(skey,nsp);
     }
@@ -8402,6 +8468,8 @@ function buildSyncPlan(matRows, specRows){
     const iSart=pick('sartname','spec_group','specgroup','spesifikasyon grubu','grup','group');
     const iTgt=pick('target_qty','targetqty','hedef miktar','hedef','target');
     const iUnit=pick('unit','birim'); const iInc=pick('include_in_progress','includeinprogress','ilerlemeye dahil','dahil');
+    // ACIK KALEM sutunu (upsertSpecsFromRows ile ayni kural): EVET -> miktari belli olmayan kalem
+    const iOpen=pick('acik kalem','acik_kalem','acikkalem','açık kalem','acik','open_qty','openqty','open');
     if(iTgt<0||(iCode<0&&iName<0)){ plan.errors.push('Spesifikasyon sayfasi: malzeme/kod ve hedef sutunlari gerekli'); }
     else for(let r=h+1;r<specRows.length;r++){ const row=specRows[r]; if(!row||row.every(c=>String(c).trim()==='')) continue;
       const ext=iExt>=0?String(row[iExt]??'').trim():'';
@@ -8416,11 +8484,21 @@ function buildSyncPlan(matRows, specRows){
       if(!sec||!validSections.has(norm(sec))){ plan.errors.push(`Spek satir ${r+1}: "${sec||'(bos)'}" bolumu tanimli degil`); continue; }
       if(!sart){ plan.errors.push(`Spek satir ${r+1}: sartname bos`); continue; }
       if(!sartIndex[norm(bina)+'|'+norm(sec)+'|'+norm(sart)]){ plan.errors.push(`Spek satir ${r+1}: "${sart}" sartnamesi ${bina}/${sec} icin tanimli degil`); continue; }
-      const tgt=Number(tgtRaw); if(!tgtRaw||isNaN(tgt)||tgt<=0){ plan.errors.push(`Spek satir ${r+1}: gecersiz hedef`); continue; }
+      // MIKTARI BELLI OLMAYAN KALEM: 0/bos "gecersiz" degil, "ACIK KALEM"dir (upsertSpecsFromRows
+      // ile ayni kural). Eskiden tek bir 0'li satir asagidaki "dogrulama basarisiz - DUR"
+      // kontrolune takilip BUTUN senkronu engelliyordu.
+      const openRaw=iOpen>=0?String(row[iOpen]??'').trim():'';
+      const openSet=openRaw!=='';
+      // norm() ile karsilastirilir: JS'in /i bayragi Turkce I/ı katlamasini yapmadigi icin
+// duz regex "AÇIK" yazimini kaciriyordu. norm() hepsini ayni yazima indirger.
+const openEvet=['evet','e','var','acik','yes','y','true','x','1'].includes(norm(openRaw));
+      const tgt=Number(tgtRaw);
+      const acik=openSet?(openEvet||!tgtRaw||tgt===0):(!tgtRaw||tgt===0);
+      if(!acik && (isNaN(tgt)||tgt<0)){ plan.errors.push(`Spek satir ${r+1}: gecersiz hedef ("${tgtRaw}")`); continue; }
       const skey=ext?('e:'+norm(ext)):('k:'+matKey(code,name)+'|'+norm(bina)+'|'+norm(sec)+'|'+norm(sart));
       if(specSeen[skey]){ plan.errors.push(`Spek satir ${r+1}: dosyada tekrar eden kayit`); continue; }
       const inc=iInc>=0?String(row[iInc]??'').trim().toUpperCase():'';
-      specSeen[skey]={ext,code,name,bina,sec,sart,tgt,unit:iUnit>=0?String(row[iUnit]??'').trim():'',exclude:(inc==='HAYIR'||inc==='NO'||inc==='HARIC')};
+      specSeen[skey]={ext,code,name,bina,sec,sart,tgt,acik,acikAcik:(openSet&&openEvet),unit:iUnit>=0?String(row[iUnit]??'').trim():'',exclude:(inc==='HAYIR'||inc==='NO'||inc==='HARIC')};
     }
   }
   if(plan.errors.length) return plan; // dogrulama basarisiz - DUR
@@ -8453,7 +8531,7 @@ async function applySyncPlan(){
   // SPEC (FK: malzeme)
   const findMat=(code,name)=>(DB.proje.materials||[]).find(m=>!m.is_deleted && matKey(m.code,m.name)===matKey(code,name));
   plan.spec.insert.forEach(x=>{ const mt=findMat(x.code,x.name); 
-    DB.proje.specs.push({id:uid(),extId:x.ext||'',code:x.code||(mt?mt.code:''),name:x.name||(mt?mt.name:''),target:x.tgt,unit:x.unit||(mt?mt.unit:''),cat:x.sec,bina:x.bina,grup:x.sart,matId:mt?mt.id:null,brand:mt?mt.brand:'',exclude:x.exclude,is_deleted:false}); rep.specCreated++; });
+    DB.proje.specs.push({id:uid(),extId:x.ext||'',code:x.code||(mt?mt.code:''),name:x.name||(mt?mt.name:''),target:x.acik?0:x.tgt,unit:x.unit||(mt?mt.unit:''),cat:x.sec,bina:x.bina,grup:x.sart,matId:mt?mt.id:null,brand:mt?mt.brand:'',openQty:!!x.acik,exclude:x.acik?true:x.exclude,is_deleted:false}); rep.specCreated++; });
   plan.spec.update.forEach(({existing,data})=>{ const mt=findMat(data.code,data.name);
     // acik kalem (openQty) korunur: Excel hedef getirdiyse normale doner, getirmediyse acik+haric kalir
     if(existing.openQty && data.tgt>0){ existing.openQty=false; existing.target=data.tgt; existing.exclude=data.exclude; }
@@ -8463,6 +8541,13 @@ async function applySyncPlan(){
       // sessizce ezilmez; fark varsa rapora uyari dusulur (dagilim sartname ici oda ekranindan guncellenir)
       existing.exclude=data.exclude;
       if(Number(existing.target)!==data.tgt) rep.errors.push(`${existing.code||existing.name}: Excel hedefi (${data.tgt}) yok sayildi - kalemin oda dagilimi toplami (${existing.target}) korundu`);
+    }
+    else if(data.acik){
+      // "Acik Kalem: EVET" acik niyettir - mevcut hedef de sifirlanir. Yalniz miktar 0/bos
+      // tahminiyle gelindiyse mevcut gercek hedef silinmez ("belli degil" != "sifir adet").
+      if(data.acikAcik){ existing.openQty=true; existing.exclude=true; existing.target=0; }
+      else if(Number(existing.target)>0) rep.errors.push(`${existing.code||existing.name}: Excel'de miktar bos/0 - mevcut hedef (${fmtNum(existing.target)} ${existing.unit||''}) korundu ("Acik Kalem" sutununa EVET yazarsaniz acik kaleme cevrilir)`);
+      else { existing.openQty=true; existing.exclude=true; existing.target=0; }
     }
     else { existing.target=data.tgt; existing.exclude=data.exclude; }
     if(data.unit)existing.unit=data.unit; existing.cat=data.sec; existing.bina=data.bina; existing.grup=data.sart; existing.is_deleted=false; if(mt){existing.matId=mt.id;existing.brand=mt.brand;} rep.specUpdated++; });
@@ -8770,8 +8855,7 @@ function renderSpec(){
       list.sort((a,b)=>a.name.localeCompare(b.name,'tr'));
     }
     const p=g.target>0?Math.min(100,(g.got/g.target)*100):0; const col=catColor(g.cat); const gdone=p>=100;
-    let cards='';
-    list.forEach(sp=>{ const{got,pct}=specProgress(sp); const{installed:montajGot,pct:montajPct}=specMontajProgress(sp); const c2=catColor(sp.cat); const done=pct>=100; const ex=!!sp.exclude; const open=!!sp.openQty; const montajDone=montajPct>=100; const spAlts=specAlts(sp.id); const altCount=spAlts.length; const altActive=spAlts.filter(a=>a.status==='kullanımda').length; const altApproved=spAlts.filter(a=>a.status==='onaylandi').length;
+    const specRowHtml=(sp)=>{ const{got,pct}=specProgress(sp); const{installed:montajGot,pct:montajPct}=specMontajProgress(sp); const c2=catColor(sp.cat); const done=pct>=100; const ex=!!sp.exclude; const open=!!sp.openQty; const montajDone=montajPct>=100; const spAlts=specAlts(sp.id); const altCount=spAlts.length; const altActive=spAlts.filter(a=>a.status==='kullanımda').length; const altApproved=spAlts.filter(a=>a.status==='onaylandi').length;
       const simg=specImgOf(sp);
       const thumb=simg?`<img src="${simg}" class="spec-thumb" onclick="event.stopPropagation();lightbox(${lbCall(specImgsOf(sp))})">`:`<div class="spec-thumb spec-thumb-ph">${phIcoSm()}</div>`;
       const exBadge=open?`<span class="cat-tag ex-badge" style="background:var(--blue)22;color:var(--blue);border:1px solid var(--blue)66" title="Miktar henuz belli degil - alimlar sinirsiz girilir, hedef girilince yuzdeye dahil olur">ACIK KALEM · MIKTAR BELIRSIZ</span>`:ex?`<span class="cat-tag ex-badge" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)66">${icoExclude()} ILERLEMEYE DAHIL DEGIL</span>`:'';
@@ -8785,15 +8869,15 @@ function renderSpec(){
         :(sp.ozelNo?` <span class="cat-tag" style="background:rgba(240,160,32,.16);color:var(--amber);font-family:var(--mono);font-size:9px" title="Ozel No">${esc(sp.ozelNo)}</span>`:'');
       const catBadges=`<span class="cat-tag" style="background:${c2}22;color:${c2}">${esc(sp.cat)}</span>${sp.code?` <span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(sp.code)}</span>`:''}${katTag}${ozelTag}${sp.bina?` <span class="bina-tag" style="background:${buildingColor(sp.bina)}22;color:${buildingColor(sp.bina)};border:1px solid ${buildingColor(sp.bina)}55">${esc(sp.bina)}</span>`:''}${exBadge}`;
       if(SPECVIEW==='list'){
-        cards+=`<div class="prog-row spec-clickable${open?' spec-open':ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')">${thumb}
+        return `<div class="prog-row spec-clickable${open?' spec-open':ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')">${thumb}
           <div class="prog-row-main"><div class="prog-row-name" title="${esc(sp.name)}">${esc(sp.name)}${altBadge}</div><div class="prog-cat">${catBadges}</div></div>
           <div class="prog-row-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(sp.unit||'')}</b></span><span>Hedef: <b>${open?'belirsiz':fmtNum(sp.target)+' '+esc(sp.unit||'')}</b></span><span>Kalan: <b style="color:${open?'var(--mute)':done?'var(--green)':'var(--amber)'}">${open?'—':done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(sp.unit||'')}</b></span></div>
           <div class="prog-row-bar"><div class="prog-row-bar-top"><span>Alim</span><b style="color:${ex?'var(--mute)':done?'var(--green)':c2}">${open?'—':pct.toFixed(0)+'%'}</b></div><div class="bar"><i style="width:${pct}%;background:${ex?'var(--dim)':done?'var(--green)':c2}"></i></div></div>
           ${Number(sp.target)>0?`<div class="prog-row-bar"><div class="prog-row-bar-top"><span>Montaj</span><b style="color:${montajDone?'var(--green)':'var(--amber)'}">${montajPct.toFixed(0)}%</b></div><div class="bar"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div></div>`
             :open?`<div class="prog-row-bar"><div class="prog-row-bar-top"><span>Montaj</span><b style="color:var(--blue)">${fmtNum(montajGot)} ${esc(sp.unit||'')}</b></div></div>`:'<div class="prog-row-bar"></div>'}
           ${actions}</div>`;
-      } else {
-      cards+=`<div class="prog-card spec-clickable${open?' spec-open':ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')"><div class="prog-head"><div style="display:flex;gap:11px;align-items:flex-start;flex:1;min-width:0">${thumb}<div style="min-width:0"><div class="prog-name">${esc(sp.name)}${altBadge}</div>
+      }
+      return `<div class="prog-card spec-clickable${open?' spec-open':ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')"><div class="prog-head"><div style="display:flex;gap:11px;align-items:flex-start;flex:1;min-width:0">${thumb}<div style="min-width:0"><div class="prog-name">${esc(sp.name)}${altBadge}</div>
         <div class="prog-cat">${catBadges}</div></div></div>
         <div class="prog-pct" style="color:${ex?'var(--mute)':done?'var(--green)':c2}">${open?'—':pct.toFixed(0)+'%'}</div></div>
         <div class="bar"><i style="width:${pct}%;background:${ex?'var(--dim)':done?'var(--green)':c2}"></i></div>
@@ -8802,7 +8886,9 @@ function renderSpec(){
         ${Number(sp.target)>0?`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:7px;white-space:nowrap"><span style="font-size:11px;color:var(--mute);flex:0 0 auto">Montaj</span><span style="font-size:11px;font-weight:600;color:${montajDone?'var(--green)':'var(--amber)'};overflow:hidden;text-overflow:ellipsis">${fmtNum(montajGot)} ${esc(sp.unit||'')} <span style="font-weight:400;color:var(--mute)">· ${montajPct.toFixed(0)}%</span></span></div><div class="bar" style="height:4px;margin-top:3px"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div>`
           :open?`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:7px;white-space:nowrap"><span style="font-size:11px;color:var(--mute);flex:0 0 auto">Montaj</span><span style="font-size:11px;font-weight:600;color:var(--blue)">${fmtNum(montajGot)} ${esc(sp.unit||'')}</span></div>`:''}
         ${actions}</div>`;
-      } });
+      };
+    let cards='';
+    list.forEach(sp=>{ cards+=specRowHtml(sp); });
     sections+=`<div class="spec-group">
       <div class="spec-group-head">
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -8842,7 +8928,9 @@ function renderSpec(){
   // BIRLESIK URUN OZETI - sadece "Tum Spesifikasyonlar" (PSPEC bos) ve birden fazla grup varken
   let mergedHtml='';
   if(PSPEC==='__all' && groupKeys.length>1){
-    const merged=mergedSpecs(specs).filter(m=>m.items.length>1) // sadece birden fazla spek'te gecen urunler
+    // Toplama acikken listedeki her sartname zaten kendi icinde topluyor; bu panel ancak urun
+    // GERCEKTEN birden fazla sartnameye yayilmissa ek bilgi verir (basligin vaat ettigi de bu).
+    const merged=mergedSpecs(specs).filter(m=>m.items.length>1)
       .filter(m=>!q||matchText(m.name+' '+(m.code||''),q))
       .sort((a,b)=>a.name.localeCompare(b.name,'tr'));
     if(merged.length){
@@ -13192,7 +13280,9 @@ let NORD=null; // aktif siparis taslagi: {no,date,bina,companyId,newCompany,pdf,
 // srcSpecId = malzemenin alindigi kaynak kalem, yerineSpecId = hedef binada yerine gectigi kalem.
 // tedarikBina/tedarikSart: satira ozel TEDARIK KAYNAGI (bkz. nordTedarikOf) - her urun icin
 // ayri secilebilir. Bos ise baslikta secili olan (varsayilan) gecerlidir.
-function _nordEmptyLine(){ return {specId:'',altId:'',srcSpecId:'',yerineSpecId:'',refSpecId:'',code:'',ad:'',cat:'',unit:'',grup:'',img:null,brand:'',qty:'',raw:'',tedarikBina:'',tedarikSart:''}; }
+// dagitKey/dagitGrup: ozel kodsuz alimda hangi dagitim grubunu bekledigi (bkz. nordDagitOpen)
+// dagitimId: birlikte dagitilmis satirlarin ortak izi - faturada ve duzenlemede korunur
+function _nordEmptyLine(){ return {specId:'',altId:'',srcSpecId:'',yerineSpecId:'',refSpecId:'',code:'',ad:'',cat:'',unit:'',grup:'',img:null,brand:'',qty:'',raw:'',tedarikBina:'',tedarikSart:'',dagitKey:'',dagitGrup:'',dagitimId:''}; }
 /* SIPARIS ATAMASI - varsayilan alanlar.
    tur:'normal'  -> bugunku davranis, hicbir sey degismez
    tur:'atama'   -> urunler KAYNAK binanin sartnamesinden secilir, ama siparis HEDEF binaya
@@ -13328,7 +13418,8 @@ function openEditOrderPage(orderId){
     // satira ozel tedarik kaynagi tazelemede korunur - yoksa duzenleyip kaydeden kullanici
     // satir bazli kunyeyi sessizce kaybederdi (basliktan mirasli satirlar zaten bos durur)
     if(sp && !l.refSpecId){ const nl=nordSpecToLine(sp, Number(l.qty), ''); nl.lokId=l.lokId||'';
-      nl.tedarikBina=l.tedarikBina||''; nl.tedarikSart=l.tedarikSart||''; return nl; }
+      nl.tedarikBina=l.tedarikBina||''; nl.tedarikSart=l.tedarikSart||'';
+      nl.dagitimId=l.dagitimId||''; return nl; }
     // ATAMA satiri geri yuklenirken duzenlenebilir hale getirilir: srcSpecId kaynak kalemdir,
     // altId doluysa satir mevcut bir kalemin YERINE baglanmistir (specId o kalemdir).
     // specId bosaltilir ki kaydetmede atamaMaterialize yeniden calissin ve "yerine"
@@ -14073,6 +14164,237 @@ function nordAtamaPickApply(){
   nordAtamaPickClose(); nordRenderLines();
   toast(`${eklenen} malzeme eklendi - istege bagli olarak her satirda "yerine gectigi kalemi" secebilirsiniz`);
 }
+/* ─── MIKTARI KALEMLERE DAGIT (ozel kodsuz alim) ────────────────────────────
+   Sartnamede ayni urun her ozel kod icin AYRI kalem olarak durur (cogunlukla hedef 1).
+   Satin alma tarafinda ozel kod kullanilmaz: faturada yalnizca "urun adi + 20 adet" yazar.
+   Bu akis o TEK satiri N satira acar; her satir kendi kalemine (specId) baglanir.
+   HICBIR KALEM BIRLESTIRILMEZ, HICBIR OZEL KOD SILINMEZ - kalemler ve kodlari yerinde
+   kalir, yalnizca faturadaki miktar aralarinda paylastirilir. Kaydedilen sonuc yine
+   "kalem basina bir satir" oldugu icin ilerleme/stok/montaj/rapor ekranlarinin hicbiri
+   degismez; hangi satirlarin birlikte dagitildigi satirdaki dagitimId ile izlenir.
+   KAPSAM DISI: alternatif urunle alim (altId) ve atama satirlari (srcSpecId) - ikisi de
+   hedef kalemini zaten tek basina belirler, dagitim sorusu orada olusmaz. */
+let _NDG=null;
+// satirin ait oldugu dagitim grubu: AYNI bina + AYNI sartname + ayni urun (kod, yoksa ad).
+// Sartname disina TASMAZ: ayni urun baska bir sartnamede de geciyorsa oradaki kalemler
+// bu faturanin kapsaminda degildir, sessizce onlara dagitmak yanlis olurdu.
+function nordDagitGrupOf(l){
+  if(!l) return [];
+  let key='', grup='';
+  if(l.dagitKey){ key=l.dagitKey; grup=l.dagitGrup||''; }
+  else {
+    if(!l.specId || l.altId || l.srcSpecId) return [];
+    const sp=DB.proje.specs.find(s=>s.id===l.specId); if(!sp) return [];
+    key=specMergeKey(sp); grup=specGroupKey(sp);
+  }
+  // DB sirasi korunur: sartname Excel'inden geldigi sira = kullanicinin listede gordugu sira
+  return (DB.proje.specs||[]).filter(s=>!s.is_deleted && (s.bina||'')===(NORD.bina||'')
+    && specGroupKey(s)===grup && specMergeKey(s)===key);
+}
+function nordDagitListe(){ return _NDG?nordDagitGrupOf(NORD.lines[_NDG.i]):[]; }
+// Kalemin o ana kadarki alimi. DUZENLEMEDE duzenlenen siparisin kendi girisleri dusulur -
+// yoksa kaydedilmis siparis yeniden acildiginda tum kalemler "kalan 0" gorunur ve
+// otomatik doldurma hicbir seyi dolduramazdi.
+function nordDagitAlinan(sp){
+  let got=specProgress(sp).got;
+  if(NORD&&NORD.editId){
+    got-=(DB.proje.items||[]).filter(it=>it.orderId===NORD.editId&&it.specId===sp.id)
+      .reduce((s,it)=>s+(Number(it.qty)||0),0);
+  }
+  return got>0?got:0;
+}
+// hedefi belirsiz (acik) kalemde kalan hesaplanamaz -> 0 doner, otomatik doldurma atlar
+function nordDagitKalan(sp){
+  const t=Number(sp.target)||0; if(!(t>0)) return 0;
+  const k=t-nordDagitAlinan(sp); return k>0?k:0;
+}
+function nordDagitDurum(){
+  const f=_NDG||{sel:{}};
+  const dagitilan=Object.keys(f.sel||{}).reduce((s,id)=>{ const n=nordParseQty(f.sel[id]); return s+(n>0?n:0); },0);
+  const t=nordParseQty(f.toplam), toplam=t>0?t:0;
+  return {dagitilan,toplam,artan:toplam>0?(toplam-dagitilan):0};
+}
+function nordDagitOpen(i){
+  const l=NORD.lines[i]; if(!l) return;
+  const list=nordDagitGrupOf(l);
+  if(list.length<2){ toast('Bu urunun bu sartnamede tek kalemi var - dagitima gerek yok','err'); return; }
+  // "YENIDEN DAGIT" TEK SATIRI DEGIL, O DAGITIMIN TAMAMINI ELE ALIR: ayni dagitimId'li
+  // satirlarin miktari toplanip ekrana getirilir ve uygulanirken hepsi birden yenilenir.
+  // Yoksa eski satirlar yerinde kalir, miktar iki kez sayilirdi.
+  const idx=l.dagitimId
+    ? NORD.lines.reduce((a,x,j)=>{ if(x.dagitimId===l.dagitimId) a.push(j); return a; },[])
+    : [i];
+  const sel={}; let toplam=0;
+  idx.forEach(j=>{ const ln=NORD.lines[j], q=nordParseQty(ln.qty);
+    if(q>0){ toplam+=q; if(ln.specId) sel[ln.specId]=String(q); } });
+  _NDG={i:idx[0],idx,dagitimId:l.dagitimId||'',sel,toplam:toplam>0?String(toplam):''};
+  // ilk kez dagitiliyorsa (satirda miktar var, secim yok) ekran hazir dagitimla acilir
+  if(!Object.keys(sel).length && nordParseQty(_NDG.toplam)>0) nordDagitDoldur();
+  nordDagitRender();
+}
+function nordDagitClose(){ _NDG=null; closeModal(); }
+function nordDagitToplam(v){ if(!_NDG) return; _NDG.toplam=v; nordDagitSayac(); }
+// SIRAYLA KALANI DOLDUR: sartname sirasinda ilerler, her kaleme kalani kadar verir.
+// Yuzde disi birakilmis kalemler (exclude) otomatik doldurulmaz - alim oraya sayilsa
+// ilerlemeye girmez, sessizce kaybolmus gibi gorunurdu; elle yazilabilir.
+function nordDagitDoldur(){
+  const f=_NDG; if(!f) return 0;
+  const toplam=nordParseQty(f.toplam); f.sel={};
+  if(!(toplam>0)) return 0;
+  let kalanMiktar=toplam;
+  for(const sp of nordDagitListe()){
+    if(kalanMiktar<=1e-9) break;
+    if(sp.exclude) continue;
+    const k=nordDagitKalan(sp); if(!(k>0)) continue;
+    const ver=Math.min(k,kalanMiktar);
+    f.sel[sp.id]=String(ver);
+    kalanMiktar=Math.round((kalanMiktar-ver)*1e6)/1e6;
+  }
+  return kalanMiktar;
+}
+function nordDagitOto(){
+  const f=_NDG; if(!f) return;
+  if(!(nordParseQty(f.toplam)>0)){ toast('Once toplam miktari yazin','err'); return; }
+  const artan=nordDagitDoldur();
+  nordDagitRender();
+  if(artan>1e-9) toast(`Kalemlerin kalani bitti - ${fmtNum(artan)} birim dagitilmadi`,'err');
+}
+function nordDagitTemizle(){ if(!_NDG) return; _NDG.sel={}; nordDagitRender(); }
+// Miktar yazarken TAM CIZIM yapilmaz (odak kaybolurdu): yalnizca satirin vurgusu ve
+// ustteki sayac guncellenir.
+function nordDagitQty(id,v,el){
+  const f=_NDG; if(!f) return;
+  if(String(v||'').trim()==='') delete f.sel[id]; else f.sel[id]=v;
+  const row=el?el.closest('.ndg-row'):null;
+  if(row){ const n=nordParseQty(v), sp=(DB.proje.specs||[]).find(s=>s.id===id);
+    const kalan=sp?nordDagitKalan(sp):0;
+    row.classList.toggle('on',n>0);
+    row.classList.toggle('asim',n>0&&kalan>0&&n>kalan+1e-9);
+  }
+  nordDagitSayac();
+}
+function nordDagitSayac(){
+  const d=nordDagitDurum();
+  const el=document.getElementById('ndgSayac');
+  if(el) el.innerHTML=nordDagitSayacHtml(d);
+  const btn=document.getElementById('ndgApply');
+  if(btn){ const blok=(d.dagitilan<=0)||Math.abs(d.artan)>1e-9;
+    btn.disabled=blok; btn.style.opacity=blok?'.5':''; btn.style.cursor=blok?'not-allowed':''; }
+}
+function nordDagitSayacHtml(d){
+  const artanRenk=Math.abs(d.artan)<=1e-9?'var(--green)':(d.artan>0?'var(--amber)':'var(--red)');
+  return `<span class="t-meta">Fatura miktari: <b style="color:var(--ink)">${d.toplam?fmtNum(d.toplam):'-'}</b></span>
+    <span class="t-meta">Dagitilan: <b style="color:var(--ink)">${fmtNum(d.dagitilan)}</b></span>
+    <span class="t-meta">${d.artan<0?'Fazla dagitildi':'Artan'}: <b style="color:${artanRenk}">${fmtNum(Math.abs(d.artan))}</b></span>`;
+}
+function nordDagitRender(){
+  closeModal(); const f=_NDG; if(!f) return;
+  const l=NORD.lines[f.i]; if(!l) return;
+  const list=nordDagitListe();
+  const ilk=list[0]||{};
+  const toplamKalan=list.reduce((s,sp)=>s+nordDagitKalan(sp),0);
+  const d=nordDagitDurum();
+  const rows=list.map(sp=>{
+    const koz=katAtaKodlar(sp);
+    const q=f.sel[sp.id]||'', n=nordParseQty(q);
+    const kalan=nordDagitKalan(sp), acik=!(Number(sp.target)>0);
+    const asim=n>0&&kalan>0&&n>kalan+1e-9;
+    const alt=[sp.kat?_katEtiket(sp.kat):'',sp.poz?'Poz '+sp.poz:'',sp.exclude?'yuzde disi':''].filter(Boolean).map(esc).join(' · ');
+    const kalanTxt=acik?'hedef belirsiz':(kalan>0?`kalan ${fmtNum(kalan)}`:'kalan yok');
+    return `<div class="ndg-row${n>0?' on':''}${asim?' asim':''}">
+      <div class="ndg-kod">${koz.length?esc(koz.join(' · ')):'<span style="color:var(--mute)">ozel kod yok</span>'}${alt?`<span>${alt}</span>`:''}</div>
+      <div class="ndg-kalan" title="Hedef ${acik?'belirsiz':fmtNum(sp.target)} · Alinan ${fmtNum(nordDagitAlinan(sp))}">${kalanTxt}</div>
+      <input type="number" step="any" min="0" placeholder="0" value="${esc(q)}" oninput="nordDagitQty('${sp.id}',this.value,this)">
+      <span class="ndg-unit">${esc(sp.unit||'')}</span>
+    </div>`;
+  }).join('')||`<p class="matd-empty" style="margin:10px 0">Kalem bulunamadi.</p>`;
+  const html=`<div class="modal-bg" onclick="if(event.target===this)nordDagitClose()"><div class="modal wide"><div class="modal-head">
+    <h3>Miktari Kalemlere Dagit</h3><button class="mini-btn" onclick="nordDagitClose()">x</button></div><div class="modal-body">
+    <div class="nxb-src">
+      <div class="nxb-src-h">OZEL KODSUZ ALIM</div>
+      <div class="nxb-name">${esc(l.ad||ilk.name||'?')}</div>
+      <div class="nxb-sub">${esc([l.code||ilk.code||'',specGroupKey(ilk),NORD.bina].filter(Boolean).join(' · '))} — ${list.length} kalem · toplam kalan ${fmtNum(toplamKalan)} ${esc(ilk.unit||'')}</div>
+    </div>
+    <p class="t-meta" style="margin:12px 0 10px;line-height:1.65">Faturada ozel kod yazmadigi icin miktar kalemlere burada paylastirilir.
+      <b>Kalemler ve ozel kodlar oldugu gibi kalir</b> - hicbiri birlestirilmez ya da silinmez; yalnizca bu siparis satiri
+      ${list.length} ayri satira acilir ve her satir kendi kalemine baglanir.</p>
+    <div class="frow" style="margin-bottom:0"><label>Faturadaki toplam miktar</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="number" step="any" min="0" style="max-width:150px;margin:0" value="${esc(f.toplam||'')}" oninput="nordDagitToplam(this.value)" placeholder="0">
+        <span class="t-meta" style="font-family:var(--mono)">${esc(ilk.unit||'')}</span>
+        <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordDagitOto()" title="Sartname sirasinda ilerleyip her kaleme kalani kadar yazar">Otomatik Doldur</button>
+        <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordDagitTemizle()">Temizle</button>
+      </div></div>
+    <div class="ndg-sayac" id="ndgSayac">${nordDagitSayacHtml(d)}</div>
+    <div class="nxb-list nat-list">${rows}</div>
+  </div><div class="modal-foot">
+    <span class="t-meta" style="margin-right:auto">Artan miktar kalmadan uygulanabilir</span>
+    <button class="btn btn-ghost" onclick="nordDagitClose()">Vazgec</button>
+    <button class="btn btn-add" id="ndgApply" onclick="nordDagitApply()">Satirlara Uygula</button>
+  </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  nordDagitSayac();
+}
+function nordDagitApply(){
+  const f=_NDG; if(!f) return;
+  const d=nordDagitDurum();
+  if(!(d.dagitilan>0)){ toast('En az bir kaleme miktar yazin','err'); return; }
+  if(Math.abs(d.artan)>1e-9){
+    toast(d.artan>0?`${fmtNum(d.artan)} birim dagitilmadi - kalemlere yazin ya da toplami dusurun`
+      :`Toplamdan ${fmtNum(-d.artan)} birim fazla dagitildi`,'err');
+    return;
+  }
+  const l=NORD.lines[f.i]||_nordEmptyLine();
+  const dagitimId=f.dagitimId||l.dagitimId||uid();
+  const yeni=[];
+  nordDagitListe().forEach(sp=>{
+    const q=nordParseQty(f.sel[sp.id]); if(!(q>0)) return;
+    const nl=nordSpecToLine(sp,q,'');
+    // satira ozel bilgiler (lokasyon, tedarik kaynagi) dagitilan tum satirlara tasinir
+    nl.lokId=l.lokId||''; nl.tedarikBina=l.tedarikBina||''; nl.tedarikSart=l.tedarikSart||'';
+    nl.dagitimId=dagitimId;
+    yeni.push(nl);
+  });
+  if(!yeni.length){ toast('Dagitilacak satir olusmadi','err'); return; }
+  // eski satirlarin TAMAMI (ayni dagitimdan gelenler dahil) yenileriyle degistirilir,
+  // yeni satirlar ilk eski satirin yerine konur - satir sirasi korunur
+  const eski=new Set((f.idx&&f.idx.length)?f.idx:[f.i]);
+  const bas=Math.min(...eski);
+  const out=[];
+  NORD.lines.forEach((x,j)=>{ if(j===bas) out.push(...yeni); if(!eski.has(j)) out.push(x); });
+  NORD.lines=out;
+  nordDagitClose(); nordRenderLines();
+  toast(`${fmtNum(d.dagitilan)} ${yeni[0].unit||'birim'} ${yeni.length} kaleme dagitildi - ozel kodlar satirlarda gorunuyor`);
+}
+// Yapistirmada ad/kod eslesti ama ayni sartnamede birden fazla kalem cikti: hangisi
+// oldugu faturadan bilinemez, satir DAGITIM BEKLIYOR durumunda birakilir (eskiden
+// sessizce ilk kaleme yazilirdi - tum miktar tek kaleme yigilir, digerleri %0 kalirdi).
+function nordDagitMatchGrup(cells){
+  const specs=DB.proje.specs.filter(s=>!s.is_deleted && (s.bina||'')===(NORD.bina||'') && nordSartMatch(s));
+  const texts=cells.map(c=>norm(c).trim()).filter(Boolean);
+  for(const t of texts){
+    if(t.length<3) continue;
+    const hits=specs.filter(s=>norm(s.name||'').trim()===t || (s.code&&norm(s.code).trim()===t));
+    if(hits.length<2) continue;
+    // ayni sartnamedeki ayni urun olmali - farkli sartname/urun karisimi dagitim grubu degildir
+    if(new Set(hits.map(specGroupKey)).size!==1) continue;
+    if(new Set(hits.map(specMergeKey)).size!==1) continue;
+    return hits;
+  }
+  return null;
+}
+function nordDagitBekleyenLine(hits,qty,raw){
+  const sp=hits[0], mt=specMaterial(sp);
+  const l=_nordEmptyLine();
+  l.code=sp.code||''; l.ad=sp.name||''; l.unit=sp.unit||''; l.cat=sp.cat||''; l.grup=specGroupKey(sp);
+  l.img=specImgOf(sp); l.brand=(mt&&mt.brand)||sp.brand||'';
+  l.qty=(qty!=null&&!isNaN(qty))?qty:'';
+  // raw dolu birakilir: satir "eslesmemis" sayilir (kaydedilmez) ve bina degisince
+  // yeniden eslestirmeye girer; kullanici isterse elle tek kalem de secebilir
+  l.raw=raw||((sp.code?sp.code+' ':'')+(sp.name||''));
+  l.dagitKey=specMergeKey(sp); l.dagitGrup=specGroupKey(sp);
+  return l;
+}
 // Turkce/Excel sayi bicimini cozer: "1.234,56" -> 1234.56 ; "5" -> 5 ; gecersiz -> NaN
 function nordParseQty(s){
   s=String(s==null?'':s).trim(); if(!s) return NaN;
@@ -14088,7 +14410,14 @@ function _nordUniq(hits){
   if(!hits.length) return null;
   const key=h=>norm((h.code||'')+'|'+(h.name||'')+'|'+(h.cat||'')+'|'+specGroupKey(h));
   const k0=key(hits[0]);
-  return hits.every(h=>key(h)===k0)?hits[0]:null;
+  if(!hits.every(h=>key(h)===k0)) return null;
+  // AYNI ANAHTAR HER ZAMAN "MUKERRER KAYIT" DEMEK DEGIL: ayni urun her ozel kod icin ayri
+  // kalem olarak acilmis olabilir (genelde hedef 1). Ozel kodlari FARKLIYSA bunlar gercek,
+  // ayri kalemlerdir - ilkini secmek faturadaki tum miktari tek kaleme yigar, digerlerini
+  // sonsuza kadar %0 birakirdi. Belirsiz sayilir; cagiran taraf dagitim akisina dusurur.
+  const kodlu=hits.filter(h=>katAtaKodlar(h).length);
+  if(kodlu.length>1 && new Set(kodlu.map(h=>katAtaKodlar(h).join('|'))).size>1) return null;
+  return hits[0];
 }
 // yapistirilan bir satirin hucrelerini binadaki sartnamelerle eslestir
 // oncelik: birebir kod > birebir ad > tekil icerik eslesmesi (kod+ad)
@@ -14131,6 +14460,10 @@ function nordMatchToLine(cells,qty,raw){
   if(sp) return nordSpecToLine(sp,qty,raw);
   const pa=nordMatchAlt(cells);
   if(pa) return nordAltToLine(pa.alt,pa.sp,qty,raw);
+  // tek kalem secilemedi ama ayni urunun ayni sartnamede birden fazla (ozel kodlu) kalemi
+  // varsa satir "dagitim bekliyor" olarak birakilir - eslesme yok sayilmaz
+  const grp=nordDagitMatchGrup(cells);
+  if(grp) return nordDagitBekleyenLine(grp,qty,raw);
   return null;
 }
 function nordSpecToLine(s,qty,raw){ const mt=specMaterial(s); const img=specImgOf(s);
@@ -14228,6 +14561,10 @@ function nordAc(i){
     NORD.lines[i]={specId:it.specId,altId:it.altId||'',refSpecId:'',code:it.code,ad:it.ad,cat:it.cat,unit:it.unit,grup:it.grup||'',img:it.img||null,brand:it.brand||'',qty:keepQty,lokId:keepLok,raw:'',tedarikBina:keepTedB,tedarikSart:keepTedS};
     const dupKey=nordDupKey(NORD.lines[i]);
     if(dupKey && NORD.lines.some((l,j)=>j!==i && nordDupKey(l)===dupKey)) toast('Bu urun listede baska bir satirda da var - mukerrer eklendi','err');
+    // ayni urunun bu sartnamede birden fazla (ozel kodlu) kalemi varsa kullanici bunu
+    // tek tek secmek zorunda degil - dagitim akisi hatirlatilir
+    else { const dagitN=nordDagitGrupOf(NORD.lines[i]).length;
+      if(dagitN>1) toast(`Bu urun ${dagitN} ayri kalem (ozel kod) olarak tanimli - "Miktari dagit" ile paylastirabilirsiniz`); }
     nordRenderLines();
     setTimeout(()=>{ const rows=document.querySelectorAll('#nordLinesWrap .nord-row:not(.nord-row-head)'); const n=rows[i]&&rows[i].querySelector('input[type=number]'); if(n)n.focus(); },0);
   }, false);
@@ -14284,7 +14621,9 @@ function nordLinesHtml(){
   const rows=NORD.lines.map((l,i)=>{
     const ok=nordLineOk(l);
     const isDup=ok&&dupCounts[nordDupKey(l)]>1;
-    const status=ok?`<span class="nord-pill ok">eslesti</span>`:(l.raw?`<span class="nord-pill err">secim bekliyor</span>`:`<span class="nord-pill">bos</span>`);
+    const status=ok?`<span class="nord-pill ok">eslesti</span>`
+      :(l.dagitKey?`<span class="nord-pill err">dagitim bekliyor</span>`
+      :l.raw?`<span class="nord-pill err">secim bekliyor</span>`:`<span class="nord-pill">bos</span>`);
     const dupBadge=isDup?`<span class="nord-pill err" title="Bu urun listede baska bir satirda da var - mukerrer eklenmis olabilir">mukerrer</span>`:'';
     // alternatif urunle alim: ana urun adi rozette gosterilir - alim ana urunun ilerlemesine sayilir
     const altSp=l.altId?DB.proje.specs.find(s=>s.id===l.specId):null;
@@ -14313,7 +14652,7 @@ function nordLinesHtml(){
           ${l.img?`<img src="${l.img}" class="nord-thumb">`:''}
           <div class="nord-prod-txt"><b>${esc(l.ad)}</b><span>${esc([l.code,l.brand].filter(Boolean).join(' · '))}</span>${tags}</div></div>
        <div class="ac-wrap" style="display:none"><input id="nord_ad_${i}"></div>`
-      :`<div class="ac-wrap"><input id="nord_ad_${i}" placeholder="${l.raw?'Eslesme bulunamadi - urun secin':(NORD.sart?esc(NORD.sart)+' icinde ara...':'Ozel no, spek no veya ad ara...')}" value="${esc(l.raw||'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" onclick="nordAc(${i})" style="cursor:pointer${l.raw?';border-color:var(--red)66':''}">${status}</div>`;
+      :`<div class="ac-wrap"><input id="nord_ad_${i}" placeholder="${l.dagitKey?'Bu urun birden fazla kaleme dagitilacak':l.raw?'Eslesme bulunamadi - urun secin':(NORD.sart?esc(NORD.sart)+' icinde ara...':'Ozel no, spek no veya ad ara...')}" value="${esc(l.raw||'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" onclick="nordAc(${i})" style="cursor:pointer${l.raw?';border-color:var(--red)66':''}">${status}</div>`;
     // parcali giris binasinda satir opsiyonel olarak bir lokasyona baglanabilir (toplu alimlar lokasyonsuz girilebilir)
     const lokSel=(ok&&binaParcali(NORD.bina))?`<span class="nord-loc${l.lokId?' has':''}"><select onchange="nordSetLok(${i},this)" onclick="event.stopPropagation()">${lokSelectOptions(NORD.bina,l.lokId||'','- lokasyon (opsiyonel) -')}</select></span>`:'';
     // ATAMA: "bu urun hangi kalemin yerine alindi" secimi. .nord-prod'un DISINDA durur -
@@ -14329,10 +14668,17 @@ function nordLinesHtml(){
       <button type="button" onclick="nordTedarikOpen(${i})" title="${ted.bina?(ted.mirasli?'Basliktaki tedarik kaynagi - bu satir icin degistirebilirsiniz':'Bu satira ozel tedarik kaynagi'):'Malzeme fiilen baska bir binanin hazir sartnamesinden alindiysa burada belirtin - yalnizca bilgi, hicbir dusum yapilmaz'}">${ted.bina?`Tedarik: <b>${esc(tedarikEtiket(ted))}</b>${ted.mirasli?' <span style="opacity:.55">(baslik)</span>':''}`:'+ Tedarik kaynagi'}</button>
       ${l.tedarikBina?`<button type="button" class="nord-yerine-x" onclick="nordTedarikClear(${i})" title="Satira ozel tedarik kaynagini kaldir">&times;</button>`:''}
     </span>`:'';
+    // OZEL KODSUZ ALIM: urun bu sartnamede birden fazla kalem olarak tanimliysa (her ozel kod
+    // icin bir kalem) faturadaki miktar kalemlere dagitilabilir. Alternatif ve atama
+    // satirlarinda hic cikmaz - nordDagitGrupOf onlar icin bos doner.
+    const dagitAdet=(ok||l.dagitKey)?nordDagitGrupOf(l).length:0;
+    const dagitSel=(dagitAdet>1)?`<span class="nord-yerine nord-dagit${l.dagitimId?' has':''}">
+      <button type="button" onclick="nordDagitOpen(${i})" title="Bu urun bu sartnamede ${dagitAdet} ayri kalem olarak tanimli (her ozel kod icin bir kalem). Faturadaki miktari o kalemlere paylastirir - kalemler ve ozel kodlar oldugu gibi kalir, hicbiri birlestirilmez.">${l.dagitimId?'Dagitildi &middot; <b>yeniden dagit</b>':`Miktari dagit <b>(${dagitAdet} kalem)</b>`}</button>
+    </span>`:'';
     return `<div class="nord-row ${ok?(isDup?'dup':''):'open'}" ondragstart="nordDragStart(event,${i})" ondragover="nordDragOver(event,${i})" ondragleave="nordDragLeave(event)" ondrop="nordDrop(event,${i})" ondragend="nordDragEnd()">
       <span class="nord-grip" title="Surukleyerek sirayi degistir" onmousedown="nordDragArm(this)" onmouseup="nordDragDisarm(this)">${icoGrip()}</span>
       <span class="nord-idx t-meta">${i+1}</span>
-      <div class="nord-prod-col">${prodCell}${yerineSel}${tedSel}${lokSel}</div>
+      <div class="nord-prod-col">${prodCell}${yerineSel}${dagitSel}${tedSel}${lokSel}</div>
       <div class="nord-qty-col"><input type="number" step="any" min="0" placeholder="0" value="${esc(l.qty)}" oninput="nordUpd(${i},'qty',this.value)">${ok&&l.unit?`<span class="nord-unit">${esc(l.unit)}</span>`:''}</div>
       <button class="mini-btn del" onclick="nordRm(${i})">${icoTrash()}</button>
     </div>`;
@@ -14482,6 +14828,11 @@ async function saveNewOrder(){
     const c=(DB.companies||[]).find(x=>x.id===NORD.companyId);
     companyId=NORD.companyId; companyName=c?c.ad:'';
   }
+  // DAGITIM BEKLEYEN SATIR SESSIZCE ATLANMAZ: ad/kod eslesmis ama hangi ozel kodlu kaleme
+  // yazilacagi belli degil. "eslesmemis satir atlanacak" onayina birakilirsa fatura eksik
+  // kaydedilir; burada acikca durdurulur.
+  const dagitBekleyen=NORD.lines.filter(l=>l.dagitKey&&!nordLineOk(l)).length;
+  if(dagitBekleyen){ toast(`${dagitBekleyen} satir dagitim bekliyor - "Miktari dagit" ile kalemlere paylastirin`,'err'); return; }
   const pending=NORD.lines.filter(l=>l.raw&&!nordLineOk(l)).length;
   if(pending && !confirm(pending+' eslesmemis satir kaydedilmeden atlanacak. Devam edilsin mi?')) return;
   const valid=NORD.lines.filter(l=>nordLineOk(l)&&Number(l.qty)>0);
@@ -14515,8 +14866,10 @@ async function saveNewOrder(){
     // tedarikBina/tedarikSart: SATIRA OZEL tedarik kaynagi - her siparis turunde yazilir.
     // Bos birakilir ki fatura ve hareket kaydi basliktan miras alsin (bkz. orderTedarikOf) -
     // basliktaki deger kopyalanirsa baslik sonradan degistiginde satirlar eski degerde donar kalir.
-    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,altId:l.altId||'',refSpecId:l.refSpecId||'',grup:l.grup||'',bina,lokId:l.lokId||null,img:l.img||null,brand:l.brand||'',pdf:null,tedarikBina:l.tedarikBina||'',tedarikSart:l.tedarikSart||''};
-    newItems.push(item); lines.push({code:l.code||'',ad:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),specId:l.specId,altId:l.altId||'',refSpecId:l.refSpecId||'',grup:l.grup||'',lokId:l.lokId||null,tedarikBina:l.tedarikBina||'',tedarikSart:l.tedarikSart||''});
+    // dagitimId: ozel kodsuz alinan bir urunun miktari birden fazla kaleme paylastirildiysa
+    // o satirlarin ortak izi - hangi satirlarin tek bir fatura kaleminden geldigi anlasilir
+    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,altId:l.altId||'',refSpecId:l.refSpecId||'',grup:l.grup||'',bina,lokId:l.lokId||null,img:l.img||null,brand:l.brand||'',pdf:null,tedarikBina:l.tedarikBina||'',tedarikSart:l.tedarikSart||'',dagitimId:l.dagitimId||''};
+    newItems.push(item); lines.push({code:l.code||'',ad:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),specId:l.specId,altId:l.altId||'',refSpecId:l.refSpecId||'',grup:l.grup||'',lokId:l.lokId||null,tedarikBina:l.tedarikBina||'',tedarikSart:l.tedarikSart||'',dagitimId:l.dagitimId||''});
   });
   const orderGrups=[...new Set(lines.map(l=>l.grup).filter(Boolean))];
   const orderGrup=orderGrups.length===1?orderGrups[0]:(orderGrups.length>1?'Karma ('+orderGrups.length+' spek)':'');

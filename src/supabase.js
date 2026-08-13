@@ -538,8 +538,11 @@ export async function sbLoadAllData(scope) {
   // rapor/tanimlar/kutuphane ekranlari da proje temel verisine (bina, bolum, sartname,
   // sartname kalemi, malzeme kutuphanesi) ihtiyac duyar - bunlar 'proje' modulunden ayrı sayılır.
   const needProjeCore = need('proje') || need('rapor') || need('tanimlar') || need('kutuphane')
-  const needProjeFull = need('proje')
-  const needCompanies = need('proje') || need('tanimlar')
+  // 'siparis' bagimsiz bir modul haline geldi: yalnizca siparis yetkisi olan kullanici
+  // (orn. ambarci) siparisleri, siparise bagli stok girislerini ve alternatif urunleri de
+  // gormeli - yoksa "Tum Siparisler" ekrani bos acilir. Sirketler de siparis formunda secilir.
+  const needProjeFull = need('proje') || need('siparis')
+  const needCompanies = need('proje') || need('tanimlar') || need('siparis')
 
   const tasks = { settingsRes: supabase.from('app_settings').select('key, value') }
   if (need('alet')) tasks.aletItems = sbGetAll('alet_items')
