@@ -4128,9 +4128,13 @@ function setMatUsageFilter(v){ _matUsageFilter=v; render(); }
 function matMatchesUsageFilter(m){
   if(_matUsageFilter==='all') return true;
   const n=materialSpecCount(m.id);
-  if(_matUsageFilter==='used') return n>0;
-  if(_matUsageFilter==='unused') return n===0;
+  // ALTERNATIF olarak kullanilan urun "kullanilmayan" degildir: kendi adina kalemi olmasa da
+  // sahada o urun aliniyor. Listedeki ALTERNATIF damgasiyla ayni olcut kullanilir.
+  const alt=materialAltCount(m.id);
+  if(_matUsageFilter==='used') return n>0||alt>0;
+  if(_matUsageFilter==='unused') return n===0&&alt===0;
   if(_matUsageFilter==='multi') return n>1;
+  if(_matUsageFilter==='alt') return alt>0;
   return true;
 }
 // "tumunu sec" = o an EKRANDA gorunen sayfa (tum filtrelenmis liste degil) -
@@ -4269,7 +4273,7 @@ function renderMaterialLib(){
     <div class="ord-f"><label>Birim</label><select onchange="setMatF('unit',this.value)"><option value="">Tumu</option>${units.map(u=>`<option value="${esc(u)}" ${MATF.unit===u?'selected':''}>${esc(u)}</option>`).join('')}</select></div>
     ${allTags.length?`<div class="ord-f"><label>Etiket</label><select onchange="setMatF('tag',this.value)"><option value="">Tumu</option>${allTags.map(t=>`<option value="${esc(t)}" ${MATF.tag===t?'selected':''}>${esc(t)}</option>`).join('')}</select></div>`:''}
     <div class="ord-f"><label>Fotograf</label><select onchange="setMatF('img',this.value)"><option value="">Tumu</option><option value="var" ${MATF.img==='var'?'selected':''}>Foto ekli</option><option value="yok" ${MATF.img==='yok'?'selected':''}>Foto eksik</option></select></div>
-    <div class="ord-f"><label>Kullanim</label><select onchange="setMatUsageFilter(this.value)"><option value="all" ${_matUsageFilter==='all'?'selected':''}>Tumu</option><option value="used" ${_matUsageFilter==='used'?'selected':''}>Kullanilan</option><option value="unused" ${_matUsageFilter==='unused'?'selected':''}>Kullanilmayan</option><option value="multi" ${_matUsageFilter==='multi'?'selected':''}>Ortak kullanim</option></select></div>
+    <div class="ord-f"><label>Kullanim</label><select onchange="setMatUsageFilter(this.value)"><option value="all" ${_matUsageFilter==='all'?'selected':''}>Tumu</option><option value="used" ${_matUsageFilter==='used'?'selected':''}>Kullanilan</option><option value="unused" ${_matUsageFilter==='unused'?'selected':''}>Kullanilmayan</option><option value="multi" ${_matUsageFilter==='multi'?'selected':''}>Ortak kullanim</option><option value="alt" ${_matUsageFilter==='alt'?'selected':''}>Alternatif olarak kullanilan</option></select></div>
     ${anyF?`<div class="ord-f" style="justify-content:flex-end"><label>&nbsp;</label><button class="btn btn-ghost" style="padding:8px 14px" onclick="clearMatF()">Filtreyi Temizle</button></div>`:''}
   </div>`;
   // sayfalama cubugu: "350 malzemeden 1-25 arasi" + sayfa boyutu + onceki/sonraki
@@ -4291,7 +4295,15 @@ function renderMaterialLib(){
       const specs=[...new Set(usage.map(s=>specGroupKey(s)))];
       const thumb=m.img?`<img class="thumb" src="${m.img}" onclick="event.stopPropagation();lightbox(${lbCall([m.img,m.img2])})">`:phThumb();
       const ccol=catColor(m.cat);
-      const usageTag=specs.length>1?`<span class="merged-badge">${specs.length} spek'te</span>`:specs.length===1?`<span class="cat-tag" style="background:var(--dim)33;color:var(--mute);font-size:9px">1 spek</span>`:`<span class="cat-tag" style="background:var(--red)18;color:var(--red);font-size:9px">kullanilmiyor</span>`;
+      /* ALTERNATIF DAMGASI: bu urun baska kalemlerin yerine kullaniliyor olabilir. O kayitlar
+         sartname kalemi degildir, bu yuzden materialUsage onlari gormez ve urun eskiden
+         "kullanilmiyor" damgasi yiyordu - oysa fiilen aliniyor. */
+      const altUse=materialAltUsage(m.id);
+      const altSpecs=[...new Set(altUse.map(x=>specGroupKey(x.sp)))];
+      const usageTag=specs.length>1?`<span class="merged-badge">${specs.length} spek'te</span>`:specs.length===1?`<span class="cat-tag" style="background:var(--dim)33;color:var(--mute);font-size:9px">1 spek</span>`:(altUse.length?'':`<span class="cat-tag" style="background:var(--red)18;color:var(--red);font-size:9px">kullanilmiyor</span>`);
+      const altTitle=altUse.slice(0,20).map(({alt,sp})=>`${sp.bina||'?'} / ${specGroupKey(sp)} · ${sp.name||sp.code||'?'} yerine · ${altStatusLabel(alt.status)}`).join('\n')
+        +(altUse.length>20?`\n… +${altUse.length-20} kalem daha`:'');
+      const altTag=altUse.length?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)55;font-size:9px" title="Bu urun ${altUse.length} kalemin ALTERNATIFI olarak kayitli:\n${esc(altTitle)}">ALTERNATIF${altUse.length>1?` (${altUse.length})`:''}</span>`:'';
       // OZEL KOD rozeti: ayni urun tek kutuphane kaydidir; kac farkli ozel no (yerlesim kodu)
       // ile kullanildigi bir bakista gorunur - detayi Kunye'deki "Ozel Kodlar" bolumunde
       const ozelNos=[...new Set(usage.map(s=>(s.ozelNo||'').trim()).filter(Boolean))];
@@ -4299,7 +4311,7 @@ function renderMaterialLib(){
       rows+=`<tr class="mat-row ${_matSel.has(m.id)?'row-sel':''}" onclick="openMatDetail('${m.id}')" title="Malzeme kunyesi: sartnameler, siparisler, montaj">
         <td style="width:34px;text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="mat-check" ${_matSel.has(m.id)?'checked':''} onclick="event.stopPropagation();toggleMatSel('${m.id}')"></td>
         <td>${thumb}</td>
-        <td class="t-name mat-clk${_matHighlightDup&&dupNames.has(norm(m.name).trim())?' dup-hl':''}">${esc(m.name)} ${usageTag} ${ozelTag}<div style="margin-top:4px">${specs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px">${esc(g)}</span>`).join('')}</div></td>
+        <td class="t-name mat-clk${_matHighlightDup&&dupNames.has(norm(m.name).trim())?' dup-hl':''}">${esc(m.name)} ${usageTag} ${altTag} ${ozelTag}<div style="margin-top:4px">${specs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px">${esc(g)}</span>`).join('')}${altSpecs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--amber)18;color:var(--amber);font-family:var(--mono);font-size:9px" title="Bu sartnamedeki bir kalemin alternatifi olarak kullaniliyor">ALT · ${esc(g)}</span>`).join('')}${altSpecs.length>4?`<span class="cat-tag" style="background:var(--amber)18;color:var(--amber);font-size:9px">+${altSpecs.length-4}</span>`:''}</div></td>
         <td class="${_matHighlightDup&&m.code&&dupCodes.has(norm(m.code).trim())?'dup-hl':''}" style="font-family:var(--mono);font-size:12px">${esc(m.code||'-')}${(m.altCodes&&m.altCodes.length)?`<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${m.altCodes.map(c=>`<span class="cat-tag" style="background:var(--dim)22;color:var(--mute);font-family:var(--mono);font-size:9px" title="Varyant kod - ayni urunun bilindigi diger kod">${esc(c)}</span>`).join('')}</div>`:''}</td>
         <td class="t-meta">${m.brand?`<div class="brand-cell">${m.brand.split(/\n|\s\/\s/).map(b=>b.trim()).filter(Boolean).map(b=>{
           const full=esc(b), short=b.length>12?esc(b.slice(0,12))+'…':full;
@@ -7730,6 +7742,25 @@ function ensureMaterial(o){ // {code,name,unit,cat,brand,note,standart,weight,ta
 function materialUsage(matId){ const mt=getMaterial(matId); if(!mt)return[];
   const keys=new Set([matKey(mt.code,mt.name),...(mt.altCodes||[]).filter(c=>String(c).trim()).map(c=>matKey(c,''))]);
   return DB.proje.specs.filter(s=>!s.is_deleted && (s.matId===matId || keys.has(matKey(s.code,s.name)))); }
+/* ALTERNATIF KULLANIMI - materialUsage'in esi.
+   materialUsage "hangi sartname kalemi BU URUNDUR" sorusunu yanitlar; bu ise "bu urun hangi
+   kalemin YERINE onerildi / kullaniliyor" sorusunu. Alternatif olarak kullanilan bir urun
+   kutuphanede kendi adina hicbir kalemde gecmeyebilir - o yuzden eskiden "kullanilmiyor"
+   gorunuyordu, oysa sahada o urun aliniyor.
+   Baglanti matId iledir; eski kayitlarda kod/ad eslesmesine duser (bkz. altMaterial).
+   Ana kalemi silinmis alternatif disarida kalir - gosterilecek bir kalem yoktur. */
+function materialAltUsage(matId){
+  if(!matId||!getMaterial(matId)) return [];
+  const out=[];
+  (DB.proje.alternatives||[]).forEach(a=>{
+    const am=altMaterial(a); if(!am||am.id!==matId) return;
+    const sp=(DB.proje.specs||[]).find(s=>s.id===a.specId&&!s.is_deleted);
+    if(sp) out.push({alt:a,sp});
+  });
+  return out;
+}
+// Kullanim filtresi ve rozetler icin: kac kalemin alternatifi (0 = alternatif olarak kullanilmiyor)
+function materialAltCount(matId){ return materialAltUsage(matId).length; }
 // TEK KAYNAK OKUMA: bir sartname satirinin bagli oldugu kutuphane malzemesi.
 // Once matId ile, o yoksa kod/ad eslesmesiyle bulunur - urun bilgileri (foto, marka, not, standart...)
 // HER ZAMAN buradan okunmali; sp uzerindeki kopyalar sadece acil yedektir (kopya bayatlasa bile ekran dogru kalir).
@@ -7752,6 +7783,8 @@ function _openMatDetail(matId){
   const m=getMaterial(matId);
   if(!m){ toast('Malzeme bulunamadi - sayfayi yenileyin','warn'); return; }
   const usage=materialUsage(matId);
+  // bu urunun BASKA kalemlerin alternatifi olarak kayitli oldugu yerler (bkz. materialAltUsage)
+  const altUse=materialAltUsage(matId);
   const specIds=new Set(usage.map(s=>s.id));
   // siparisler: satirlarinda bu urunun sartname kalemleri gecen faturalar
   const ords=(DB.proje.orders||[]).map(o=>{
@@ -7775,6 +7808,8 @@ function _openMatDetail(matId){
     m.standart?`<span class="matd-chip dim" title="Standart">${esc(m.standart)}</span>`:'',
     m.weight!=null?`<span class="matd-chip dim">${fmtNum(m.weight)} kg</span>`:'',
     unit?`<span class="matd-chip dim">${esc(unit)}</span>`:'',
+    // ALTERNATIF damgasi kutuphane listesindekiyle ayni olcut - kunyede de bir bakista gorunur
+    altUse.length?`<span class="matd-chip" style="color:var(--amber);border-color:var(--amber)66" title="Bu urun ${altUse.length} kalemin alternatifi olarak kayitli - ayrinti asagida">ALTERNATIF${altUse.length>1?` (${altUse.length})`:''}</span>`:'',
     ...((m.tags||[]).map(t=>{const c=tagColor(t);return `<span class="matd-chip" style="color:${c};border-color:${c}55">${esc(t)}</span>`;}))
   ].filter(Boolean).join('');
   // Kutuphanedeki serbest NOT alani (bkz. mt_note). Cok satirli girilmis olabilir: satir
@@ -7802,7 +7837,19 @@ function _openMatDetail(matId){
       <span class="t-meta" style="margin-left:auto;white-space:nowrap">${mont?fmtNum(mont)+' / ':''}${tgt?fmtNum(tgt):'-'} ${esc(s.unit||'')}</span>
       ${bar}
     </div>`;
-  }).join(''):`<p class="matd-empty">Bu urun henuz hicbir sartnamede kullanilmiyor.</p>`;
+  }).join(''):`<p class="matd-empty">Bu urun <b>kendi adina</b> hicbir sartname kaleminde kullanilmiyor.${altUse.length?' Asagida <b>alternatif</b> olarak kullanildigi kalemler var.':''}</p>`;
+  /* ALTERNATIF OLARAK KULLANILDIGI KALEMLER: urun baska bir kalemin yerine onerilmis/kullaniliyor
+     olabilir - bu kayitlar sartname kalemi olmadigi icin ustteki listede cikmaz. */
+  const altRows=altUse.map(({alt,sp})=>{
+    const bc=buildingColor(sp.bina), sc=altStatusColor(alt.status), grp=specGroupKey(sp);
+    return `<div class="matd-row" onclick="matDetailGoSpec('${esc(sp.bina)}','${esc(sp.cat)}','${esc(grp)}')" title="Sartname kartina git">
+      <span class="bina-tag" style="background:${bc}22;color:${bc};flex-shrink:0">${esc(sp.bina)}</span>
+      <span class="mono" style="font-size:11px;flex-shrink:0">${esc(grp)}</span>
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px" title="Bu urun bu kalemin yerine kullaniliyor">${esc(sp.name||sp.code||'?')} <span class="t-meta">yerine</span></span>
+      ${alt.reason?`<span class="t-meta" style="flex-shrink:0">${esc(altReasonLabel(alt.reason))}</span>`:''}
+      <span class="alt-status" style="margin-left:auto;flex-shrink:0;background:${sc}22;color:${sc};border:1px solid ${sc}55">${esc(altStatusLabel(alt.status))}</span>
+    </div>`;
+  }).join('');
   const ordRows=ords.length?ords.slice(0,30).map(({o,qty})=>{
     const bc=buildingColor(o.bina);
     return `<div class="matd-row" onclick="closeModal();openOrderDetail('${o.id}')" title="Fatura detayini ac">
@@ -7839,6 +7886,7 @@ function _openMatDetail(matId){
       </div>
       ${ozelSection}
       <div class="matd-sec">Sartnameler <span>${usage.length}</span></div>${specRows}
+      ${altUse.length?`<div class="matd-sec">Alternatif Olarak Kullanildigi Kalemler <span>${altUse.length}</span><i>bu urun asagidaki kalemlerin yerine onerildi / kullaniliyor</i></div>${altRows}`:''}
       <div class="matd-sec">Siparisler <span>${ords.length}</span>${totOrd?`<i>${fmtNum(totOrd)} ${esc(unit)}</i>`:''}</div>${ordRows}
       <div class="matd-sec">Saha Raporlari - Montaj <span>${raps.length}</span>${totRap?`<i>${fmtNum(totRap)} ${esc(unit)}</i>`:''}</div>${rapRows}
     </div>
