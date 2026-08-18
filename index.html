@@ -15940,17 +15940,19 @@ body{margin:0;background:#e9ecf1;font-family:Arial,Helvetica,"Segoe UI",sans-ser
    penceresinde secilebilen kucuk kenar bosluklarini tolere eder.
    Sayfalar ayrica .sheets icine sarilir: son .page body'nin son cocugu degil (arkasinda
    <script> var), o yuzden eski .page:last-child kurali HIC eslesmiyordu. */
-.page{width:210mm;min-height:290mm;background:#fff;margin:14px auto;padding:13mm 14mm 9mm;
+.page{width:210mm;min-height:290mm;background:#fff;margin:14px auto;padding:9mm 14mm 9mm;
   display:flex;flex-direction:column;box-shadow:0 2px 14px rgba(0,0,0,.18)}
 @media print{.page{margin:0;box-shadow:none;page-break-after:always;break-after:page}
   .sheets .page:last-child{page-break-after:auto;break-after:auto}}
 
 /* ust antet */
-.ph-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+/* Antet bandi logo yuksekliginde kalir: firma bilgisi iki satir (unvan + adres/iletisim)
+   ve logoyla dikey ortali. Uc satirken bant logodan uzun oluyordu. */
+.ph-head{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:10mm}
 .ph-logo{height:10mm;width:auto;object-fit:contain}
-.ph-firm{text-align:right;font-size:6.6pt;line-height:1.35;color:#8a93a3}
-.ph-firm b{display:block;font-size:7.6pt;color:#374151}
-.ph-rule{height:1.5px;background:#3e5680;margin-top:2.6mm}
+.ph-firm{text-align:right;font-size:6.4pt;line-height:1.3;color:#8a93a3}
+.ph-firm b{display:block;font-size:7.4pt;color:#374151}
+.ph-rule{height:1.5px;background:#3e5680;margin-top:2mm}
 
 /* baslik blogu */
 .ph-title{text-align:center;margin:3.4mm 0 2.8mm}
@@ -15992,9 +15994,10 @@ table.mt tr.tot td{background:#f4f6fa;height:auto;padding:2mm 3mm;font-size:7.5p
 
 /* aciklamalar */
 .ph-not{margin-top:3.5mm;border:1px solid #b9c2d1}
-.ph-not h6{margin:0;background:#eef1f6;color:#33415c;font-size:7pt;letter-spacing:.9px;
-  padding:1.8mm 3mm;border-bottom:1px solid #b9c2d1;font-weight:bold}
-.ph-not .nb{padding:2mm 3mm 1mm;font-size:8pt;line-height:1.6;white-space:pre-wrap;min-height:11mm}
+.ph-bar+.ph-not{margin-top:0}
+.ph-not h6{margin:0;background:#eef1f6;color:#33415c;font-size:6.2pt;letter-spacing:.9px;
+  padding:1.3mm 3mm;border-bottom:1px solid #b9c2d1;font-weight:bold}
+.ph-not .nb{padding:1.6mm 3mm 1mm;font-size:6.6pt;line-height:1.4;white-space:pre-wrap;min-height:10mm}
 .ph-not .nl{border-bottom:1px dotted #c3cad6;height:3.6mm}
 .ph-not .nl:last-child{border-bottom:none}
 
@@ -16037,16 +16040,16 @@ table.mt tr.tot td{background:#f4f6fa;height:auto;padding:2mm 3mm;font-size:7.5p
 // bir sayfanin ust anteti (her sayfada tekrarlanir)
 function tutPrintHead(A){
   const ph=(v,plc)=>v?esc(v):'<span class="ph">'+plc+'</span>';
-  const alt=[A.tel?esc(A.tel):'<span class="ph">[ Tel / Тел. ]</span>',
-             A.email?esc(A.email):'<span class="ph">[ E-posta / E-mail ]</span>',
-             A.vergi?esc(A.vergi):'<span class="ph">[ Vergi No / ИНН ]</span>'].join(' &nbsp;•&nbsp; ');
+  // adres de ayni satira alindi: antet blogu logodan uzun olmasin
+  const alt=[ph(A.adres,'[ Adres / Адрес ]'), ph(A.tel,'[ Tel / Тел. ]'),
+             ph(A.email,'[ E-posta / E-mail ]'),
+             ph(A.vergi,'[ Vergi No / ИНН ]')].join(' &nbsp;•&nbsp; ');
   // Antet logosu yuklenmisse o, degilse uygulamanin logosu kullanilir
   const logo=A.logo||(location.origin+'/logo.png');
   return `<div class="ph-head">
       <img class="ph-logo" src="${esc(logo)}" alt="">
       <div class="ph-firm">
         <b>${ph(A.unvan,'[ Firma Ünvanı / Наименование компании ]')}</b>
-        <div>${ph(A.adres,'[ Adres / Адрес ]')}</div>
         <div>${alt}</div>
       </div>
     </div><div class="ph-rule"></div>`;
@@ -16090,8 +16093,6 @@ function tutanakPrintHtml(t){
   const chunks=[];
   for(let i=0;i<lines.length;){ const k=kapasite(chunks.length); chunks.push(lines.slice(i,i+k)); i+=k; }
   if(!chunks.length) chunks.push([]);
-  const toplamSayfa=chunks.length;
-
   const rowHtml=(l,sira)=>{
     const img=tutLineImg(l);
     return `<tr>
@@ -16109,9 +16110,39 @@ function tutanakPrintHtml(t){
   const bosRow=sira=>`<tr><td class="c">${sira}</td><td class="im"></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
 
   const aciklama=String(t.aciklama||'').trim();
-  const notBody=aciklama
-    ? `<div class="nb">${esc(aciklama)}</div>`
-    : `<div class="nb"><div class="nl"></div><div class="nl"></div><div class="nl"></div></div>`;
+  const notKutu=txt=>`<div class="ph-not"><h6>AÇIKLAMALAR / ПРИМЕЧАНИЯ</h6>${txt
+    ? `<div class="nb">${esc(txt)}</div>`
+    : `<div class="nb"><div class="nl"></div><div class="nl"></div><div class="nl"></div></div>`}</div>`;
+
+  /* Aciklama kutusu buyudukce son malzeme sayfasi kagidi asiyordu (asan bosluk arkaya
+     bombos bir yaprak dusuruyor). Kutunun kac satir tutacagi kabaca hesaplanip son
+     sayfadaki yerle karsilastiriliyor; sigmiyorsa aciklama KENDI sayfasina aliniyor.
+     Olculen degerler: 6.6pt'de bir satira ~150 karakter siyor; aciklamaya ilk sayfada
+     ~6, devam sayfasinda ~9 satirlik yer kaliyor. Tablodaki bos satirlar da cizildigi
+     icin bu yer kalem sayisina gore DEGISMIYOR. */
+  const NOT_SATIR_KAR=150;
+  const notSatirSay=aciklama
+    ? aciklama.split('\n').reduce((a,l)=>a+Math.max(1,Math.ceil(l.length/NOT_SATIR_KAR)),0)
+    : 3;
+  const notYeri=chunks.length===1?6:9;
+  const notAyriSayfa=notSatirSay>notYeri;
+  // Kendi sayfasina dusen aciklama da bir sayfayi asabilir; kelime ortasindan kesmeden
+  // parcalara bolunur (bir aciklama sayfasina guvenle ~50 satir siyor).
+  const NOT_SAYFA_SATIR=50;
+  const notParcalari=(()=>{
+    if(!notAyriSayfa) return [];
+    const enFazla=NOT_SAYFA_SATIR*NOT_SATIR_KAR;
+    const out=[]; let kalan=aciklama;
+    while(kalan.length>enFazla){
+      let kes=kalan.lastIndexOf('\n',enFazla);
+      if(kes<enFazla*0.6) kes=kalan.lastIndexOf(' ',enFazla);
+      if(kes<=0) kes=enFazla;
+      out.push(kalan.slice(0,kes).trim()); kalan=kalan.slice(kes).trim();
+    }
+    out.push(kalan);
+    return out;
+  })();
+  const toplamSayfa=chunks.length+notParcalari.length;
 
   // IMZA SERIDI: her sayfanin altina basilir, boylece cok sayfali tutanakta
   // her yaprak tek basina imzalanmis olur (eski tam sayfalik imza bolumunun yerine).
@@ -16176,18 +16207,26 @@ function tutanakPrintHtml(t){
       ${ust}
       ${bant}
       <table class="mt">${tutPrintTableHead()}<tbody>${trs}${totRow}</tbody></table>
-      ${son?`<div class="ph-not"><h6>AÇIKLAMALAR / ПРИМЕЧАНИЯ</h6>${notBody}</div>`:''}
-      ${imzaSerit(son)}
+      ${(son&&!notAyriSayfa)?notKutu(aciklama):''}
+      ${imzaSerit(son&&!notAyriSayfa)}
       ${tutPrintFoot(ci+1,toplamSayfa)}
     </div>`;
   }).join('');
+
+  const notSayfalari=notParcalari.map((parca,pi)=>`<div class="page">
+    ${tutPrintHead(A)}
+    <div class="ph-bar">AÇIKLAMALAR &nbsp;<i>| &nbsp;ПРИМЕЧАНИЯ${pi>0?' &nbsp;(devam / продолжение)':''}</i></div>
+    ${notKutu(parca)}
+    ${imzaSerit(pi===notParcalari.length-1)}
+    ${tutPrintFoot(chunks.length+pi+1,toplamSayfa)}
+  </div>`).join('');
 
   const baslik=`Tutanak ${t.no||''} - ${fmtDate(t.tarih)}`.trim();
   return `<!doctype html><html lang="tr"><head><meta charset="utf-8">
     <title>${esc(baslik)}</title><style>${tutanakPrintCss()}</style></head><body>
     <div class="tbar"><button onclick="window.print()">Yazdır / PDF olarak kaydet</button>
       <span>Yazdırma penceresinde "Hedef: PDF olarak kaydet" seçerek dosya olarak alabilirsiniz.</span></div>
-    <div class="sheets">${malzemeSayfalari}</div>
+    <div class="sheets">${malzemeSayfalari}${notSayfalari}</div>
     <script>window.addEventListener('load',function(){setTimeout(function(){try{window.print()}catch(e){}},350)})<\/script>
   </body></html>`;
 }
