@@ -15559,6 +15559,18 @@ const TUT_TURLERI=[
 function tutTurOf(t){ const id=(t&&t.tur)||TUT_TURLERI[0].id;
   return TUT_TURLERI.find(x=>x.id===id)||TUT_TURLERI[0]; }
 function tutIadeVar(t){ return !!(t&&t.iade); }
+/* Taraf firmasi. Alan serbest metin; yazilan ad Sirketler listesindeki bir kayda
+   uyuyorsa firmaId de saklaniyor ve ad bundan sonra CANLI sirket kaydindan okunuyor.
+   Bagli degilse (kisi adi, listede olmayan firma, eski kayit) yazilan metin gecerli. */
+function tutFirma(t,side){
+  const p=(t&&t[side])||{};
+  if(p.firmaId){ const c=(DB.companies||[]).find(x=>x.id===p.firmaId); if(c) return c.ad||''; }
+  return p.firma||'';
+}
+function tutFirmaBagli(t,side){
+  const p=(t&&t[side])||{};
+  return !!(p.firmaId&&(DB.companies||[]).some(x=>x.id===p.firmaId));
+}
 function tutIadeTarihi(t){ return (tutIadeVar(t)&&t.iadeTarih)?t.iadeTarih:null; }
 function tutIadeOzet(t){ if(!tutIadeVar(t)) return 'iade yok';
   const d=tutIadeTarihi(t); return d?('iade var - '+fmtDate(d)):'iade var - tarih belirtilmedi'; }
@@ -15614,7 +15626,7 @@ function setTutQ(v){ TUTV.q=v; render(); }
 function renderTutanakList(){
   const all=(DB.tutanaklar||[]).slice().sort((a,b)=>(b.tarih||0)-(a.tarih||0));
   const q=TUTV.q;
-  const list=q?all.filter(t=>matchText([t.no,(t.eden||{}).firma,(t.alan||{}).firma,t.bina,
+  const list=q?all.filter(t=>matchText([t.no,tutFirma(t,'eden'),tutFirma(t,'alan'),t.bina,
     tutTurOf(t).tr,tutIadeOzet(t),
     ...((t.lines||[]).map(l=>l.ad+' '+(l.code||'')))].join(' '),q)):all;
   const now=new Date(), ayBasi=new Date(now.getFullYear(),now.getMonth(),1).getTime();
@@ -15635,8 +15647,8 @@ function renderTutanakList(){
         ?`<span class="tut-iade" title="${esc(tutTurOf(t).tr)} - ${esc(tutIadeOzet(t))}">IADE</span>`:''}</td>
       <td class="t-meta">${esc(fmtDate(t.tarih))}${tutIadeTarihi(t)
         ?`<div style="color:var(--amber);font-size:11px">iade: ${esc(fmtDate(tutIadeTarihi(t)))}</div>`:''}</td>
-      <td><span class="tut-party-tag"><i style="background:#9e5f5f"></i>${esc((t.eden||{}).firma||'-')}</span></td>
-      <td><span class="tut-party-tag"><i style="background:#4d6288"></i>${esc((t.alan||{}).firma||'-')}</span></td>
+      <td><span class="tut-party-tag"><i style="background:#9e5f5f"></i>${esc(tutFirma(t,'eden')||'-')}</span></td>
+      <td><span class="tut-party-tag"><i style="background:#4d6288"></i>${esc(tutFirma(t,'alan')||'-')}</span></td>
       <td class="t-meta">${esc(t.bina||'-')}</td>
       <td class="t-qty">${fmtNum(tt.kalem)} kalem <span style="color:var(--mute)">· ${fmtNum(tt.miktar)}</span></td>
       <td><div class="row-actions">
@@ -15762,7 +15774,7 @@ async function delTutanak(id){
   if(!guard('delete',{mod:'rapor'}))return;
   const t=(DB.tutanaklar||[]).find(x=>x.id===id); if(!t)return;
   const tt=tutTotals(t);
-  if(!confirm(`"${t.no||'Tutanak'}" tutanagi silinecek.\n\nTarih: ${fmtDate(t.tarih)}\nTeslim eden: ${(t.eden||{}).firma||'-'}\nTeslim alan: ${(t.alan||{}).firma||'-'}\nIcerik: ${tt.kalem} kalem\n\nBu islem geri alinamaz. Devam edilsin mi?`))return;
+  if(!confirm(`"${t.no||'Tutanak'}" tutanagi silinecek.\n\nTarih: ${fmtDate(t.tarih)}\nTeslim eden: ${tutFirma(t,'eden')||'-'}\nTeslim alan: ${tutFirma(t,'alan')||'-'}\nIcerik: ${tt.kalem} kalem\n\nBu islem geri alinamaz. Devam edilsin mi?`))return;
   await sbDeleteTutanak(id);
   DB.tutanaklar=(DB.tutanaklar||[]).filter(x=>x.id!==id);
   logAction('delete','Tutanak silindi: '+(t.no||id));
@@ -15779,7 +15791,14 @@ function tutSetIadeTarihVar(v){ if(!_TUT)return;
   _TUT.iadeTarih=v?(_TUT.iadeTarih||Date.now()):null; render(); }
 function tutSetIadeTarih(v){ if(!_TUT)return;
   _TUT.iadeTarih=v?new Date(v+'T12:00:00').getTime():null; render(); }
-function tutSetParty(side,k,v){ if(!_TUT)return; if(!_TUT[side])_TUT[side]={}; _TUT[side][k]=v; }
+function tutSetParty(side,k,v){ if(!_TUT)return; if(!_TUT[side])_TUT[side]={}; _TUT[side][k]=v;
+  if(k==='firma'){
+    // Yazilan ad listedeki bir sirkete uyuyorsa bag kurulur, uymuyorsa bag kalkar.
+    const c=(DB.companies||[]).find(x=>norm(x.ad)===norm(v));
+    _TUT[side].firmaId=c?c.id:'';
+    render();                       // bagli/serbest rozeti guncellensin
+  }
+}
 function tutSetLine(i,k,v){ if(!_TUT||!_TUT.lines[i])return; _TUT.lines[i][k]=v;
   if(k==='ad'||k==='code') _TUT.lines[i].matId=_TUT.lines[i].matId||''; }
 function tutAddBlankLine(){ if(!_TUT)return; _TUT.lines.push(tutBlankLine()); tutRenderLines(); }
@@ -15819,7 +15838,10 @@ function renderTutanakForm(){
   const party=(side,baslikTr,baslikRu,cls)=>`<div class="tut-party ${cls}">
     <h5>${baslikTr}<span>${baslikRu}</span></h5>
     <div class="frow"><label>Firma / Компания</label>
-      <input list="tutCompList" value="${esc((t[side]||{}).firma||'')}" placeholder="firma unvani" onchange="tutSetParty('${side}','firma',this.value.trim())"></div>
+      <input list="tutCompList" value="${esc(tutFirma(t,side))}" placeholder="firma unvani" onchange="tutSetParty('${side}','firma',this.value.trim())">
+      ${tutFirma(t,side)?`<div class="t-meta" style="margin-top:5px;font-size:11px">${tutFirmaBagli(t,side)
+        ?'<span style="color:var(--green)">✓ Sirketler listesine bagli</span> - sirket adi degisirse tutanakta da degisir'
+        :'Serbest metin - Sirketler listesinde boyle bir kayit yok'}</div>`:''}</div>
     <div class="frow"><label>Ad Soyad / Ф.И.О.</label>
       <input value="${esc((t[side]||{}).ad||'')}" placeholder="ad soyad" onchange="tutSetParty('${side}','ad',this.value.trim())"></div>
     <div class="frow" style="margin-bottom:0"><label>Gorev / Должность</label>
@@ -16225,7 +16247,7 @@ function tutanakPrintHtml(t){
   const tot=tutTotals(t);
   // "TSM ENERJİ A.Ş." gibi noktayla biten unvanlarda cumle sonunda cift nokta olusmasin
   const noktasiz=s=>String(s||'').replace(/\.\s*$/,'');
-  const edenFirma=(t.eden||{}).firma||'', alanFirma=(t.alan||{}).firma||'';
+  const edenFirma=tutFirma(t,'eden'), alanFirma=tutFirma(t,'alan');
   const eF=edenFirma?`<b>${esc(edenFirma)}</b>`:'<span class="ph">[ TESLİM EDEN FİRMA ]</span>';
   const aF=alanFirma?`<b>${esc(alanFirma)}</b>`:'<span class="ph">[ TESLİM ALAN FİRMA ]</span>';
   const eR=edenFirma?`<b>${esc(edenFirma)}</b>`:'<span class="ph">[ ПЕРЕДАЮЩАЯ КОМПАНИЯ ]</span>';
@@ -16312,7 +16334,7 @@ function tutanakPrintHtml(t){
     return `<div class="${cls}">
       <div class="sgm-h">${trBas}<span>${ruBas}</span></div>
       <div class="sgm-b">
-        <div class="sgm-r"><span><b>Firma</b> <em>/ Компания</em> ${imzaAlan(s.firma)}</span></div>
+        <div class="sgm-r"><span><b>Firma</b> <em>/ Компания</em> ${imzaAlan(tutFirma(t,side))}</span></div>
         <div class="sgm-r"><span><b>Ad Soyad</b> <em>/ Ф.И.О.</em> ${imzaAlan(s.ad)}</span></div>
         <div class="sgm-r"><span><b>Görev</b> <em>/ Должность</em> ${imzaAlan(s.gorev)}</span>
           <span class="dar"><b>Tarih</b> <em>/ Дата</em> ${imzaAlan((d&&!isNaN(d))?fmtDate(t.tarih):'')}</span></div>
