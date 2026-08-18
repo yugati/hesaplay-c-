@@ -1850,6 +1850,17 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .nord-dagit>button:first-child:hover{border-color:var(--green);color:var(--green)}
 .nord-dagit.has>button:first-child{border-style:solid;border-color:color-mix(in srgb,var(--green) 45%,transparent);background:color-mix(in srgb,var(--green) 10%,transparent);color:var(--ink)}
 .nord-dagit.has>button:first-child b{color:var(--green)}
+/* ozel kod kirilimi: satirin miktarini YERLESIM (ozel) kodlarina bolme ekrani.
+   Kalemlere dagitimdan (.ndg-*) farki: kodun sistemde kalem karsiligi YOKTUR - bu
+   sartnamelerde kalemler acik kalem, uzerlerinde ozel kod yok. Kod serbest metindir. */
+.nok-row{display:flex;align-items:center;gap:9px;width:100%;padding:7px 10px;background:var(--panel);border:1px solid var(--line);border-radius:9px;transition:border-color .12s,background .12s}
+.nok-row.on{border-color:var(--green);background:color-mix(in srgb,var(--green) 8%,var(--panel))}
+.nok-no{width:26px;flex-shrink:0;text-align:right;font-size:11px;color:var(--mute);font-family:var(--mono)}
+.nok-row input.nok-kod{flex:1;min-width:0;margin:0;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--amber)}
+.nok-row input.nok-qty{width:96px;flex-shrink:0;margin:0;text-align:right}
+.nok-unit{width:58px;flex-shrink:0;font-size:11px;color:var(--mute);font-family:var(--mono);line-height:1.25;overflow-wrap:anywhere}
+.nord-ozel.uyumsuz>button:first-child{border-color:var(--red)88;background:color-mix(in srgb,var(--red) 9%,transparent);color:var(--red)}
+.nord-ozel.uyumsuz>button:first-child b{color:var(--red)}
 /* faturada atama kunyesi: siparisin hangi sartnameden referans aldigi bir bakista okunur */
 .inv-atama{background:color-mix(in srgb,var(--blue) 8%,var(--panel2));border:1px solid color-mix(in srgb,var(--blue) 35%,transparent);border-radius:10px;padding:11px 13px;margin-bottom:12px}
 .inv-atama-h{font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--blue);font-family:var(--mono);margin-bottom:5px}
@@ -9264,10 +9275,14 @@ function orderInvoiceHtml(o,genis){
     const tedNote=tedPay.length
       ?`<div style="margin-top:2px">${tedPay.map(p=>tedRozet(tedarikEtiket(p)||'kaynak belirtilmemis',Number(p.qty)||0)).join('')}</div>`
       :(l.tedarikBina?`<div style="margin-top:2px">${tedRozet(tedarikEtiket({bina:l.tedarikBina,sart:l.tedarikSart}),null)}</div>`:'');
+    // OZEL KOD KIRILIMI: miktarin hangi yerlesim koduna gittigi faturada da gorunur. Her kod
+    // KENDI MIKTARIYLA ayri rozet olur - tek rozet basilsaydi tamami tek koda gitmis gorunurdu.
+    const ozPay=ozelPaylari(l);
+    const ozNote=ozPay.length?`<div style="margin-top:2px">${ozPay.map(p=>`<span class="cat-tag" style="background:color-mix(in srgb,var(--amber) 14%,transparent);color:var(--amber);border:1px dashed color-mix(in srgb,var(--amber) 45%,transparent);font-family:var(--mono);margin-right:4px" title="Bu miktar bu yerlesim koduna gitti - yalnizca kunye, hicbir dusum yapilmaz">${esc(p.kod||'kod yok')} · <b>${fmtNum(Number(p.qty)||0)}</b></span>`).join('')}</div>`:'';
     rows+=`<tr>
     <td style="text-align:center;color:var(--mute)">${i+1}</td>
     <td class="inv-code">${esc(l.code||'-')}</td>
-    <td>${esc(l.ad)}${ozel}${atamaNote}${tedNote}${altNote}</td>
+    <td>${esc(l.ad)}${ozel}${atamaNote}${tedNote}${ozNote}${altNote}</td>
     <td class="num" style="font-weight:700">${fmtNum(l.qty)}</td>
     <td style="color:var(--mute)">${esc(l.unit||'')}</td></tr>`; });
   const qty=o.lines.reduce((x,l)=>x+(Number(l.qty)||0),0);
@@ -9394,20 +9409,26 @@ function exportOrdersExcel(){
   // alindi" diye filtreleyip toplam alindiginda dogru sonuc cikar - tek satirda birlestirilse
   // 44 birimlik kaynak da 100 gorunurdu. Hangi fatura satirindan geldigi "Fatura Satiri"
   // sutununda gorunur (orn. "3 (2/2)") - ayni kalem iki kez sayilmis sanilmasin.
-  const rows=[["Siparis No","Tarih","Bina","Sirket","Spesifikasyon","Fatura Satiri","Spek No","Malzeme","Miktar","Birim","Siparis Turu","Kaynak Bina","Kaynak Sartname","Atama Nedeni","Tedarik Bina","Tedarik Sartname","Tedarik Notu"]];
+  const rows=[["Siparis No","Tarih","Bina","Sirket","Spesifikasyon","Fatura Satiri","Spek No","Malzeme","Miktar","Birim","Siparis Turu","Kaynak Bina","Kaynak Sartname","Atama Nedeni","Tedarik Bina","Tedarik Sartname","Tedarik Notu","Ozel Kod"]];
   orders.slice().sort((a,b)=>(b.date||0)-(a.date||0)).forEach(o=>{
     const at=o.tur==='atama';
-    o.lines.forEach((l,li)=>{ const pay=orderTedarikPaylari(o,l);
-      pay.forEach((p,pi)=>{
+    o.lines.forEach((l,li)=>{ const pay=orderTedarikPaylari(o,l); const oz=ozelPaylari(l);
+      // OZEL KOD KIRILIMI varsa her kod AYRI SATIR olur - tedarik kirilimindaki gerekcenin
+      // aynisi: tek satira liste yazilsaydi koda gore filtreleyip toplam alinamazdi.
+      // Iki kirilim ayni satirda bulunamadigi icin (bkz. nordOzelOpen) carpim/mukerrer sayim olmaz.
+      const parca=oz.length
+        ?oz.map(p=>({qty:Number(p.qty)||0,kod:p.kod||'',ted:pay[0]||{}}))
+        :pay.map(p=>({qty:Number(p.qty)||0,kod:'',ted:p}));
+      parca.forEach((p,pi)=>{
         rows.push([o.no,fmtDate(o.date),o.bina||'',orderCompany(o),o.grup||'',
-          pay.length>1?`${li+1} (${pi+1}/${pay.length})`:String(li+1),
-          l.code||'',l.ad,Number(p.qty)||0,l.unit||'',
+          parca.length>1?`${li+1} (${pi+1}/${parca.length})`:String(li+1),
+          l.code||'',l.ad,p.qty,l.unit||'',
           at?'Atama':'Normal', at?(o.kaynakBina||''):'', at?(o.kaynakSart||''):'', at?atamaNedenLabel(o.atamaNeden):'',
-          p.bina||'', p.sart||'', o.tedarikNot||'']);
+          p.ted.bina||'', p.ted.sart||'', o.tedarikNot||'', p.kod]);
       });
     });
   });
-  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:16},{wch:12},{wch:10},{wch:20},{wch:16},{wch:13},{wch:14},{wch:40},{wch:10},{wch:8},{wch:12},{wch:12},{wch:20},{wch:34},{wch:12},{wch:26},{wch:30}];
+  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:16},{wch:12},{wch:10},{wch:20},{wch:16},{wch:13},{wch:14},{wch:40},{wch:10},{wch:8},{wch:12},{wch:12},{wch:20},{wch:34},{wch:12},{wch:26},{wch:30},{wch:18}];
   XLSX.utils.book_append_sheet(wb,ws,"Siparisler"); XLSX.writeFile(wb,`Proje_Siparisler_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Siparis raporu indirildi");
 }
 function icoChevron(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M9 18l6-6-6-6"/></svg>'; }
@@ -13545,7 +13566,8 @@ let NORD=null; // aktif siparis taslagi: {no,date,bina,companyId,newCompany,pdf,
 // dagitKey/dagitGrup: ozel kodsuz alimda hangi dagitim grubunu bekledigi (bkz. nordDagitOpen)
 // dagitimId: birlikte dagitilmis satirlarin ortak izi - faturada ve duzenlemede korunur
 // tedarikPay: TEDARIK KIRILIMI - miktar birden fazla kaynaktan geldiyse [{bina,sart,qty}] (bkz. tedarikPaylari)
-function _nordEmptyLine(){ return {specId:'',altId:'',srcSpecId:'',yerineSpecId:'',refSpecId:'',code:'',ad:'',cat:'',unit:'',grup:'',img:null,brand:'',qty:'',raw:'',tedarikBina:'',tedarikSart:'',tedarikPay:[],dagitKey:'',dagitGrup:'',dagitimId:''}; }
+// ozelPay: OZEL KOD KIRILIMI - miktar birden fazla yerlesim koduna gittiyse [{kod,qty}] (bkz. ozelPaylari)
+function _nordEmptyLine(){ return {specId:'',altId:'',srcSpecId:'',yerineSpecId:'',refSpecId:'',code:'',ad:'',cat:'',unit:'',grup:'',img:null,brand:'',qty:'',raw:'',tedarikBina:'',tedarikSart:'',tedarikPay:[],ozelPay:[],dagitKey:'',dagitGrup:'',dagitimId:''}; }
 /* SIPARIS ATAMASI - varsayilan alanlar.
    tur:'normal'  -> bugunku davranis, hicbir sey degismez
    tur:'atama'   -> urunler KAYNAK binanin sartnamesinden secilir, ama siparis HEDEF binaya
@@ -13623,6 +13645,29 @@ function tedarikPayYaz(l,pay){
   if(l.tedarikPay.length){ const b=tedarikBaskinPay(l.tedarikPay);
     l.tedarikBina=b?b.bina:''; l.tedarikSart=b?(b.sart||''):''; }
 }
+/* ─── OZEL KOD KIRILIMI ──────────────────────────────────────────────────────
+   Satin alma ozel kodsuz yapilir, ama malzeme fiilen belirli YERLESIM KODLARINA gider
+   (00UYB16EM0258 gibi) ve bunlarin katlari farkli olabilir. Faturada tek satir vardir,
+   arkasinda birden cok kod durur:  ozelPay:[{kod,qty}, ...]  toplami satirin miktarina esittir.
+
+   NEDEN "Miktari Dagit" DEGIL: o akis (nordDagit*) miktari SARTNAME KALEMLERINE paylastirir
+   ve her ozel kod icin ayri bir kalem bulundugunu varsayar. Bu sartnamelerde oyle kalemler
+   yok - kalemler acik kalem, uzerlerinde ozel kod yazmiyor. Bu yuzden kod, kalemde degil
+   SATIRDA yasar; sistemde bir kaleme baglanmaz, uydurma bir eslesme kurulmaz.
+
+   TEDARIK KIRILIMI gibi YALNIZCA KUNYEDIR: satir tek kalir ve tek hareket kaydi uretir,
+   hicbir kalemin hedef/alim/montaj sayisi degismez, hicbir dusum yapilmaz.
+   IKI BOLME BIRDEN OLMAZ: tedarik kirilimi ve kalemlere dagitimla ayni satirda bulunamaz
+   (bkz. nordOzelOpen, nordTedarikSetMod, nordDagitOpen) - yoksa miktar iki kez sayilirdi.
+   Bos dizi = kirilim yok. Eski kayitlarda alan hic yoktur; tum okuyucular buradan gecer. */
+function ozelPaylari(x){ const p=x&&x.ozelPay; return (Array.isArray(p)&&p.length)?p:[]; }
+function ozelPayToplam(pay){ return (pay||[]).reduce((s,p)=>s+(Number(p.qty)||0),0); }
+function ozelPayKodlari(x){ return ozelPaylari(x).map(p=>String(p.kod||'').trim()).filter(Boolean); }
+// "00UYB16EM0258: 1 · 00UYB16EM0260: 2"
+function ozelPayOzet(pay){ return (pay||[]).map(p=>`${p.kod||'kod yok'}: ${fmtNum(Number(p.qty)||0)}`).join(' · '); }
+// Kirilim satirin miktariyla uyusuyor mu? (kirilim yazildiktan SONRA miktar degistirilmis olabilir)
+function ozelPayUyumsuz(l){ const p=ozelPaylari(l); if(!p.length) return false;
+  return Math.abs(ozelPayToplam(p)-(Number(l.qty)||0))>1e-9; }
 /* Tedarik kaynagi SISTEM DISI olabilir: malzeme, bu projede kaydi olmayan (kullanicinin
    sorumlu olmadigi) bir binanin sartnamesinden gelmis olabilir. Bu yuzden bina ve sartname
    serbest metin olarak yazilabilir - kayitli olanlar yalnizca oneri listesi olarak sunulur.
@@ -13741,6 +13786,9 @@ function openEditOrderPage(orderId){
       // duzenleme sirasinda yerinde degistirilmesin) - yoksa duzenleyip kaydeden
       // kullanici miktar miktar girdigi kaynak ayrimini sessizce kaybederdi
       nl.tedarikPay=(l.tedarikPay||[]).map(p=>({...p}));
+      // ozel kod kirilimi de tazelemede korunur - yoksa duzenleyip kaydeden kullanici
+      // kod kod girdigi yerlesim ayrimini sessizce kaybederdi
+      nl.ozelPay=(l.ozelPay||[]).map(p=>({...p}));
       nl.dagitimId=l.dagitimId||''; return nl; }
     // ATAMA satiri geri yuklenirken duzenlenebilir hale getirilir: srcSpecId kaynak kalemdir,
     // altId doluysa satir mevcut bir kalemin YERINE baglanmistir (specId o kalemdir).
@@ -13750,7 +13798,8 @@ function openEditOrderPage(orderId){
     return {specId:atamaSatiri?'':(l.specId||''),altId:atamaSatiri?'':(l.altId||''),
       srcSpecId:l.refSpecId||'',yerineSpecId:(atamaSatiri&&l.altId)?(l.specId||''):'',
       refSpecId:l.refSpecId||'',code:l.code||'',ad:l.ad||'',cat:'',unit:l.unit||'',grup:l.grup||'',lokId:l.lokId||'',img:null,brand:'',qty:Number(l.qty)||'',raw:l.specId?'':((l.code?l.code+' ':'')+(l.ad||'')),
-      tedarikBina:l.tedarikBina||'',tedarikSart:l.tedarikSart||'',tedarikPay:(l.tedarikPay||[]).map(p=>({...p}))};
+      tedarikBina:l.tedarikBina||'',tedarikSart:l.tedarikSart||'',tedarikPay:(l.tedarikPay||[]).map(p=>({...p})),
+      ozelPay:(l.ozelPay||[]).map(p=>({...p}))};
   });
   // ATAMA siparisi duzenlenirken sart bos birakilmaz: atamada NORD.sart HEDEF SARTNAME'dir
   // (karsilik kalemin acildigi yer), yalnizca bir arama filtresi degil.
@@ -13854,7 +13903,11 @@ function nordTedarikOpen(i){
   nordTedarikRender();
 }
 function nordTedarikClose(){ _NTD=null; closeModal(); }
-function nordTedarikSetMod(v){ if(!_NTD) return; _NTD.mod=(v==='bol')?'bol':'tek'; nordTedarikRender(); }
+function nordTedarikSetMod(v){ if(!_NTD) return;
+  // IKI BOLME BIRDEN OLMAZ - satirda ozel kod kirilimi varsa miktar zaten bolunmus durumda
+  if(v==='bol'&&ozelPaylari(NORD.lines[_NTD.i]).length){
+    toast('Bu satirda ozel kod kirilimi var - ayni satirda iki bolme birden olmaz. Once ozel kod kirilimini kaldirin.','err'); return; }
+  _NTD.mod=(v==='bol')?'bol':'tek'; nordTedarikRender(); }
 /* ── KIRILIM SATIRLARI ──
    Alanlar serbest metin oldugu icin yazarken modal YENIDEN CIZILMEZ (odak kaybolurdu):
    yalnizca ilgili satirin vurgusu, sartname onerileri ve ustteki sayac tazelenir.
@@ -14163,7 +14216,8 @@ async function nordXbinaBind(hedefSpecId){
     const i=f.i, cur=NORD.lines[i]||{};
     NORD.lines[i]={specId:hedefSpecId,altId:alt.id,code:alt.code,ad:alt.name,cat:hedef.cat||'',
       unit:alt.unit||hedef.unit||'',grup:specGroupKey(hedef),img:alt.img||null,brand:alt.brand||'',
-      qty:cur.qty,lokId:cur.lokId,raw:'',tedarikBina:cur.tedarikBina||'',tedarikSart:cur.tedarikSart||'',tedarikPay:(cur.tedarikPay||[]).map(p=>({...p}))};
+      qty:cur.qty,lokId:cur.lokId,raw:'',tedarikBina:cur.tedarikBina||'',tedarikSart:cur.tedarikSart||'',tedarikPay:(cur.tedarikPay||[]).map(p=>({...p})),
+      ozelPay:(cur.ozelPay||[]).map(p=>({...p}))};
     logAction('editSpec',`Baska bina alternatifi: "${alt.name}" (${src.bina}) -> ${hedef.name} (${NORD.bina})`);
     nordXbinaClose(); nordRenderLines();
     toast(`Baglandi - siparis ${NORD.bina}'ye yazilacak`);
@@ -14269,7 +14323,7 @@ function atamaLineFrom(src,qty,lokId,yerineSpecId){
     cat:y?(y.cat||''):'',grup:y?specGroupKey(y):(NORD.sart||''),
     qty:(qty!=null&&!isNaN(qty))?qty:'',lokId:lokId||'',raw:'',
     // tedarik kaynagi bos baslar: satir basliktakini miras alir (bkz. nordTedarikOf)
-    tedarikBina:'',tedarikSart:'',tedarikPay:[]};
+    tedarikBina:'',tedarikSart:'',tedarikPay:[],ozelPay:[]};
 }
 function nordAtamaBind(i,srcSpecId){
   if(!canEdit('proje')){ toast('Atama icin duzenleme yetkisi gerekir','err'); return; }
@@ -14279,6 +14333,7 @@ function nordAtamaBind(i,srcSpecId){
   // urun degistirildiginde satira ozel tedarik kaynagi korunur - miktar/lokasyon gibi
   NORD.lines[i].tedarikBina=cur.tedarikBina||''; NORD.lines[i].tedarikSart=cur.tedarikSart||'';
   NORD.lines[i].tedarikPay=(cur.tedarikPay||[]).map(p=>({...p}));
+  NORD.lines[i].ozelPay=(cur.ozelPay||[]).map(p=>({...p}));
   nordRenderLines();
 }
 // Atama satiri gecerli mi? Kaydetmeden once specId HENUZ YOKTUR (bkz. atamaMaterialize),
@@ -14689,6 +14744,12 @@ function nordDagitOpen(i){
     toast('Bu satirda tedarik kirilimi var - once kirilimi kaldirin, dagittiktan sonra olusan satirlarda ayri ayri girin','err');
     return;
   }
+  // Ayni gerekce ozel kod kirilimi icin de gecerli: miktar zaten kodlara bolunmus, ustune
+  // bir de kalemlere bolmek "hangi kod hangi kaleme gitti" sorusunu cevaplanamaz kilar.
+  if(ozelPaylari(l).length){
+    toast('Bu satirda ozel kod kirilimi var - once kirilimi kaldirin, dagittiktan sonra olusan satirlarda ayri ayri girin','err');
+    return;
+  }
   // "YENIDEN DAGIT" TEK SATIRI DEGIL, O DAGITIMIN TAMAMINI ELE ALIR: ayni dagitimId'li
   // satirlarin miktari toplanip ekrana getirilir ve uygulanirken hepsi birden yenilenir.
   // Yoksa eski satirlar yerinde kalir, miktar iki kez sayilirdi.
@@ -14824,6 +14885,7 @@ function nordDagitApply(){
     // satira ozel bilgiler (lokasyon, tedarik kaynagi) dagitilan tum satirlara tasinir.
     // Kirilim tasinmaz - zaten kirilimli satir dagitima girmiyor (bkz. nordDagitOpen).
     nl.lokId=l.lokId||''; nl.tedarikBina=l.tedarikBina||''; nl.tedarikSart=l.tedarikSart||''; nl.tedarikPay=[];
+    nl.ozelPay=[];   // kod kirilimi tasinmaz - kirilimli satir zaten dagitima giremez (bkz. nordDagitOpen)
     nl.dagitimId=dagitimId;
     yeni.push(nl);
   });
@@ -14868,6 +14930,155 @@ function nordDagitBekleyenLine(hits,qty,raw){
   return l;
 }
 // Turkce/Excel sayi bicimini cozer: "1.234,56" -> 1234.56 ; "5" -> 5 ; gecersiz -> NaN
+/* ─── OZEL KOD KIRILIMI EKRANI ──────────────────────────────────────────────
+   Kodlar YAPISTIRILARAK girilir: faturadaki kod sutunu oldugu gibi yapistirilir ve
+   _ozelKodBol bosluk/satir yuzunden ikiye kopmus kodlari ("00UYB16 EM0258") birlestirir,
+   zaten tam olanlara dokunmaz. Her koda varsayilan 1 birim yazilir - bir kod bir yerlesim
+   demektir; ayni koda birden fazla adet gidiyorsa miktar elle degistirilir. */
+let _NOK=null;
+function nordOzelOpen(i){
+  const l=NORD.lines[i]; if(!l) return;
+  // IKI BOLME BIRDEN OLMAZ - bkz. nordDagitOpen'daki ayni kural
+  if(tedarikPaylari(l).length){
+    toast('Bu satirda tedarik kirilimi var - ayni satirda iki bolme birden olmaz. Once tedarik kirilimini kaldirin.','err'); return; }
+  if(l.dagitimId){
+    toast('Bu satir kalemlere dagitilmis - ozel kodlari olusan satirlarda ayri ayri girin','err'); return; }
+  _NOK={i,pay:ozelPaylari(l).map(p=>({kod:p.kod||'',qty:p.qty==null?'':String(p.qty)}))};
+  nordOzelRender();
+}
+function nordOzelClose(){ _NOK=null; closeModal(); }
+/* Kodu bos birakilmis satir TOPLAMA GIRMEZ: uygulanirken de elenir (bkz. nordOzelApply),
+   ikisi ayni saymasaydi sayac "tamam" gorunup uygulama reddedilirdi. */
+function nordOzelDurum(){
+  const f=_NOK||{pay:[]};
+  const l=(NORD&&NORD.lines[f.i])||{};
+  const h=nordParseQty(l.qty), hedef=h>0?h:0;
+  const kodlu=(f.pay||[]).filter(p=>String(p.kod||'').trim());
+  const girilen=kodlu.reduce((s,p)=>{ const n=nordParseQty(p.qty); return s+(n>0?n:0); },0);
+  return {hedef,girilen,kodlu:kodlu.length,artan:Math.round((hedef-girilen)*1e6)/1e6};
+}
+function nordOzelSayacHtml(d){
+  const renk=!(d.hedef>0)?'var(--mute)':(Math.abs(d.artan)<=1e-9?'var(--green)':(d.artan>0?'var(--amber)':'var(--red)'));
+  return `<span class="t-meta">Satir miktari: <b style="color:var(--ink)">${d.hedef?fmtNum(d.hedef):'-'}</b></span>
+    <span class="t-meta">Kod: <b style="color:var(--ink)">${d.kodlu}</b></span>
+    <span class="t-meta">Girilen: <b style="color:var(--ink)">${fmtNum(d.girilen)}</b></span>
+    <span class="t-meta">${d.artan<0?'Fazla girildi':'Artan'}: <b style="color:${renk}">${fmtNum(Math.abs(d.artan))}</b></span>`;
+}
+function nordOzelSayac(){
+  const d=nordOzelDurum();
+  const el=document.getElementById('nokSayac'); if(el) el.innerHTML=nordOzelSayacHtml(d);
+  const btn=document.getElementById('nokApply');
+  if(btn){ const blok=!(d.hedef>0)||!d.kodlu||Math.abs(d.artan)>1e-9;
+    btn.disabled=blok; btn.style.opacity=blok?'.5':''; btn.style.cursor=blok?'not-allowed':''; }
+}
+/* Kod alani serbest metin oldugu icin her tusa basista modal YENIDEN CIZILMEZ - cizilse
+   yazarken odak kaybolurdu. Yalnizca satirin vurgusu ve ustteki sayac tazelenir. */
+function nordOzelSet(k,alan,v){
+  const f=_NOK; if(!f||!f.pay[k]) return;
+  f.pay[k][alan]=v;
+  const row=document.getElementById('nokRow'+k);
+  if(row) row.classList.toggle('on',nordParseQty(f.pay[k].qty)>0&&!!String(f.pay[k].kod||'').trim());
+  nordOzelSayac();
+}
+function nordOzelAdd(){ const f=_NOK; if(!f) return; f.pay.push({kod:'',qty:'1'}); nordOzelRender(); }
+function nordOzelDel(k){ const f=_NOK; if(!f) return; f.pay.splice(k,1); nordOzelRender(); }
+function nordOzelTemizle(){ const f=_NOK; if(!f) return; f.pay=[]; nordOzelRender(); }
+/* YAPISTIR: faturadaki kod sutunu oldugu gibi yapistirilir. Ayni kod iki kez gecerse
+   miktari toplanir - listede iki ayri yerlesim gibi gorunmesin. */
+function nordOzelYapistir(v){
+  const f=_NOK; if(!f) return;
+  const kodlar=_ozelKodBol(String(v||''));
+  if(!kodlar.length){ toast('Kod bulunamadi','err'); return; }
+  kodlar.forEach(k=>{
+    const v2=f.pay.find(p=>norm(p.kod)===norm(k));
+    if(v2){ const n=nordParseQty(v2.qty); v2.qty=String((n>0?n:0)+1); }
+    else f.pay.push({kod:k,qty:'1'});
+  });
+  nordOzelRender();
+  toast(`${kodlar.length} kod okundu`);
+}
+// KALANI YAZ: satir miktarindan geriye kalani ilk bos miktarli koda yazar
+function nordOzelKalan(){
+  const f=_NOK; if(!f) return;
+  const d=nordOzelDurum();
+  if(!(d.hedef>0)){ toast('Once satirin miktarini girin','err'); return; }
+  if(!(d.artan>1e-9)){ toast(d.artan<-1e-9?'Satir miktarindan fazla girilmis':'Yazilacak kalan yok','err'); return; }
+  const bos=f.pay.find(p=>String(p.kod||'').trim()&&!(nordParseQty(p.qty)>0));
+  if(!bos){ toast('Miktari bos bir kod yok - once "Kod Ekle" deyin','err'); return; }
+  bos.qty=String(Math.round(d.artan*1e6)/1e6);
+  nordOzelRender();
+}
+function nordOzelRender(){
+  closeModal(); const f=_NOK; if(!f) return;
+  const l=NORD.lines[f.i]; if(!l) return;
+  if(!f.pay.length) f.pay.push({kod:'',qty:'1'});
+  const d=nordOzelDurum();
+  const rows=f.pay.map((p,k)=>{
+    const dolu=nordParseQty(p.qty)>0&&!!String(p.kod||'').trim();
+    return `<div class="nok-row${dolu?' on':''}" id="nokRow${k}">
+      <span class="nok-no">${k+1}</span>
+      <input class="nok-kod" type="text" placeholder="00UYB16EM0258" value="${esc(p.kod||'')}" oninput="nordOzelSet(${k},'kod',this.value)">
+      <input class="nok-qty" type="number" step="any" min="0" placeholder="0" value="${esc(p.qty||'')}" oninput="nordOzelSet(${k},'qty',this.value)">
+      <span class="nok-unit">${esc(l.unit||'')}</span>
+      <button class="mini-btn del" onclick="nordOzelDel(${k})" title="Bu kodu cikar">${icoTrash()}</button>
+    </div>`;
+  }).join('');
+  const html=`<div class="modal-bg" onclick="if(event.target===this)nordOzelClose()"><div class="modal wide"><div class="modal-head">
+    <h3>Ozel Kod Kirilimi</h3><button class="mini-btn" onclick="nordOzelClose()">x</button></div><div class="modal-body">
+    <div class="nxb-src">
+      <div class="nxb-src-h">FATURA SATIRI</div>
+      <div class="nxb-name">${esc(l.ad||'?')}</div>
+      <div class="nxb-sub">${esc([l.code||'',l.grup||NORD.sart||'',NORD.bina||''].filter(Boolean).join(' · '))} — ${fmtNum(Number(l.qty)||0)} ${esc(l.unit||'')}</div>
+    </div>
+    <p class="t-meta" style="margin:12px 0 10px;line-height:1.65">Alinan miktarin hangi <b>yerlesim (ozel) koduna</b> gittigi burada yazilir - katlari farkli olabilir.
+      Kodlar <b>yalnizca kunyedir</b>: satir tek kalir, tek hareket kaydi uretir; hicbir kalemin hedef, alim ve montaj sayisi degismez.
+      Faturadaki kod sutununu oldugu gibi asagiya yapistirabilirsiniz; <b>bosluk yuzunden ikiye kopmus kodlar</b> ("00UYB16 EM0258") otomatik birlestirilir.</p>
+    <div class="frow" style="margin-bottom:10px"><label>Kodlari yapistir</label>
+      <textarea id="nokPaste" rows="3" placeholder="00UYB16 EM0258&#10;00UYB16 EM0260&#10;00UYB16 EM0262" style="font-family:var(--mono);font-size:12px"></textarea>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordOzelYapistir(document.getElementById('nokPaste').value)">Listeye Ekle</button>
+        <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordOzelAdd()">Kod Ekle</button>
+        <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordOzelKalan()" title="Satir miktarindan geriye kalani, miktari bos ilk koda yazar">Kalani Yaz</button>
+        <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordOzelTemizle()">Temizle</button>
+      </div></div>
+    <div class="ndg-sayac" id="nokSayac">${nordOzelSayacHtml(d)}</div>
+    <div class="nxb-list nat-list">${rows}</div>
+  </div><div class="modal-foot">
+    <span class="t-meta" style="margin-right:auto">Toplam satir miktarina esit olmadan uygulanamaz</span>
+    <button class="btn btn-ghost" onclick="nordOzelClose()">Vazgec</button>
+    <button class="btn btn-add" id="nokApply" onclick="nordOzelApply()">Satira Uygula</button>
+  </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  nordOzelSayac();
+}
+/* KIRILIMI UYGULA: kodsuz/miktarsiz satirlar elenir, ayni kod iki kez yazildiysa toplanir.
+   Toplam satir miktarina esit olmak zorundadir - esit degilse fatura ile kunye birbirini
+   tutmaz, sessizce kaydetmek yanlis olurdu (tedarik kirilimiyla ayni kural). */
+function nordOzelApply(){
+  const f=_NOK; if(!f) return;
+  const l=NORD.lines[f.i]; if(!l) return;
+  const pay=f.pay.map(p=>({kod:String(p.kod||'').trim(),qty:nordParseQty(p.qty)}))
+    .filter(p=>p.kod&&p.qty>0);
+  if(!pay.length){ toast('En az bir koda miktar yazin','err'); return; }
+  const hedef=nordParseQty(l.qty);
+  if(!(hedef>0)){ toast('Once satirin miktarini girin','err'); return; }
+  const birlesik=[];
+  pay.forEach(p=>{ const v=birlesik.find(x=>norm(x.kod)===norm(p.kod));
+    if(v) v.qty=Math.round((v.qty+p.qty)*1e6)/1e6; else birlesik.push({...p}); });
+  const artan=Math.round((hedef-ozelPayToplam(birlesik))*1e6)/1e6;
+  if(Math.abs(artan)>1e-9){
+    toast(artan>0?`${fmtNum(artan)} birim koda yazilmadi - kalani dagitin ya da satir miktarini dusurun`
+      :`Satir miktarindan ${fmtNum(-artan)} birim fazla girildi`,'err');
+    return;
+  }
+  l.ozelPay=birlesik;
+  nordOzelClose(); nordRenderLines();
+  toast(`${birlesik.length} ozel koda bolundu - yalnizca kunye, hicbir dusum yapilmaz`);
+}
+function nordOzelClear(i){
+  const l=NORD.lines[i]; if(!l) return;
+  l.ozelPay=[]; nordRenderLines(); toast('Ozel kod kirilimi kaldirildi');
+}
 function nordParseQty(s){
   s=String(s==null?'':s).trim(); if(!s) return NaN;
   s=s.replace(/\s/g,'');
@@ -15005,9 +15216,11 @@ function nordSetBina(b){
     // binasi degisse de gecerliligini korur, yeniden eslestirmede tasinir
     const ml=nordMatchToLine(cells,l.qty!==''?Number(l.qty):NaN,l.raw);
     const kopyaPay=()=>(l.tedarikPay||[]).map(p=>({...p}));
-    if(ml){ ml.tedarikBina=l.tedarikBina||''; ml.tedarikSart=l.tedarikSart||''; ml.tedarikPay=kopyaPay(); return ml; }
+    // ozel kod satirin kendi kunyesidir: bina degisse de gecerliligini korur, tasinir
+    const kopyaOzel=()=>(l.ozelPay||[]).map(p=>({...p}));
+    if(ml){ ml.tedarikBina=l.tedarikBina||''; ml.tedarikSart=l.tedarikSart||''; ml.tedarikPay=kopyaPay(); ml.ozelPay=kopyaOzel(); return ml; }
     const nl=_nordEmptyLine(); nl.raw=l.raw||src; nl.qty=l.qty;
-    nl.tedarikBina=l.tedarikBina||''; nl.tedarikSart=l.tedarikSart||''; nl.tedarikPay=kopyaPay(); return nl;
+    nl.tedarikBina=l.tedarikBina||''; nl.tedarikSart=l.tedarikSart||''; nl.tedarikPay=kopyaPay(); nl.ozelPay=kopyaOzel(); return nl;
   });
   render(); // sartname secenekleri ve kalem sayisi yeni binaya gore yeniden cizilir
 }
@@ -15032,9 +15245,33 @@ function nordTedChipHtml(i){
     </span>`;
 }
 function nordTedRozetTazele(i){ const el=document.getElementById('ntdChip'+i); if(el) el.outerHTML=nordTedChipHtml(i); }
+/* OZEL KOD ROZETI: tedarik rozetiyle ayni gerekce - satirin miktari degistiginde tum liste
+   yeniden cizilmeden (miktar kutusundaki odak kaybolmadan) yalnizca bu rozet tazelenebilsin. */
+function nordOzelChipHtml(i){
+  const l=NORD.lines[i]; if(!l) return '';
+  const pay=ozelPaylari(l), uyumsuz=ozelPayUyumsuz(l);
+  // Kod sayisi arttikca "1 + 1 + 1 + ..." okunmaz hale gelir; dortten sonrasi toplama doner.
+  // Kodlarin tamami zaten ipucunda (hover) duruyor.
+  const ic=pay.length
+    ?`Ozel kod: <b>${pay.length}</b> · ${pay.length<=4
+        ?pay.map(p=>fmtNum(Number(p.qty)||0)).join(' + ')
+        :'toplam '+fmtNum(ozelPayToplam(pay))}${uyumsuz?' &#9888;':''}`
+    :'+ Ozel kod kirilimi';
+  const ipucu=pay.length
+    ?`Ozel kod kirilimi - ${ozelPayOzet(pay)}`+(uyumsuz
+      ?`\nUYARI: kirilim toplami ${fmtNum(ozelPayToplam(pay))}, satir miktari ${fmtNum(Number(l.qty)||0)} - duzeltilmeden kaydedilemez`
+      :`\nYalnizca kunyedir - hicbir kalemden dusum yapilmaz`)
+    :'Alinan miktar birden fazla yerlesim koduna gidiyorsa (katlari farkli olabilir) kodlari burada yazin - yalnizca kunye, hicbir dusum yapilmaz.';
+  return `<span class="nord-yerine nord-ozel${pay.length?' has':''}${uyumsuz?' uyumsuz':''}" id="nokChip${i}">
+      <button type="button" onclick="nordOzelOpen(${i})" title="${esc(ipucu)}">${ic}</button>
+      ${pay.length?`<button type="button" class="nord-yerine-x" onclick="nordOzelClear(${i})" title="Ozel kod kirilimini kaldir">&times;</button>`:''}
+    </span>`;
+}
+function nordOzelRozetTazele(i){ const el=document.getElementById('nokChip'+i); if(el) el.outerHTML=nordOzelChipHtml(i); }
 function nordUpd(i,k,v){ NORD.lines[i][k]=v;
   // kirilimli satirda miktar degisince rozetteki uyum uyarisi aninda gorunur olmali
   if(k==='qty'&&tedarikPaylari(NORD.lines[i]).length) nordTedRozetTazele(i);
+  if(k==='qty'&&ozelPaylari(NORD.lines[i]).length) nordOzelRozetTazele(i);
   nordUpdateSummary(); }
 // lokasyon secimi: degeri yazar + secili (yesil) vurguyu aninda gunceller (tam cizim gerektirmez)
 function nordSetLok(i,sel){ NORD.lines[i].lokId=sel.value; const w=sel.closest('.nord-loc'); if(w)w.classList.toggle('has',!!sel.value); }
@@ -15162,6 +15399,9 @@ function nordLinesHtml(){
     // TEDARIK KAYNAGI: satirda deger yoksa baslikta secili olan kesik cizgiyle gosterilir.
     // Salt bilgi - "yerine"den farki, hicbir ilerleme/stok hesabina girmemesidir.
     const tedSel=ok?nordTedChipHtml(i):'';
+    // OZEL KOD KIRILIMI: miktarin hangi yerlesim kodlarina gittigi. Kalemlere dagitimdan
+    // farki, kodun sartnamede kalem karsiligi olmamasidir - salt kunye (bkz. ozelPaylari).
+    const ozelSel=ok?nordOzelChipHtml(i):'';
     // OZEL KODSUZ ALIM: urun bu sartnamede birden fazla kalem olarak tanimliysa (her ozel kod
     // icin bir kalem) faturadaki miktar kalemlere dagitilabilir. Alternatif ve atama
     // satirlarinda hic cikmaz - nordDagitGrupOf onlar icin bos doner.
@@ -15172,7 +15412,7 @@ function nordLinesHtml(){
     return `<div class="nord-row ${ok?(isDup?'dup':''):'open'}" ondragstart="nordDragStart(event,${i})" ondragover="nordDragOver(event,${i})" ondragleave="nordDragLeave(event)" ondrop="nordDrop(event,${i})" ondragend="nordDragEnd()">
       <span class="nord-grip" title="Surukleyerek sirayi degistir" onmousedown="nordDragArm(this)" onmouseup="nordDragDisarm(this)">${icoGrip()}</span>
       <span class="nord-idx t-meta">${i+1}</span>
-      <div class="nord-prod-col">${prodCell}${yerineSel}${dagitSel}${tedSel}${lokSel}</div>
+      <div class="nord-prod-col">${prodCell}${yerineSel}${dagitSel}${tedSel}${ozelSel}${lokSel}</div>
       <div class="nord-qty-col"><input type="number" step="any" min="0" placeholder="0" value="${esc(l.qty)}" oninput="nordUpd(${i},'qty',this.value)">${ok&&l.unit?`<span class="nord-unit">${esc(l.unit)}</span>`:''}</div>
       <button class="mini-btn del" onclick="nordRm(${i})">${icoTrash()}</button>
     </div>`;
@@ -15189,10 +15429,12 @@ function nordSummaryHtml(){
   let warn='';
   // kirilim yazildiktan SONRA miktar degistirilmis olabilir - toplam tutmuyorsa kaydettirmeyiz
   const tedUyumsuz=NORD.lines.filter(l=>nordLineOk(l)&&tedarikPayUyumsuz(l)).length;
+  const ozUyumsuz=NORD.lines.filter(l=>nordLineOk(l)&&ozelPayUyumsuz(l)).length;
   if(pending) warn+=`<span class="nord-pill err">${pending} satir urun secimi bekliyor</span>`;
   if(noQty) warn+=`<span class="nord-pill err">${noQty} satirda miktar eksik</span>`;
   if(dupRows) warn+=`<span class="nord-pill err">${dupRows} satir mukerrer urun</span>`;
   if(tedUyumsuz) warn+=`<span class="nord-pill err">${tedUyumsuz} satirda tedarik kirilimi miktarla uyusmuyor</span>`;
+  if(ozUyumsuz) warn+=`<span class="nord-pill err">${ozUyumsuz} satirda ozel kod kirilimi miktarla uyusmuyor</span>`;
   // Taslak butonu: kesinlesmemis siparisleri saklamak icin - gercek siparis duzenlerken (editId) gizli
   const draftBtn=NORD.editId?'':`<button class="btn btn-ghost" onclick="nordSaveDraft()" title="Kesinlestirmeden sakla - stok/ilerlemeyi etkilemez, Taslaklar sekmesinde durur">${NORD.draftId?'Taslagi Guncelle':'Taslak Kaydet'}</button>`;
   return `<div class="nord-sum-left"><b>${ok.length}</b> gecerli satir · toplam <b>${fmtNum(totQty)}</b> birim ${NORD.draftId?'<span class="nord-pill" style="background:var(--amber)22;color:var(--amber)">taslak</span>':''} ${warn}</div>
@@ -15321,6 +15563,9 @@ async function saveNewOrder(){
   // olabilir - sessizce kaydedilirse fatura ile kunye birbirini tutmaz
   const tedUyumsuz=NORD.lines.find(l=>nordLineOk(l)&&tedarikPayUyumsuz(l));
   if(tedUyumsuz){ toast(`"${tedUyumsuz.ad||tedUyumsuz.code}" satirinda tedarik kirilimi ${fmtNum(tedarikPayToplam(tedarikPaylari(tedUyumsuz)))}, satir miktari ${fmtNum(Number(tedUyumsuz.qty)||0)} - esitleyin`,"err"); return; }
+  // OZEL KOD KIRILIMI de ayni sekilde satir miktariyla tutmali
+  const ozUyumsuz=NORD.lines.find(l=>nordLineOk(l)&&ozelPayUyumsuz(l));
+  if(ozUyumsuz){ toast(`"${ozUyumsuz.ad||ozUyumsuz.code}" satirinda ozel kod kirilimi ${fmtNum(ozelPayToplam(ozelPaylari(ozUyumsuz)))}, satir miktari ${fmtNum(Number(ozUyumsuz.qty)||0)} - esitleyin`,"err"); return; }
   let companyId='', companyName='';
   if(NORD.companyId==='__new'){
     companyName=(NORD.newCompany||'').trim();
@@ -15375,9 +15620,12 @@ async function saveNewOrder(){
     // o satirlarin ortak izi - hangi satirlarin tek bir fatura kaleminden geldigi anlasilir
     // tedarikPay: TEDARIK KIRILIMI - miktarin hangi kaynaktan ne kadari geldigi. Satir yine
     // TEK hareket kaydi uretir (ilerleme/stok degismez), kirilim yalnizca kunye olarak durur.
+    // ozelPay: OZEL KOD KIRILIMI - miktarin hangi yerlesim koduna ne kadari gittigi. tedarikPay
+    // gibi satir yine TEK hareket kaydi uretir (ilerleme/stok degismez), kirilim kunye olarak durur.
     const tedPay=tedarikPaylari(l).map(p=>({bina:p.bina||'',sart:p.sart||'',qty:Number(p.qty)||0}));
-    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,altId:l.altId||'',refSpecId:l.refSpecId||'',grup:l.grup||'',bina,lokId:l.lokId||null,img:l.img||null,brand:l.brand||'',pdf:null,tedarikBina:l.tedarikBina||'',tedarikSart:l.tedarikSart||'',tedarikPay:tedPay,dagitimId:l.dagitimId||''};
-    newItems.push(item); lines.push({code:l.code||'',ad:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),specId:l.specId,altId:l.altId||'',refSpecId:l.refSpecId||'',grup:l.grup||'',lokId:l.lokId||null,tedarikBina:l.tedarikBina||'',tedarikSart:l.tedarikSart||'',tedarikPay:tedPay.map(p=>({...p})),dagitimId:l.dagitimId||''});
+    const ozPay=ozelPaylari(l).map(p=>({kod:String(p.kod||'').trim(),qty:Number(p.qty)||0}));
+    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,altId:l.altId||'',refSpecId:l.refSpecId||'',grup:l.grup||'',bina,lokId:l.lokId||null,img:l.img||null,brand:l.brand||'',pdf:null,tedarikBina:l.tedarikBina||'',tedarikSart:l.tedarikSart||'',tedarikPay:tedPay,ozelPay:ozPay,dagitimId:l.dagitimId||''};
+    newItems.push(item); lines.push({code:l.code||'',ad:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),specId:l.specId,altId:l.altId||'',refSpecId:l.refSpecId||'',grup:l.grup||'',lokId:l.lokId||null,tedarikBina:l.tedarikBina||'',tedarikSart:l.tedarikSart||'',tedarikPay:tedPay.map(p=>({...p})),ozelPay:ozPay.map(p=>({...p})),dagitimId:l.dagitimId||''});
   });
   const orderGrups=[...new Set(lines.map(l=>l.grup).filter(Boolean))];
   const orderGrup=orderGrups.length===1?orderGrups[0]:(orderGrups.length>1?'Karma ('+orderGrups.length+' spek)':'');
@@ -15412,6 +15660,12 @@ async function saveNewOrder(){
       .map(l=>`${l.ad||l.code||'?'} (${tedarikPayOzet(tedarikPaylari(l))})`).join(' ; ');
     const _kirEski=_kirOzet(exOrder.lines), _kirYeni=_kirOzet(lines);
     if(_kirEski!==_kirYeni) _bas.push(`Tedarik kirilimi: ${_kirEski||'yok'} → ${_kirYeni||'yok'}`);
+    // OZEL KOD KIRILIMI degisikligi de miktar diff'ine yansimaz (satir toplami ayni kalir):
+    // 7 birimin kodlari degistirilse burada yazilmazsa hicbir iz birakmazdi
+    const _ozOzet=arr=>(arr||[]).filter(l=>ozelPaylari(l).length)
+      .map(l=>`${l.ad||l.code||'?'} (${ozelPayOzet(ozelPaylari(l))})`).join(' ; ');
+    const _ozEski=_ozOzet(exOrder.lines), _ozYeni=_ozOzet(lines);
+    if(_ozEski!==_ozYeni) _bas.push(`Ozel kod kirilimi: ${_ozEski||'yok'} → ${_ozYeni||'yok'}`);
     order.history=[...(exOrder.history||[]),
       {ts:order.updated,user:CURRENT_USER.username,bas:_bas,..._d}].slice(-20);
     const oldItemIds=DB.proje.items.filter(it=>it.orderId===editId).map(it=>it.id);
