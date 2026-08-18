@@ -2898,6 +2898,16 @@ function render(){
 function pSpecsAll(){ return DB.proje.specs.filter(s=>!s.is_deleted && (s.bina||'')===PBINA && (s.cat||'')===PCAT); }
 function pItems(){ return DB.proje.items.filter(it=>!it.is_deleted && (it.bina||'')===PBINA && (it.cat||'')===PCAT && (PSPEC==='__all' || (it.grup||'')===PSPEC)); }
 function pSpecs(){ return DB.proje.specs.filter(s=>!s.is_deleted && (s.bina||'')===PBINA && (s.cat||'')===PCAT && (PSPEC==='__all' || specGroupKey(s)===PSPEC)); }
+/* Siparisteki sirket adi. Siparise kayit aninda hem companyId hem de o gunku AD
+   yaziliyor; ad yalnizca eski/disaridan gelen (id'siz) kayitlar icin yedek.
+   Ekranlar bu fonksiyondan okudugu icin Sirketler ekranindaki bir isim degisikligi
+   butun siparislere aninda yansir - kayitlari tek tek guncellemek gerekmez. */
+function orderCompany(o){
+  if(!o) return '';
+  if(o.companyId){ const c=(DB.companies||[]).find(x=>x.id===o.companyId); if(c) return c.ad||''; }
+  return o.company||'';
+}
+
 function pOrders(){ return (DB.proje.orders||[]).filter(o=>{ if((o.bina||'')!==PBINA) return false;
   if(PSPEC==='__all'){ return (o.lines||[]).some(l=>{ const sp=DB.proje.specs.find(s=>s.id===l.specId); return sp&&sp.cat===PCAT; }); }
   // belirli spek: o spek'e ait satiri olan siparisler
@@ -3663,7 +3673,7 @@ function allOrdersFiltered(){
   const all=(DB.proje.orders||[]).slice().sort((a,b)=>(b.date||0)-(a.date||0));
   return all.filter(o=>{
     if(ORDBINA && (o.bina||'')!==ORDBINA) return false;
-    if(ORDF.comp && (o.company||'')!==ORDF.comp) return false;
+    if(ORDF.comp && orderCompany(o)!==ORDF.comp) return false;
     if(ORDF.from){ const t=new Date(ORDF.from).getTime(); if(!(o.date>=t)) return false; }
     if(ORDF.to){ const t=new Date(ORDF.to).getTime()+86399999; if(!(o.date<=t)) return false; } // gun sonu dahil
     if(ORDF.pdf==='var' && !o.pdf) return false;
@@ -3678,7 +3688,7 @@ function allOrdersFiltered(){
     if(ORDF.mat){ const q=norm(ORDF.mat).trim(); if(!lines.some(l=>norm(l.ad||'').indexOf(q)>=0)) return false; }
     if(ORDF.code){ const q=norm(ORDF.code).trim(); if(!lines.some(l=>norm(l.code||'').indexOf(q)>=0)) return false; }
     if(SEARCH){ const q=norm(SEARCH).trim().replace(/\s+/g,'');
-      const hay=norm((o.no||'')+' '+(o.bina||'')+' '+(o.grup||'')+' '+(o.company||'')+' '+lines.map(l=>l.ad+' '+l.code).join(' ')).replace(/\s+/g,'');
+      const hay=norm((o.no||'')+' '+(o.bina||'')+' '+(o.grup||'')+' '+orderCompany(o)+' '+lines.map(l=>l.ad+' '+l.code).join(' ')).replace(/\s+/g,'');
       if(hay.indexOf(q)<0) return false; }
     return true;
   });
@@ -3706,7 +3716,7 @@ function renderAllOrders(){
   // filtre secenekleri MEVCUT verilerden dolar: binalar, sartnameler, sirketler
   const binas=projBuildings();
   const sarts=[...new Set(all.flatMap(o=>[(o.grup||''),...(o.lines||[]).map(l=>l.grup||'')]).filter(g=>g&&!g.startsWith('Karma (')))].sort((a,b)=>a.localeCompare(b,'tr'));
-  const comps=[...new Set(all.map(o=>o.company||'').filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const comps=[...new Set(all.map(o=>orderCompany(o)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
   const secs=DB.proje.sections||[];
   const anyFilter=ORDBINA||ORDF.sec||ORDF.sart||ORDF.mat||ORDF.code||ORDF.comp||ORDF.from||ORDF.to||ORDF.pdf||ORDF.tur||SEARCH;
   const atamaSayi=all.filter(o=>o.tur==='atama').length; // secenek etiketinde kac tane oldugu gorunsun
@@ -3749,7 +3759,7 @@ function renderAllOrders(){
         <div class="order-meta">
           <span class="bina-tag" style="background:${col}22;color:${col};border:1px solid ${col}55">${esc(o.bina||'-')}</span>
           <span class="cat-tag" style="background:var(--dim)33;color:var(--text)">${esc(o.grup||'-')}</span>
-          ${o.company?`<span class="cat-tag" style="background:#a855f722;color:#a855f7">${esc(o.company)}</span>`:''}
+          ${orderCompany(o)?`<span class="cat-tag" style="background:#a855f722;color:#a855f7">${esc(orderCompany(o))}</span>`:''}
         </div>
         <div class="order-urunler">${urunOzet}</div>
         <div class="order-foot"><span>${(o.lines||[]).length} kalem · ${fmtNum(qty)} birim</span><span class="order-open">Detay ${icoChevron()}</span></div>
@@ -3818,7 +3828,7 @@ function exportAllOrdersExcel(){
   const list=allOrdersFiltered();
   if(!list.length){toast("Siparis yok","err");return;}
   const rows=[["Siparis No","Tarih","Bina","Sirket","Sartname","Spek No","Malzeme","Miktar","Birim"]];
-  list.forEach(o=>{ (o.lines||[]).forEach(l=>{ rows.push([o.no,fmtDate(o.date),o.bina||'',o.company||'',l.grup||o.grup||'',l.code||'',l.ad||'',Number(l.qty)||0,l.unit||'']); }); });
+  list.forEach(o=>{ (o.lines||[]).forEach(l=>{ rows.push([o.no,fmtDate(o.date),o.bina||'',orderCompany(o),l.grup||o.grup||'',l.code||'',l.ad||'',Number(l.qty)||0,l.unit||'']); }); });
   const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:14},{wch:12},{wch:10},{wch:20},{wch:22},{wch:16},{wch:42},{wch:10},{wch:8}];
   XLSX.utils.book_append_sheet(wb,ws,"Siparisler"); XLSX.writeFile(wb,`Siparisler_${ORDBINA||'tum'}_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel indirildi");
@@ -7901,7 +7911,7 @@ function _openMatDetail(matId){
       <span class="t-meta" style="flex-shrink:0">${fmtDate(o.date)}</span>
       <span class="mono" style="font-size:11px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.no||'-')}</span>
       <span class="bina-tag" style="background:${bc}22;color:${bc};flex-shrink:0">${esc(o.bina)}</span>
-      ${o.company?`<span class="t-meta" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.company)}</span>`:''}
+      ${orderCompany(o)?`<span class="t-meta" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(orderCompany(o))}</span>`:''}
       <b style="margin-left:auto;white-space:nowrap;font-family:var(--mono);font-size:12px">${fmtNum(qty)} <span class="t-meta">${esc(unit)}</span></b>
     </div>`;
   }).join('')+(ords.length>30?`<p class="matd-empty">+ ${ords.length-30} eski fatura daha</p>`:''):`<p class="matd-empty">Bu urun icin siparis kaydi yok.</p>`;
@@ -9137,7 +9147,7 @@ function specFromOff(name,cat,unit){ if(specDraftBlocks('add'))return; openSpecM
 /* ===================== SIPARISLER (fatura takip) ===================== */
 function renderProjeOrders(){
   const orders=pOrders().slice().sort((a,b)=>(b.date||0)-(a.date||0));
-  const fs=orders.filter(o=>!SEARCH||matchText((o.no||'')+' '+(o.bina||'')+' '+(o.grup||'')+' '+(o.company||'')+' '+o.lines.map(l=>l.ad+' '+l.code).join(' '), SEARCH));
+  const fs=orders.filter(o=>!SEARCH||matchText((o.no||'')+' '+(o.bina||'')+' '+(o.grup||'')+' '+orderCompany(o)+' '+o.lines.map(l=>l.ad+' '+l.code).join(' '), SEARCH));
   // ust istatistik
   const totalLines=orders.reduce((s,o)=>s+o.lines.length,0);
   const totalQty=orders.reduce((s,o)=>s+o.lines.reduce((x,l)=>x+(Number(l.qty)||0),0),0);
@@ -9164,7 +9174,7 @@ function renderProjeOrders(){
         <div class="order-meta">
           <span class="bina-tag" style="background:${col}22;color:${col};border:1px solid ${col}55">${esc(o.bina||'-')}</span>
           <span class="cat-tag" style="background:var(--dim)33;color:var(--text)">${esc(o.grup||'-')}</span>
-          ${o.company?`<span class="cat-tag" style="background:#a855f722;color:#a855f7">${esc(o.company)}</span>`:''}
+          ${orderCompany(o)?`<span class="cat-tag" style="background:#a855f722;color:#a855f7">${esc(orderCompany(o))}</span>`:''}
         </div>
         <div class="order-urunler">${urunOzet}</div>
         <div class="order-foot"><span>${o.lines.length} kalem · ${fmtNum(qty)} birim</span><span class="order-open">Detay ${icoChevron()}</span></div>
@@ -9265,7 +9275,7 @@ function orderInvoiceHtml(o,genis){
         </div>`:''}
         <div class="inv-grid">
           <div class="inv-cell"><label>Tarih</label><b>${fmtDate(o.date)}</b></div>
-          <div class="inv-cell"><label>Sirket</label><b>${esc(o.company||'-')}</b></div>
+          <div class="inv-cell"><label>Sirket</label><b>${esc(orderCompany(o)||'-')}</b></div>
           <div class="inv-cell"><label>Sartname</label><b>${esc(o.grup||'-')}</b></div>
           <div class="inv-cell"><label>Kalem</label><b>${o.lines.length} satir</b></div>
           <div class="inv-cell"><label>Toplam Birim</label><b>${fmtNum(qty)}</b></div>
@@ -9280,7 +9290,7 @@ function orderInvoiceHtml(o,genis){
         </table>
         </div>
         ${orderHistoryHtml(o)}
-        <div class="invoice-footer">${o.lines.length} kalem · ${fmtNum(qty)} toplam birim · ${esc(o.bina||'')} binasi${o.company?' · '+esc(o.company):''}</div>
+        <div class="invoice-footer">${o.lines.length} kalem · ${fmtNum(qty)} toplam birim · ${esc(o.bina||'')} binasi${orderCompany(o)?' · '+esc(orderCompany(o)):''}</div>
       </div>`;
 }
 // fatura islem dugmeleri - modal ve sayfa ayni dugmeleri kullanir (tek kaynak)
@@ -9308,7 +9318,7 @@ function renderOrderPage(){
       <button onclick="closeOrderPage()" style="color:${col}">${esc(o.bina||'-')}</button> ${icoChevron()}
       <b>${esc(o.no)}</b></div>
     <div class="page-head"><h1>Fatura / Siparis Detayi</h1>
-      <p class="page-sub">${esc(o.no)} · ${esc(o.bina||'-')}${o.company?' · '+esc(o.company):''} · ${o.lines.length} satir</p></div>
+      <p class="page-sub">${esc(o.no)} · ${esc(o.bina||'-')}${orderCompany(o)?' · '+esc(orderCompany(o)):''} · ${o.lines.length} satir</p></div>
     ${orderInvoiceHtml(o,true)}
     <div class="kata-page-foot">
       <button class="btn btn-ghost" style="margin-right:auto" onclick="closeOrderPage()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Geri Don</button>
@@ -9375,7 +9385,7 @@ function exportOrdersExcel(){
     const at=o.tur==='atama';
     o.lines.forEach((l,li)=>{ const pay=orderTedarikPaylari(o,l);
       pay.forEach((p,pi)=>{
-        rows.push([o.no,fmtDate(o.date),o.bina||'',o.company||'',o.grup||'',
+        rows.push([o.no,fmtDate(o.date),o.bina||'',orderCompany(o),o.grup||'',
           pay.length>1?`${li+1} (${pi+1}/${pay.length})`:String(li+1),
           l.code||'',l.ad,Number(p.qty)||0,l.unit||'',
           at?'Atama':'Normal', at?(o.kaynakBina||''):'', at?(o.kaynakSart||''):'', at?atamaNedenLabel(o.atamaNeden):'',
@@ -15375,7 +15385,7 @@ async function saveNewOrder(){
     const _d=orderLineDiff(exOrder.lines,lines), _bas=[];
     if(norm(exOrder.no||'')!==norm(no)) _bas.push(`Fatura no: ${exOrder.no||'-'} → ${no}`);
     if(Number(exOrder.date)!==Number(date)) _bas.push(`Tarih: ${fmtDate(exOrder.date)} → ${fmtDate(date)}`);
-    if((exOrder.company||'')!==(companyName||'')) _bas.push(`Sirket: ${exOrder.company||'-'} → ${companyName||'-'}`);
+    if(orderCompany(exOrder)!==(companyName||'')) _bas.push(`Sirket: ${orderCompany(exOrder)||'-'} → ${companyName||'-'}`);
     // tedarik kaynagi satir bazinda degisebildigi icin gecmiste iz birakir (miktar diff'i bunu gormez)
     const _tedEski=tedarikEtiket({bina:exOrder.tedarikBina,sart:exOrder.tedarikSart});
     const _tedYeni=tedarikEtiket({bina:order.tedarikBina,sart:order.tedarikSart});
@@ -16687,9 +16697,9 @@ function cmdkSearch(q){
       q,[it.name,it.code,it.bina,it.cat,it.grup,it.order,it.note,it.unit,'alim stok hareket sevk cikis']));
     (DB.proje.orders||[]).filter(o=>!o.is_deleted).forEach(o=>{
       const lineText=(o.lines||[]).map(l=>[l.ad,l.name,l.code,l.grup,l.cat,l.unit,l.qty].filter(Boolean).join(' ')).join(' ');
-      cmdkAdd(out,{kind:'Siparis',name:o.no||'Siparis',meta:[o.bina,o.company,o.grup,fmtDate(o.date)].filter(Boolean).join(' / '),
-        go:()=>{ if(canSee('proje'))switchSection('proje'); openAllOrders(); ORDBINA=o.bina||''; SEARCH=o.no||o.company||''; render(); }},
-        q,[o.no,o.company,o.bina,o.grup,lineText,'siparis fatura proje']);
+      cmdkAdd(out,{kind:'Siparis',name:o.no||'Siparis',meta:[o.bina,orderCompany(o),o.grup,fmtDate(o.date)].filter(Boolean).join(' / '),
+        go:()=>{ if(canSee('proje'))switchSection('proje'); openAllOrders(); ORDBINA=o.bina||''; SEARCH=o.no||orderCompany(o)||''; render(); }},
+        q,[o.no,orderCompany(o),o.bina,o.grup,lineText,'siparis fatura proje']);
     });
     (DB.companies||[]).forEach(c=>cmdkAdd(out,{kind:'Sirket',name:c.ad||'Sirket',meta:'Tedarikci / firma',
       go:()=>{ switchSection('proje'); openCompanies(); SEARCH=c.ad||''; render(); }},
