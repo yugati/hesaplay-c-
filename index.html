@@ -15994,7 +15994,6 @@ async function saveTutanak(andPrint){
   if((DB.tutanaklar||[]).some(x=>x.id!==_TUT.id && norm(x.no||'')===norm(no))){
     toast('Bu tutanak numarasi zaten kullaniliyor','err'); return; }
   if(!tutFilledLines(_TUT).length){ toast('En az bir malzeme satiri girin','err'); return; }
-  if(window.__tutanakTableMissing){ toast('Tutanak tablosu Supabase\'de yok - migration_tutanak.sql dosyasini calistirin','err'); return; }
   _TUT.no=no;
   if(!_TUT.tur) _TUT.tur=TUT_TURLERI[0].id;
   _TUT.iade=!!_TUT.iade;
@@ -16004,12 +16003,28 @@ async function saveTutanak(andPrint){
   _TUT.lines=tutFilledLines(_TUT);
   const yeni=_TUT._yeni; delete _TUT._yeni;
   const kayit=JSON.parse(JSON.stringify(_TUT));
-  if(yeni){ await sbInsertTutanak(kayit); if(!DB.tutanaklar)DB.tutanaklar=[]; DB.tutanaklar.push(kayit); }
-  else {
-    await sbUpdateTutanak(kayit.id,kayit);
-    const i=(DB.tutanaklar||[]).findIndex(x=>x.id===kayit.id);
-    if(i>=0) DB.tutanaklar[i]=kayit; else DB.tutanaklar.push(kayit);
+  /* Yazma DENENIR. Eskiden window.__tutanakTableMissing bayragina bakilip pesinen
+     reddediliyordu; o bayrak sayfa yuklenirken alinan anlik bir durum ve SQL bu arada
+     calistirilmis olabiliyor - yani kaydedilebilecek tutanaklar geri cevriliyordu.
+     Hata olursa taslak formda kalir (_yeni geri verilir), girilen bilgi kaybolmaz. */
+  try{
+    if(yeni){ await sbInsertTutanak(kayit); if(!DB.tutanaklar)DB.tutanaklar=[]; DB.tutanaklar.push(kayit); }
+    else {
+      await sbUpdateTutanak(kayit.id,kayit);
+      const i=(DB.tutanaklar||[]).findIndex(x=>x.id===kayit.id);
+      if(i>=0) DB.tutanaklar[i]=kayit; else DB.tutanaklar.push(kayit);
+    }
+  }catch(e){
+    if(yeni) _TUT._yeni=true;                       // tekrar denenince yine INSERT olsun
+    const msj=String((e&&e.message)||e||'');
+    const tabloYok=/tutanaklar|schema cache|does not exist|PGRST205|relation .* does not exist/i.test(msj);
+    if(tabloYok) window.__tutanakTableMissing=true;
+    toast(tabloYok
+      ? 'Tutanak tablosu Supabase\'de yok. migration_tutanak.sql dosyasini SQL Editor\'de bir kez calistirip sayfayi yenileyin - girdikleriniz formda duruyor.'
+      : 'Tutanak kaydedilemedi: '+msj,'err');
+    return;
   }
+  window.__tutanakTableMissing=false;               // yazabildiysek uyari bandi kalksin
   logAction('define',(yeni?'Tutanak olusturuldu: ':'Tutanak guncellendi: ')+kayit.no);
   const id=kayit.id;
   tutBackToList();
