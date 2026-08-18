@@ -1990,6 +1990,27 @@ datalist{display:none}
 .tut-card>h4{font-size:11px;text-transform:uppercase;letter-spacing:.7px;color:var(--mute);margin-bottom:12px;font-weight:700}
 .tut-card>h4 i{font-style:normal;color:var(--dim);text-transform:none;letter-spacing:0;font-weight:500;margin-left:6px}
 .tut-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px 14px}
+/* TUR / IADE SECIMI - hem "Yeni Tutanak" penceresinde hem formda ayni gorunum */
+.tut-tur{display:grid;gap:9px;margin-bottom:14px}
+.tut-tur:last-child{margin-bottom:0}
+.tut-tur>h6{font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--mute);font-weight:700;margin:0}
+.tut-tur>h6 i{font-style:normal;color:var(--dim);text-transform:none;letter-spacing:0;font-weight:500;margin-left:6px}
+.tut-sec{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px}
+.tut-opt{display:flex;gap:9px;align-items:flex-start;text-align:left;background:var(--panel2);
+  border:1px solid var(--line);border-radius:10px;padding:9px 12px;cursor:pointer;color:var(--ink);
+  font-size:12.5px;font-weight:600;transition:border-color var(--transition),background var(--transition)}
+.tut-opt:hover{border-color:color-mix(in srgb,var(--primary) 45%,var(--line))}
+.tut-opt.on{border-color:var(--primary);background:color-mix(in srgb,var(--primary) 12%,var(--panel2))}
+.tut-opt .im{flex:none;width:15px;height:15px;border-radius:50%;border:2px solid var(--line);
+  margin-top:1px;position:relative}
+.tut-opt.on .im{border-color:var(--primary)}
+.tut-opt.on .im:after{content:'';position:absolute;inset:2px;border-radius:50%;background:var(--primary)}
+.tut-opt small{display:block;font-size:11px;font-weight:500;color:var(--dim);margin-top:2px;letter-spacing:0}
+/* listedeki IADE damgasi */
+.tut-iade{display:inline-block;margin-left:7px;font-size:9.5px;font-weight:800;letter-spacing:.5px;
+  padding:2px 7px;border-radius:20px;vertical-align:middle;
+  background:color-mix(in srgb,var(--amber) 16%,transparent);color:var(--amber);
+  border:1px solid color-mix(in srgb,var(--amber) 42%,transparent)}
 .tut-parties{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media(max-width:820px){.tut-parties{grid-template-columns:1fr}}
 .tut-party{border:1px solid var(--line);border-radius:12px;padding:14px 15px;background:var(--panel2)}
@@ -15519,6 +15540,19 @@ const TUT_ROWS_FIRST_ARA=10;      // ilk sayfa, arkasindan baska sayfa geliyorsa
 const TUT_ROWS_PER_PAGE=11;       // devam sayfasi, ayni zamanda son sayfaysa
 const TUT_ROWS_ARA=14;            // devam sayfasi, arkasindan baska sayfa geliyorsa
 
+/* TUTANAK TURLERI. Simdilik tek tur var; yeni tur eklemek icin bu listeye bir satir
+   yetiyor - tur penceresi, form, liste ve cikti hep buradan okuyor.
+   Eski kayitlarda tur/iade alanlari yok; hepsi "Malzeme Teslim, iade yok" sayilir. */
+const TUT_TURLERI=[
+  {id:'teslim', tr:'Malzeme Teslim', ru:'Приёма-передачи материалов'}
+];
+function tutTurOf(t){ const id=(t&&t.tur)||TUT_TURLERI[0].id;
+  return TUT_TURLERI.find(x=>x.id===id)||TUT_TURLERI[0]; }
+function tutIadeVar(t){ return !!(t&&t.iade); }
+function tutIadeTarihi(t){ return (tutIadeVar(t)&&t.iadeTarih)?t.iadeTarih:null; }
+function tutIadeOzet(t){ if(!tutIadeVar(t)) return 'iade yok';
+  const d=tutIadeTarihi(t); return d?('iade var - '+fmtDate(d)):'iade var - tarih belirtilmedi'; }
+
 function openTutanak(){
   if(!canSee('rapor')){ toast('Bu bolume erisim yetkiniz yok','err'); return; }
   PTUT=true;
@@ -15571,6 +15605,7 @@ function renderTutanakList(){
   const all=(DB.tutanaklar||[]).slice().sort((a,b)=>(b.tarih||0)-(a.tarih||0));
   const q=TUTV.q;
   const list=q?all.filter(t=>matchText([t.no,(t.eden||{}).firma,(t.alan||{}).firma,t.bina,
+    tutTurOf(t).tr,tutIadeOzet(t),
     ...((t.lines||[]).map(l=>l.ad+' '+(l.code||'')))].join(' '),q)):all;
   const now=new Date(), ayBasi=new Date(now.getFullYear(),now.getMonth(),1).getTime();
   const buAy=all.filter(t=>(t.tarih||0)>=ayBasi).length;
@@ -15586,8 +15621,10 @@ function renderTutanakList(){
   else list.forEach(t=>{
     const tt=tutTotals(t);
     rows+=`<tr>
-      <td><span class="tut-no">${esc(t.no||'-')}</span></td>
-      <td class="t-meta">${esc(fmtDate(t.tarih))}</td>
+      <td><span class="tut-no">${esc(t.no||'-')}</span>${tutIadeVar(t)
+        ?`<span class="tut-iade" title="${esc(tutTurOf(t).tr)} - ${esc(tutIadeOzet(t))}">IADE</span>`:''}</td>
+      <td class="t-meta">${esc(fmtDate(t.tarih))}${tutIadeTarihi(t)
+        ?`<div style="color:var(--amber);font-size:11px">iade: ${esc(fmtDate(tutIadeTarihi(t)))}</div>`:''}</td>
       <td><span class="tut-party-tag"><i style="background:#9e5f5f"></i>${esc((t.eden||{}).firma||'-')}</span></td>
       <td><span class="tut-party-tag"><i style="background:#4d6288"></i>${esc((t.alan||{}).firma||'-')}</span></td>
       <td class="t-meta">${esc(t.bina||'-')}</td>
@@ -15611,7 +15648,7 @@ function renderTutanakList(){
       <div class="ord-f" style="justify-content:flex-end;flex:none"><label>&nbsp;</label>
         <div style="display:flex;gap:9px;flex-wrap:wrap">
           ${isAdmin()?`<button class="btn btn-ghost" onclick="openTutAntet()" title="Ciktinin ust kosesindeki firma bilgisi (unvan, adres, telefon, e-posta, vergi no)">${icoTutAntet()} Antet Ayarlari</button>`:''}
-          ${canEdit('rapor')?`<button class="btn btn-add" onclick="newTutanak()">${icoPlus()} Yeni Tutanak</button>`:''}
+          ${canEdit('rapor')?`<button class="btn btn-add" onclick="openTutTur()">${icoPlus()} Yeni Tutanak</button>`:''}
         </div></div>
     </div>
     <div class="ord-sumline"><b>${fmtNum(list.length)}</b> tutanak${q?` <span class="t-meta">(${fmtNum(all.length)} kayit icinden filtrelendi)</span>`:''}</div>
@@ -15625,9 +15662,63 @@ function icoTutPrint(){ return '<svg width="13" height="13" viewBox="0 0 24 24" 
 function icoTutAntet(){ return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 13h6"/></svg>'; }
 
 /* ---------- OLUSTUR / DUZENLE / SIL ---------- */
-function newTutanak(){
+/* Tutanak acilmadan once tur soruluyor: tur -> iade var/yok -> (iade varsa) tarih var/yok.
+   Secim yalnizca baslangic degeri; form icinden de degistirilebiliyor. */
+let _TUTSEC=null;
+function openTutTur(){
   if(!guard('define',{mod:'rapor'}))return;
+  _TUTSEC={ tur:TUT_TURLERI[0].id, iade:false, tarihVar:false, tarih:tutISO(Date.now()) };
+  document.body.insertAdjacentHTML('beforeend',
+    `<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:530px">
+      <div class="modal-head"><h3>Yeni Tutanak</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+      <div class="modal-body" id="tutTurBody">${tutTurBody()}</div>
+      <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Vazgec</button>
+        <button class="btn btn-add" onclick="tutTurDevam()">Devam Et</button></div></div></div>`);
+}
+function tutTurSet(k,v){ if(!_TUTSEC)return;
+  _TUTSEC[k]=v;
+  if(k==='iade'&&!v) _TUTSEC.tarihVar=false;      // iade yoksa tarih sorusu da kalkar
+  const b=document.getElementById('tutTurBody'); if(b)b.innerHTML=tutTurBody();
+}
+// tur/iade secenek kartlari - formda da ayni gorunum kullaniliyor
+function tutOptBtn(secili,bas,alt,tik){
+  return `<button class="tut-opt${secili?' on':''}" onclick="${tik}"><span class="im"></span>
+    <span>${bas}<small>${alt}</small></span></button>`;
+}
+function tutTurBody(){
+  const s=_TUTSEC;
+  return `<div class="tut-tur"><h6>Tutanak Turu <i>Тип акта</i></h6>
+      <div class="tut-sec">${TUT_TURLERI.map(x=>tutOptBtn(s.tur===x.id,esc(x.tr),esc(x.ru),
+        `tutTurSet('tur','${x.id}')`)).join('')}</div></div>
+    <div class="tut-tur"><h6>Iade Durumu <i>Возврат</i></h6>
+      <div class="tut-sec">
+        ${tutOptBtn(!s.iade,'Iade Yok','Malzeme karsi tarafta kalir',"tutTurSet('iade',false)")}
+        ${tutOptBtn(s.iade,'Iade Var','Malzeme geri alinacak',"tutTurSet('iade',true)")}
+      </div></div>
+    ${s.iade?`<div class="tut-tur"><h6>Iade Tarihi <i>Дата возврата</i></h6>
+      <div class="tut-sec">
+        ${tutOptBtn(!s.tarihVar,'Tarih Yok','Ciktida "belirtilmemistir" yazar',"tutTurSet('tarihVar',false)")}
+        ${tutOptBtn(s.tarihVar,'Tarih Var','Asagidan secin',"tutTurSet('tarihVar',true)")}
+      </div>
+      ${s.tarihVar?`<div class="frow" style="margin:0"><label>Iade Tarihi / Дата возврата *</label>
+        <input type="date" value="${esc(s.tarih||'')}" onchange="tutTurSet('tarih',this.value)"></div>`:''}
+    </div>`:''}
+    <p class="t-meta" style="margin:2px 0 0;font-size:11.5px">Secimler ciktida da gorunur; tutanagi
+      actiktan sonra <b>Tutanak Bilgisi</b> kartindan degistirebilirsiniz.</p>`;
+}
+function tutTurDevam(){
+  const s=_TUTSEC; if(!s)return;
+  if(s.iade&&s.tarihVar&&!s.tarih){ toast('Iade tarihini secin','err'); return; }
+  closeModal();
+  newTutanak({ tur:s.tur, iade:s.iade,
+    iadeTarih:(s.iade&&s.tarihVar&&s.tarih)?new Date(s.tarih+'T12:00:00').getTime():null });
+}
+
+function newTutanak(sec){
+  if(!guard('define',{mod:'rapor'}))return;
+  sec=sec||{};
   _TUT={ id:uid(), no:tutNextNo(), tarih:Date.now(), bina:'',
+    tur:sec.tur||TUT_TURLERI[0].id, iade:!!sec.iade, iadeTarih:sec.iadeTarih||null,
     eden:{firma:'',ad:'',gorev:''}, alan:{firma:'',ad:'',gorev:''},
     lines:[tutBlankLine(),tutBlankLine(),tutBlankLine()], aciklama:'',
     createdBy:(CURRENT_USER&&CURRENT_USER.username)||'', createdAt:Date.now(), updatedAt:Date.now(), _yeni:true };
@@ -15640,6 +15731,10 @@ function editTutanak(id){
   if(!_TUT.lines||!_TUT.lines.length) _TUT.lines=[tutBlankLine()];
   if(!_TUT.eden) _TUT.eden={firma:'',ad:'',gorev:''};
   if(!_TUT.alan) _TUT.alan={firma:'',ad:'',gorev:''};
+  // tur/iade alanlari sonradan eklendi: eski kayitlar "Malzeme Teslim, iade yok"
+  if(!_TUT.tur) _TUT.tur=TUT_TURLERI[0].id;
+  _TUT.iade=!!_TUT.iade;
+  if(!_TUT.iade) _TUT.iadeTarih=null;
   _TUT._yeni=false;
   TUTV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
 }
@@ -15667,6 +15762,13 @@ async function delTutanak(id){
 /* ---------- FORM ---------- */
 function tutSet(k,v){ if(_TUT) _TUT[k]=v; }
 function tutSetTarih(v){ if(_TUT) _TUT.tarih=v?new Date(v+'T12:00:00').getTime():Date.now(); }
+/* Iade secimleri blogun yapisini degistirdigi icin sayfa yeniden ciziliyor;
+   alanlar onchange ile _TUT'a islendiginden yazilan bilgi kaybolmaz. */
+function tutSetIade(v){ if(!_TUT)return; _TUT.iade=!!v; if(!v)_TUT.iadeTarih=null; render(); }
+function tutSetIadeTarihVar(v){ if(!_TUT)return;
+  _TUT.iadeTarih=v?(_TUT.iadeTarih||Date.now()):null; render(); }
+function tutSetIadeTarih(v){ if(!_TUT)return;
+  _TUT.iadeTarih=v?new Date(v+'T12:00:00').getTime():null; render(); }
 function tutSetParty(side,k,v){ if(!_TUT)return; if(!_TUT[side])_TUT[side]={}; _TUT[side][k]=v; }
 function tutSetLine(i,k,v){ if(!_TUT||!_TUT.lines[i])return; _TUT.lines[i][k]=v;
   if(k==='ad'||k==='code') _TUT.lines[i].matId=_TUT.lines[i].matId||''; }
@@ -15726,11 +15828,27 @@ function renderTutanakForm(){
           <input value="${esc(t.no||'')}" placeholder="TSL-2026-0001" onchange="tutSet('no',this.value.trim())"></div>
         <div class="frow" style="margin-bottom:0"><label>Tarih / Дата *</label>
           <input type="date" value="${tutISO(t.tarih)}" onchange="tutSetTarih(this.value)"></div>
+        <div class="frow" style="margin-bottom:0"><label>Tur / Тип акта</label>
+          <select onchange="tutSet('tur',this.value)">
+            ${TUT_TURLERI.map(x=>`<option value="${esc(x.id)}" ${tutTurOf(t).id===x.id?'selected':''}>${esc(x.tr)}</option>`).join('')}
+          </select></div>
         <div class="frow" style="margin-bottom:0"><label>Bina <span class="t-meta">(opsiyonel - yalniz kayit icin)</span></label>
           <select onchange="tutSet('bina',this.value)">
             <option value="">- secilmedi -</option>
             ${binalar.map(b=>`<option ${t.bina===b?'selected':''}>${esc(b)}</option>`).join('')}
           </select></div>
+      </div>
+      <div class="tut-tur" style="margin-top:14px"><h6>Iade Durumu <i>Возврат</i></h6>
+        <div class="tut-sec">
+          ${tutOptBtn(!t.iade,'Iade Yok','Malzeme karsi tarafta kalir','tutSetIade(false)')}
+          ${tutOptBtn(!!t.iade,'Iade Var','Malzeme geri alinacak','tutSetIade(true)')}
+        </div>
+        ${t.iade?`<div class="tut-sec">
+          ${tutOptBtn(!t.iadeTarih,'Tarih Yok','Ciktida "belirtilmemistir" yazar','tutSetIadeTarihVar(false)')}
+          ${tutOptBtn(!!t.iadeTarih,'Tarih Var','Asagidan secin','tutSetIadeTarihVar(true)')}
+        </div>
+        ${t.iadeTarih?`<div class="frow" style="margin:0;max-width:260px"><label>Iade Tarihi / Дата возврата</label>
+          <input type="date" value="${tutISO(t.iadeTarih)}" onchange="tutSetIadeTarih(this.value)"></div>`:''}`:''}
       </div>
     </div>
 
@@ -15832,6 +15950,9 @@ async function saveTutanak(andPrint){
   if(!tutFilledLines(_TUT).length){ toast('En az bir malzeme satiri girin','err'); return; }
   if(window.__tutanakTableMissing){ toast('Tutanak tablosu Supabase\'de yok - migration_tutanak.sql dosyasini calistirin','err'); return; }
   _TUT.no=no;
+  if(!_TUT.tur) _TUT.tur=TUT_TURLERI[0].id;
+  _TUT.iade=!!_TUT.iade;
+  if(!_TUT.iade) _TUT.iadeTarih=null;   // iade kapaliyken tarih kaydedilmez
   _TUT.updatedAt=Date.now();
   // bos satirlar kaydedilmez; ciktida da gorunmezlerdi
   _TUT.lines=tutFilledLines(_TUT);
@@ -15981,6 +16102,12 @@ body{margin:0;background:#e9ecf1;font-family:Arial,Helvetica,"Segoe UI",sans-ser
 .ph-col p:last-child{margin-bottom:0}
 .ph{color:#b08968;font-weight:bold}
 
+/* iade sartli teslimde girisin altindaki tek satirlik uyari */
+.ph-iade{border:1px solid #c8a27a;background:#fbf5ee;color:#7a5230;border-radius:1mm;
+  padding:1.4mm 3mm;font-size:6.6pt;line-height:1.4;margin-bottom:3mm}
+.ph-iade b{color:#8a4f22;letter-spacing:.3px}
+.ph-iade i{font-style:normal;color:#9c7a5c}
+
 /* bolum bandi */
 .ph-bar{background:#4d6288;color:#fff;font-size:8.5pt;font-weight:bold;letter-spacing:.6px;
   padding:2.1mm 3mm;margin-bottom:3mm}
@@ -16098,8 +16225,10 @@ function tutanakPrintHtml(t){
   const tarihTxt=(d&&!isNaN(d))?`${p2(d.getDate())} / ${p2(d.getMonth()+1)} / ${d.getFullYear()}`:'……… / ……… / 20………';
 
   // Sayfalama. Ayri imza sayfasi YOK - imza seridi her sayfanin altinda.
+  // Iade seridi yalniz ilk sayfada, girisin altinda duruyor: o sayfa bir satir az alir.
+  const iadeEk=tutIadeVar(t)?1:0;
   const kapasite=(ci,sonMu)=>ci===0
-    ? (sonMu?TUT_ROWS_FIRST:TUT_ROWS_FIRST_ARA)
+    ? (sonMu?TUT_ROWS_FIRST:TUT_ROWS_FIRST_ARA)-iadeEk
     : (sonMu?TUT_ROWS_PER_PAGE:TUT_ROWS_ARA);
   const chunks=[];
   for(let i=0;i<lines.length;){
@@ -16189,6 +16318,16 @@ function tutanakPrintHtml(t){
       ${imzaKutu('alan','alan','TESLİM ALAN','ПРИНЯЛ')}
     </div></div>`;
 
+  /* IADE SERIDI: "iade var" secilen tutanaklarda girisin hemen altinda. Iade yok ise
+     hicbir sey basilmaz - eski tutanaklarin ciktisi birebir ayni kalir. */
+  const iadeTarih=tutIadeTarihi(t);
+  const iadeSerit=tutIadeVar(t)?`<div class="ph-iade">
+      <b>İADE ŞARTLI TESLİM</b> — Aşağıdaki malzemeler <b>iade edilmek üzere</b> teslim edilmiştir.
+      İade tarihi: <b>${iadeTarih?esc(fmtDate(iadeTarih)):'belirtilmemiştir'}</b>
+      <i>&nbsp;|&nbsp; <b>ПЕРЕДАЧА С УСЛОВИЕМ ВОЗВРАТА</b> — материалы переданы с обязательством возврата.
+      Дата возврата: <b>${iadeTarih?esc(fmtDate(iadeTarih)):'не указана'}</b></i>
+    </div>`:'';
+
   const malzemeSayfalari=chunks.map((chunk,ci)=>{
     const son=ci===chunks.length-1;
     const bas=sayfaBas[ci];
@@ -16219,7 +16358,8 @@ function tutanakPrintHtml(t){
           <p>Настоящий акт составлен в отношении материалов, переданных компанией ${eR} компании ${aR}.</p>
           <p>Материалы, вид, количество и характеристики которых указаны ниже, переданы в полном объёме и в исправном состоянии.</p>
         </div>
-      </div>`:'';
+      </div>
+      ${iadeSerit}`:'';
     // Devam sayfalari tek baslarina dolasabildigi icin bantta tutanak numarasi da yazar
     const bant=`<div class="ph-bar">TESLİM EDİLEN MALZEME TÜR VE MİKTARI &nbsp;<i>| &nbsp;ВИД И КОЛИЧЕСТВО ПЕРЕДАННЫХ МАТЕРИАЛОВ${ci>0?` &nbsp;(devam / продолжение${t.no?' · '+esc(t.no):''})`:''}</i></div>`;
     return `<div class="page">
