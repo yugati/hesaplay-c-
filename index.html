@@ -15509,11 +15509,15 @@ async function saveAletOrder(){
    ================================================================== */
 let TUTV={ mode:'list', q:'' };   // liste / form
 let _TUT=null;                    // duzenlenen tutanak taslagi (kaydedilene kadar bellekte)
-const TUT_ROWS_PER_PAGE=11;       // devam sayfalarinda 11 malzeme satiri
-// Ilk sayfa antet + baslik + iki dilli girisi de tasidigi (ve her sayfanin altinda
-// imza seridi durdugu) icin daha az satir alir. Degerler ciktinin gercek olculerinden
-// gelir: en dar senaryoda sayfanin dibinde ilk sayfada ~6mm, devaminda ~16mm pay kalir.
-const TUT_ROWS_FIRST=8;
+/* Sayfa basina malzeme satiri. Kapasite iki seye bagli:
+   - ILK sayfa mi:  baslik + tutanak no/tarih + iki dilli giris orada duruyor,
+   - SON sayfa mi:  toplam satiri + ACIKLAMALAR kutusu yalnizca son sayfada cikiyor.
+   Degerler tahmin degil, ciktinin Chrome'da olculen yuksekliklerinden geliyor; en dar
+   senaryoda bile sayfanin dibinde 5mm'den fazla serbest pay kaliyor. */
+const TUT_ROWS_FIRST=8;           // ilk sayfa, ayni zamanda son sayfaysa
+const TUT_ROWS_FIRST_ARA=10;      // ilk sayfa, arkasindan baska sayfa geliyorsa
+const TUT_ROWS_PER_PAGE=11;       // devam sayfasi, ayni zamanda son sayfaysa
+const TUT_ROWS_ARA=14;            // devam sayfasi, arkasindan baska sayfa geliyorsa
 
 function openTutanak(){
   if(!canSee('rapor')){ toast('Bu bolume erisim yetkiniz yok','err'); return; }
@@ -15921,7 +15925,7 @@ async function saveTutAntet(){
 /* ==================================================================
    TUTANAK CIKTISI — A4, iki dilli, sablonla birebir
    Ayri bir pencerede uretilir (uygulamanin koyu temasi ciktiya karismasin).
-   Sayfa duzeni: malzeme sayfalari (ilk 8, devam 11 satir; bos dolgu satiri YOK)
+   Sayfa duzeni: malzeme sayfalari (bkz. TUT_ROWS_*; bos dolgu satiri YOK)
    imza seridi HER sayfanin altinda
    Renkler sablondan: lacivert #4d6288 (bant/baslik), bordo #9e5f5f (teslim
    eden), mavi #3a5f96 (Rusca baslik), tarcin #b08968 (yer tutucu metin).
@@ -16093,13 +16097,22 @@ function tutanakPrintHtml(t){
   const p2=n=>String(n).padStart(2,'0');
   const tarihTxt=(d&&!isNaN(d))?`${p2(d.getDate())} / ${p2(d.getMonth()+1)} / ${d.getFullYear()}`:'……… / ……… / 20………';
 
-  // sayfalama: ilk sayfa basligi + iki dilli girisi de tasidigi icin TUT_ROWS_FIRST,
-  // devam sayfalari TUT_ROWS_PER_PAGE satir alir; son malzeme sayfasi toplam + aciklama tasir.
-  // Ayri imza sayfasi YOK - imza seridi her sayfanin altinda.
-  const kapasite=ci=>ci===0?TUT_ROWS_FIRST:TUT_ROWS_PER_PAGE;
+  // Sayfalama. Ayri imza sayfasi YOK - imza seridi her sayfanin altinda.
+  const kapasite=(ci,sonMu)=>ci===0
+    ? (sonMu?TUT_ROWS_FIRST:TUT_ROWS_FIRST_ARA)
+    : (sonMu?TUT_ROWS_PER_PAGE:TUT_ROWS_ARA);
   const chunks=[];
-  for(let i=0;i<lines.length;){ const k=kapasite(chunks.length); chunks.push(lines.slice(i,i+k)); i+=k; }
+  for(let i=0;i<lines.length;){
+    const ci=chunks.length, kalan=lines.length-i;
+    // Kalanlar son sayfaya sigiyorsa hepsi bu sayfaya; sigmiyorsa arkaya EN AZ bir satir
+    // birakiyoruz - yoksa bu sayfa farkinda olmadan son sayfa olur ve toplam + aciklama
+    // icin yer kalmaz.
+    const al=kalan<=kapasite(ci,true)?kalan:Math.min(kapasite(ci,false),kalan-1);
+    chunks.push(lines.slice(i,i+al)); i+=al;
+  }
   if(!chunks.length) chunks.push([]);
+  // sayfalarin ilk sira numaralari (kapasite sayfadan sayfaya degisebiliyor)
+  const sayfaBas=[]; chunks.reduce((a,c)=>{ sayfaBas.push(a); return a+c.length; },0);
   const rowHtml=(l,sira)=>{
     const img=tutLineImg(l);
     return `<tr>
@@ -16132,7 +16145,7 @@ function tutanakPrintHtml(t){
     : 3;
   const sonChunk=chunks[chunks.length-1];
   const notYeri=(chunks.length===1?6:9)
-    +(kapasite(chunks.length-1)-sonChunk.length)*4;
+    +(kapasite(chunks.length-1,true)-sonChunk.length)*4;
   const notAyriSayfa=notSatirSay>notYeri;
   // Kendi sayfasina dusen aciklama da bir sayfayi asabilir; kelime ortasindan kesmeden
   // parcalara bolunur (bir aciklama sayfasina guvenle ~50 satir siyor).
@@ -16178,8 +16191,7 @@ function tutanakPrintHtml(t){
 
   const malzemeSayfalari=chunks.map((chunk,ci)=>{
     const son=ci===chunks.length-1;
-    const kap=kapasite(ci);
-    const bas=ci===0?0:TUT_ROWS_FIRST+(ci-1)*TUT_ROWS_PER_PAGE;
+    const bas=sayfaBas[ci];
     let trs='';
     chunk.forEach((l,i)=>{ trs+=rowHtml(l,bas+i+1); });
     const totRow=son?`<tr class="tot">
