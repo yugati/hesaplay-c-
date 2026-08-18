@@ -3373,55 +3373,69 @@ function renderCompanies(){
   const all=(DB.companies||[]).slice().sort((a,b)=>(a.ad||'').localeCompare(b.ad||'','tr'));
   const cntOf=c=>(DB.proje.orders||[]).filter(o=>o.companyId===c.id).length;
   const list=all.filter(c=>{
-    if(COMPF.q && !matchText(c.ad||'',COMPF.q)) return false;
+    if(COMPF.q && !matchText([c.ad,c.vergi,c.adres,c.tel,c.email].filter(Boolean).join(' '),COMPF.q)) return false;
     if(COMPF.use==='var' && cntOf(c)===0) return false;
     if(COMPF.use==='yok' && cntOf(c)>0) return false;
     return true;
   });
   const anyF=COMPF.q||COMPF.use;
   const filterbar=`<div class="ord-filterbar">
-    <div class="ord-f"><label>Sirket Adi</label><input value="${esc(COMPF.q)}" placeholder="ad ile ara..." onchange="setCompF('q',this.value.trim())"></div>
+    <div class="ord-f"><label>Ara</label><input value="${esc(COMPF.q)}" placeholder="ad, vergi no, adres, telefon veya e-posta..." onchange="setCompF('q',this.value.trim())"></div>
     <div class="ord-f"><label>Kullanim</label><select onchange="setCompF('use',this.value)"><option value="">Tumu</option><option value="var" ${COMPF.use==='var'?'selected':''}>Siparisi olan</option><option value="yok" ${COMPF.use==='yok'?'selected':''}>Siparisi olmayan</option></select></div>
     ${anyF?`<div class="ord-f" style="justify-content:flex-end"><label>&nbsp;</label><button class="btn btn-ghost" style="padding:8px 14px" onclick="clearCompF()">Filtreyi Temizle</button></div>`:''}
   </div>`;
   const sumline=`<div class="ord-sumline"><b>${fmtNum(list.length)}</b> sirket${anyF?` <span class="t-meta">(${fmtNum(all.length)} sirket icinden filtrelendi)</span>`:''}</div>`;
   let rows='';
-  if(list.length===0) rows=emptyRow(3,anyF?'Eslesen sirket yok':'Henuz sirket eklenmedi',anyF?'Filtreleri degistirin':'"Sirket Ekle" ile baslayin');
+  if(list.length===0) rows=emptyRow(5,anyF?'Eslesen sirket yok':'Henuz sirket eklenmedi',anyF?'Filtreleri degistirin':'"Sirket Ekle" ile baslayin');
   else list.forEach(c=>{
     const cnt=cntOf(c);
-    rows+=`<tr><td><div class="t-name">${esc(c.ad)}</div></td><td class="t-meta">${cnt} siparis</td>
+    const iletisim=[c.tel,c.email].filter(Boolean).map(v=>`<div>${esc(v)}</div>`).join('');
+    rows+=`<tr>
+      <td><div class="t-name">${esc(c.ad)}</div>${c.adres?`<div class="t-meta" style="margin-top:2px">${esc(c.adres)}</div>`:''}</td>
+      <td class="t-meta mono">${esc(c.vergi||'-')}</td>
+      <td class="t-meta">${iletisim||'-'}</td>
+      <td class="t-meta">${cnt} siparis</td>
       <td><div class="row-actions">
         ${can('define')?`<button class="mini-btn" title="Duzenle" onclick="openCompanyModal('${c.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>`:''}
         ${can('delete')?`<button class="mini-btn del" title="Sil" onclick="delCompany('${c.id}')">${icoTrash()}</button>`:''}
       </div></td></tr>`;
   });
-  return `<div class="sel-wrap" style="max-width:900px">
+  return `<div class="sel-wrap" style="max-width:1080px">
     <div class="sel-bc"><button onclick="closeCompanies()">${icoArr('left')} Binalara Don</button></div>
-    <div class="sel-head"><h2>Sirketler</h2><p>Proje siparis/fatura girisinde secilecek sirket listesi.</p></div>
+    <div class="sel-head"><h2>Sirketler</h2><p>Proje siparis/fatura girisinde secilecek sirket listesi.
+      Vergi no, adres ve iletisim bilgileri de burada tutulur.</p></div>
     <div class="def-sec-bar"><div class="def-sec-chips"></div>
       ${can('define')?`<button class="btn btn-add" onclick="openCompanyModal()">${icoPlus()} Sirket Ekle</button>`:''}</div>
     ${filterbar}
     ${sumline}
-    <div class="tablewrap"><table><thead><tr><th>Sirket Adi</th><th>Kullanim</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tablewrap"><table><thead><tr><th>Sirket Adi</th><th>Vergi No</th><th>Iletisim</th><th>Kullanim</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
 function openCompanyModal(id){ if(!guard('define'))return; const x=id?(DB.companies||[]).find(c=>c.id===id):null;
-  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>${x?'Sirket Duzenle':'Sirket Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:520px"><div class="modal-head"><h3>${x?'Sirket Duzenle':'Sirket Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow"><label>Sirket Adi *</label><input id="c_ad" value="${x?esc(x.ad):''}" placeholder="orn. ABC Insaat Ltd. Sti." onkeydown="if(event.key==='Enter')saveCompany(${x?`'${x.id}'`:'null'})"></div>
+    <div class="frow"><label>Vergi No <span class="t-meta">(opsiyonel)</span></label><input id="c_vergi" value="${x?esc(x.vergi||''):''}" placeholder="orn. 1234567890"></div>
+    <div class="frow"><label>Adres <span class="t-meta">(opsiyonel)</span></label><input id="c_adres" value="${x?esc(x.adres||''):''}" placeholder="orn. ... Mah. ... Cad. No:1 Istanbul"></div>
+    <div class="frow two" style="margin-bottom:0">
+      <div><label>Telefon</label><input id="c_tel" value="${x?esc(x.tel||''):''}" placeholder="+90 ..."></div>
+      <div><label>E-posta</label><input id="c_email" value="${x?esc(x.email||''):''}" placeholder="info@..."></div></div>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveCompany(${x?`'${x.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   const inp=document.getElementById('c_ad'); if(inp) setTimeout(()=>inp.focus(),0);
 }
 async function saveCompany(id){ if(!guard('define'))return;
-  const ad=document.getElementById('c_ad').value.trim();
+  const al=k=>{ const e=document.getElementById(k); return e?e.value.trim():''; };
+  const ad=al('c_ad');
   if(!ad){toast("Sirket adi zorunlu","err");return;}
   if((DB.companies||[]).some(c=>norm(c.ad)===norm(ad) && c.id!==id)){ toast("Bu sirket zaten var","err"); return; }
+  // vergi no / adres / telefon / e-posta opsiyonel; bos birakilanlar bos string olarak yazilir
+  const bilgi={ad, vergi:al('c_vergi'), adres:al('c_adres'), tel:al('c_tel'), email:al('c_email')};
   if(id){
     const x=DB.companies.find(c=>c.id===id);
-    await sbUpdateCompany(id,{...x,ad});
-    x.ad=ad;
+    await sbUpdateCompany(id,{...x,...bilgi});
+    Object.assign(x,bilgi);
   } else {
-    const entity={id:uid(),ad};
+    const entity={id:uid(),...bilgi};
     await sbInsertCompany(entity);
     if(!DB.companies)DB.companies=[];
     DB.companies.push(entity);
