@@ -137,6 +137,9 @@ import {
   sbDeleteProjeBinaModel,
   sbUploadBinaModelFile,
   sbDeleteBinaModelFile,
+  sbBelgeUrl,
+  sbBelgeYukle,
+  sbBelgeSil,
   // Parcali giris: lokasyon kirilim agaci
   sbInsertProjeLokasyon,
   sbUpdateProjeLokasyon,
@@ -345,6 +348,18 @@ window.sbUpdateProjeBinaModel   = guardedSafe('tanimlar', 'update', sbUpdateProj
 window.sbDeleteProjeBinaModel   = guardedSafe('tanimlar', 'delete', sbDeleteProjeBinaModel)
 window.sbUploadBinaModelFile    = guardedSafe('tanimlar', 'create', sbUploadBinaModelFile)
 window.sbDeleteBinaModelFile    = guardedSafe('tanimlar', 'delete', sbDeleteBinaModelFile)
+
+// ─── Belgeler (fatura PDF) ───────────────────────────────────────────────────
+// Bunlar guardedSafe'e SARILMAZ: guardedSafe hatada undefined dondurup toast basiyor,
+// oysa buradaki cagiranlar donen degeri kullaniyor (yukleme kunyesi / imzali adres) ve
+// hatayi kendileri yonetiyor - sessiz undefined "yuklendi" sanilirdi.
+// Yukleme icin yetki yine kontrol edilir, ama hata YUTULMAZ, yukari firlatilir.
+function guardedThrow(module, action, fn) {
+  return async function (...args) { _permCheck(module, action); return fn.apply(this, args) }
+}
+window.sbBelgeUrl               = sbBelgeUrl                                   // okuma: oturum yeter
+window.sbBelgeYukle             = guardedThrow('proje', 'create', sbBelgeYukle) // siparis olusturmayla ayni yetki
+window.sbBelgeSil               = sbBelgeSil                                   // govdesi hatayi zaten yutuyor
 window.initBinaViewer           = initBinaViewer
 
 // ─── Parcali giris: lokasyon kirilim agaci (Kat / Fragment / Oda) ────────────

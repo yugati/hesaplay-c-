@@ -9396,7 +9396,31 @@ async function toggleOrderImza(id){
   logAction('order','Imzali kagit durumu: '+o.no+' -> '+(o.imzaYok?'ELDE DEGIL':'elde'));
   closeModal(); render(); toast(o.imzaYok?'"Imzali kagit elde degil" olarak isaretlendi':'Imzali kagit elde - isaret kaldirildi');
 }
-function openProjeOrderPdf(id){ const o=(DB.proje.orders||[]).find(x=>x.id===id); if(o&&o.pdf&&o.pdf.data){ const w=window.open(); w.document.write(`<title>${esc(o.pdf.name||'Fatura')}</title><iframe src="${o.pdf.data}" style="width:100%;height:100%;border:none"></iframe>`); } else { toast("PDF bulunamadi","err"); } }
+/* PDF ACMA - TEK KAPI. Kayittaki pdf alani iki bicimden biri olabilir:
+     {name, path} -> dosya Storage'da (yeni duzen). /api/dosya kisa omurlu imzali adres verir.
+     {name, data} -> base64 kayidin icinde (ESKI kayitlar). Gecis bitene kadar desteklenir.
+   Sekme TIKLAMA ANINDA acilir; imzali adres beklendikten sonra acilsaydi tarayicinin
+   acilir-pencere engelleyicisi sekmeyi bloklardi (kullanici hicbir sey gormezdi).
+   data: adresine ust duzey gezinme Chrome'da yasak - o yuzden base64 yolu iframe ile cizilir. */
+function acPdf(pdf){
+  if(!pdf){ toast('PDF bulunamadi','err'); return; }
+  const w=window.open('','_blank');
+  if(!w){ toast('Tarayici yeni sekmeyi engelledi - bu site icin acilir pencereye izin verin','err'); return; }
+  const ad=esc(pdf.name||'Belge');
+  const yaz=(govde)=>{ try{ w.document.open(); w.document.write(`<title>${ad}</title>${govde}`); w.document.close(); }catch(_){} };
+  yaz('<body style="font:14px system-ui;padding:26px;color:#555">Belge hazirlaniyor…</body>');
+  if(pdf.path && window.sbBelgeUrl){
+    window.sbBelgeUrl(pdf.path)
+      .then(url=>{ w.location.href=url; })
+      .catch(e=>{ if(pdf.data) yaz(`<iframe src="${pdf.data}" style="position:fixed;inset:0;width:100%;height:100%;border:0"></iframe>`);
+        else yaz(`<body style="font:14px system-ui;padding:26px;color:#b00">Belge acilamadi: ${esc(e.message||'bilinmeyen hata')}</body>`); });
+  } else if(pdf.data){
+    yaz(`<iframe src="${pdf.data}" style="position:fixed;inset:0;width:100%;height:100%;border:0"></iframe>`);
+  } else {
+    yaz('<body style="font:14px system-ui;padding:26px;color:#b00">Belge bulunamadi.</body>');
+  }
+}
+function openProjeOrderPdf(id){ const o=(DB.proje.orders||[]).find(x=>x.id===id); acPdf(o&&o.pdf); }
 async function delProjeOrder(id){ if(!guard('delete'))return;
   const o=(DB.proje.orders||[]).find(x=>x.id===id); if(!o)return;
   if(!confirm(`"${o.no}" siparisini ve bagli ${o.lines.length} stok girisini silmek istiyor musunuz?`))return;
@@ -9680,8 +9704,32 @@ function setMatImgUrl2(v){ v=String(v||'').trim();
   test.onerror=()=>{ toast('Resim linkten yuklenemedi - linki kontrol edin (dogrudan resim dosyasina isaret etmeli)','err'); };
   test.src=v;
 }
-function pickPdf(e,dropId){ const f=e.target.files[0]; if(!f)return; if(f.size>5*1024*1024){toast("PDF 5MB'tan buyuk","err");return;} const r=new FileReader(); r.onload=()=>{ modalPdf={name:f.name,data:r.result}; const el=document.getElementById(dropId); el.classList.add('has'); el.innerHTML=`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(f.name)}<button onclick="event.stopPropagation();modalPdf=null;render2pdf('${dropId}')">x</button></div>`; }; r.readAsDataURL(f); }
-function render2pdf(dropId){ const el=document.getElementById(dropId); el.classList.remove('has'); el.innerHTML=`${icoDoc()}<div style="margin-top:6px">PDF ekleyin</div>`; }
+/* PDF SECIMI - dosya artik kayda base64 olarak GOMULMEZ; Storage'a yuklenir, kayitta yalnizca
+   {name, path, size} kunyesi durur (bkz. api/dosya.js, src/supabase.js sbBelgeYukle).
+   Neden: gomulu PDF'ler uygulamanin her acilista indirdigi veriyi 33 MB'a cikarmisti.
+   Yukleme SECIM ANINDA yapilir - kayit (siparis/hareket) henuz olusmamis olabilir, bu yuzden
+   yol icin gecici bir kimlik uretilir. Dosya kayitta 'path' ile bulunur; yolun kayit id'siyle
+   ayni olmasi gerekmez. Form iptal edilirse kovada sahipsiz dosya kalir - kucuk ve zararsiz.
+   Dosya sunucudan GECMEZ: imzali adres alinir, tarayici dogrudan Storage'a gonderir. */
+async function pickPdf(e,dropId){
+  const f=e.target.files[0]; e.target.value=''; if(!f)return;
+  if(f.size>20*1024*1024){ toast("PDF 20MB'tan buyuk","err"); return; }
+  const el=document.getElementById(dropId); if(!el)return;
+  const onceki=modalPdf;
+  el.classList.add('has');
+  el.innerHTML=`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(f.name)} <span style="opacity:.7">· yukleniyor…</span></div>`;
+  try{
+    modalPdf=await window.sbBelgeYukle('siparis',uid(),f);
+    el.innerHTML=`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(f.name)}<button onclick="event.stopPropagation();silModalPdf('${dropId}')">x</button></div>`;
+    toast('PDF yuklendi');
+  }catch(err){
+    modalPdf=onceki; render2pdf(dropId);
+    toast('PDF yuklenemedi: '+(err&&err.message||'baglanti hatasi'),'err');
+  }
+}
+// "x" ile kaldirma: kayittan cikarilan dosya kovadan da silinir (yetim dosya birikmesin)
+function silModalPdf(dropId){ const p=modalPdf; modalPdf=null; render2pdf(dropId); if(p&&p.path&&window.sbBelgeSil) window.sbBelgeSil(p.path); }
+function render2pdf(dropId){ const el=document.getElementById(dropId); if(!el)return; el.classList.remove('has'); el.innerHTML=`${icoDoc()}<div style="margin-top:6px">PDF ekleyin</div>`; }
 
 /* ---------- PROJE item modal ---------- */
 function openProjeItemModal(){ modalImg=null; modalPdf=null; window._pickSpec=null;
@@ -9785,7 +9833,7 @@ function openProjeItemEdit(id){
     <div class="frow"><label>Siparis No</label><input id="ei_order" value="${esc(it.order||'')}"></div>
     <div class="frow"><label>Not</label><textarea id="ei_note">${esc(it.note||'')}</textarea></div>
     <div class="frow"><label>Malzeme Fotografi</label><div class="drop ${it.img?'has':''}" id="eiImgDrop" onclick="document.getElementById('eiImgInput').click()">${it.img?`<img class="img-prev" src="${it.img}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div><input type="file" id="eiImgInput" accept="image/*" class="hidden" onchange="pickImg(event,'eiImgDrop')"></div>
-    <div class="frow"><label>Siparis PDF'i</label><div class="drop ${it.pdf?'has':''}" id="eiPdfDrop" onclick="document.getElementById('eiPdfInput').click()">${icoDoc()}<div style="margin-top:6px">${it.pdf?esc(it.pdf.name):'PDF ekleyin'}</div></div><input type="file" id="eiPdfInput" accept="application/pdf" class="hidden" onchange="pickPdf(event,'eiPdfDrop')"></div>
+    <div class="frow"><label>Siparis PDF'i</label><div class="drop ${it.pdf?'has':''}" id="eiPdfDrop" onclick="document.getElementById('eiPdfInput').click()">${icoDoc()}<div style="margin-top:6px">${it.pdf?esc(it.pdf.name):(itemPdf(it)?`Siparisten geliyor: ${esc(itemPdf(it).name||'belge')}`:'PDF ekleyin')}</div></div><input type="file" id="eiPdfInput" accept="application/pdf" class="hidden" onchange="pickPdf(event,'eiPdfDrop')"></div>
   </div><div class="modal-foot"><button class="btn btn-ghost" style="margin-right:auto;border-color:var(--red)55;color:var(--red)" onclick="delProjeItem('${it.id}')">${icoTrash()} Sil</button><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveProjeItemEdit('${it.id}')">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
 }
@@ -9810,7 +9858,7 @@ async function saveProjeItemEdit(id){
 function itemPdf(it){ if(!it) return null; if(it.pdf) return it.pdf;
   if(it.orderId){ const o=(DB.proje.orders||[]).find(x=>x.id===it.orderId); if(o&&o.pdf) return o.pdf; }
   return null; }
-function openProjePdf(id){ const it=DB.proje.items.find(i=>i.id===id); const pdf=itemPdf(it); if(!pdf)return; const w=window.open(); w.document.write(`<title>${esc(pdf.name)}</title><iframe src="${pdf.data}" style="width:100%;height:100%;border:0"></iframe>`); }
+function openProjePdf(id){ const it=DB.proje.items.find(i=>i.id===id); acPdf(itemPdf(it)); }
 
 /* ---------- SPEC modal ---------- */
 // YENI kalem giris kapilari: acik taslak varken kilitlidir (bkz. TOPLU GIRIS TASLAGI kurali).
@@ -10756,7 +10804,7 @@ function orderDetail(id){ const o=DB.gecici.orders.find(x=>x.id===id); if(!o)ret
   </div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
 }
-function openOrderPdf(id){ const o=DB.gecici.orders.find(x=>x.id===id); if(!o||!o.pdf)return; const w=window.open(); w.document.write(`<title>${esc(o.pdf.name)}</title><iframe src="${o.pdf.data}" style="width:100%;height:100%;border:0"></iframe>`); }
+function openOrderPdf(id){ const o=DB.gecici.orders.find(x=>x.id===id); acPdf(o&&o.pdf); }
 async function delOrder(id){ const o=DB.gecici.orders.find(x=>x.id===id); if(!o)return;
   if(!confirm("Bu siparis silinsin mi? Eklenen stoklar bakiyeden geri dusulecek."))return;
   const moveIdsToDelete=DB.gecici.moves.filter(m=>m.order===o.no).map(m=>m.id);
@@ -15547,7 +15595,7 @@ function renderNewOrderPage(){
               <option value="__new" ${NORD.companyId==='__new'?'selected':''}>+ Yeni sirket...</option></select>
             <input id="nord_newsirket" class="${NORD.companyId==='__new'?'':'hidden'}" style="margin-top:7px" placeholder="Yeni sirket adi" value="${esc(NORD.newCompany)}" oninput="NORD.newCompany=this.value"></div>
           <div class="frow"><label>Siparis / Fatura PDF'i</label>
-            <div class="drop ${NORD.pdf?'has':''}" id="nordPdfDrop" onclick="document.getElementById('nordPdfInput').click()">${NORD.pdf?`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(NORD.pdf.name)}<button onclick="event.stopPropagation();NORD.pdf=null;render()">x</button></div>`:icoDoc()+'<div style="margin-top:6px">PDF ekleyin</div>'}</div>
+            <div class="drop ${NORD.pdf?'has':''}" id="nordPdfDrop" onclick="${NORD.pdf&&NORD.pdf.yukleniyor?'':`document.getElementById('nordPdfInput').click()`}">${NORD.pdf?`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(NORD.pdf.name)}${NORD.pdf.yukleniyor?' <span style="opacity:.7">· yukleniyor…</span>':`<button onclick="event.stopPropagation();nordPdfKaldir()">x</button>`}</div>`:icoDoc()+'<div style="margin-top:6px">PDF ekleyin</div>'}</div>
             <input type="file" id="nordPdfInput" accept="application/pdf" class="hidden" onchange="nordPickPdf(event)"></div>
           <div class="frow" style="margin-bottom:0;display:flex;align-items:center;gap:7px">
             <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer;text-transform:none;font-size:13px;color:var(--ink)"><input type="checkbox" id="nord_imza" style="width:auto;margin:0" ${NORD.imzaYok?'checked':''} onchange="NORD.imzaYok=this.checked"> Imzali kagit elde degil</label>
@@ -15578,8 +15626,18 @@ function renderNewOrderPage(){
   </div>`;
 }
 function wireNewOrderPage(){ setTimeout(()=>{ const el=document.getElementById('nord_no'); if(el&&!el.value)el.focus(); },50); }
-function nordPickPdf(e){ const f=e.target.files[0]; if(!f)return; if(f.size>5*1024*1024){toast("PDF 5MB'tan buyuk","err");return;}
-  const r=new FileReader(); r.onload=()=>{ NORD.pdf={name:f.name,data:r.result}; render(); }; r.readAsDataURL(f); }
+// Siparis sayfasindaki fatura PDF'i - pickPdf ile ayni mantik, tek farki durumu NORD'da tutmasi
+async function nordPickPdf(e){
+  const f=e.target.files[0]; e.target.value=''; if(!f)return;
+  if(f.size>20*1024*1024){ toast("PDF 20MB'tan buyuk","err"); return; }
+  const eski=NORD.pdf;
+  NORD.pdf={name:f.name,yukleniyor:1}; render();
+  try{ NORD.pdf=await window.sbBelgeYukle('siparis',NORD.editId||uid(),f); toast('Fatura PDF yuklendi'); }
+  catch(err){ NORD.pdf=eski; toast('PDF yuklenemedi: '+(err&&err.message||'baglanti hatasi'),'err'); }
+  render();
+}
+// "x" ile kaldirma: dosya kovadan da silinir
+function nordPdfKaldir(){ const p=NORD.pdf; NORD.pdf=null; render(); if(p&&p.path&&window.sbBelgeSil) window.sbBelgeSil(p.path); }
 async function saveNewOrder(){
   const no=(NORD.no||'').trim(); if(!no){toast("Siparis / fatura no zorunlu","err");document.getElementById('nord_no').focus();return;}
   const dupOrder=(DB.proje.orders||[]).find(o=>o.id!==(NORD.editId||null)&&norm(o.no)===norm(no));

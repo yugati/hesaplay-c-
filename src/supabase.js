@@ -484,6 +484,51 @@ export async function sbDeleteBinaModelFile(path) {
   await supabase.storage.from(BINA_MODEL_BUCKET).remove([path])
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// BELGELER (fatura PDF) - 'belgeler' kovasi PRIVATE. Tarayici oraya anon anahtarla
+// erisemez; her islem /api/dosya uzerinden imzali adresle yapilir (bkz. api/dosya.js).
+//
+// Eskiden PDF, siparis kaydinin icinde base64 durdugu icin uygulama HER acilista
+// tum faturalari indiriyordu (33 MB). Artik kayitta yalnizca 'path' var: dosya
+// sadece kullanici PDF'e tikladiginda iner.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const BELGE_BUCKET = 'belgeler'
+
+// Kisa omurlu (5 dk) imzali okuma adresi.
+export async function sbBelgeUrl(path) {
+  const { url } = await authFetch('/api/dosya?path=' + encodeURIComponent(path))
+  return url
+}
+
+/* Dosyayi Storage'a yukler ve kayda yazilacak kunyeyi dondurur: {name, path, size}.
+   Dosyanin KENDISI sunucudan gecmez - sunucu yalnizca imzali yukleme adresi verir,
+   tarayici dogrudan Storage'a gonderir. Boylece Vercel'in 4.5 MB govde siniri
+   buyuk faturalarda yola girmez. */
+export async function sbBelgeYukle(kind, id, file) {
+  const { path, token } = await authFetch('/api/dosya', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind, id, name: file.name }),
+  })
+  const { error } = await supabase.storage.from(BELGE_BUCKET).uploadToSignedUrl(path, token, file, {
+    contentType: file.type || 'application/pdf',
+  })
+  if (error) throw error
+  return { name: file.name, path, size: file.size }
+}
+
+// Kayittan cikarilan dosyayi kovadan da siler. Hata firlatmaz: kayit zaten
+// guncellenmisse, kovada kalan yetim dosya isleyisi bozmaz.
+export async function sbBelgeSil(path) {
+  if (!path) return
+  try {
+    await authFetch('/api/dosya?path=' + encodeURIComponent(path), { method: 'DELETE' })
+  } catch (e) {
+    console.warn('Belge silinemedi (kovada kaldi):', path, e.message)
+  }
+}
+
 function uid8() {
   return Math.random().toString(36).slice(2, 10)
 }
