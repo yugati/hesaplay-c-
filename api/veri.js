@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { requireAuth } from '../lib/auth.js'
+import { yetkiKontrol } from '../lib/yetki.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VERI ERISIM UCU (Asama 1)
@@ -14,10 +15,9 @@ import { requireAuth } from '../lib/auth.js'
 // beyaz listeyle sinirlidir. Liste disindaki her sey reddedilir. 'users' tablosu
 // hicbir kosulda buradan erisilemez - o zaten /api/users* ile yonetiliyor.
 //
-// Yetki: su an yalnizca gecerli oturum sarti var (Asama 1 = tasima katmani).
-// Modul bazli create/update/delete kontrolu Asama 2'de buraya tasinacak; bugun
-// hala tarayicida (src/main.js _permCheck). Tek istisna: TUM TABLOYU silen
-// islem simdiden admin ister - en yikici islem ve bedeli yok.
+// Yetki (Asama 2): modul bazli okuma/ekleme/duzenleme/silme kontrolu artik BURADA
+// yapiliyor (lib/yetki.js) - tarayicidaki kontrol atlanabilir, bu atlanamaz.
+// Kurallar tarayicidakinin birebir kopyasidir, davranis degismedi.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // id + data (JSONB) seklindeki varlik tablolari
@@ -57,10 +57,28 @@ export default async function handler(req, res) {
   if (!TABLOLAR.has(table)) return hata(res, 400, 'Bilinmeyen tablo: ' + table)
 
   try {
+    // YETKI. Kullanici bilgisi oncelikle tokenden okunur (acilistaki ~60 istek icin
+    // her seferinde users tablosuna gitmemek adina). ESKI tokenlerde (Asama 2'den once
+    // imzalanmis) bu alanlar yoktur - o durumda kullanici satirindan okunur, boylece
+    // yenilenmemis oturumlar da calismaya devam eder.
+    let kullanici
+    if (claims.perms || claims.sections) {
+      kullanici = { role: claims.role, sections: claims.sections || [], permissions: claims.perms || {} }
+    } else {
+      const { data } = await supabaseAdmin.from('users').select('role, sections, permissions').eq('id', claims.sub).maybeSingle()
+      if (!data) return hata(res, 401, 'Kullanici bulunamadi - yeniden giris yapin')
+      kullanici = data
+    }
+    const izin = yetkiKontrol(kullanici, table, op, !!g.all)
+    if (!izin.ok) return hata(res, izin.kod, izin.mesaj)
+
     let q = supabaseAdmin.from(table)
 
     if (op === 'count') {
-      const { count, error } = await q.select('id', { count: 'exact', head: true })
+      // '*' kullanilir, 'id' DEGIL: app_settings / saha_settings anahtar-deger
+      // tablolaridir ve id sutunlari yok - 'id' ile sayim orada hata veriyordu.
+      // head:true oldugu icin satir tasinmaz, yalnizca sayi doner.
+      const { count, error } = await q.select('*', { count: 'exact', head: true })
       if (error) throw error
       res.status(200).json({ count: count || 0 })
       return
@@ -148,8 +166,7 @@ export default async function handler(req, res) {
     if (op === 'delete') {
       let d = q.delete()
       if (g.all) {
-        // TUM TABLOYU bosaltir - yalnizca admin
-        if (claims.role !== 'admin') return hata(res, 403, 'Bu islem icin yonetici yetkisi gerekir')
+        // TUM TABLOYU bosaltir - yetki kontrolunde yalnizca admin'e aciktir
         d = d.gte('created_at', '2000-01-01T00:00:00Z')
       } else if (g.in) {
         if (!ESLESME_SUTUNLARI.has(g.in.col)) return hata(res, 400, 'Izin verilmeyen eslesme sutunu')

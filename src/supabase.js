@@ -635,7 +635,10 @@ export async function sbLoadAllData(scope) {
     tasks.projeBinaModelleri = sbGetAll('proje_bina_modelleri').catch(() => [])
   }
   if (needCompanies) tasks.companies = sbGetAll('companies').catch(() => [])
-  if (!scope) tasks.auditRes = veriSelect('audit_log', { columns: 'data', order: [{ col: 'created_at', asc: true }], limit: 2000 })
+  // Denetim kaydini yalnizca YONETICI okuyabilir (Asama 2 - sunucu tarafi kontrol).
+  // Hataya toleransli: bolumu tanimlanmamis bir kullanici tam yukleme yapsa bile
+  // 403 yuzunden acilis kirilmasin, denetim listesi bos gelsin yeter.
+  if (!scope) tasks.auditRes = veriSelect('audit_log', { columns: 'data', order: [{ col: 'created_at', asc: true }], limit: 2000 }).catch(() => [])
 
   const keys = Object.keys(tasks)
   // Yukleme ekranina GERCEK ilerleme bildirilir: her tablo tamamlandiginda hangi tablonun
