@@ -2658,6 +2658,7 @@ async function doLogin(){
     // birlikte saklanir ki sayfa yenilemede uzatma ayni sureyle yapilsin
     const ttl=remember?SESSION_TTL_REMEMBER:SESSION_TTL_DEFAULT;
     localStorage.setItem('authSession', JSON.stringify({user:user, token:token, expiresAt:Date.now()+ttl, ttl:ttl}));
+    baslatOturumTazeleme(ttl); // token periyodik yenilensin - veri islemleri ona bagli
     const lg=document.getElementById('login');
     lg.classList.add('fade-out');
     showAppFade();
@@ -2674,6 +2675,40 @@ function loginFail(msg){ document.getElementById('loginErr').textContent=msg; pw
 // Sifre sifirlama backend akisi olmadigi icin kullaniciyi dogru kanala yonlendiririz
 function forgotPw(){ toast('Şifre sıfırlama için yöneticinizle iletişime geçin'); }
 function logout(){ localStorage.removeItem('authSession'); window.AUTH_TOKEN=null; CURRENT_USER=null; window.CURRENT_USER=null; location.reload(); }
+
+/* ─── OTURUM TOKENI TAZELEME ────────────────────────────────────────────────
+   Asama 1'den beri TUM veri islemleri oturum tokenine bagli (/api/veri). Token
+   varsayilan 1 saatlik; eskiden suresi dolunca yalnizca /api/me ve kullanici
+   yonetimi etkileniyordu, simdi her okuma/yazma 401 alir. Bu yuzden token
+   periyodik olarak /api/me'den tazelenir - kullanici sekmeyi acik biraksa da
+   oturum yasar. Tazeleme basarisiz olursa oturum DUSURULMEZ (gecici ag hatasi
+   olabilir); gercekten gecersizse zaten ilk 401'de oturumDustu devreye girer. */
+let _tazelemeZamani=null;
+function oturumTazeleUygula(fresh, ttl){
+  const yeniToken=fresh.__token; const yeniTtl=fresh.__ttl||ttl;
+  const u={...fresh}; delete u.__token; delete u.__ttl;
+  CURRENT_USER=u; window.CURRENT_USER=u;
+  if(yeniToken) window.AUTH_TOKEN=yeniToken;
+  try{ localStorage.setItem('authSession', JSON.stringify({user:u, token:window.AUTH_TOKEN, expiresAt:Date.now()+(yeniTtl||3600000), ttl:yeniTtl})); }catch(e){}
+  applyUserChrome();
+}
+function baslatOturumTazeleme(ttl){
+  if(_tazelemeZamani) clearInterval(_tazelemeZamani);
+  // 1 saatlik tokende 20 dakikada bir yenilenir - suresi dolmadan cok once
+  _tazelemeZamani=setInterval(async()=>{
+    if(!window.AUTH_TOKEN) return;
+    try{ const fresh=await sbGetUserByUsername(); if(fresh) oturumTazeleUygula(fresh, ttl); }
+    catch(e){ /* gecici hata: bir sonraki turda tekrar denenir */ }
+  }, 20*60*1000);
+}
+/* Sunucu tokeni reddettiginde (401) cagrilir - src/supabase.js authFetch'ten.
+   Tek sefer calisir: onlarca paralel istek ayni anda 401 alabilir. */
+let _oturumDustuGosterildi=false;
+window.oturumDustu=function(){
+  if(_oturumDustuGosterildi) return; _oturumDustuGosterildi=true;
+  try{ toast('Oturum suresi doldu - yeniden giris yapmaniz gerekiyor','err'); }catch(e){}
+  setTimeout(()=>{ try{ localStorage.removeItem('authSession'); }catch(e){} location.reload(); }, 2200);
+};
 // giris/oturum acildiginda #app'i yumusak fade-in ile gosterir (login/loading ekranlariyla capraz gecis)
 function showAppFade(){
   const ap=document.getElementById('app');
@@ -2732,16 +2767,15 @@ document.addEventListener('DOMContentLoaded', async function(){
     showAppFade();
     startClock(); applyUserChrome(); render();
     if(SEC==='saha') initSaha();
-    // Arka planda kullanıcıyı Supabase'den tazele (UI'ı engellemez)
+    // Arka planda kullanıcıyı tazele (UI'ı engellemez) + oturum tokenini yenile
     (async()=>{
       try {
         const fresh=await sbGetUserByUsername();
         if(!fresh){ localStorage.removeItem('authSession'); logout(); return; }
-        CURRENT_USER=fresh; window.CURRENT_USER=fresh;
-        saveSession(fresh, sess.ttl, sess.token);
-        applyUserChrome();
+        oturumTazeleUygula(fresh, sess.ttl);
       } catch(e){ /* ağ hatası: önbellekten devam et */ }
     })();
+    baslatOturumTazeleme(sess.ttl);
   } catch(e){
     console.warn('Oturum hatasi:',e);
     // Veri yukleme hatasi: oturumu DUSURME, bos ekran gosterme - hata ekrani + tekrar dene

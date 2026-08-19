@@ -23,6 +23,14 @@ async function authFetch(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers })
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
+    // OTURUM DUSTU: token gonderdik ama sunucu reddetti - suresi dolmus ya da
+    // gecersiz. Asama 1'den beri TUM veri bu yoldan gectigi icin bu durumda
+    // uygulama calisir gorunup her islemde sessizce hata verirdi; kullaniciya
+    // acikca haber verilir (index.html oturumDustu). /api/login'in 401'i buraya
+    // dusmez - orada henuz token yoktur.
+    if (res.status === 401 && token && typeof window !== 'undefined' && window.oturumDustu) {
+      window.oturumDustu()
+    }
     const err = new Error(body.error || `Istek basarisiz (${res.status})`)
     err.status = res.status
     err.code = body.code
@@ -50,10 +58,12 @@ export async function sbLoginUser(username, password, rememberMe) {
 
 // Aktif oturum tokeniyle (window.AUTH_TOKEN) kendi kaydini tazeler (arka plan
 // yenileme icin - cagirandan once token atanmis olmali).
+// Kullaniciyi tazeler ve YENI bir oturum tokeni getirir: {user, token, ttl}
+// (eski cagiranlar yalnizca .user kullaniyordu, uyumlu kalir).
 export async function sbGetUserByUsername() {
   try {
-    const { user } = await authFetch('/api/me')
-    return user || null
+    const { user, token, ttl } = await authFetch('/api/me')
+    return user ? { ...user, __token: token, __ttl: ttl } : null
   } catch (e) {
     // Token gecersiz/suresi dolmus ya da kullanici silinmis: gercekten
     // cikis yaptirilmali. Diger tum hatalar (ag, 5xx) yukari firlatilir ki
@@ -92,10 +102,27 @@ export async function sbDeleteUser(id) {
 // Generic helpers – JSONB data tabloları için
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function sbRun(builder) {
-  const { data, error } = await builder
-  if (error) throw error
-  return data
+// ─────────────────────────────────────────────────────────────────────────────
+// VERI ERISIMI - tarayici Supabase'e DOGRUDAN gitmez (Asama 1)
+//
+// Her tablo islemi /api/veri'ye gider ve orada service_role anahtariyla calisir.
+// Boylece anon anahtarin tarayiciya gomulu olmasi tek basina veriye erisim
+// saglamaz. Uc, genel bir SQL kapisi degildir: tablo/sutun/siralama beyaz listeyle
+// sinirlidir (bkz. api/veri.js).
+//
+// Postgres hata kodu sunucudan aynen geri gelir (authFetch onu err.code'a koyar) -
+// sbFetchRange'in zaman asimi kurtarmasi bu koda bakiyor, kaybolursa calismaz.
+// ─────────────────────────────────────────────────────────────────────────────
+async function veri(govde) {
+  return authFetch('/api/veri', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(govde),
+  })
+}
+async function veriSelect(table, opts = {}) {
+  const { rows } = await veri({ op: 'select', table, ...opts })
+  return rows
 }
 
 // Tablodaki tüm satırları entity dizisi olarak döndürür.
@@ -114,11 +141,11 @@ const SB_PAGE_SIZE = 100
 const SB_PAGE_CONCURRENCY = 5
 async function sbFetchRange(table, from, to) {
   try {
-    return await sbRun(
-      supabase.from(table).select('id, data')
-        .order('created_at', { ascending: true }).order('id', { ascending: true })
-        .range(from, to)
-    ) || []
+    return await veriSelect(table, {
+      columns: 'id, data',
+      order: [{ col: 'created_at', asc: true }, { col: 'id', asc: true }],
+      range: [from, to],
+    }) || []
   } catch (e) {
     if (!(e && SB_TIMEOUT_CODES.has(e.code)) || to <= from) throw e
     // zaman asimi: araligi kucuk parcalara bolerek ayni satirlari yeniden dene
@@ -131,8 +158,7 @@ async function sbFetchRange(table, from, to) {
   }
 }
 async function sbGetAll(table) {
-  const { count, error } = await supabase.from(table).select('id', { count: 'exact', head: true })
-  if (error) throw error
+  const { count } = await veri({ op: 'count', table })
   const total = count || 0
   if (!total) return []
   const ranges = []
@@ -147,42 +173,54 @@ async function sbGetAll(table) {
 }
 
 async function sbInsertEntity(table, entity) {
-  await sbRun(supabase.from(table).insert([{ id: entity.id, data: entity }]))
+  await veri({ op: 'insert', table, rows: [{ id: entity.id, data: entity }] })
 }
 
 // Satir sayisinin yaninda TOPLAM BAYT boyutuna gore de parcalar: gomulu foto/PDF
-// tasiyan kayitlar (ornegin proje_items) tek satirda birkac MB olabiliyor, 500
-// satirlik sabit blok bu durumda tek istekte onlarca MB'a cikip sessizce
-// basarisiz oluyordu (restore sirasinda hicbir hata gorunmeden kayit kaybi).
-async function sbInsertEntities(table, entities) {
-  if (!entities || !entities.length) return
-  const MAX_ROWS = 500
-  const MAX_BYTES = 3 * 1024 * 1024
+// tasiyan kayitlar tek satirda birkac MB olabiliyor; 500 satirlik SABIT blok bu
+// durumda tek istekte onlarca MB'a cikip sessizce basarisiz oluyordu (restore
+// sirasinda hicbir hata gorunmeden kayit kaybi). Istek artik Vercel fonksiyonundan
+// da gectigi icin ayrica 4.5 MB'lik govde siniri var - 3 MB onun altinda kalir.
+const MAX_SATIR = 500
+const MAX_BAYT = 3 * 1024 * 1024
+function bayaGoreParcala(entities) {
   const chunks = []
   let cur = [], curBytes = 0
   for (const e of entities) {
     const size = JSON.stringify(e).length
-    if (cur.length && (cur.length >= MAX_ROWS || curBytes + size > MAX_BYTES)) {
+    if (cur.length && (cur.length >= MAX_SATIR || curBytes + size > MAX_BAYT)) {
       chunks.push(cur); cur = []; curBytes = 0
     }
     cur.push(e); curBytes += size
   }
   if (cur.length) chunks.push(cur)
-  for (const chunk of chunks) {
-    await sbRun(supabase.from(table).insert(chunk.map(e => ({ id: e.id, data: e }))))
+  return chunks
+}
+
+async function sbInsertEntities(table, entities) {
+  if (!entities || !entities.length) return
+  for (const chunk of bayaGoreParcala(entities)) {
+    await veri({ op: 'insert', table, rows: chunk.map(e => ({ id: e.id, data: e })) })
+  }
+}
+
+async function sbUpsertEntities(table, entities) {
+  if (!entities || !entities.length) return
+  for (const chunk of bayaGoreParcala(entities)) {
+    await veri({ op: 'upsert', table, onConflict: 'id', rows: chunk.map(e => ({ id: e.id, data: e })) })
   }
 }
 
 async function sbUpdateEntity(table, id, entity) {
-  await sbRun(supabase.from(table).update({ data: entity }).eq('id', id))
+  await veri({ op: 'update', table, eq: { col: 'id', val: id }, patch: { data: entity } })
 }
 
 async function sbDeleteEntity(table, id) {
-  await sbRun(supabase.from(table).delete().eq('id', id))
+  await veri({ op: 'delete', table, eq: { col: 'id', val: id } })
 }
 
 async function sbDeleteAll(table) {
-  await sbRun(supabase.from(table).delete().gte('created_at', '2000-01-01T00:00:00Z'))
+  await veri({ op: 'delete', table, all: true })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -190,16 +228,12 @@ async function sbDeleteAll(table) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function sbGetSetting(key) {
-  const row = await sbRun(
-    supabase.from('app_settings').select('value').eq('key', key).maybeSingle()
-  )
+  const row = await veriSelect('app_settings', { columns: 'value', eq: { col: 'key', val: key }, single: true })
   return row ? row.value : null
 }
 
 export async function sbSetSetting(key, value) {
-  await sbRun(
-    supabase.from('app_settings').upsert([{ key, value }], { onConflict: 'key' })
-  )
+  await veri({ op: 'upsert', table: 'app_settings', onConflict: 'key', rows: [{ key, value }] })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -208,16 +242,16 @@ export async function sbSetSetting(key, value) {
 
 export async function sbInsertAuditLog(entry) {
   try {
-    await sbRun(supabase.from('audit_log').insert([{ data: entry }]))
+    await veri({ op: 'insert', table: 'audit_log', rows: [{ data: entry }] })
   } catch (e) {
     console.warn('Audit log yazılamadı:', e)
   }
 }
 
 export async function sbGetAuditLog() {
-  const rows = await sbRun(
-    supabase.from('audit_log').select('data').order('created_at', { ascending: false }).limit(2000)
-  )
+  const rows = await veriSelect('audit_log', {
+    columns: 'data', order: [{ col: 'created_at', asc: false }], limit: 2000,
+  })
   return (rows || []).map(r => r.data)
 }
 
@@ -250,16 +284,14 @@ export async function sbUpdateSahaSocket(id, e) { return sbUpdateEntity('saha_so
 export async function sbDeleteSahaSocket(id) { return sbDeleteEntity('saha_sockets', id) }
 
 export async function sbGetAllSahaSettings() {
-  const rows = await sbRun(supabase.from('saha_settings').select('key, value'))
+  const rows = await veriSelect('saha_settings', { columns: 'key, value' })
   const map = {}
   ;(rows || []).forEach(r => { map[r.key] = r.value })
   return map
 }
 
 export async function sbSetSahaSetting(key, value) {
-  await sbRun(
-    supabase.from('saha_settings').upsert([{ key, value }], { onConflict: 'key' })
-  )
+  await veri({ op: 'upsert', table: 'saha_settings', onConflict: 'key', rows: [{ key, value }] })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -276,26 +308,23 @@ export async function sbDeleteRaporEntriesByIds(ids) {
 }
 
 export async function sbGetRaporEkipler() {
-  const rows = await sbRun(
-    supabase.from('rapor_ekipler').select('name').order('created_at', { ascending: true })
-  )
+  const rows = await veriSelect('rapor_ekipler', { columns: 'name', order: [{ col: 'created_at', asc: true }] })
   return (rows || []).map(r => r.name)
 }
 
 export async function sbInsertRaporEkip(name) {
-  const { error } = await supabase.from('rapor_ekipler').upsert([{ name }], { onConflict: 'name' })
-  if (error) console.warn('Ekip eklenemedi:', error)
+  try { await veri({ op: 'upsert', table: 'rapor_ekipler', onConflict: 'name', rows: [{ name }] }) }
+  catch (e) { console.warn('Ekip eklenemedi:', e) }
 }
 
 export async function sbInsertRaporEkipler(names) {
-  for (const name of names) {
-    const { error } = await supabase.from('rapor_ekipler').upsert([{ name }], { onConflict: 'name' })
-    if (error) console.warn('Ekip eklenemedi:', name, error)
-  }
+  if (!names || !names.length) return
+  try { await veri({ op: 'upsert', table: 'rapor_ekipler', onConflict: 'name', rows: names.map(name => ({ name })) }) }
+  catch (e) { console.warn('Ekipler eklenemedi:', e) }
 }
 
 export async function sbDeleteRaporEkip(name) {
-  await sbRun(supabase.from('rapor_ekipler').delete().eq('name', name))
+  await veri({ op: 'delete', table: 'rapor_ekipler', eq: { col: 'name', val: name } })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -336,57 +365,56 @@ export async function sbDeleteGeciciOrder(id) { return sbDeleteEntity('gecici_or
 // Proje modülü
 // ─────────────────────────────────────────────────────────────────────────────
 
+const SIRA_BINA = [{ col: 'sort_order', asc: true }, { col: 'created_at', asc: true }]
+
 export async function sbGetProjeBuildings() {
-  const rows = await sbRun(
-    supabase.from('proje_buildings').select('code').order('sort_order, created_at', { ascending: true })
-  )
+  const rows = await veriSelect('proje_buildings', { columns: 'code', order: SIRA_BINA })
   return (rows || []).map(r => r.code)
 }
 
+// 23505 = benzersizlik ihlali: ayni bina zaten var demek, hata degil (yutulur)
 export async function sbInsertProjeBuilding(code) {
-  const { error } = await supabase.from('proje_buildings').insert([{ code }])
-  if (error && error.code !== '23505') throw error
+  try { await veri({ op: 'insert', table: 'proje_buildings', rows: [{ code }] }) }
+  catch (e) { if (e.code !== '23505') throw e }
 }
 
 export async function sbInsertProjeBuildings(codes) {
   if (!codes || !codes.length) return
   for (let i = 0; i < codes.length; i++) {
-    const { error } = await supabase.from('proje_buildings').insert([{ code: codes[i], sort_order: i }])
-    if (error && error.code !== '23505') console.warn('Bina eklenemedi:', codes[i])
+    try { await veri({ op: 'insert', table: 'proje_buildings', rows: [{ code: codes[i], sort_order: i }] }) }
+    catch (e) { if (e.code !== '23505') console.warn('Bina eklenemedi:', codes[i], e.message) }
   }
 }
 
 export async function sbDeleteProjeBuilding(code) {
-  await sbRun(supabase.from('proje_buildings').delete().eq('code', code))
+  await veri({ op: 'delete', table: 'proje_buildings', eq: { col: 'code', val: code } })
 }
 
 // code kolonu binanin kendisi (ayri id yok) - yeniden adlandirma satiri silmez, sort_order/created_at korunur
 export async function sbRenameProjeBuilding(oldCode, newCode) {
-  await sbRun(supabase.from('proje_buildings').update({ code: newCode }).eq('code', oldCode))
+  await veri({ op: 'update', table: 'proje_buildings', eq: { col: 'code', val: oldCode }, patch: { code: newCode } })
 }
 
 export async function sbGetProjeSections() {
-  const rows = await sbRun(
-    supabase.from('proje_sections').select('name').order('sort_order, created_at', { ascending: true })
-  )
+  const rows = await veriSelect('proje_sections', { columns: 'name', order: SIRA_BINA })
   return (rows || []).map(r => r.name)
 }
 
 export async function sbInsertProjeSection(name, sortOrder = 0) {
-  const { error } = await supabase.from('proje_sections').insert([{ name, sort_order: sortOrder }])
-  if (error && error.code !== '23505') throw error
+  try { await veri({ op: 'insert', table: 'proje_sections', rows: [{ name, sort_order: sortOrder }] }) }
+  catch (e) { if (e.code !== '23505') throw e }
 }
 
 export async function sbInsertProjeSections(names) {
   if (!names || !names.length) return
   for (let i = 0; i < names.length; i++) {
-    const { error } = await supabase.from('proje_sections').insert([{ name: names[i], sort_order: i }])
-    if (error && error.code !== '23505') console.warn('Bölüm eklenemedi:', names[i])
+    try { await veri({ op: 'insert', table: 'proje_sections', rows: [{ name: names[i], sort_order: i }] }) }
+    catch (e) { if (e.code !== '23505') console.warn('Bölüm eklenemedi:', names[i], e.message) }
   }
 }
 
 export async function sbDeleteProjeSection(name) {
-  await sbRun(supabase.from('proje_sections').delete().eq('name', name))
+  await veri({ op: 'delete', table: 'proje_sections', eq: { col: 'name', val: name } })
 }
 
 export async function sbGetProjeSartnames() { return sbGetAll('proje_sartnames') }
@@ -451,7 +479,7 @@ export async function sbInsertProjeLokasyon(e) { return sbInsertEntity('proje_lo
 export async function sbUpdateProjeLokasyon(id, e) { return sbUpdateEntity('proje_lokasyonlar', id, e) }
 export async function sbDeleteProjeLokasyonlar(ids) {
   if (!ids || !ids.length) return
-  await sbRun(supabase.from('proje_lokasyonlar').delete().in('id', ids))
+  await veri({ op: 'delete', table: 'proje_lokasyonlar', in: { col: 'id', vals: ids } })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -537,38 +565,13 @@ function uid8() {
 // Upsert (import / sync sonrası toplu güncelleme)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export async function sbUpsertProjeMaterials(items) {
-  if (!items || !items.length) return
-  const chunks = []
-  for (let i = 0; i < items.length; i += 500) chunks.push(items.slice(i, i + 500))
-  for (const chunk of chunks) {
-    await sbRun(
-      supabase.from('proje_materials').upsert(chunk.map(m => ({ id: m.id, data: m })), { onConflict: 'id' })
-    )
-  }
-}
-
-export async function sbUpsertProjeSpecs(items) {
-  if (!items || !items.length) return
-  const chunks = []
-  for (let i = 0; i < items.length; i += 500) chunks.push(items.slice(i, i + 500))
-  for (const chunk of chunks) {
-    await sbRun(
-      supabase.from('proje_specs').upsert(chunk.map(s => ({ id: s.id, data: s })), { onConflict: 'id' })
-    )
-  }
-}
-
-export async function sbUpsertProjeItems(items) {
-  if (!items || !items.length) return
-  const chunks = []
-  for (let i = 0; i < items.length; i += 500) chunks.push(items.slice(i, i + 500))
-  for (const chunk of chunks) {
-    await sbRun(
-      supabase.from('proje_items').upsert(chunk.map(it => ({ id: it.id, data: it })), { onConflict: 'id' })
-    )
-  }
-}
+// Uc upsert de sbUpsertEntities'e baglandi: eskiden 500 satirlik SABIT bloklar
+// halinde gidiyorlardi, bayt siniri yoktu. Gomulu foto/PDF tasiyan kayitlarda bu
+// blok onlarca MB'a cikabiliyor; istek artik Vercel fonksiyonundan gectigi icin
+// 4.5 MB govde sinirini asar ve sessizce basarisiz olurdu.
+export async function sbUpsertProjeMaterials(items) { return sbUpsertEntities('proje_materials', items) }
+export async function sbUpsertProjeSpecs(items) { return sbUpsertEntities('proje_specs', items) }
+export async function sbUpsertProjeItems(items) { return sbUpsertEntities('proje_items', items) }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tüm veriyi Supabase'den yükle (loadDB yerine)
@@ -589,7 +592,7 @@ export async function sbLoadAllData(scope) {
   const needProjeFull = need('proje') || need('siparis')
   const needCompanies = need('proje') || need('tanimlar') || need('siparis')
 
-  const tasks = { settingsRes: supabase.from('app_settings').select('key, value') }
+  const tasks = { settingsRes: veriSelect('app_settings', { columns: 'key, value' }) }
   if (need('alet')) tasks.aletItems = sbGetAll('alet_items')
   if (need('saha')) {
     tasks.sahaPanels = sbGetAll('saha_panels')
@@ -604,7 +607,7 @@ export async function sbLoadAllData(scope) {
   }
   if (need('rapor')) {
     tasks.raporEntries = sbGetAll('rapor_entries')
-    tasks.raporEkiplerRes = supabase.from('rapor_ekipler').select('name').order('created_at', { ascending: true })
+    tasks.raporEkiplerRes = veriSelect('rapor_ekipler', { columns: 'name', order: [{ col: 'created_at', asc: true }] })
     // tutanaklar tablosu supabase_schema.sql'in yeni bölümüyle oluşturulur; migration
     // henüz çalıştırılmamışsa TÜM yüklemeyi kilitlememesi için hataya toleranslı.
     // Eksikse uygulamaya haber verilir: Tutanak ekrani "once SQL'i calistirin" uyarisi gosterir.
@@ -614,8 +617,8 @@ export async function sbLoadAllData(scope) {
     })
   }
   if (needProjeCore) {
-    tasks.projeBuildingsRes = supabase.from('proje_buildings').select('code').order('sort_order, created_at', { ascending: true })
-    tasks.projeSectionsRes = supabase.from('proje_sections').select('name').order('sort_order, created_at', { ascending: true })
+    tasks.projeBuildingsRes = veriSelect('proje_buildings', { columns: 'code', order: SIRA_BINA })
+    tasks.projeSectionsRes = veriSelect('proje_sections', { columns: 'name', order: SIRA_BINA })
     tasks.projeSartnames = sbGetAll('proje_sartnames')
     tasks.projeMaterials = sbGetAll('proje_materials')
     tasks.projeSpecs = sbGetAll('proje_specs')
@@ -632,7 +635,7 @@ export async function sbLoadAllData(scope) {
     tasks.projeBinaModelleri = sbGetAll('proje_bina_modelleri').catch(() => [])
   }
   if (needCompanies) tasks.companies = sbGetAll('companies').catch(() => [])
-  if (!scope) tasks.auditRes = supabase.from('audit_log').select('data').order('created_at', { ascending: true }).limit(2000)
+  if (!scope) tasks.auditRes = veriSelect('audit_log', { columns: 'data', order: [{ col: 'created_at', asc: true }], limit: 2000 })
 
   const keys = Object.keys(tasks)
   // Yukleme ekranina GERCEK ilerleme bildirilir: her tablo tamamlandiginda hangi tablonun
@@ -649,12 +652,12 @@ export async function sbLoadAllData(scope) {
   const r = {}
   keys.forEach((k, i) => { r[k] = results[i] })
 
-  const ekipler = r.raporEkiplerRes ? (r.raporEkiplerRes.data || []).map(x => x.name) : []
-  const buildings = r.projeBuildingsRes ? (r.projeBuildingsRes.data || []).map(x => x.code) : []
-  const sections = r.projeSectionsRes ? (r.projeSectionsRes.data || []).map(x => x.name) : []
-  const auditEntries = r.auditRes ? (r.auditRes.data || []).map(x => x.data) : []
+  const ekipler = (r.raporEkiplerRes || []).map(x => x.name)
+  const buildings = (r.projeBuildingsRes || []).map(x => x.code)
+  const sections = (r.projeSectionsRes || []).map(x => x.name)
+  const auditEntries = (r.auditRes || []).map(x => x.data)
   const settingsMap = {}
-  ;(r.settingsRes.data || []).forEach(s => { settingsMap[s.key] = s.value })
+  ;(r.settingsRes || []).forEach(s => { settingsMap[s.key] = s.value })
 
   if (!scope) {
     // Supabase boşsa null döndür → localStorage migration tetiklenecek. Kismi (scope'lu)
@@ -775,9 +778,12 @@ export async function sbMigrateLocalDB(localDB) {
   if (localDB.companies?.length)
     push('Sirketler', sbInsertEntities('companies', localDB.companies))
   if (localDB.meta?.audit?.length)
-    push('Denetim Kaydi', supabase.from('audit_log').insert(
-      localDB.meta.audit.map(entry => ({ data: entry }))
-    ).then(() => {}))
+    push('Denetim Kaydi', (async () => {
+      // audit girdileri id tasimaz; bayt/satir sinirina gore parcalanarak yazilir
+      for (const chunk of bayaGoreParcala(localDB.meta.audit)) {
+        await veri({ op: 'insert', table: 'audit_log', rows: chunk.map(entry => ({ data: entry })) })
+      }
+    })())
 
   // meta ayarlarinin TAMAMI geri yazilir (binaGiris, migration flag'leri vb.) -
   // audit ayri tabloya gider, updated/seeded/_partial calisma-ani degerleridir
@@ -815,10 +821,10 @@ export async function sbWipeAllData() {
   ]
   await Promise.allSettled([
     ...textIdTables.map(t => sbDeleteAll(t)),
-    supabase.from('rapor_ekipler').delete().gte('created_at', '2000-01-01T00:00:00Z'),
-    supabase.from('proje_buildings').delete().gte('created_at', '2000-01-01T00:00:00Z'),
-    supabase.from('proje_sections').delete().gte('created_at', '2000-01-01T00:00:00Z'),
-    supabase.from('saha_settings').delete().gte('created_at', '2000-01-01T00:00:00Z'),
+    sbDeleteAll('rapor_ekipler'),
+    sbDeleteAll('proje_buildings'),
+    sbDeleteAll('proje_sections'),
+    sbDeleteAll('saha_settings'),
     // audit_log ve app_settings silinmez
   ])
 }
@@ -833,8 +839,8 @@ export async function sbWipeProjeData() {
     sbDeleteAll('proje_sartnames'),
     sbDeleteAll('proje_bina_modelleri'),
     sbDeleteAll('proje_lokasyonlar'),
-    supabase.from('proje_buildings').delete().gte('created_at', '2000-01-01T00:00:00Z'),
-    supabase.from('proje_sections').delete().gte('created_at', '2000-01-01T00:00:00Z'),
+    sbDeleteAll('proje_buildings'),
+    sbDeleteAll('proje_sections'),
   ])
 }
 
@@ -846,8 +852,8 @@ export async function sbWipeProjeBinaData() {
   await Promise.allSettled([
     sbDeleteAll('proje_bina_modelleri'),
     sbDeleteAll('proje_lokasyonlar'),
-    supabase.from('proje_buildings').delete().gte('created_at', '2000-01-01T00:00:00Z'),
-    supabase.from('proje_sections').delete().gte('created_at', '2000-01-01T00:00:00Z'),
+    sbDeleteAll('proje_buildings'),
+    sbDeleteAll('proje_sections'),
   ])
 }
 
@@ -890,7 +896,7 @@ export async function sbWipeSahaData() {
     sbDeleteAll('saha_panels'),
     sbDeleteAll('saha_lines'),
     sbDeleteAll('saha_sockets'),
-    supabase.from('saha_settings').delete().gte('created_at', '2000-01-01T00:00:00Z'),
+    sbDeleteAll('saha_settings'),
   ])
 }
 
@@ -907,6 +913,6 @@ export async function sbWipeGeciciData() {
 export async function sbWipeRaporData() {
   await Promise.allSettled([
     sbDeleteAll('rapor_entries'),
-    supabase.from('rapor_ekipler').delete().gte('created_at', '2000-01-01T00:00:00Z'),
+    sbDeleteAll('rapor_ekipler'),
   ])
 }
