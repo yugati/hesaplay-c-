@@ -136,7 +136,8 @@ import {
   sbInsertProjeBinaModel,
   sbUpdateProjeBinaModel,
   sbDeleteProjeBinaModel,
-  sbUploadBinaModelFile,
+  sbModelYukle,
+  sbModelUrl,
   sbDeleteBinaModelFile,
   sbBelgeUrl,
   sbBelgeYukle,
@@ -348,7 +349,8 @@ window.sbGetProjeBinaModelleri  = sbGetProjeBinaModelleri
 window.sbInsertProjeBinaModel   = guardedSafe('tanimlar', 'create', sbInsertProjeBinaModel)
 window.sbUpdateProjeBinaModel   = guardedSafe('tanimlar', 'update', sbUpdateProjeBinaModel)
 window.sbDeleteProjeBinaModel   = guardedSafe('tanimlar', 'delete', sbDeleteProjeBinaModel)
-window.sbUploadBinaModelFile    = guardedSafe('tanimlar', 'create', sbUploadBinaModelFile)
+window.sbModelYukle             = guardedThrow('tanimlar', 'create', sbModelYukle)
+window.sbModelUrl               = sbModelUrl
 window.sbDeleteBinaModelFile    = guardedSafe('tanimlar', 'delete', sbDeleteBinaModelFile)
 
 // ─── Belgeler (fatura PDF) ───────────────────────────────────────────────────

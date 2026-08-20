@@ -1,15 +1,19 @@
-import { createClient } from '@supabase/supabase-js'
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
-
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  throw new Error(
-    'Missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY in the Vite environment.'
-  )
-}
-
-export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY)
+// ─────────────────────────────────────────────────────────────────────────────
+// ASAMA 3 - TARAYICIDA ARTIK SUPABASE ISTEMCISI VE ANAHTARI YOK
+//
+// Eskiden burada anon ("publishable") anahtarla bir Supabase istemcisi kuruluyordu.
+// O anahtar derlemede JS paketine gomuluyor, veritabaninin butun tablolari da
+// "FOR ALL TO anon USING (true)" politikasiyla acik oldugu icin siteyi acan
+// herkes GIRIS YAPMADAN tum proje verisini okuyabiliyor, yazabiliyor ve
+// silebiliyordu.
+//
+// Artik her sey /api/* uzerinden gidiyor: veri /api/veri, dosyalar /api/dosya.
+// Ikisi de oturum dogrular ve sunucuda service_role ile calisir. Dosya yukleme
+// bile anahtarsiz: sunucudan imzali adres alinir, tarayici dogrudan oraya PUT eder.
+//
+// Bu dosyada BILEREK hicbir Supabase import'u yoktur; eklenirse anahtar yeniden
+// pakete girer ve arka kapi geri acilir. Sunucu tarafi icin lib/supabaseAdmin.js.
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Users — artik dogrudan Supabase'e degil, /api/* sunucu fonksiyonlarina gider.
@@ -664,30 +668,23 @@ export async function sbDeleteProjeLokasyonlar(ids) {
 // Bina 3D Modelleri (glTF/.glb) - Supabase Storage + JSONB referans tablosu
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BINA_MODEL_BUCKET = 'bina-modelleri'
-
 export async function sbGetProjeBinaModelleri() { return sbGetAll('proje_bina_modelleri') }
 export async function sbInsertProjeBinaModel(e) { return sbInsertEntity('proje_bina_modelleri', e) }
 export async function sbUpdateProjeBinaModel(id, e) { return sbUpdateEntity('proje_bina_modelleri', id, e) }
 export async function sbDeleteProjeBinaModel(id) { return sbDeleteEntity('proje_bina_modelleri', id) }
 
-// Dosyayı bucket'a yükler ve genel-erişim URL'sini döndürür.
-export async function sbUploadBinaModelFile(bina, file) {
-  const ext = (file.name.split('.').pop() || 'glb').toLowerCase()
-  const path = `${bina}/${Date.now()}_${uid8()}.${ext}`
-  const { error } = await supabase.storage.from(BINA_MODEL_BUCKET).upload(path, file, {
-    cacheControl: '31536000',
-    upsert: false,
-    contentType: file.type || 'model/gltf-binary',
-  })
-  if (error) throw error
-  const { data } = supabase.storage.from(BINA_MODEL_BUCKET).getPublicUrl(path)
-  return { url: data.publicUrl, path }
+/* 3D model dosyasi: eskiden tarayici anon anahtarla DOGRUDAN public kovaya yukluyor
+   ve kalici bir public URL uretiyordu - o adresi bilen herkes dosyayi indirebilirdi.
+   Artik kova PRIVATE; yukleme sunucudan alinan imzali adresle, okuma da kisa omurlu
+   imzali adresle yapiliyor. Kayitta URL degil yalnizca 'path' saklanir. */
+export async function sbModelYukle(bina, file) {
+  return dosyaYukle('model', bina.replace(/[^A-Za-z0-9_-]/g, '') || 'bina', file)
 }
-
+export async function sbModelUrl(path) {
+  return dosyaUrl(path, 'bina-modelleri')
+}
 export async function sbDeleteBinaModelFile(path) {
-  if (!path) return
-  await supabase.storage.from(BINA_MODEL_BUCKET).remove([path])
+  return dosyaSil(path, 'bina-modelleri')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -699,45 +696,49 @@ export async function sbDeleteBinaModelFile(path) {
 // sadece kullanici PDF'e tikladiginda iner.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const BELGE_BUCKET = 'belgeler'
-
-// Kisa omurlu (5 dk) imzali okuma adresi.
-export async function sbBelgeUrl(path) {
-  const { url } = await authFetch('/api/dosya?path=' + encodeURIComponent(path))
+/* Kisa omurlu (5 dk) imzali okuma adresi. */
+async function dosyaUrl(path, kova) {
+  const q = '/api/dosya?path=' + encodeURIComponent(path) + (kova ? '&kova=' + encodeURIComponent(kova) : '')
+  const { url } = await authFetch(q)
   return url
 }
 
-/* Dosyayi Storage'a yukler ve kayda yazilacak kunyeyi dondurur: {name, path, size}.
-   Dosyanin KENDISI sunucudan gecmez - sunucu yalnizca imzali yukleme adresi verir,
-   tarayici dogrudan Storage'a gonderir. Boylece Vercel'in 4.5 MB govde siniri
-   buyuk faturalarda yola girmez. */
-export async function sbBelgeYukle(kind, id, file) {
-  const { path, token } = await authFetch('/api/dosya', {
+/* Dosyayi Storage'a yukler, kayda yazilacak kunyeyi dondurur: {name, path, size}.
+   Dosyanin KENDISI sunucudan gecmez: sunucudan imzali yukleme adresi alinir, dosya
+   dogrudan Storage'a PUT edilir. Iki kazanc: Vercel'in 4.5 MB govde siniri yola
+   girmez ve tarayicinin hicbir Supabase anahtarina ihtiyaci kalmaz (imza adresin
+   icinde tasinir - Asama 3'te anon anahtar paketten tamamen kaldirildi). */
+async function dosyaYukle(kind, id, file) {
+  const { path, signedUrl } = await authFetch('/api/dosya', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ kind, id, name: file.name }),
   })
-  const { error } = await supabase.storage.from(BELGE_BUCKET).uploadToSignedUrl(path, token, file, {
-    contentType: file.type || 'application/pdf',
+  if (!signedUrl) throw new Error('Yukleme adresi alinamadi')
+  const r = await fetch(signedUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
   })
-  if (error) throw error
+  if (!r.ok) throw new Error('Dosya yuklenemedi (' + r.status + ')')
   return { name: file.name, path, size: file.size }
 }
 
-// Kayittan cikarilan dosyayi kovadan da siler. Hata firlatmaz: kayit zaten
-// guncellenmisse, kovada kalan yetim dosya isleyisi bozmaz.
-export async function sbBelgeSil(path) {
+/* Kayittan cikarilan dosyayi kovadan da siler. Hata firlatmaz: kayit zaten
+   guncellenmisse, kovada kalan yetim dosya isleyisi bozmaz. */
+async function dosyaSil(path, kova) {
   if (!path) return
   try {
-    await authFetch('/api/dosya?path=' + encodeURIComponent(path), { method: 'DELETE' })
+    const q = '/api/dosya?path=' + encodeURIComponent(path) + (kova ? '&kova=' + encodeURIComponent(kova) : '')
+    await authFetch(q, { method: 'DELETE' })
   } catch (e) {
-    console.warn('Belge silinemedi (kovada kaldi):', path, e.message)
+    console.warn('Dosya silinemedi (kovada kaldi):', path, e.message)
   }
 }
 
-function uid8() {
-  return Math.random().toString(36).slice(2, 10)
-}
+export async function sbBelgeUrl(path) { return dosyaUrl(path) }
+export async function sbBelgeYukle(kind, id, file) { return dosyaYukle(kind, id, file) }
+export async function sbBelgeSil(path) { return dosyaSil(path) }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Upsert (import / sync sonrası toplu güncelleme)

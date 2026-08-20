@@ -6486,7 +6486,7 @@ function open3DBinaModal(bina){
     <div id="bina3d-slot">${bm?bina3dViewerHtml(bina,bm):bina3dUploadHtml(bina)}</div>
   </div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
-  if(bm) mount3DBinaViewer(bina,bm.url);
+  if(bm) mount3DBinaViewer(bina,bm);
 }
 function icoCube(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>'; }
 function bina3dUploadHtml(bina){
@@ -6508,10 +6508,21 @@ function bina3dViewerHtml(bina,bm){
     <div id="bina3dCanvas" class="bina3d-canvas"><div class="bina3d-loading">Model yukleniyor...</div></div>
     <p style="font-size:11px;color:var(--dim);margin-top:8px">Surukle: dondur · Kaydir: yakinlastir</p>`;
 }
-function mount3DBinaViewer(bina,url){
-  requestAnimationFrame(()=>{
+/* 3D model goruntuleyici. Kayit artik KALICI bir public URL tasimiyor (Asama 3:
+   kova private edildi, tarayicida Supabase anahtari yok) - dosya adresi her
+   goruntulemede /api/dosya'dan kisa omurlu imzali adres olarak alinir.
+   Eski kayitlarda url alani varsa ona duselir (geriye uyum). */
+function mount3DBinaViewer(bina,bm){
+  requestAnimationFrame(async()=>{
     const el=document.getElementById('bina3dCanvas'); if(!el||!window.initBinaViewer)return;
     if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; }
+    let url=bm&&bm.url;
+    if(bm&&bm.path&&window.sbModelUrl){
+      try{ url=await window.sbModelUrl(bm.path); }
+      catch(e){ console.error('3D model adresi alinamadi:',e);
+        el.innerHTML=`<div class="bina3d-loading" style="color:var(--red)">Model adresi alinamadi</div>`; return; }
+    }
+    if(!url){ el.innerHTML=`<div class="bina3d-loading" style="color:var(--red)">Model dosyasi bulunamadi</div>`; return; }
     window._binaViewer=window.initBinaViewer(el,url,{
       onLoaded:()=>{ const l=el.querySelector('.bina3d-loading'); if(l)l.remove(); },
       onError:(err)=>{ console.error('3D model yuklenemedi:',err); el.innerHTML=`<div class="bina3d-loading" style="color:var(--red)">Model yuklenemedi - dosya bozuk olabilir</div>`; }
@@ -6525,9 +6536,9 @@ async function upload3DBinaModel(bina,e){
   if(f.size>BINA3D_MAX_MB*1024*1024){ toast(`Dosya cok buyuk - maks ${BINA3D_MAX_MB}MB`,"err"); return; }
   toast("Model yukleniyor...");
   const old=binaModel(bina);
-  const up=await sbUploadBinaModelFile(bina,f);
+  const up=await window.sbModelYukle(bina,f);
   if(!up)return; // hata zaten toast edildi
-  const entity={id:old?old.id:uid(),bina,url:up.url,path:up.path,fileName:f.name,sizeBytes:f.size,addedAt:Date.now()};
+  const entity={id:old?old.id:uid(),bina,path:up.path,fileName:f.name,sizeBytes:f.size,addedAt:Date.now()};
   if(old){
     await sbUpdateProjeBinaModel(old.id,entity);
     Object.assign(old,entity);
@@ -6538,7 +6549,7 @@ async function upload3DBinaModel(bina,e){
   if(old && old.path && old.path!==up.path) await sbDeleteBinaModelFile(old.path);
   logAction('define','3D Model: '+bina+' / '+f.name);
   const slot=document.getElementById('bina3d-slot');
-  if(slot){ slot.innerHTML=bina3dViewerHtml(bina,entity); mount3DBinaViewer(bina,entity.url); }
+  if(slot){ slot.innerHTML=bina3dViewerHtml(bina,entity); mount3DBinaViewer(bina,entity); }
   toast("3D model kaydedildi");
 }
 async function del3DBinaModel(bina){
