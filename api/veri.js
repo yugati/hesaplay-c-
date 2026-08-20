@@ -35,7 +35,9 @@ const DIGER_TABLOLAR = new Set(['app_settings', 'saha_settings', 'rapor_ekipler'
 const TABLOLAR = new Set([...VARLIK_TABLOLARI, ...DIGER_TABLOLAR])
 
 // select ile istenebilecek sutun kaliplari (serbest metin kabul edilmez)
-const SUTUNLAR = new Set(['id, data', 'id', 'data', 'key, value', 'value', 'name', 'code'])
+// 'id, updated_at': ARTIMLI YUKLEME'nin kimlik listesi - satir basina ~45 bayt.
+// Istemci bunu onbellegiyle karsilastirip yalnizca degisen satirlarin verisini ister.
+const SUTUNLAR = new Set(['id, data', 'id', 'id, updated_at', 'data', 'key, value', 'key, updated_at', 'value', 'name', 'code'])
 // siralama ve eslesme icin kullanilabilecek sutunlar
 const SIRA_SUTUNLARI = new Set(['created_at', 'id', 'sort_order', 'name', 'code'])
 const ESLESME_SUTUNLARI = new Set(['id', 'key', 'name', 'code'])
@@ -91,6 +93,12 @@ export default async function handler(req, res) {
         if (!SIRA_SUTUNLARI.has(s.col)) return hata(res, 400, 'Izin verilmeyen siralama sutunu')
       }
       if (g.eq && !ESLESME_SUTUNLARI.has(g.eq.col)) return hata(res, 400, 'Izin verilmeyen eslesme sutunu')
+      // in: artimli yuklemede YALNIZCA degisen satirlarin verisini istemek icin
+      if (g.in) {
+        if (!ESLESME_SUTUNLARI.has(g.in.col)) return hata(res, 400, 'Izin verilmeyen eslesme sutunu')
+        if (!Array.isArray(g.in.vals) || !g.in.vals.length) return hata(res, 400, 'Deger listesi bos')
+        if (g.in.vals.length > MAX_SATIR) return hata(res, 400, 'Tek istekte en fazla ' + MAX_SATIR + ' kayit')
+      }
       if (Array.isArray(g.range)) {
         const [f, t] = g.range
         if (!Number.isInteger(f) || !Number.isInteger(t) || f < 0 || t < f || t - f >= MAX_SATIR) {
@@ -107,6 +115,7 @@ export default async function handler(req, res) {
         let s = supabaseAdmin.from(table).select(kolon)
         for (const o of (g.order || [])) s = s.order(o.col, { ascending: o.asc !== false })
         if (g.eq) s = s.eq(g.eq.col, g.eq.val)
+        if (g.in) s = s.in(g.in.col, g.in.vals)
         return s
       }
 

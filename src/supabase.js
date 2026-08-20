@@ -125,6 +125,109 @@ async function veriSelect(table, opts = {}) {
   return rows
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ONBELLEK (IndexedDB) - ARTIMLI YUKLEME icin
+//
+// Uygulama her acilista TUM veriyi bastan indiriyordu. Bu, Supabase'in aylik
+// egress kotasini yakan sey oldu (19 Agu 2026'da proje kotadan kapandi).
+// Artik sunucudan yalnizca KIMLIK LISTESI iner (id + updated_at, satir basina
+// ~45 bayt); istemci bunu onbellegiyle karsilastirip SADECE degisen satirlarin
+// verisini ister. Degismeyen satirlar bir daha inmez.
+//
+// Dogruluk: sonuc her zaman SUNUCUNUN kimlik listesinden kurulur. Silinen satir
+// listede olmadigi icin sonuca giremez - onbellekte kalsa bile gorunmez.
+// Herhangi bir aksilikte (IndexedDB yok, surum degisti, satir eksik) tam yukleme
+// yapilir: en kotu ihtimalle eski davranisa doneriz, yanlis veri gosterilmez.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ONBELLEK_DB = 'saha-onbellek'
+const ONBELLEK_DEPO = 'tablolar'
+const ONBELLEK_SURUM = 1        // bicim degisirse artir - eski onbellek yok sayilir
+let _idb = null
+
+function idbAc() {
+  if (_idb) return _idb
+  _idb = new Promise((resolve) => {
+    try {
+      if (typeof indexedDB === 'undefined') return resolve(null)
+      const istek = indexedDB.open(ONBELLEK_DB, ONBELLEK_SURUM)
+      istek.onupgradeneeded = () => {
+        const db = istek.result
+        // surum atlayinca eski depo silinip yeniden kurulur (bicim degisikligi guvenligi)
+        if (db.objectStoreNames.contains(ONBELLEK_DEPO)) db.deleteObjectStore(ONBELLEK_DEPO)
+        db.createObjectStore(ONBELLEK_DEPO)
+      }
+      istek.onsuccess = () => resolve(istek.result)
+      istek.onerror = () => resolve(null)
+      istek.onblocked = () => resolve(null)
+    } catch (e) { resolve(null) }
+  })
+  return _idb
+}
+
+function idbIslem(mod, fn) {
+  return idbAc().then(db => {
+    if (!db) return null
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(ONBELLEK_DEPO, mod)
+        const depo = tx.objectStore(ONBELLEK_DEPO)
+        const r = fn(depo)
+        tx.oncomplete = () => resolve(r && r.result !== undefined ? r.result : null)
+        tx.onerror = () => resolve(null)
+        tx.onabort = () => resolve(null)
+      } catch (e) { resolve(null) }
+    })
+  }).catch(() => null)
+}
+
+// Onbellekten oku: Map(id -> {u: updated_at, d: data})
+async function onbellekOku(table) {
+  const kayit = await idbIslem('readonly', depo => depo.get(table))
+  if (!kayit || !Array.isArray(kayit.satirlar)) return null
+  const m = new Map()
+  for (const s of kayit.satirlar) m.set(s.id, s)
+  return m
+}
+async function onbellekYaz(table, satirlar) {
+  await idbIslem('readwrite', depo => depo.put({ satirlar, ts: Date.now() }, table))
+}
+// Yedekten geri yukleme / toplu temizlik sonrasi onbellek gecersizdir.
+export async function sbOnbellekTemizle() {
+  await idbIslem('readwrite', depo => depo.clear())
+}
+
+/* ANAHTAR-DEGER tablolari icin artimli okuma (app_settings).
+   Ayni mantik, tek farki kimligin 'key' olmasi. app_settings acilistaki en buyuk
+   ikinci kalemdi (0.31 MB): tutanak anteti, kat listesi ve birlestirme gruplari
+   burada duruyor ve degismedikleri halde her acilista iniyorlardi. */
+async function anahtarDegerGetir(table) {
+  const kimlikler = await veriSelect(table, { columns: 'key, updated_at' }) || []
+  const onbellek = (await onbellekOku(table)) || new Map()
+  const eksik = []
+  for (const k of kimlikler) {
+    const c = onbellek.get(k.key)
+    if (!c || c.u !== k.updated_at) eksik.push(k.key)
+  }
+  const yeni = new Map()
+  if (eksik.length) {
+    for (let i = 0; i < eksik.length; i += SB_VERI_GRUBU) {
+      const grup = eksik.slice(i, i + SB_VERI_GRUBU)
+      const satirlar = await veriSelect(table, { columns: 'key, value', in: { col: 'key', vals: grup } }) || []
+      for (const r of satirlar) yeni.set(r.key, r.value)
+    }
+  }
+  const cikti = [], saklanacak = []
+  for (const k of kimlikler) {
+    const v = yeni.has(k.key) ? yeni.get(k.key) : (onbellek.get(k.key) || {}).d
+    if (v === undefined) return veriSelect(table, { columns: 'key, value' }) || []   // guvenli geri donus: tam oku
+    cikti.push({ key: k.key, value: v })
+    saklanacak.push({ id: k.key, u: k.updated_at, d: v })
+  }
+  await onbellekYaz(table, saklanacak)
+  return cikti
+}
+
 // Tablodaki tüm satırları entity dizisi olarak döndürür.
 // HIZ: once toplam satir sayisi ogrenilir (head istegi - veri tasimaz), sonra
 // sayfalar PARALEL cekilir. Eski surum 25'lik sayfalari TEK TEK ardisik cekiyordu;
@@ -157,10 +260,85 @@ async function sbFetchRange(table, from, to) {
     return out
   }
 }
+// Kimlik listesi sayfa boyu: satirlar cok kucuk oldugu icin veri sayfalarindan
+// buyuk tutulur (1022 satirlik tablo 2 istekte iner). Sunucunun tek istek siniri 3000.
+const SB_KIMLIK_SAYFA = 1000
+// Degisen satirlar 'in' ile grup grup istenir - URL uzunlugu makul kalsin diye 100'luk
+const SB_VERI_GRUBU = 100
+
 async function sbGetAll(table) {
   const { count } = await veri({ op: 'count', table })
   const total = count || 0
-  if (!total) return []
+  if (!total) { await onbellekYaz(table, []); return [] }
+
+  // 1) SUNUCUNUN kimlik listesi - sonucun tek dogruluk kaynagi
+  const kimlikler = []
+  for (let f = 0; f < total; f += SB_KIMLIK_SAYFA) {
+    kimlikler.push(...(await veriSelect(table, {
+      columns: 'id, updated_at',
+      order: [{ col: 'created_at', asc: true }, { col: 'id', asc: true }],
+      range: [f, Math.min(total - 1, f + SB_KIMLIK_SAYFA - 1)],
+    }) || []))
+  }
+
+  // 2) onbellekte olmayan ya da degismis satirlari belirle
+  const onbellek = (await onbellekOku(table)) || new Map()
+  const eksikIds = []
+  for (const k of kimlikler) {
+    const c = onbellek.get(k.id)
+    if (!c || c.u !== k.updated_at) eksikIds.push(k.id)
+  }
+
+  // 3) yalnizca onlarin verisini cek
+  const yeni = new Map()
+  if (eksikIds.length) {
+    const gruplar = []
+    for (let i = 0; i < eksikIds.length; i += SB_VERI_GRUBU) gruplar.push(eksikIds.slice(i, i + SB_VERI_GRUBU))
+    const sonuclar = new Array(gruplar.length)
+    let sira = 0
+    const isci = async () => {
+      while (sira < gruplar.length) {
+        const i = sira++
+        sonuclar[i] = await sbFetchIds(table, gruplar[i])
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(SB_PAGE_CONCURRENCY, gruplar.length) }, isci))
+    for (const r of sonuclar.flat()) yeni.set(r.id, r.data)
+  }
+
+  // 4) sonucu SUNUCUNUN sirasiyla kur; bir satir hicbir kaynakta yoksa onbellege
+  //    guvenme, tam yuklemeye don (veri eksik gostermektense yeniden indir)
+  const satirlar = []
+  for (const k of kimlikler) {
+    const d = yeni.has(k.id) ? yeni.get(k.id) : (onbellek.get(k.id) || {}).d
+    if (d === undefined) return sbGetAllTam(table, total)
+    satirlar.push({ id: k.id, u: k.updated_at, d })
+  }
+  await onbellekYaz(table, satirlar)
+  return satirlar.map(s => ({ ...s.d, id: s.id }))
+}
+
+/* Verilen id'lerin verisini getirir (artimli yuklemenin 3. adimi).
+   sbFetchRange'deki gibi zaman asimi kurtarmasi var: bir grup Postgres'in sorgu
+   suresini asarsa ikiye bolunup yeniden denenir. */
+async function sbFetchIds(table, ids) {
+  try {
+    return await veriSelect(table, { columns: 'id, data', in: { col: 'id', vals: ids } }) || []
+  } catch (e) {
+    if (!(e && SB_TIMEOUT_CODES.has(e.code)) || ids.length <= 1) throw e
+    const orta = Math.ceil(ids.length / 2)
+    const [a, b] = await Promise.all([sbFetchIds(table, ids.slice(0, orta)), sbFetchIds(table, ids.slice(orta))])
+    return a.concat(b)
+  }
+}
+
+/* TAM yukleme - artimli yol bir satiri hicbir kaynakta bulamazsa kullanilan guvenli
+   geri donus. Onbellege YAZMAZ, tam tersine o tablonun kaydini siler: buradaki
+   satirlarin updated_at damgasi elimizde olmadigi icin yazilsaydi bir sonraki
+   acilis her satiri "degismis" sanip hepsini yeniden indirirdi. Bos onbellek zaten
+   dogru davranisi verir - sonraki acilis her seyi bir kez cekip duzgun onbellekler. */
+async function sbGetAllTam(table, total) {
+  await onbellekYaz(table, [])
   const ranges = []
   for (let f = 0; f < total; f += SB_PAGE_SIZE) ranges.push([f, Math.min(total - 1, f + SB_PAGE_SIZE - 1)])
   const pages = new Array(ranges.length)
@@ -592,7 +770,7 @@ export async function sbLoadAllData(scope) {
   const needProjeFull = need('proje') || need('siparis')
   const needCompanies = need('proje') || need('tanimlar') || need('siparis')
 
-  const tasks = { settingsRes: veriSelect('app_settings', { columns: 'key, value' }) }
+  const tasks = { settingsRes: anahtarDegerGetir('app_settings') }
   if (need('alet')) tasks.aletItems = sbGetAll('alet_items')
   if (need('saha')) {
     tasks.sahaPanels = sbGetAll('saha_panels')

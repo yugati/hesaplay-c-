@@ -30,6 +30,7 @@ import {
   sbWipeRaporData,
   sbWipeTutanakData,
   // Settings & Audit
+  sbOnbellekTemizle,
   sbGetSetting,
   sbSetSetting,
   sbInsertAuditLog,
@@ -230,6 +231,7 @@ window.sbWipeRaporData     = sbWipeRaporData
 window.sbWipeTutanakData   = sbWipeTutanakData
 
 // ─── Settings & Audit ────────────────────────────────────────────────────────
+window.sbOnbellekTemizle   = sbOnbellekTemizle
 window.sbGetSetting        = sbGetSetting
 window.sbSetSetting        = sbSetSetting
 window.sbInsertAuditLog    = sbInsertAuditLog
