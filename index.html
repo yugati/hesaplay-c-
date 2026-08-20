@@ -9740,25 +9740,25 @@ function pickImg2(e,dropId){ const f=e.target.files[0]; if(!f)return; compressIm
 function matImgDropReset(dropId){ const el=document.getElementById(dropId); if(!el) return; el.classList.remove('has'); el.innerHTML=phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'; }
 // malzeme modalinda internetten resim linki yapistirma (Excel'deki "Resim Linki" sutununun
 // program ici karsiligi). Link once denenerek yuklenir: bozuk/erisilemez linkte kayit KIRLETILMEZ.
-function setMatImgUrl(v){ v=String(v||'').trim();
-  // ALAN BOSALTILDI = fotografi KALDIR. Eskiden burada sessizce return ediliyordu: yanlis urune
-  // yapistirilan link silinip kaydedilse bile modalImg eski linkte kaldigi, kayit da img:modalImg
-  // ile yazildigi icin fotograf urunde duruyordu. Sadece LINKLE eklenmis foto temizlenir.
-  if(!v){ if(modalImg&&/^https?:\/\//i.test(modalImg)){ modalImg=null; matImgDropReset('mtImgDrop'); toast('Fotograf kaldirildi - Kaydet ile kesinlesir'); } return; }
+// ORTAK UYGULAYICI: slot 1 -> modalImg, slot 2 -> modalImg2, dropId hangi modalin kutusu oldugunu
+// soyler. Malzeme ve El Aleti modallari ayni davranisi paylasir - kural tek yerde durur.
+// ALAN BOSALTILDI = fotografi KALDIR. Eskiden burada sessizce return ediliyordu: yanlis urune
+// yapistirilan link silinip kaydedilse bile modalImg eski linkte kaldigi, kayit da img:modalImg
+// ile yazildigi icin fotograf urunde duruyordu. Sadece LINKLE eklenmis foto temizlenir.
+function applyImgUrl(v,dropId,slot){ v=String(v||'').trim();
+  const cur=slot===2?modalImg2:modalImg;
+  const setCur=u=>{ if(slot===2) modalImg2=u; else modalImg=u; };
+  if(!v){ if(cur&&/^https?:\/\//i.test(cur)){ setCur(null); matImgDropReset(dropId); toast((slot===2?'2. fotograf':'Fotograf')+' kaldirildi - Kaydet ile kesinlesir'); } return; }
   if(!/^https?:\/\//i.test(v)){ toast('Gecerli bir link girin (https:// ile baslamali)','err'); return; }
   const test=new Image();
-  test.onload=()=>{ modalImg=v; const el=document.getElementById('mtImgDrop'); if(el){ el.classList.add('has'); el.innerHTML=`<img class="img-prev" src="${v}">`; } toast('Resim linki eklendi'); };
+  test.onload=()=>{ setCur(v); const el=document.getElementById(dropId); if(el){ el.classList.add('has'); el.innerHTML=`<img class="img-prev" src="${v}">`; } toast((slot===2?'2. resim':'Resim')+' linki eklendi'); };
   test.onerror=()=>{ toast('Resim linkten yuklenemedi - linki kontrol edin (dogrudan resim dosyasina isaret etmeli)','err'); };
   test.src=v;
 }
-function setMatImgUrl2(v){ v=String(v||'').trim();
-  if(!v){ if(modalImg2&&/^https?:\/\//i.test(modalImg2)){ modalImg2=null; matImgDropReset('mtImg2Drop'); toast('2. fotograf kaldirildi - Kaydet ile kesinlesir'); } return; }
-  if(!/^https?:\/\//i.test(v)){ toast('Gecerli bir link girin (https:// ile baslamali)','err'); return; }
-  const test=new Image();
-  test.onload=()=>{ modalImg2=v; const el=document.getElementById('mtImg2Drop'); if(el){ el.classList.add('has'); el.innerHTML=`<img class="img-prev" src="${v}">`; } toast('2. resim linki eklendi'); };
-  test.onerror=()=>{ toast('Resim linkten yuklenemedi - linki kontrol edin (dogrudan resim dosyasina isaret etmeli)','err'); };
-  test.src=v;
-}
+function setMatImgUrl(v){ applyImgUrl(v,'mtImgDrop',1); }
+function setMatImgUrl2(v){ applyImgUrl(v,'mtImg2Drop',2); }
+function setAletImgUrl(v){ applyImgUrl(v,'aImgDrop',1); }
+function setAletImgUrl2(v){ applyImgUrl(v,'aImg2Drop',2); }
 /* PDF SECIMI - dosya artik kayda base64 olarak GOMULMEZ; Storage'a yuklenir, kayitta yalnizca
    {name, path, size} kunyesi durur (bkz. api/dosya.js, src/supabase.js sbBelgeYukle).
    Neden: gomulu PDF'ler uygulamanin her acilista indirdigi veriyi 33 MB'a cikarmisti.
@@ -10909,7 +10909,7 @@ const ALET_DURUM=[['depo','Depoda'],['saha','Sahada'],['tamir','Tamirde'],['kayi
 function aletDurumTag(d){ const m={depo:'Depoda',saha:'Sahada',tamir:'Tamirde',kayip:'Kayip'}; return `<span class="tool-status ts-${d||'depo'}">${m[d||'depo']}</span>`; }
 function renderAletler(){
   let items=DB.alet.items.slice();
-  if(SEARCH){ items=items.filter(x=>matchText((x.ad||'')+' '+(x.seri||'')+' '+(x.marka||'')+' '+(x.zimmet||''), SEARCH)); }
+  if(SEARCH){ items=items.filter(x=>matchText((x.ad||'')+' '+(x.seri||'')+' '+(x.marka||'')+' '+(x.zimmet||'')+' '+(x.kod||'')+' '+(x.barkod||'')+' '+(x.renk||'')+' '+(x.olcu||'')+' '+(x.madde||''), SEARCH)); }
   items.sort((a,b)=>(a.ad||'').localeCompare(b.ad||'','tr'));
   const total=DB.alet.items.length;
   const sahada=DB.alet.items.filter(x=>x.durum==='saha').length;
@@ -10918,9 +10918,9 @@ function renderAletler(){
   let rows='';
   if(items.length===0) rows=emptyRow(7,SEARCH?'Eslesen alet yok':'Henuz el aleti eklenmedi','"Alet Ekle" ile baslayin');
   else items.forEach(x=>{
-    const thumb=x.img?`<img class="thumb" src="${x.img}" onclick="lightbox('${x.img}')">`:phThumb();
+    const thumb=x.img?`<img class="thumb" src="${x.img}" onclick="lightbox(${lbCall([x.img,x.img2])})">`:phThumb();
     rows+=`<tr><td>${thumb}</td>
-      <td><div class="t-name">${esc(x.ad)}</div><div class="t-code">${esc(x.marka||'')}</div></td>
+      <td><div class="t-name">${esc(x.ad)}</div><div class="t-code">${esc([x.kod,x.marka].filter(Boolean).join(' · '))}</div></td>
       <td class="t-code" style="font-size:12px">${esc(x.seri||'-')}</td>
       <td>${aletDurumTag(x.durum)}</td>
       <td class="t-meta">${esc(x.zimmet||'-')}</td>
@@ -10931,28 +10931,50 @@ function renderAletler(){
       </div></td></tr>`;
   });
   return statRow([['Toplam Alet',total,'kayitli','#d97706'],['Sahada',sahada,'kullanimda','var(--amber)'],['Tamirde',tamir,'serviste','var(--red)'],['Kayip',kayip,'bulunamiyor','var(--dim)']])
-    +`<div class="toolbar">${searchBox('Alet adi, seri no, marka veya zimmet ara...')}
+    +`<div class="toolbar">${searchBox('Alet adi, urun kodu, seri no, barkod, marka veya zimmet ara...')}
       <button class="btn btn-grid" onclick="exportAletExcel()">${icoXls()} Excel Raporu</button>
       ${canCreate('alet')?`<button class="btn btn-order" onclick="openAletOrderModal()">${icoDoc()} Fatura ile Ekle</button>
       <button class="btn btn-add" onclick="openAletModal()">${icoPlus()} Alet Ekle</button>`:''}</div>`
-    +`<div class="tablewrap"><table><thead><tr><th></th><th>Alet / Marka</th><th>Seri No</th><th>Durum</th><th>Zimmet</th><th>Tarih</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    +`<div class="tablewrap"><table><thead><tr><th></th><th>Alet / Kod · Marka</th><th>Seri No</th><th>Durum</th><th>Zimmet</th><th>Tarih</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
-function openAletModal(id){ if(!canEdit('alet')) return; modalImg=null; const x=id?DB.alet.items.find(i=>i.id===id):null;
+function openAletModal(id){ if(!canEdit('alet')) return; modalImg=null; modalImg2=null; const x=id?DB.alet.items.find(i=>i.id===id):null;
   if(x&&x.img) modalImg=x.img;
-  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>${x?'Alet Duzenle':'El Aleti Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
-    <div class="frow"><label>Alet Adi *</label><input id="a_ad" value="${x?esc(x.ad):''}" placeholder="orn. Darbeli Matkap"></div>
-    <div class="frow two"><div><label>Marka / Model</label><input id="a_marka" value="${x?esc(x.marka||''):''}" placeholder="orn. Bosch GSB 18V"></div><div><label>Seri Numarasi *</label><input id="a_seri" value="${x?esc(x.seri||''):''}" placeholder="orn. SN-2024-0918"></div></div>
+  if(x&&x.img2) modalImg2=x.img2;
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${x?'Alet Duzenle':'El Aleti Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <div class="frow"><label>Urun Kodu</label><input id="a_kod" value="${x?esc(x.kod||''):''}" placeholder="orn. 121491"></div>
+    <div class="frow"><label>Malzeme Adi ve Ozelligi *</label><input id="a_ad" value="${x?esc(x.ad):''}" placeholder="orn. Darbeli Matkap 18V / SDS-Plus"></div>
+    <div class="frow two"><div><label>Marka / Model</label><input id="a_marka" value="${x?esc(x.marka||''):''}" placeholder="orn. Bosch GSB 18V"></div><div><label>Birim</label><input id="a_birim" value="${x?esc(x.birim||''):''}" placeholder="ADET"></div></div>
+    <div class="frow two"><div><label>Barkod</label><input id="a_barkod" value="${x?esc(x.barkod||''):''}" placeholder="orn. 8690000000000"></div><div><label>Seri Numarasi *</label><input id="a_seri" value="${x?esc(x.seri||''):''}" placeholder="orn. SN-2024-0918"></div></div>
+    <div class="frow two"><div><label>Renk</label><input id="a_renk" value="${x?esc(x.renk||''):''}" placeholder="orn. Mavi"></div><div><label>Olcu ve Boyut</label><input id="a_olcu" value="${x?esc(x.olcu||''):''}" placeholder="orn. 320x210x90 mm"></div></div>
+    <div class="frow two"><div><label>Agirlik (kg)</label><input id="a_agirlik" type="number" step="any" min="0" value="${x&&x.agirlik!=null?x.agirlik:''}" placeholder="0"></div><div><label>Madde</label><input id="a_madde" value="${x?esc(x.madde||''):''}" placeholder="orn. 12"></div></div>
     <div class="frow two"><div><label>Durum</label><select id="a_durum">${ALET_DURUM.map(([v,l])=>`<option value="${v}" ${x&&x.durum===v?'selected':''}>${l}</option>`).join('')}</select></div><div><label>Tarih</label><input id="a_tarih" type="date"></div></div>
     <div class="frow"><label>Zimmetli Kisi / Konum</label><input id="a_zimmet" value="${x?esc(x.zimmet||''):''}" placeholder="orn. Ahmet Y. / A Blok"></div>
     <div class="frow"><label>Not</label><textarea id="a_note" placeholder="Kalibrasyon, aksesuar, durum notu...">${x?esc(x.note||''):''}</textarea></div>
-    <div class="frow"><label>Alet Fotografi</label><div class="drop ${x&&x.img?'has':''}" id="aImgDrop" onclick="document.getElementById('aImgInput').click()">${x&&x.img?`<img class="img-prev" src="${x.img}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div><input type="file" id="aImgInput" accept="image/*" class="hidden" onchange="pickImg(event,'aImgDrop')"></div>
+    <div class="frow"><label>Alet Fotografi  <span class="t-meta">(dosya secin veya internetten resim linki yapistirin)</span></label>
+      <div class="drop ${x&&x.img?'has':''}" id="aImgDrop" onclick="document.getElementById('aImgInput').click()">${x&&x.img?`<img class="img-prev" src="${x.img}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div>
+      <input type="file" id="aImgInput" accept="image/*" class="hidden" onchange="pickImg(event,'aImgDrop')">
+      <input id="a_imgUrl" style="margin-top:7px" placeholder="veya resim linki: https://..." value="${x&&x.img&&/^https?:/i.test(x.img)?esc(x.img):''}" onchange="setAletImgUrl(this.value)"></div>
+    <div class="frow"><label>Alet Fotografi 2  <span class="t-meta">(opsiyonel - 2 fotograf girilirse buyutulen goruntude sag/sol okla gecis yapilir)</span></label>
+      <div class="drop ${x&&x.img2?'has':''}" id="aImg2Drop" onclick="document.getElementById('aImg2Input').click()">${x&&x.img2?`<img class="img-prev" src="${x.img2}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div>
+      <input type="file" id="aImg2Input" accept="image/*" class="hidden" onchange="pickImg2(event,'aImg2Drop')">
+      <input id="a_img2Url" style="margin-top:7px" placeholder="veya resim linki: https://..." value="${x&&x.img2&&/^https?:/i.test(x.img2)?esc(x.img2):''}" onchange="setAletImgUrl2(this.value)"></div>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveAlet(${x?`'${x.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   document.getElementById('a_tarih').value=x&&x.tarih?new Date(x.tarih).toISOString().slice(0,10):new Date().toISOString().slice(0,10);
 }
 async function saveAlet(id){ if(!guard('define',{bina:PBINA}))return; const ad=document.getElementById('a_ad').value.trim(); const seri=document.getElementById('a_seri').value.trim();
-  if(!ad){toast("Alet adi zorunlu","err");return;} if(!seri){toast("Seri numarasi zorunlu","err");return;}
-  const data={ad,seri,marka:document.getElementById('a_marka').value.trim(),durum:document.getElementById('a_durum').value,tarih:new Date(document.getElementById('a_tarih').value||Date.now()).getTime(),zimmet:document.getElementById('a_zimmet').value.trim(),note:document.getElementById('a_note').value.trim(),img:modalImg};
+  if(!ad){toast("Malzeme adi zorunlu","err");return;} if(!seri){toast("Seri numarasi zorunlu","err");return;}
+  const agirlikRaw=document.getElementById('a_agirlik').value.trim();
+  if(agirlikRaw!==''&&isNaN(Number(agirlikRaw))){toast("Agirlik sayisal olmali","err");return;}
+  // FOTOGRAF LINKI - son soz ALANIN kaydetme anindaki degeridir (ayni kural saveMaterial'de de var):
+  // link kutusu bosaltilmissa linkle eklenmis fotograf silinir. Dosyadan yuklenen (data:) fotograf
+  // etkilenmez - onun linki bu kutuda hic gorunmez, bos kutu yuklenmis fotografi silmemeli.
+  const imgUrlNow=String((document.getElementById('a_imgUrl')||{}).value||'').trim();
+  if(!imgUrlNow && modalImg && /^https?:\/\//i.test(modalImg)) modalImg=null;
+  const img2UrlNow=String((document.getElementById('a_img2Url')||{}).value||'').trim();
+  if(!img2UrlNow && modalImg2 && /^https?:\/\//i.test(modalImg2)) modalImg2=null;
+  const g=i=>document.getElementById(i).value.trim();
+  const data={ad,seri,kod:g('a_kod'),marka:g('a_marka'),birim:g('a_birim')||'ADET',barkod:g('a_barkod'),renk:g('a_renk'),olcu:g('a_olcu'),agirlik:agirlikRaw!==''?Number(agirlikRaw):null,madde:g('a_madde'),durum:document.getElementById('a_durum').value,tarih:new Date(document.getElementById('a_tarih').value||Date.now()).getTime(),zimmet:g('a_zimmet'),note:g('a_note'),img:modalImg,img2:modalImg2};
   if(id){
     const x=DB.alet.items.find(i=>i.id===id);
     const updated={...x,...data};
@@ -10968,9 +10990,9 @@ async function saveAlet(id){ if(!guard('define',{bina:PBINA}))return; const ad=d
 async function delAlet(id){ if(!guard('delete'))return; if(!confirm("Bu aleti silmek istiyor musunuz?"))return; await sbDeleteAletItem(id); DB.alet.items=DB.alet.items.filter(i=>i.id!==id); render(); toast("Alet silindi"); }
 function exportAletExcel(){ const items=DB.alet.items; if(items.length===0){toast("Veri yok","err");return;}
   const wb=XLSX.utils.book_new(); const m={depo:'Depoda',saha:'Sahada',tamir:'Tamirde',kayip:'Kayip'};
-  const rows=[["Alet Adi","Marka/Model","Seri No","Durum","Zimmet/Konum","Tarih","Not","Foto"]];
-  items.slice().sort((a,b)=>(a.ad||'').localeCompare(b.ad||'','tr')).forEach(x=>rows.push([x.ad,x.marka||'',x.seri||'',m[x.durum||'depo'],x.zimmet||'',x.tarih?fmtDate(x.tarih):'',x.note||'',x.img?'Var':'-']));
-  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:26},{wch:20},{wch:18},{wch:10},{wch:22},{wch:12},{wch:28},{wch:7}];
+  const rows=[["Urun Kodu","Malzeme Adi ve Ozelligi","Marka/Model","Birim","Barkod","Seri No","Renk","Olcu ve Boyut","Agirlik","Madde","Durum","Zimmet/Konum","Tarih","Not","Foto"]];
+  items.slice().sort((a,b)=>(a.ad||'').localeCompare(b.ad||'','tr')).forEach(x=>rows.push([x.kod||'',x.ad,x.marka||'',x.birim||'',x.barkod||'',x.seri||'',x.renk||'',x.olcu||'',x.agirlik!=null&&x.agirlik!==''?Number(x.agirlik):'',x.madde||'',m[x.durum||'depo'],x.zimmet||'',x.tarih?fmtDate(x.tarih):'',x.note||'',[x.img,x.img2].filter(Boolean).length||'-']));
+  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:14},{wch:32},{wch:18},{wch:8},{wch:16},{wch:18},{wch:12},{wch:18},{wch:9},{wch:9},{wch:10},{wch:22},{wch:12},{wch:26},{wch:6}];
   XLSX.utils.book_append_sheet(wb,ws,"El Aletleri"); XLSX.writeFile(wb,`El_Aletleri_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel raporu indirildi");
 }
 
@@ -15906,13 +15928,15 @@ let aOrderLines=[];
 function aletSrc(){
   const map={};
   DB.alet.items.forEach(x=>{ const k=(x.ad||'').trim().toLowerCase();
-    if(!map[k]) map[k]={ad:x.ad,marka:x.marka||'',alt:(x.marka||'')+' '+(x.seri||''),sub:(x.marka?x.marka:'')+(x.seri?' · '+x.seri:'')}; });
+    if(!map[k]) map[k]={ad:x.ad,marka:x.marka||'',kod:x.kod||'',barkod:x.barkod||'',
+      alt:(x.kod||'')+' '+(x.marka||'')+' '+(x.barkod||'')+' '+(x.seri||''),
+      sub:[x.kod,x.marka].filter(Boolean).join(' · ')+(x.seri?' · '+x.seri:'')}; });
   return Object.values(map).map(o=>({ad:o.ad,alt:o.alt,sub:o.sub,obj:o}));
 }
-function openAletOrderModal(){ if(!canCreate('alet')) return; modalPdf=null; aOrderLines=[{ad:'',marka:'',seri:''}];
-  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide"><div class="modal-head"><h3>Fatura ile Alet Girisi</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+function openAletOrderModal(){ if(!canCreate('alet')) return; modalPdf=null; aOrderLines=[aBosSatir()];
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide" style="max-width:820px"><div class="modal-head"><h3>Fatura ile Alet Girisi</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow two"><div><label>Fatura No *</label><input id="ao_no" placeholder="orn. FTR-2026-0210"></div><div><label>Tarih</label><input id="ao_date" type="date"></div></div>
-    <div class="frow"><label>Aletler (her satir bir alet - gecmiste varsa marka otomatik gelir)</label>
+    <div class="frow"><label>Aletler (her satir bir alet - gecmiste ayni isim varsa urun kodu, marka ve barkod otomatik gelir)</label>
       <div id="aolines"></div>
       <button class="add-line" onclick="addALine()">+ Alet Satiri Ekle</button>
     </div>
@@ -15926,20 +15950,26 @@ function renderALines(){ const c=document.getElementById('aolines'); if(!c)retur
   c.innerHTML=aOrderLines.map((l,i)=>{
     const dup=DB.alet.items.find(x=>x.ad.trim().toLowerCase()===(l.ad||'').trim().toLowerCase());
     const info=l.ad?(dup?`<div class="lib-match match-found">Bu isimde alet zaten var - yeni kopya (ayri seri) olarak eklenir</div>`:`<div class="lib-match match-new">Yeni alet eklenecek</div>`):'';
-    return `<div class="oline" style="grid-template-columns:1fr 130px 130px 34px">
-      <div class="ac-wrap"><input id="al_ad_${i}" placeholder="Alet adi (ara...)" value="${esc(l.ad)}" autocomplete="off" onfocus="acAlet(${i})"></div>
+    return `<div class="oline" style="grid-template-columns:110px 1fr 120px 130px 120px 34px">
+      <input placeholder="Urun Kodu" value="${esc(l.kod||'')}" oninput="updALine(${i},'kod',this.value)">
+      <div class="ac-wrap"><input id="al_ad_${i}" placeholder="Malzeme adi ve ozelligi (ara...)" value="${esc(l.ad)}" autocomplete="off" onfocus="acAlet(${i})"></div>
       <input placeholder="Marka/Model" value="${esc(l.marka)}" oninput="updALine(${i},'marka',this.value)">
+      <input placeholder="Barkod" value="${esc(l.barkod||'')}" oninput="updALine(${i},'barkod',this.value)">
       <input placeholder="Seri No" value="${esc(l.seri)}" oninput="updALine(${i},'seri',this.value)">
       <button class="mini-btn del" onclick="rmALine(${i})">${icoTrash()}</button>
       ${info}</div>`;
   }).join('');
 }
 function acAlet(i){ const el=document.getElementById('al_ad_'+i);
-  acOpen(el, aletSrc(), (it,isNew)=>{ aOrderLines[i].ad=it.ad; if(!isNew&&it.marka&&!aOrderLines[i].marka){aOrderLines[i].marka=it.marka;} renderALines(); setTimeout(()=>{const n=document.getElementById('al_ad_'+i);if(n)n.focus();},0); }, true);
+  acOpen(el, aletSrc(), (it,isNew)=>{ aOrderLines[i].ad=it.ad;
+    // gecmisteki kunye yalnizca BOS alanlari doldurur: kullanicinin elle yazdigi deger ezilmez
+    if(!isNew){ ['marka','kod','barkod'].forEach(k=>{ if(it[k]&&!aOrderLines[i][k]) aOrderLines[i][k]=it[k]; }); }
+    renderALines(); setTimeout(()=>{const n=document.getElementById('al_ad_'+i);if(n)n.focus();},0); }, true);
 }
 function updALine(i,k,v){ aOrderLines[i][k]=v; }
-function addALine(){ aOrderLines.push({ad:'',marka:'',seri:''}); renderALines(); }
-function rmALine(i){ aOrderLines.splice(i,1); if(aOrderLines.length===0)aOrderLines.push({ad:'',marka:'',seri:''}); renderALines(); }
+function aBosSatir(){ return {ad:'',marka:'',seri:'',kod:'',barkod:''}; }
+function addALine(){ aOrderLines.push(aBosSatir()); renderALines(); }
+function rmALine(i){ aOrderLines.splice(i,1); if(aOrderLines.length===0)aOrderLines.push(aBosSatir()); renderALines(); }
 async function saveAletOrder(){
   if(!guard('order',{bina:PBINA})){return;}
   const no=document.getElementById('ao_no').value.trim(); if(!no){toast("Fatura no zorunlu","err");return;}
@@ -15947,7 +15977,7 @@ async function saveAletOrder(){
   aOrderLines.forEach((l,i)=>{ const el=document.getElementById('al_ad_'+i); if(el)l.ad=el.value; });
   const valid=aOrderLines.filter(l=>l.ad.trim());
   if(valid.length===0){toast("En az bir alet adi girin","err");return;}
-  const newItems=valid.map(l=>({id:uid(),ad:l.ad.trim(),seri:(l.seri||'').trim(),marka:(l.marka||'').trim(),durum:'depo',tarih:date,zimmet:'',note:'Fatura: '+no,img:null}));
+  const newItems=valid.map(l=>({id:uid(),ad:l.ad.trim(),seri:(l.seri||'').trim(),kod:(l.kod||'').trim(),marka:(l.marka||'').trim(),barkod:(l.barkod||'').trim(),birim:'ADET',durum:'depo',tarih:date,zimmet:'',note:'Fatura: '+no,img:null,img2:null}));
   await sbInsertAletItems(newItems);
   newItems.forEach(e=>DB.alet.items.push(e));
   closeModal(); render(); toast(`Fatura kaydedildi - ${newItems.length} alet eklendi`);
