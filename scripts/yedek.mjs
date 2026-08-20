@@ -4,7 +4,9 @@
      2) ham-yedek_*_tam.json  : tablo/satir ham kopyasi (id, data, created_at, updated_at)
                                 -> cerrahi (yalniz eksik id'leri geri ekleme) icin
    Salt-okuma: hicbir yazma islemi yapmaz. Sonunda canli/yedek satir sayilarini karsilastirir.
-   .env dosyasindaki VITE_SUPABASE_URL + VITE_SUPABASE_PUBLISHABLE_KEY kullanilir. */
+   .env dosyasindaki VITE_SUPABASE_URL + APP_SUPABASE_SECRET_KEY (service_role) kullanilir.
+   NOT: anon anahtar Asama 3'te kapatildi (bkz. asama3_anon_kapat.sql) - bu betik
+   artik service_role ile okur. Anahtar .env'de, git'e girmiyor. */
 import { createClient } from '@supabase/supabase-js';
 import fs from 'fs';
 import crypto from 'crypto';
@@ -13,7 +15,7 @@ const env = Object.fromEntries(
   fs.readFileSync('.env', 'utf8').split(/\r?\n/).filter(l => l && !l.startsWith('#'))
     .map(l => { const i = l.indexOf('='); return [l.slice(0, i).trim(), l.slice(i + 1).trim()]; })
 );
-const sb = createClient(env.VITE_SUPABASE_URL, env.VITE_SUPABASE_PUBLISHABLE_KEY);
+const sb = createClient(env.VITE_SUPABASE_URL, env.APP_SUPABASE_SECRET_KEY, { auth: { persistSession: false } });
 const OUT = 'C:/Users/bykara-a/OneDrive/Rabo.tr/YEDEK';
 const mb = b => (b / 1048576).toFixed(2) + ' MB';
 const uyku = ms => new Promise(r => setTimeout(r, ms));
