@@ -1511,13 +1511,15 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
    kiriliyordu). Genis govde + ikili satirlar modali hem kisaltir hem okunakli birakir. */
 .modal.spec-modal{max-width:680px}
 /* -- dashboard widget'lari (bina secim ekrani) -- */
-.dash-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin-top:20px}
+/* GIRIS SAYFASI - dort kart TEK izgarada 2x2: iki sutun esit genislikte, ayni satirdaki
+   kartlar esit yuksekte (grid stretch) ve dikey ayrim cizgisi iki satirda AYNI yerde durur.
+   Eskiden ust satir ayri bir izgaraydi (.dash-hero, 1fr / 1.35fr): seam alt satirla
+   ortusmuyor, sayfa asimetrik gorunuyordu. grid-auto-rows minimumu kisa kartlarin
+   basik kalmasini engeller, icerik buyudukce satir birlikte uzar. */
+.dash-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(210px,auto);gap:14px;margin-top:20px}
 .dash-grid>*{min-width:0}
-@media(max-width:900px){.dash-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:900px){.dash-grid{grid-template-columns:minmax(0,1fr);grid-auto-rows:auto}}
 /* -- dashboard ust blok: donut grafikler + bina bazli ilerleme tablosu -- */
-.dash-hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:14px;margin-top:20px}
-.dash-hero>*{min-width:0}
-@media(max-width:1000px){.dash-hero{grid-template-columns:minmax(0,1fr)}}
 .dash-donuts{display:flex;align-items:center;justify-content:space-around;gap:12px;flex-wrap:wrap}
 .donut{text-align:center;padding:4px 2px}
 .donut svg circle{transition:stroke-dashoffset .7s cubic-bezier(.16,.8,.3,1)}
@@ -1529,6 +1531,7 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .dash-counts span{font-size:10px;color:var(--mute);text-transform:uppercase;letter-spacing:.4px}
 /* bina basina Tedarik + Montaj cubuklari ALT ALTA (yan yana degil) - genis binalarin
    sartname sayisi coksa bar'a yeterince yer kalsin, iki yuzde ayri satirda kolay okunsun */
+.bina-prog-list{max-height:330px;overflow:auto}
 .bina-prog-row{padding:9px 4px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:6px;transition:background .13s}
 .bina-prog-row:hover{background:var(--hover)}
 .bina-prog-row:last-child{border-bottom:none}
@@ -3110,8 +3113,7 @@ function renderDashWidgets(bins){
       <div class="bp-line"><span class="bp-lbl">Tedarik</span><div class="scb-track"><i style="width:${tp}%;background:var(--primary)"></i></div><span class="bp-pct" style="color:var(--primary)">${tp.toFixed(0)}%</span></div>
       <div class="bp-line"><span class="bp-lbl">Montaj</span><div class="scb-track"><i style="width:${mp}%;background:${mp>=100?'var(--success)':'var(--warning)'}"></i></div><span class="bp-pct" style="color:${mp>=100?'var(--success)':'var(--warning)'}">${mp.toFixed(0)}%</span></div>
     </div>`; }).join('');
-  const hero=`<div class="dash-hero">
-    <div class="dash-card dash-donuts">
+  const hero=`<div class="dash-card dash-donuts">
       ${donut(tedPct,'var(--primary)','Genel Tedarik',fmtNum(gg)+' / '+fmtNum(tt))}
       ${donut(monPct,monPct>=100?'var(--success)':'var(--warning)','Genel Montaj',fmtNum(mm)+' / '+fmtNum(tt))}
       <div class="dash-counts">
@@ -3121,9 +3123,8 @@ function renderDashWidgets(bins){
     </div>
     <div class="dash-card">
       <div class="dash-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/></svg>Bina Bazli Ilerleme</div>
-      ${binaRows||'<div class="dash-empty">Sartnamesi olan bina yok</div>'}
-    </div>
-  </div>`;
+      ${binaRows?`<div class="bina-prog-list">${binaRows}</div>`:'<div class="dash-empty">Sartnamesi olan bina yok</div>'}
+    </div>`;
   // son hareketler: en yeni 6 malzeme giris/cikisi
   const sonHareket=DB.proje.items.filter(i=>!i.is_deleted && vis.has(i.bina)).sort((a,b)=>b.date-a.date).slice(0,6);
   const hareketHtml=sonHareket.length?sonHareket.map(e=>{ const out=e.type==='out';
@@ -3142,7 +3143,7 @@ function renderDashWidgets(bins){
       <span class="dr-name" title="${esc(x.sp.name)}">${esc(x.sp.name)}</span>
       <span class="dr-meta" title="${esc(x.sp.bina||'')} · ${esc(x.sp.cat||'')}">${esc(x.sp.bina||'')} · ${esc(x.sp.cat||'')}</span></div>`; }).join('')
     :'<div class="dash-empty">Eksik kalem yok - tum hedefler karsilandi</div>';
-  return `${hero}<div class="dash-grid">
+  return `<div class="dash-grid">${hero}
     <div class="dash-card"><div class="dash-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>Son Hareketler</div>${hareketHtml}</div>
     <div class="dash-card"><div class="dash-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>Eksik Malzemeler <span style="text-transform:none;letter-spacing:0;font-weight:500">(en cok kalan)</span></div>${eksikHtml}</div>
   </div>`;
