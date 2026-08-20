@@ -4574,12 +4574,10 @@ function renderMaterialLibGecici(){
 }
 // modal disina (bos alana) tiklandiginda: alanlardan biri doldurulmussa modali kapatma,
 // veri kaybini onlemek icin kullanici Iptal/X ile bilerek kapatmali
-function matModalBgClick(ev){
-  if(ev.target!==ev.currentTarget) return;
-  const ids=['mt_name','mt_code','mt_brand','mt_standart','mt_weight','mt_unit','mt_proje','mt_note','mt_altCodeInput'];
-  const hasData = ids.some(id=>{ const el=document.getElementById(id); return el&&String(el.value||'').trim(); })
-    || (modalTags&&modalTags.length) || (modalAltCodes&&modalAltCodes.length) || modalImg || modalImg2;
-  if(!hasData) matModalClose();
+function matModalBgClick(ev){ if(ev.target!==ev.currentTarget) return; modalKazaKapat(); }
+function matFormDolu(){
+  const ids=['mt_name','mt_code','mt_brand','mt_standart','mt_weight','mt_unit','mt_proje','mt_note','mt_altCodeInput','mt_imgUrl','mt_img2Url'];
+  return formDoluMu(ids,(modalTags&&modalTags.length)||(modalAltCodes&&modalAltCodes.length)||modalImg||modalImg2);
 }
 // matModalClose: malzeme modali kapanirken, eger spec kalemi duzenlemeden gelindiyse
 // (window._matReturn set) o forma geri doner - aksi halde normal kapanis.
@@ -4634,6 +4632,7 @@ function openMaterialModal(id,keepReturn){
   document.getElementById('mt_cat').onchange=function(){document.getElementById('mt_newcat').classList.toggle('hidden',this.value!=='__new');};
   renderTagsBox('mt');
   renderAltCodesBox();
+  setModalGuard(matFormDolu,matModalClose);
 }
 // basit etiket-cip girisi: Enter/virgul ile mevcut metni cip olarak onaylar (paylasilan modalTags dizisine yazar)
 function renderTagsBox(prefix){
@@ -9727,9 +9726,26 @@ function _lbRender(){
 function _lbNav(dir){ _lbIdx=(_lbIdx+dir+_lbImgs.length)%_lbImgs.length; _lbRender(); }
 function _lbKeydown(e){ if(e.key==='Escape')_lbClose(); else if(e.key==='ArrowLeft')_lbNav(-1); else if(e.key==='ArrowRight')_lbNav(1); }
 function _lbClose(){ const d=document.querySelector('.lightbox'); if(d)d.remove(); document.removeEventListener('keydown',_lbKeydown); }
-function closeModal(){ if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; } document.querySelectorAll('.modal-bg').forEach(m=>m.remove()); modalImg=null; modalImg2=null; modalPdf=null; modalTags=[]; modalAltCodes=[]; _rDayOpen=null;
+function closeModal(){ if(window._binaViewer){ window._binaViewer.dispose(); window._binaViewer=null; } window._modalGuard=null; document.querySelectorAll('.modal-bg').forEach(m=>m.remove()); modalImg=null; modalImg2=null; modalPdf=null; modalTags=[]; modalAltCodes=[]; _rDayOpen=null;
   // Kat Panelinden gecici olarak ayrilindiysa (rapor gunu goruntuleme) panele geri don
   if(window._KATPBACK){ window._KATPBACK=0; if(typeof _KATP!=='undefined'&&_KATP) renderKatPanel(); } }
+
+/* ---------- KAZA ILE KAPANMA KORUMASI (shared) ----------
+   Form doldurulduktan sonra modal disina tiklamak veya Esc'e basmak girilen bilgiyi siliyordu.
+   Modal acilirken setModalGuard() ile "formda veri var mi" sorusu kaydedilir; dis tiklama ve Esc
+   bu soruyu sorar, cevap evet ise KAPATMAZ ve nedenini soyler.
+   Kaydet / Iptal / X yollari korumaya TAKILMAZ - onlar zaten bilincli kapatmadir. */
+function setModalGuard(doluFn,kapatFn){ window._modalGuard={dolu:doluFn,kapat:kapatFn||closeModal}; }
+// alan id listesi (+ ek kosul) uzerinden "veri girildi mi": her zaman dolu olan alanlar
+// (tarih, durum gibi varsayilanli kutular) listeye KONMAZ, yoksa bos form da kapanmaz
+function formDoluMu(ids,ek){ return ids.some(id=>{ const el=document.getElementById(id); return el&&String(el.value||'').trim(); }) || !!ek; }
+function modalKazaKapat(){
+  const g=window._modalGuard;
+  if(!g){ closeModal(); return; }
+  let dolu=false; try{ dolu=!!g.dolu(); }catch(e){}
+  if(dolu){ toast('Bilgi girildi - kapatmak icin Iptal veya X kullanin'); return; }
+  (g.kapat||closeModal)();
+}
 
 /* ---------- image/pdf pickers (shared) ---------- */
 let modalImg=null, modalImg2=null, modalPdf=null, modalTags=[], modalAltCodes=[];
@@ -10940,7 +10956,7 @@ function renderAletler(){
 function openAletModal(id){ if(!canEdit('alet')) return; modalImg=null; modalImg2=null; const x=id?DB.alet.items.find(i=>i.id===id):null;
   if(x&&x.img) modalImg=x.img;
   if(x&&x.img2) modalImg2=x.img2;
-  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${x?'Alet Duzenle':'El Aleti Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${x?'Alet Duzenle':'El Aleti Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow"><label>Urun Kodu</label><input id="a_kod" value="${x?esc(x.kod||''):''}" placeholder="orn. 121491"></div>
     <div class="frow"><label>Malzeme Adi ve Ozelligi *</label><input id="a_ad" value="${x?esc(x.ad):''}" placeholder="orn. Darbeli Matkap 18V / SDS-Plus"></div>
     <div class="frow two"><div><label>Marka / Model</label><input id="a_marka" value="${x?esc(x.marka||''):''}" placeholder="orn. Bosch GSB 18V"></div><div><label>Birim</label><input id="a_birim" value="${x?esc(x.birim||''):''}" placeholder="ADET"></div></div>
@@ -10961,6 +10977,8 @@ function openAletModal(id){ if(!canEdit('alet')) return; modalImg=null; modalImg
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveAlet(${x?`'${x.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   document.getElementById('a_tarih').value=x&&x.tarih?new Date(x.tarih).toISOString().slice(0,10):new Date().toISOString().slice(0,10);
+  // Tarih ve Durum listede YOK: ikisi de varsayilanli, bos formun kapanmasini engellememeli
+  setModalGuard(()=>formDoluMu(['a_kod','a_ad','a_marka','a_birim','a_barkod','a_seri','a_renk','a_olcu','a_agirlik','a_madde','a_zimmet','a_note','a_imgUrl','a_img2Url'],modalImg||modalImg2));
 }
 async function saveAlet(id){ if(!guard('define',{bina:PBINA}))return; const ad=document.getElementById('a_ad').value.trim(); const seri=document.getElementById('a_seri').value.trim();
   if(!ad){toast("Malzeme adi zorunlu","err");return;} if(!seri){toast("Seri numarasi zorunlu","err");return;}
@@ -15934,7 +15952,7 @@ function aletSrc(){
   return Object.values(map).map(o=>({ad:o.ad,alt:o.alt,sub:o.sub,obj:o}));
 }
 function openAletOrderModal(){ if(!canCreate('alet')) return; modalPdf=null; aOrderLines=[aBosSatir()];
-  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide" style="max-width:820px"><div class="modal-head"><h3>Fatura ile Alet Girisi</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal wide" style="max-width:820px"><div class="modal-head"><h3>Fatura ile Alet Girisi</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow two"><div><label>Fatura No *</label><input id="ao_no" placeholder="orn. FTR-2026-0210"></div><div><label>Tarih</label><input id="ao_date" type="date"></div></div>
     <div class="frow"><label>Aletler (her satir bir alet - gecmiste ayni isim varsa urun kodu, marka ve barkod otomatik gelir)</label>
       <div id="aolines"></div>
@@ -15945,6 +15963,11 @@ function openAletOrderModal(){ if(!canCreate('alet')) return; modalPdf=null; aOr
   document.body.insertAdjacentHTML('beforeend',html);
   document.getElementById('ao_date').value=new Date().toISOString().slice(0,10);
   renderALines();
+  // satir alanlari aOrderLines'ta tutulur; alet adi ise DOM'da (autocomplete) - ikisine de bakilir
+  setModalGuard(()=>formDoluMu(['ao_no'],modalPdf||aOrderLines.some((l,i)=>{
+    const el=document.getElementById('al_ad_'+i);
+    return [(el&&el.value)||l.ad,l.kod,l.marka,l.barkod,l.seri].some(v=>String(v||'').trim());
+  })));
 }
 function renderALines(){ const c=document.getElementById('aolines'); if(!c)return;
   c.innerHTML=aOrderLines.map((l,i)=>{
@@ -17261,7 +17284,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     if(document.getElementById('cmdkBg')){ closeCmdk(); return; }
     const lb=document.querySelector('.lightbox'); if(lb){ lb.remove(); return; }
-    if(document.querySelector('.modal-bg')){ closeModal(); return; }
+    if(document.querySelector('.modal-bg')){ modalKazaKapat(); return; }
     if(document.body.classList.contains('sb-open')) closeSidebar();
   }
 });
