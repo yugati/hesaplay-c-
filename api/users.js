@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { requireAdmin } from '../lib/auth.js'
-import { hashPassword } from '../lib/password.js'
+import { hashPassword, sifreKurallari } from '../lib/password.js'
 
 // GET  /api/users  - tum kullanicilari listeler (sifresiz)
 // POST /api/users  - yeni kullanici olusturur
@@ -25,6 +25,9 @@ export default async function handler(req, res) {
   if (req.method === 'POST') {
     const { username, password, role, sections, buildings, permissions } = req.body || {}
     if (!username || !password) { res.status(400).json({ error: 'Kullanici adi ve sifre gerekli' }); return }
+    // Asama 4: yeni sifreler asgari kuraldan gecer (bkz. lib/password.js sifreKurallari)
+    const kuralHatasi = sifreKurallari(password, username)
+    if (kuralHatasi) { res.status(400).json({ error: kuralHatasi }); return }
     try {
       const hashed = await hashPassword(password)
       const { data, error } = await supabaseAdmin

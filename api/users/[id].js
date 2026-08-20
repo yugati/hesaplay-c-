@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '../../lib/supabaseAdmin.js'
 import { requireAdmin } from '../../lib/auth.js'
-import { hashPassword } from '../../lib/password.js'
+import { hashPassword, sifreKurallari } from '../../lib/password.js'
 
 // PUT    /api/users/:id - kullanici guncelle (sifre bos birakilirsa degismez)
 // DELETE /api/users/:id - kullanici sil
@@ -16,7 +16,14 @@ export default async function handler(req, res) {
     const { password, role, sections, buildings, permissions } = req.body || {}
     const update = { role, sections, buildings }
     if (permissions !== undefined) update.permissions = permissions
-    if (password) update.password = await hashPassword(password)
+    if (password) {
+      // Asama 4: sifre kurali. Kullanici adini kayittan okuyoruz ki "sifre =
+      // kullanici adi" durumu da yakalansin.
+      const { data: mevcut } = await supabaseAdmin.from('users').select('username').eq('id', id).maybeSingle()
+      const kuralHatasi = sifreKurallari(password, mevcut && mevcut.username)
+      if (kuralHatasi) { res.status(400).json({ error: kuralHatasi }); return }
+      update.password = await hashPassword(password)
+    }
     try {
       const { data, error } = await supabaseAdmin
         .from('users').update(update).eq('id', id).select().single()

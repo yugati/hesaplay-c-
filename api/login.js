@@ -1,12 +1,28 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { signSession, SESSION_TTL_DEFAULT, SESSION_TTL_REMEMBER } from '../lib/auth.js'
 import { verifyPassword, hashPassword, isHashed } from '../lib/password.js'
+import { girisKilitli, hataliDeneme, basariliGiris, istekIp } from '../lib/girisKoruma.js'
+
+// Kilit mesaji: kalan sureyi insan diliyle yazar
+function kalanMetin(sn) {
+  if (sn >= 60) { const d = Math.ceil(sn / 60); return d + ' dakika' }
+  return sn + ' saniye'
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return }
 
   const { username, password, rememberMe } = req.body || {}
   if (!username || !password) { res.status(400).json({ error: 'Kullanici adi ve sifre gerekli' }); return }
+
+  // KABA KUVVET ENGELI: sifre kontrolunden ONCE bakilir ki kilitliyken bcrypt
+  // hesabi bile yapilmasin (saldirgan sunucuyu mesgul edemesin).
+  const ip = istekIp(req)
+  const kilit = await girisKilitli(username, ip)
+  if (kilit.kilitli) {
+    res.status(429).json({ error: 'Cok fazla hatali deneme. ' + kalanMetin(kilit.kalanSn) + ' sonra tekrar deneyin.' })
+    return
+  }
 
   let user
   try {
@@ -23,10 +39,23 @@ export default async function handler(req, res) {
     return
   }
 
-  if (!user) { res.status(401).json({ error: 'Kullanici adi veya sifre hatali' }); return }
+  /* Kullanici YOKSA da deneme sayilir ve mesaj AYNI kalir: aksi halde "kilitlendi"
+     cevabi hangi kullanici adlarinin gercek oldugunu ele verirdi. */
+  const basarisiz = async () => {
+    const d = await hataliDeneme(username, ip)
+    if (d.kilitSn) {
+      res.status(429).json({ error: 'Cok fazla hatali deneme. ' + kalanMetin(d.kilitSn) + ' sonra tekrar deneyin.' })
+    } else {
+      res.status(401).json({ error: 'Kullanici adi veya sifre hatali' })
+    }
+  }
+
+  if (!user) { await basarisiz(); return }
 
   const ok = await verifyPassword(password, user.password)
-  if (!ok) { res.status(401).json({ error: 'Kullanici adi veya sifre hatali' }); return }
+  if (!ok) { await basarisiz(); return }
+
+  await basariliGiris(username, ip)
 
   // Eski duz metin sifreyi basarili girişten sonra sessizce hash'e yukselt.
   if (!isHashed(user.password)) {
