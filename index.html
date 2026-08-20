@@ -11106,7 +11106,8 @@ function aletPickLib(libId){ const l=aletLib().find(i=>i.id===libId); if(!l)retu
 let _aletDraft=null;
 function aletFormOku(itemId){ const g=i=>{ const el=document.getElementById(i); return el?el.value:''; };
   return {_itemId:itemId||null,libId:window._aletPick||null,adet:g('a_adet'),seri:g('a_seri'),durum:g('a_durum'),
-    tarih:g('a_tarih'),zimkod:g('a_zimkod'),zimmet:g('a_zimmet'),konum:g('a_konum'),note:g('a_note')}; }
+    tarih:g('a_tarih'),zimkod:g('a_zimkod'),zimmet:g('a_zimmet'),konum:g('a_konum'),note:g('a_note'),
+    birimler:_aletBirimler.map(b=>({seri:b.seri,zimkod:b.zimkod}))}; }
 function aletLibEkleFromForm(itemId){
   _aletDraft=aletFormOku(itemId);
   closeModal(); // form taslakta duruyor - iki modal ust uste durmasin
@@ -11114,6 +11115,34 @@ function aletLibEkleFromForm(itemId){
   window._aletLibReturn=()=>{ openAletModal(_aletDraft&&_aletDraft._itemId||null); };
   openAletLibModal();
 }
+/* TOPLU EKLEME: adet 1'den buyukse her alet icin AYRI seri no + zimmet kodu satiri cikar
+   ve kayit N ayri alet kaydi olarak acilir (her biri adet=1). Neden ayri kayit: zimmet kodu,
+   seri no, durum ve konum fiziksel alete aittir - 5 aleti tek satirda tutmak "biri tamire
+   gitti" durumunu kaydedilemez hale getirirdi.
+   Duzenlemede bu liste CIKMAZ: mevcut bir kaydi bolmek id'lerini degistirirdi. */
+const ALET_BIRIM_MAX=100;
+let _aletBirimler=[];
+function aletAdetChange(){
+  const el=document.getElementById('a_adet'); if(!el) return;
+  let n=Math.floor(Number(el.value)||1); if(!(n>0)) n=1;
+  if(n>ALET_BIRIM_MAX){ n=ALET_BIRIM_MAX; el.value=n; toast(`Tek seferde en fazla ${ALET_BIRIM_MAX} alet eklenir`,'warn'); }
+  const tek=document.getElementById('a_tekBox'), box=document.getElementById('a_birimBox');
+  const coklu=n>1;
+  if(tek) tek.classList.toggle('hidden',coklu);
+  if(box) box.classList.toggle('hidden',!coklu);
+  if(!coklu){ _aletBirimler=[]; return; }
+  while(_aletBirimler.length<n) _aletBirimler.push({seri:'',zimkod:''});
+  _aletBirimler.length=n;
+  renderAletBirimler();
+}
+function renderAletBirimler(){ const c=document.getElementById('a_birimler'); if(!c) return;
+  c.innerHTML=_aletBirimler.map((b,i)=>`<div class="oline" style="grid-template-columns:26px 1fr 1fr;margin-bottom:6px">
+    <span class="t-meta" style="font-family:var(--mono);font-size:12px;text-align:center">${i+1}</span>
+    <input placeholder="Seri No" value="${esc(b.seri||'')}" oninput="updAletBirim(${i},'seri',this.value)">
+    <input placeholder="Zimmet Kodu" value="${esc(b.zimkod||'')}" oninput="updAletBirim(${i},'zimkod',this.value)">
+  </div>`).join('');
+}
+function updAletBirim(i,k,v){ if(_aletBirimler[i]) _aletBirimler[i][k]=v; }
 function openAletModal(id){ if(!canEdit('alet')) return;
   const x=id?DB.alet.items.find(i=>i.id===id):null;
   if(!x && aletLib().length===0 && !_aletDraft){
@@ -11131,22 +11160,27 @@ function openAletModal(id){ if(!canEdit('alet')) return;
       <div id="a_kunyeBox" style="margin-top:8px">${aletKunyeBoxHtml(l||(eski?x:null))}</div>
       ${canCreate('alet')?`<button class="btn btn-ghost" style="margin-top:8px;padding:6px 11px;font-size:12px" onclick="aletLibEkleFromForm(${x?`'${x.id}'`:'null'})">+ Kutuphaneye Yeni Alet Ekle</button>`:''}
     </div>
-    <div class="frow two"><div><label>Adet *</label><input id="a_adet" type="number" min="1" step="1" value="${x?aletAdet(x):1}"></div><div><label>Seri Numarasi  <span class="t-meta">(tek adette zorunlu)</span></label><input id="a_seri" value="${x?esc(x.seri||''):''}" placeholder="orn. SN-2024-0918"></div></div>
-    <div class="frow two"><div><label>Durum</label><select id="a_durum">${ALET_DURUM.map(([v,lbl])=>`<option value="${v}" ${x&&x.durum===v?'selected':''}>${lbl}</option>`).join('')}</select></div><div><label>Tarih</label><input id="a_tarih" type="date"></div></div>
-    <div class="frow two"><div><label>Zimmet Kodu</label><input id="a_zimkod" value="${x?esc(x.zimkod||''):''}" placeholder="orn. ZM-2026-014"></div><div><label>Zimmetli Kisi</label><input id="a_zimmet" value="${x?esc(x.zimmet||''):''}" placeholder="orn. Ahmet Y."></div></div>
+    <div class="frow two"><div><label>Adet *</label><input id="a_adet" type="number" min="1" step="1" value="${x?aletAdet(x):1}" ${x?'':'oninput="aletAdetChange()"'}></div><div><label>Durum</label><select id="a_durum">${ALET_DURUM.map(([v,lbl])=>`<option value="${v}" ${x&&x.durum===v?'selected':''}>${lbl}</option>`).join('')}</select></div></div>
+    <div class="frow two"><div><label>Tarih</label><input id="a_tarih" type="date"></div><div><label>Zimmetli Kisi</label><input id="a_zimmet" value="${x?esc(x.zimmet||''):''}" placeholder="orn. Ahmet Y."></div></div>
     <div class="frow"><label>Konum</label><input id="a_konum" value="${x?esc(x.konum||''):''}" placeholder="orn. A Blok / 2. Kat Depo"></div>
+    <div class="frow two" id="a_tekBox"><div><label>Seri Numarasi  <span class="t-meta">(tek adette zorunlu)</span></label><input id="a_seri" value="${x?esc(x.seri||''):''}" placeholder="orn. SN-2024-0918"></div><div><label>Zimmet Kodu</label><input id="a_zimkod" value="${x?esc(x.zimkod||''):''}" placeholder="orn. ZM-2026-014"></div></div>
+    ${x?'':`<div class="frow hidden" id="a_birimBox"><label>Her Alet Icin Seri No ve Zimmet Kodu  <span class="t-meta">(her satir AYRI bir alet kaydi olur - durum, tarih, zimmetli kisi ve konum hepsinde ayni)</span></label><div id="a_birimler"></div></div>`}
     <div class="frow"><label>Not</label><textarea id="a_note" placeholder="Kalibrasyon, aksesuar, durum notu...">${x?esc(x.note||''):''}</textarea></div>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveAlet(${x?`'${x.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   document.getElementById('a_tarih').value=x&&x.tarih?new Date(x.tarih).toISOString().slice(0,10):new Date().toISOString().slice(0,10);
+  _aletBirimler=[];
   // kutuphaneye gidip donuldiyse form oldugu gibi geri yuklenir
   if(_aletDraft){ const d=_aletDraft; _aletDraft=null;
     const set=(i,v)=>{ const el=document.getElementById(i); if(el&&v!=null&&v!=='') el.value=v; };
     set('a_adet',d.adet); set('a_seri',d.seri); set('a_durum',d.durum); set('a_tarih',d.tarih);
     set('a_zimkod',d.zimkod); set('a_zimmet',d.zimmet); set('a_konum',d.konum); set('a_note',d.note);
+    _aletBirimler=(d.birimler||[]).map(b=>({seri:b.seri||'',zimkod:b.zimkod||''}));
     if(d.libId) aletPickLib(d.libId);
   }
-  setModalGuard(()=>formDoluMu(['a_seri','a_zimkod','a_zimmet','a_konum','a_note'],window._aletPick||(x&&x.libId)));
+  if(!x) aletAdetChange();
+  setModalGuard(()=>formDoluMu(['a_seri','a_zimkod','a_zimmet','a_konum','a_note'],
+    window._aletPick||(x&&x.libId)||_aletBirimler.some(b=>b.seri||b.zimkod)));
 }
 async function saveAlet(id){ if(!guard('define',{bina:PBINA}))return;
   const x=id?DB.alet.items.find(i=>i.id===id):null;
@@ -11157,12 +11191,27 @@ async function saveAlet(id){ if(!guard('define',{bina:PBINA}))return;
   const adet=Number(adetRaw||1);
   if(!(adet>0)){ toast("Adet 0'dan buyuk olmali","err"); return; }
   const seri=document.getElementById('a_seri').value.trim();
-  // seri no TEK adette zorunlu: 5 adetlik bir zimmet satirinin tek seri numarasi olmaz
-  if(adet===1 && !seri){ toast("Tek alet icin seri numarasi zorunlu","err"); return; }
   const g=i=>document.getElementById(i).value.trim();
-  const data={adet,seri,durum:document.getElementById('a_durum').value,
+  const ortak={durum:document.getElementById('a_durum').value,
     tarih:new Date(document.getElementById('a_tarih').value||Date.now()).getTime(),
-    zimkod:g('a_zimkod'),zimmet:g('a_zimmet'),konum:g('a_konum'),note:g('a_note')};
+    zimmet:g('a_zimmet'),konum:g('a_konum'),note:g('a_note')};
+  // TOPLU EKLEME: her satir ayri bir alet kaydi (adet=1), seri/zimmet kodu satirdan gelir
+  if(!id && adet>1){
+    // adet kadar satir uretilir: liste kisa kalmissa (satirlar cizilmeden kaydedilmisse)
+    // eksikler bos seri/zimmet ile tamamlanir, kayit sayisi her zaman adet kadar olur
+    const list=Array.from({length:adet},(_,i)=>{ const b=_aletBirimler[i]||{};
+      return {seri:String(b.seri||'').trim(),zimkod:String(b.zimkod||'').trim()}; });
+    const dolu=list.map(b=>b.seri).filter(Boolean);
+    const tekrar=dolu.find((sn,i)=>dolu.indexOf(sn)!==i);
+    if(tekrar){ toast('Ayni seri numarasi birden fazla satirda: '+tekrar,'err'); return; }
+    const items=list.map(b=>Object.assign({id:uid(),adet:1,seri:b.seri,zimkod:b.zimkod},libId?{libId}:{},ortak));
+    await sbInsertAletItems(items);
+    items.forEach(e=>DB.alet.items.push(e));
+    closeModal(); render(); toast(`${items.length} alet eklendi`); return;
+  }
+  // seri no TEK adette zorunlu: adet kutusu 1 iken kayit tek fiziksel alettir
+  if(adet===1 && !seri){ toast("Tek alet icin seri numarasi zorunlu","err"); return; }
+  const data=Object.assign({adet,seri,zimkod:g('a_zimkod')},ortak);
   if(libId) data.libId=libId;
   if(id){
     const updated={...x,...data};
