@@ -2,6 +2,19 @@
 -- Saha Malzeme Takip Sistemi — Supabase Tam Şema
 -- Supabase Dashboard > SQL Editor'da çalıştırın.
 -- IF NOT EXISTS koruması sayesinde tekrar çalıştırmak güvenlidir.
+--
+-- ⚠ ÖNEMLİ — AŞAMA 3 (20 Ağu 2026):
+-- Aşağıdaki bölümlerde her tablo için hâlâ
+--     CREATE POLICY "<tablo>_anon_all" ... FOR ALL TO anon USING (true)
+--     GRANT SELECT, INSERT, UPDATE, DELETE ... TO anon
+-- satırları duruyor. Bunlar TARİHSEL: uygulama o zamanlar tarayıcıya gömülü anon
+-- anahtarla doğrudan veritabanına gidiyordu. ARTIK GİTMİYOR — her şey /api/veri ve
+-- /api/dosya üzerinden, sunucuda service_role ile yapılıyor.
+--
+-- Bu yüzden dosyanın EN SONUNA anon/authenticated yetkilerini geri alan bir blok
+-- eklendi. Dosyayı baştan sona çalıştırırsanız kapı açılıp yeniden kapanır; sonuç
+-- KAPALI olur. Sadece ortadaki bir bölümü kopyalayıp çalıştırmayın — kapıyı açık
+-- bırakırsınız. Ayrıntı: asama3_anon_kapat.sql
 -- ============================================================
 
 -- pgcrypto (UUID üretimi için — Supabase'de genellikle yüklü gelir)
@@ -731,3 +744,26 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.tutanaklar TO anon, authenticated
 DROP TRIGGER IF EXISTS tutanaklar_updated_at ON public.tutanaklar;
 CREATE TRIGGER tutanaklar_updated_at BEFORE UPDATE ON public.tutanaklar
   FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+
+-- ============================================================
+-- AŞAMA 3 — ANON ERİŞİMİNİ KAPAT  (dosyanın EN SONU, sırası önemli)
+--
+-- Yukarıdaki bölümlerin anon'a verdiği tüm yetkiler burada geri alınır.
+-- service_role RLS'i atladığı için uygulama (api/veri.js, api/dosya.js) etkilenmez.
+-- Bu blok kaldırılırsa arka kapı yeniden açılır - kaldırmayın.
+-- Ayrıntılı açıklama ve doğrulama sorguları: asama3_anon_kapat.sql
+-- ============================================================
+DO $$
+DECLARE t TEXT;
+BEGIN
+  FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_anon_all', t);
+    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', t || '_auth_all', t);
+    EXECUTE format('REVOKE ALL ON public.%I FROM anon, authenticated', t);
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
+  END LOOP;
+END $$;
+
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated;
