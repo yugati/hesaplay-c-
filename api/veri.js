@@ -22,7 +22,7 @@ import { yetkiKontrol } from '../lib/yetki.js'
 
 // id + data (JSONB) seklindeki varlik tablolari
 const VARLIK_TABLOLARI = new Set([
-  'companies', 'tutanaklar', 'alet_items',
+  'companies', 'tutanaklar', 'alet_items', 'alet_lib',
   'saha_panels', 'saha_lines', 'saha_sockets',
   'rapor_entries', 'gecici_lib', 'gecici_moves', 'gecici_orders',
   'proje_sartnames', 'proje_materials', 'proje_specs', 'proje_items',

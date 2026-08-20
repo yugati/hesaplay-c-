@@ -25,6 +25,7 @@ import {
   sbWipeProjeSiparisData,
   sbWipeCompaniesData,
   sbWipeAletData,
+  sbWipeAletLibData,
   sbWipeSahaData,
   sbWipeGeciciData,
   sbWipeRaporData,
@@ -41,6 +42,11 @@ import {
   sbInsertAletItems,
   sbUpdateAletItem,
   sbDeleteAletItem,
+  sbGetAletLib,
+  sbInsertAletLibItem,
+  sbInsertAletLibItems,
+  sbUpdateAletLibItem,
+  sbDeleteAletLibItem,
   // Saha
   sbGetSahaPanels,
   sbInsertSahaPanel,
@@ -226,6 +232,7 @@ window.sbWipeProjeMalzemeData   = sbWipeProjeMalzemeData
 window.sbWipeProjeSiparisData   = sbWipeProjeSiparisData
 window.sbWipeCompaniesData      = sbWipeCompaniesData
 window.sbWipeAletData      = sbWipeAletData
+window.sbWipeAletLibData   = sbWipeAletLibData
 window.sbWipeSahaData      = sbWipeSahaData
 window.sbWipeGeciciData    = sbWipeGeciciData
 window.sbWipeRaporData     = sbWipeRaporData
@@ -244,6 +251,11 @@ window.sbInsertAletItem    = guardedSafe('alet', 'create', sbInsertAletItem)
 window.sbInsertAletItems   = guardedSafe('alet', 'create', sbInsertAletItems)
 window.sbUpdateAletItem    = guardedSafe('alet', 'update', sbUpdateAletItem)
 window.sbDeleteAletItem    = guardedSafe('alet', 'delete', sbDeleteAletItem)
+window.sbGetAletLib        = sbGetAletLib
+window.sbInsertAletLibItem = guardedSafe('alet', 'create', sbInsertAletLibItem)
+window.sbInsertAletLibItems= guardedSafe('alet', 'create', sbInsertAletLibItems)
+window.sbUpdateAletLibItem = guardedSafe('alet', 'update', sbUpdateAletLibItem)
+window.sbDeleteAletLibItem = guardedSafe('alet', 'delete', sbDeleteAletLibItem)
 
 // ─── Saha ────────────────────────────────────────────────────────────────────
 window.sbGetSahaPanels     = sbGetSahaPanels

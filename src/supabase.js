@@ -447,6 +447,14 @@ export async function sbInsertAletItems(items) { return sbInsertEntities('alet_i
 export async function sbUpdateAletItem(id, e) { return sbUpdateEntity('alet_items', id, e) }
 export async function sbDeleteAletItem(id) { return sbDeleteEntity('alet_items', id) }
 
+// Mekanik (Alet) kutuphanesi - alet kunyelerinin tek kaynagi (bkz. migration_alet_lib.sql).
+// alet_items bu kayitlara libId ile baglanir; kunye tek yerde durur.
+export async function sbGetAletLib() { return sbGetAll('alet_lib') }
+export async function sbInsertAletLibItem(e) { return sbInsertEntity('alet_lib', e) }
+export async function sbInsertAletLibItems(items) { return sbInsertEntities('alet_lib', items) }
+export async function sbUpdateAletLibItem(id, e) { return sbUpdateEntity('alet_lib', id, e) }
+export async function sbDeleteAletLibItem(id) { return sbDeleteEntity('alet_lib', id) }
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Saha modülü
 // ─────────────────────────────────────────────────────────────────────────────
@@ -772,7 +780,17 @@ export async function sbLoadAllData(scope) {
   const needCompanies = need('proje') || need('tanimlar') || need('siparis')
 
   const tasks = { settingsRes: anahtarDegerGetir('app_settings') }
-  if (need('alet')) tasks.aletItems = sbGetAll('alet_items')
+  if (need('alet')) {
+    tasks.aletItems = sbGetAll('alet_items')
+    // alet_lib tablosu migration_alet_lib.sql ile olusturulur; migration henuz
+    // calistirilmamissa TUM yuklemeyi kilitlememesi icin hataya toleransli
+    // (tutanaklar/proje_lokasyonlar ile ayni desen). Eksikse uygulamaya haber verilir:
+    // Mekanik kutuphanesi ekrani "once SQL'i calistirin" uyarisi gosterir.
+    tasks.aletLib = sbGetAll('alet_lib').catch(() => {
+      if (typeof window !== 'undefined') window.__aletLibTableMissing = true
+      return []
+    })
+  }
   if (need('saha')) {
     tasks.sahaPanels = sbGetAll('saha_panels')
     tasks.sahaLines = sbGetAll('saha_lines')
@@ -855,7 +873,7 @@ export async function sbLoadAllData(scope) {
   return {
     companies: r.companies || [],
     tutanaklar: r.tutanaklar || [],
-    alet: { items: r.aletItems || [] },
+    alet: { items: r.aletItems || [], lib: r.aletLib || [] },
     saha: {
       bg: (r.sahaSettings && r.sahaSettings.bg) || null,
       bgName: (r.sahaSettings && r.sahaSettings.bgName) || '',
@@ -913,6 +931,8 @@ export async function sbMigrateLocalDB(localDB) {
   const ops = []
   const push = (label, promise) => ops.push({ label, promise })
 
+  if (localDB.alet?.lib?.length)
+    push('Mekanik (Alet) Kutuphanesi', sbInsertEntities('alet_lib', localDB.alet.lib))
   if (localDB.alet?.items?.length)
     push('El Aletleri', sbInsertEntities('alet_items', localDB.alet.items))
   if (localDB.saha?.panels?.length)
@@ -998,7 +1018,7 @@ export async function sbWipeAllData() {
   const textIdTables = [
     'proje_materials', 'proje_specs', 'proje_items', 'proje_orders', 'proje_sartnames',
     'proje_bina_modelleri', 'proje_lokasyonlar', 'proje_alternatives', 'companies',
-    'alet_items', 'saha_panels', 'saha_lines', 'saha_sockets',
+    'alet_items', 'alet_lib', 'saha_panels', 'saha_lines', 'saha_sockets',
     'rapor_entries', 'tutanaklar', 'gecici_lib', 'gecici_moves', 'gecici_orders',
   ]
   await Promise.allSettled([
@@ -1067,9 +1087,15 @@ export async function sbWipeProjeSiparisData() {
   ])
 }
 
-// Sadece el aletleri verisini sil
+// Sadece el aletleri (zimmet/depo) kayitlarini sil - kutuphane KALIR
 export async function sbWipeAletData() {
   await sbDeleteAll('alet_items')
+}
+
+// Sadece Mekanik (Alet) kutuphanesini sil - zimmet kayitlari KALIR (libId'leri bosa duser,
+// kayitlar kendi icindeki eski kunyeyle gorunmeye devam eder)
+export async function sbWipeAletLibData() {
+  await sbDeleteAll('alet_lib')
 }
 
 // Sadece santiye sahasi verisini sil

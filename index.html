@@ -2196,11 +2196,11 @@ function blankDB(){
     id:uid(), kod:s.c, ad:s.a, grup:s.g, marka:s.m, unit:s.u||'ADET',
     barkod:s.bc, renk:s.r, bakiye:Number(s.b)||0, parca:Number(s.p)||0, img:null
   }));
-  return { companies:[], tutanaklar:[], proje:{items:[],specs:[],buildings:[],orders:[],materials:[],sections:[],sartnames:[],binaModelleri:[],lokasyonlar:[],alternatives:[]}, gecici:{lib:lib, moves:[], orders:[]}, alet:{items:[]}, saha:{bg:SAHA_DEFAULT_BG, bgName:'GP_oll_area-1.pdf', panels:[], lines:[], sockets:[]}, meta:{created:Date.now(),seeded:true,tavaSeed:false,tavaSeedV:4,specWipeV:1,matLibV:1} };
+  return { companies:[], tutanaklar:[], proje:{items:[],specs:[],buildings:[],orders:[],materials:[],sections:[],sartnames:[],binaModelleri:[],lokasyonlar:[],alternatives:[]}, gecici:{lib:lib, moves:[], orders:[]}, alet:{items:[],lib:[]}, saha:{bg:SAHA_DEFAULT_BG, bgName:'GP_oll_area-1.pdf', panels:[], lines:[], sockets:[]}, meta:{created:Date.now(),seeded:true,tavaSeed:false,tavaSeedV:4,specWipeV:1,matLibV:1} };
 }
 // TAMAMEN BOS sistem (seed yok) - test/temiz kurulum icin
 function emptyDB(){
-  return { companies:[], tutanaklar:[], proje:{items:[],specs:[],buildings:[],orders:[],materials:[],sections:[],sartnames:[],binaModelleri:[],lokasyonlar:[],alternatives:[]}, gecici:{lib:[],moves:[],orders:[]}, alet:{items:[]}, saha:{bg:null,bgName:'',panels:[],lines:[],sockets:[]}, meta:{created:Date.now(),seeded:true,tavaSeed:false,tavaSeedV:4,specWipeV:1,matLibV:1} };
+  return { companies:[], tutanaklar:[], proje:{items:[],specs:[],buildings:[],orders:[],materials:[],sections:[],sartnames:[],binaModelleri:[],lokasyonlar:[],alternatives:[]}, gecici:{lib:[],moves:[],orders:[]}, alet:{items:[],lib:[]}, saha:{bg:null,bgName:'',panels:[],lines:[],sockets:[]}, meta:{created:Date.now(),seeded:true,tavaSeed:false,tavaSeedV:4,specWipeV:1,matLibV:1} };
 }
 async function saveDB(){
   // Her işlem artık doğrudan Supabase'e yazılıyor; bu fonksiyon yalnızca meta günceller.
@@ -2274,7 +2274,9 @@ function migrate(){
   if(!DB.companies) DB.companies=[];
   // MALZEME TESLIM TUTANAKLARI (TR/RU) - Rapor'un altindaki "Tutanak Ac" ekrani
   if(!DB.tutanaklar) DB.tutanaklar=[];
-  if(!DB.alet) DB.alet={items:[]};
+  if(!DB.alet) DB.alet={items:[],lib:[]};
+  // Mekanik (Alet) kutuphanesi sonradan eklendi: eski oturumlarda alan hic olmayabilir
+  if(!DB.alet.lib) DB.alet.lib=[];
   if(!DB.saha) DB.saha={bg:null,bgName:null,panels:[],lines:[],sockets:[]};
   if(!DB.saha.sockets) DB.saha.sockets=[];
   if(!DB.proje) DB.proje={items:[],specs:[]};
@@ -4365,9 +4367,15 @@ async function confirmMergeMaterials(){
   toast(`Urunler birlestirildi (${affectedSpecs.length} sartname satiri guncellendi)`);
 }
 function renderMaterialLib(){
-  // yetkisi olmayan kullanici gecici kapsaminda kalmasin
+  // yetkisi olmayan kullanici gecici/alet kapsaminda kalmasin
   if(MATF.scope==='gecici' && !canSee('gecici')) MATF.scope='proje';
+  if(MATF.scope==='alet' && !canSee('alet')) MATF.scope='proje';
+  // Proje kapsami kutuphane/proje yetkisi ister: ekrana El Aletleri'ndeki "Mekanik Kutuphanesi"
+  // dugmesinden de girilebiliyor, yalnizca 'alet' yetkisi olan proje malzemelerini gormemeli
+  if(MATF.scope==='proje' && !(canSee('kutuphane')||canSee('proje')))
+    MATF.scope=canSee('alet')?'alet':(canSee('gecici')?'gecici':'proje');
   if(MATF.scope==='gecici') return renderMaterialLibGecici();
+  if(MATF.scope==='alet') return renderMaterialLibAlet();
   const matsAll=matLibFilteredSorted();
   const {start,end,pages}=matLibPageSlice(matsAll.length);
   const mats=matsAll.slice(start,end); // sadece gorunen sayfa cizilir
@@ -4484,8 +4492,9 @@ function renderMaterialLib(){
 // Iki liste birbirinden tamamen ayridir - mobilizasyon kalemleri proje kutuphanesine karismaz.
 function matScopeBar(){
   return `<div class="seg" style="margin-bottom:12px;display:inline-flex">
-    <button class="${MATF.scope==='proje'?'on':''}" onclick="setMatScope('proje')">Proje</button>
+    ${(canSee('kutuphane')||canSee('proje'))?`<button class="${MATF.scope==='proje'?'on':''}" onclick="setMatScope('proje')">Proje</button>`:''}
     ${canSee('gecici')?`<button class="${MATF.scope==='gecici'?'on':''}" onclick="setMatScope('gecici')" title="Gecici Elektrik kutuphanesi - proje malzemelerinden ayri tutulur">Mobilizasyon (Gecici Elektrik)</button>`:''}
+    ${canSee('alet')?`<button class="${MATF.scope==='alet'?'on':''}" onclick="setMatScope('alet')" title="El aletlerinin kunye kaynagi - zimmet/adet kayitlari El Aletleri bolumunde tutulur">Mekanik (Alet)</button>`:''}
   </div>`;
 }
 // Mobilizasyon kapsami: gecici elektrik kutuphanesi ayni yapisal filtre paneliyle listelenir.
@@ -4572,6 +4581,92 @@ function renderMaterialLibGecici(){
     <div class="tablewrap"><table><thead><tr><th></th><th>Malzeme / Kod</th><th>Grup</th><th>Marka</th><th>Renk</th><th>Bakiye</th><th>Barkod</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
+/* ===================================================================
+   MEKANIK (ALET) KUTUPHANESI - kutuphane ekranindaki 3. kapsam
+   Proje tarafindaki duzenin aynisi: kunye burada bir kez tanimlanir,
+   El Aletleri bolumundeki kayit libId ile buraya baglanir ve yalnizca
+   adet / zimmet / konum bilgisini tasir.
+   =================================================================== */
+function matLibAletFiltered(){
+  let lib=aletLib().slice();
+  if(SEARCH) lib=lib.filter(x=>matchText([x.ad,x.kod,x.barkod,x.marka,x.grup,x.renk,x.olcu,x.madde].filter(Boolean).join(' '),SEARCH));
+  lib=lib.filter(x=>{
+    if(MATF.cat && (x.grup||'')!==MATF.cat) return false;
+    if(MATF.brand && norm(x.marka||'')!==norm(MATF.brand)) return false;
+    if(MATF.renk && (x.renk||'')!==MATF.renk) return false;
+    if(MATF.unit && (x.birim||'')!==MATF.unit) return false;
+    if(MATF.img==='var' && !x.img) return false;
+    if(MATF.img==='yok' && x.img) return false;
+    return true;
+  });
+  lib.sort((a,b)=>(a.grup||'').localeCompare(b.grup||'','tr')||(a.ad||'').localeCompare(b.ad||'','tr'));
+  return lib;
+}
+function renderMaterialLibAlet(){
+  const libAll=matLibAletFiltered();
+  const {start,end,pages}=matLibPageSlice(libAll.length);
+  const lib=libAll.slice(start,end);
+  const all=aletLib();
+  const grps=aletLibGroups();
+  const brands=[...new Set(all.map(x=>(x.marka||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const renks=[...new Set(all.map(x=>(x.renk||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const units=[...new Set(all.map(x=>(x.birim||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const anyF=matAnyF();
+  const filterbar=`<div class="ord-filterbar">
+    <div class="ord-f"><label>Grup</label><select onchange="setMatF('cat',this.value)"><option value="">Tumu</option>${grps.map(g=>`<option value="${esc(g)}" ${MATF.cat===g?'selected':''}>${esc(g)}</option>`).join('')}</select></div>
+    <div class="ord-f"><label>Marka</label><select onchange="setMatF('brand',this.value)"><option value="">Tumu</option>${brands.map(b=>`<option value="${esc(b)}" ${MATF.brand===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div>
+    ${units.length?`<div class="ord-f"><label>Birim</label><select onchange="setMatF('unit',this.value)"><option value="">Tumu</option>${units.map(u=>`<option value="${esc(u)}" ${MATF.unit===u?'selected':''}>${esc(u)}</option>`).join('')}</select></div>`:''}
+    ${renks.length?`<div class="ord-f"><label>Renk</label><select onchange="setMatF('renk',this.value)"><option value="">Tumu</option>${renks.map(r=>`<option value="${esc(r)}" ${MATF.renk===r?'selected':''}>${esc(r)}</option>`).join('')}</select></div>`:''}
+    <div class="ord-f"><label>Fotograf</label><select onchange="setMatF('img',this.value)"><option value="">Tumu</option><option value="var" ${MATF.img==='var'?'selected':''}>Foto ekli</option><option value="yok" ${MATF.img==='yok'?'selected':''}>Foto eksik</option></select></div>
+    ${anyF?`<div class="ord-f" style="justify-content:flex-end"><label>&nbsp;</label><button class="btn btn-ghost" style="padding:8px 14px" onclick="clearMatF()">Filtreyi Temizle</button></div>`:''}
+  </div>`;
+  const pgbar=`<div class="matlib-pgbar">
+    <span class="t-meta">${libAll.length?`<b>${fmtNum(libAll.length)}</b> aletten <b>${start+1}-${end}</b> arasi gosteriliyor`:'Gosterilecek alet yok'}</span>
+    <div class="matlib-pgctrl">
+      <select class="selbox" onchange="setMatPageSize(this.value)">${[25,50,100,250].map(n=>`<option value="${n}" ${_matPageSize===n?'selected':''}>${n} satir</option>`).join('')}</select>
+      <button class="mini-btn" ${_matPage===0?'disabled':`onclick="setMatPage(${_matPage-1})"`} title="Onceki sayfa"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
+      <span class="t-meta" style="min-width:44px;text-align:center">${_matPage+1} / ${pages}</span>
+      <button class="mini-btn" ${_matPage>=pages-1?'disabled':`onclick="setMatPage(${_matPage+1})"`} title="Sonraki sayfa"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button>
+    </div>
+  </div>`;
+  let rows='';
+  if(libAll.length===0){
+    const eksik=typeof window!=='undefined'&&window.__aletLibTableMissing;
+    rows=`<tr><td colspan="8"><div class="empty" style="padding:30px"><p>${eksik?'Kutuphane tablosu henuz olusturulmamis':(anyF?'Eslesen alet yok':'Mekanik kutuphanesi bos')}</p><span style="font-size:12px">${eksik?'Supabase SQL Editor icinde <b>migration_alet_lib.sql</b> dosyasini bir kez calistirin - kayitlar ondan once saklanamaz.':'"Kutuphaneye Alet Ekle" ile baslayin - sonra El Aletleri bolumunde zimmet/adet girersiniz'}</span></div></td></tr>`;
+  } else {
+    lib.forEach(x=>{
+      const imgs=[x.img,x.img2].filter(Boolean);
+      const thumb=imgs.length?`<img class="thumb" src="${imgs[0]}" onclick="lightbox(${lbCall(imgs)})">`:phThumb();
+      const dot=x.renk?`<span class="color-dot" style="background:${renkHex(x.renk)}"></span>`:'';
+      const kul=DB.alet.items.filter(i=>i.libId===x.id).length;
+      rows+=`<tr><td>${thumb}</td>
+        <td><div class="t-name">${esc(x.ad)}</div><div class="t-code">${esc(x.kod||'-')}</div></td>
+        <td><span class="grp-tag">${esc(x.grup||'-')}</span></td>
+        <td class="t-meta">${esc(x.marka||'-')}</td>
+        <td class="t-meta">${esc(x.birim||'-')}</td>
+        <td class="t-meta">${dot}${esc(x.renk||'-')}</td>
+        <td class="t-meta">${kul?`<b>${fmtNum(kul)}</b> kayit`:'-'}</td>
+        <td><div class="row-actions">
+          ${canEdit('alet')?`<button class="mini-btn" title="Kunyeyi Duzenle" onclick='openAletLibModal("${x.id}")'><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>`:''}
+          ${canDelete('alet')?`<button class="mini-btn del" title="Sil" onclick='delAletLib("${x.id}")'>${icoTrash()}</button>`:''}
+        </div></td></tr>`;
+    });
+  }
+  return `<div class="sel-wrap" style="max-width:none">
+    <div class="sel-bc"><button onclick="closeMaterialLib()">${icoArr('left')} Binalara Don</button></div>
+    <div class="sel-head"><h2>Malzeme Kutuphanesi</h2><p>Mekanik (Alet) kutuphanesi - el aletlerinin kunye kaynagi; adet, zimmet ve konum El Aletleri bolumunde girilir</p></div>
+    ${matScopeBar()}
+    <div class="matlib-filterbar">
+    <div class="toolbar">${searchBox('Alet adi, urun kodu, barkod, marka veya grup ara...')}
+      <button class="btn btn-ciplak" title="Excel Raporu - Mekanik kutuphanesini Excel dosyasi olarak indirir" aria-label="Excel raporu" onclick="exportAletLibExcel()">${icoXlsRapor()}</button>
+      ${canCreate('alet')?`<button class="btn btn-ciplak" title="Kutuphaneye yeni alet kunyesi ekle" aria-label="Alet ekle" onclick="openAletLibModal()">${icoMalEkle()}</button>`:''}</div>
+    <div style="margin-top:10px">${filterbar}</div>
+    ${pgbar}
+    </div>
+    <div class="tablewrap"><table><thead><tr><th></th><th>Alet / Kod</th><th>Grup</th><th>Marka</th><th>Birim</th><th>Renk</th><th>Kullanim</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+  </div>`;
+}
+
 // modal disina (bos alana) tiklandiginda: alanlardan biri doldurulmussa modali kapatma,
 // veri kaybini onlemek icin kullanici Iptal/X ile bilerek kapatmali
 function matModalBgClick(ev){ if(ev.target!==ev.currentTarget) return; modalKazaKapat(); }
@@ -8858,7 +8953,8 @@ const WIPE_CATS=[
   {key:'proje_malzeme',  label:'Malzeme Kutuphanesi',          detail:'Malzeme kutuphanesi kayitlari tamamen silinir', group:'Proje'},
   {key:'proje_siparis',  label:'Siparis ve Hareket Kayitlari', detail:'Siparis ve hareket (stok giris/cikis) kayitlari tamamen silinir', group:'Proje'},
   {key:'proje_sirket',   label:'Sirketler',                    detail:'Siparis/fatura girisindeki sirket listesi tamamen silinir', group:'Proje'},
-  {key:'alet',   label:'El Aletleri',               detail:'Alet zimmet/depo kayitlari', group:'Diger Moduller'},
+  {key:'alet',   label:'El Aletleri',               detail:'Alet zimmet/depo kayitlari (Mekanik kutuphanesi KALIR)', group:'Diger Moduller'},
+  {key:'alet_lib',label:'Mekanik (Alet) Kutuphanesi', detail:'Alet kunyeleri tamamen silinir - zimmet kayitlari kalir ama kunyesiz gorunur', group:'Diger Moduller'},
   {key:'saha',   label:'Santiye Sahasi',            detail:'Pano, hat, priz ve saha ayarlari', group:'Diger Moduller'},
   {key:'gecici', label:'Gecici Elektrik Ambari',    detail:'Kutuphane, hareket ve siparisler', group:'Diger Moduller'},
   {key:'rapor',  label:'Saha Raporu',               detail:'Gunluk rapor kayitlari ve ekip listesi', group:'Diger Moduller'},
@@ -8877,7 +8973,8 @@ function wipeCatInfo(key){
     case 'proje_malzeme': n=add((p.materials||[]).length,'malzeme'); break;
     case 'proje_siparis': n=add((p.orders||[]).length,'siparis')+add((p.items||[]).length,'hareket'); break;
     case 'proje_sirket': n=add((DB.companies||[]).length,'sirket'); break;
-    case 'alet': n=add((DB.alet&&DB.alet.items||[]).length,'alet'); break;
+    case 'alet': n=add((DB.alet&&DB.alet.items||[]).length,'alet kaydi'); break;
+    case 'alet_lib': n=add((DB.alet&&DB.alet.lib||[]).length,'kunye'); break;
     case 'saha': n=add((DB.saha&&DB.saha.panels||[]).length,'pano')+add((DB.saha&&DB.saha.lines||[]).length,'hat')+add((DB.saha&&DB.saha.sockets||[]).length,'priz'); break;
     case 'gecici': n=add((DB.gecici&&DB.gecici.lib||[]).length,'urun')+add((DB.gecici&&DB.gecici.moves||[]).length,'hareket')+add((DB.gecici&&DB.gecici.orders||[]).length,'siparis'); break;
     case 'rapor': n=add((DB.rapor&&DB.rapor.entries||[]).length,'kayit')+add((DB.rapor&&DB.rapor.ekipler||[]).length,'ekip'); break;
@@ -8961,7 +9058,8 @@ async function confirmWipe(){
     if(sel.includes('proje_malzeme')){ await sbWipeProjeMalzemeData(); DB.proje.materials=[]; }
     if(sel.includes('proje_siparis')){ await sbWipeProjeSiparisData(); DB.proje.items=[]; DB.proje.orders=[]; }
     if(sel.includes('proje_sirket')){ await sbWipeCompaniesData(); DB.companies=[]; }
-    if(sel.includes('alet')){ await sbWipeAletData(); DB.alet={items:[]}; }
+    if(sel.includes('alet')){ await sbWipeAletData(); DB.alet={items:[],lib:aletLib()}; }
+    if(sel.includes('alet_lib')){ await sbWipeAletLibData(); DB.alet={items:(DB.alet&&DB.alet.items)||[],lib:[]}; }
     if(sel.includes('saha')){ await sbWipeSahaData(); DB.saha={bg:null,bgName:'',panels:[],lines:[],sockets:[]}; }
     if(sel.includes('gecici')){ await sbWipeGeciciData(); DB.gecici={lib:[],moves:[],orders:[]}; }
     if(sel.includes('rapor')){ await sbWipeRaporData(); DB.rapor={entries:[],ekipler:[],meta:{}}; }
@@ -10923,23 +11021,46 @@ function exportLibExcel(){
    =================================================================== */
 const ALET_DURUM=[['depo','Depoda'],['saha','Sahada'],['tamir','Tamirde'],['kayip','Kayip']];
 function aletDurumTag(d){ const m={depo:'Depoda',saha:'Sahada',tamir:'Tamirde',kayip:'Kayip'}; return `<span class="tool-status ts-${d||'depo'}">${m[d||'depo']}</span>`; }
+
+/* KUNYE TEK KAYNAKTAN: bir alet kaydi libId ile Mekanik (Alet) kutuphanesine baglidir -
+   urun kodu, ad, marka, birim, barkod, renk, olcu, agirlik, madde ve fotograf ORADAN okunur.
+   Kayitta yalnizca adet, seri, durum, tarih, zimmet kodu/kisi, konum ve not durur.
+   Kutuphane oncesi girilmis ESKI kayitlar kunyeyi kendi iclerinde tasir: libId yoksa kaydin
+   kendisi dondurulur, boylece veri tasima adimi olmadan eski satirlar aynen gorunmeye devam eder. */
+function aletLib(){ if(DB.alet&&!DB.alet.lib) DB.alet.lib=[]; return (DB.alet&&DB.alet.lib)||[]; }
+function aletLibOf(x){ return (x&&x.libId)?(aletLib().find(l=>l.id===x.libId)||null):null; }
+function aletKunye(x){ return aletLibOf(x)||x||{}; }
+function aletLibGroups(){ return [...new Set(aletLib().map(x=>x.grup).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr')); }
+function aletAdet(x){ const n=Number(x&&x.adet); return n>0?n:1; }
+function aletKunyeOzet(l){ return [l.kod,l.marka,l.birim].filter(Boolean).join(' · ')||l.ad||''; }
+function aletArananMetin(x){ const k=aletKunye(x);
+  return [k.ad,k.kod,k.marka,k.barkod,k.renk,k.olcu,k.madde,k.grup,x.seri,x.zimkod,x.zimmet,x.konum,x.note].filter(Boolean).join(' '); }
+// El Aletleri ekranindan kutuphaneye atlama (kutuphane ekraninin Mekanik kapsami)
+function openAletLib(){ if(!canSee('alet')){toast('Yetkiniz yok','err');return;}
+  MATF={scope:'alet',cat:'',brand:'',unit:'',tag:'',img:'',renk:'',bak:''}; _matUsageFilter='all'; _matSel.clear(); _matPage=0; openMaterialLib(); }
+
 function renderAletler(){
   let items=DB.alet.items.slice();
-  if(SEARCH){ items=items.filter(x=>matchText((x.ad||'')+' '+(x.seri||'')+' '+(x.marka||'')+' '+(x.zimmet||'')+' '+(x.kod||'')+' '+(x.barkod||'')+' '+(x.renk||'')+' '+(x.olcu||'')+' '+(x.madde||''), SEARCH)); }
-  items.sort((a,b)=>(a.ad||'').localeCompare(b.ad||'','tr'));
-  const total=DB.alet.items.length;
-  const sahada=DB.alet.items.filter(x=>x.durum==='saha').length;
-  const tamir=DB.alet.items.filter(x=>x.durum==='tamir').length;
-  const kayip=DB.alet.items.filter(x=>x.durum==='kayip').length;
+  if(SEARCH){ items=items.filter(x=>matchText(aletArananMetin(x),SEARCH)); }
+  items.sort((a,b)=>(aletKunye(a).ad||'').localeCompare(aletKunye(b).ad||'','tr'));
+  const topla=f=>DB.alet.items.filter(f).reduce((n,x)=>n+aletAdet(x),0);
+  const total=topla(()=>true);
+  const sahada=topla(x=>x.durum==='saha');
+  const tamir=topla(x=>x.durum==='tamir');
+  const kayip=topla(x=>x.durum==='kayip');
   let rows='';
-  if(items.length===0) rows=emptyRow(7,SEARCH?'Eslesen alet yok':'Henuz el aleti eklenmedi','"Alet Ekle" ile baslayin');
+  if(items.length===0) rows=emptyRow(9,SEARCH?'Eslesen alet yok':'Henuz el aleti eklenmedi','"Alet Ekle" ile baslayin - kunye Mekanik kutuphanesinden secilir');
   else items.forEach(x=>{
-    const thumb=x.img?`<img class="thumb" src="${x.img}" onclick="lightbox(${lbCall([x.img,x.img2])})">`:phThumb();
+    const k=aletKunye(x); const imgs=[k.img,k.img2].filter(Boolean);
+    const thumb=imgs.length?`<img class="thumb" src="${imgs[0]}" onclick="lightbox(${lbCall(imgs)})">`:phThumb();
+    const kodMarka=[k.kod,k.marka].filter(Boolean).join(' · ');
     rows+=`<tr><td>${thumb}</td>
-      <td><div class="t-name">${esc(x.ad)}</div><div class="t-code">${esc([x.kod,x.marka].filter(Boolean).join(' · '))}</div></td>
+      <td><div class="t-name">${esc(k.ad||'(kunye yok)')}</div><div class="t-code">${esc(kodMarka||'-')}</div>${x.libId?'':`<div class="t-meta" style="font-size:10px;color:var(--dim)">kutuphaneye bagli degil</div>`}</td>
       <td class="t-code" style="font-size:12px">${esc(x.seri||'-')}</td>
+      <td class="t-qty">${fmtNum(aletAdet(x))} <span class="t-meta">${esc(k.birim||'')}</span></td>
       <td>${aletDurumTag(x.durum)}</td>
-      <td class="t-meta">${esc(x.zimmet||'-')}</td>
+      <td class="t-meta">${esc([x.zimkod,x.zimmet].filter(Boolean).join(' · ')||'-')}</td>
+      <td class="t-meta">${esc(x.konum||'-')}</td>
       <td class="t-meta">${x.tarih?fmtDate(x.tarih):'-'}</td>
       <td><div class="row-actions">
         ${canUpdate('alet')?`<button class="mini-btn" title="Duzenle" onclick='openAletModal("${x.id}")'><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>`:''}
@@ -10947,54 +11068,103 @@ function renderAletler(){
       </div></td></tr>`;
   });
   return statRow([['Toplam Alet',total,'kayitli','#d97706'],['Sahada',sahada,'kullanimda','var(--amber)'],['Tamirde',tamir,'serviste','var(--red)'],['Kayip',kayip,'bulunamiyor','var(--dim)']])
-    +`<div class="toolbar">${searchBox('Alet adi, urun kodu, seri no, barkod, marka veya zimmet ara...')}
+    +`<div class="toolbar">${searchBox('Alet adi, urun kodu, seri no, barkod, zimmet veya konum ara...')}
       <button class="btn btn-grid" onclick="exportAletExcel()">${icoXls()} Excel Raporu</button>
+      <button class="btn btn-grid" onclick="openAletLib()" title="Mekanik (Alet) kutuphanesi - kunyeler burada tanimlanir">${icoDoc()} Mekanik Kutuphanesi</button>
       ${canCreate('alet')?`<button class="btn btn-order" onclick="openAletOrderModal()">${icoDoc()} Fatura ile Ekle</button>
       <button class="btn btn-add" onclick="openAletModal()">${icoPlus()} Alet Ekle</button>`:''}</div>`
-    +`<div class="tablewrap"><table><thead><tr><th></th><th>Alet / Kod · Marka</th><th>Seri No</th><th>Durum</th><th>Zimmet</th><th>Tarih</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    +`<div class="tablewrap"><table><thead><tr><th></th><th>Alet / Kod · Marka</th><th>Seri No</th><th>Adet</th><th>Durum</th><th>Zimmet</th><th>Konum</th><th>Tarih</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
-function openAletModal(id){ if(!canEdit('alet')) return; modalImg=null; modalImg2=null; const x=id?DB.alet.items.find(i=>i.id===id):null;
-  if(x&&x.img) modalImg=x.img;
-  if(x&&x.img2) modalImg2=x.img2;
-  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${x?'Alet Duzenle':'El Aleti Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
-    <div class="frow"><label>Urun Kodu</label><input id="a_kod" value="${x?esc(x.kod||''):''}" placeholder="orn. 121491"></div>
-    <div class="frow"><label>Malzeme Adi ve Ozelligi *</label><input id="a_ad" value="${x?esc(x.ad):''}" placeholder="orn. Darbeli Matkap 18V / SDS-Plus"></div>
-    <div class="frow two"><div><label>Marka / Model</label><input id="a_marka" value="${x?esc(x.marka||''):''}" placeholder="orn. Bosch GSB 18V"></div><div><label>Birim</label><input id="a_birim" value="${x?esc(x.birim||''):''}" placeholder="ADET"></div></div>
-    <div class="frow two"><div><label>Barkod</label><input id="a_barkod" value="${x?esc(x.barkod||''):''}" placeholder="orn. 8690000000000"></div><div><label>Seri Numarasi *</label><input id="a_seri" value="${x?esc(x.seri||''):''}" placeholder="orn. SN-2024-0918"></div></div>
-    <div class="frow two"><div><label>Renk</label><input id="a_renk" value="${x?esc(x.renk||''):''}" placeholder="orn. Mavi"></div><div><label>Olcu ve Boyut</label><input id="a_olcu" value="${x?esc(x.olcu||''):''}" placeholder="orn. 320x210x90 mm"></div></div>
-    <div class="frow two"><div><label>Agirlik (kg)</label><input id="a_agirlik" type="number" step="any" min="0" value="${x&&x.agirlik!=null?x.agirlik:''}" placeholder="0"></div><div><label>Madde</label><input id="a_madde" value="${x?esc(x.madde||''):''}" placeholder="orn. 12"></div></div>
-    <div class="frow two"><div><label>Durum</label><select id="a_durum">${ALET_DURUM.map(([v,l])=>`<option value="${v}" ${x&&x.durum===v?'selected':''}>${l}</option>`).join('')}</select></div><div><label>Tarih</label><input id="a_tarih" type="date"></div></div>
-    <div class="frow"><label>Zimmetli Kisi / Konum</label><input id="a_zimmet" value="${x?esc(x.zimmet||''):''}" placeholder="orn. Ahmet Y. / A Blok"></div>
+
+/* ---------- El Aleti kaydi: kutuphaneden sec + adet/zimmet/konum ---------- */
+// kunye ozeti (secilen kutuphane kaydinin salt-okunur gorunumu)
+function aletKunyeBoxHtml(l){
+  if(!l) return `<div class="t-meta" style="font-size:11px">Alet secilince kunye (kod, marka, birim, barkod, renk, olcu, agirlik, madde) burada gorunur.</div>`;
+  const imgs=[l.img,l.img2].filter(Boolean);
+  const sat=[['Urun Kodu',l.kod],['Marka',l.marka],['Birim',l.birim],['Barkod',l.barkod],['Renk',l.renk],['Olcu',l.olcu],['Agirlik',(l.agirlik!=null&&l.agirlik!=='')?l.agirlik+' kg':''],['Madde',l.madde],['Grup',l.grup]].filter(a=>a[1]);
+  return `<div style="display:flex;gap:10px;align-items:flex-start;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px">
+    ${imgs.length?`<img src="${imgs[0]}" style="width:58px;height:58px;border-radius:7px;object-fit:contain;background:#fff;border:1px solid var(--line);cursor:pointer;flex-shrink:0" onclick="lightbox(${lbCall(imgs)})">`:''}
+    <div style="min-width:0;flex:1;display:flex;flex-wrap:wrap;gap:3px 12px">${sat.length?sat.map(a=>`<span style="font-size:11px;font-family:var(--mono)"><b style="color:var(--mute)">${a[0]}:</b> ${esc(String(a[1]))}</span>`).join(''):`<span class="t-meta" style="font-size:11px">Kunye alanlari bos</span>`}</div>
+  </div>`;
+}
+function aletLibSrc(){ return aletLib().map(l=>({ad:l.ad||'',
+  alt:[l.kod,l.marka,l.barkod,l.grup,l.renk,l.madde].filter(Boolean).join(' '),
+  sub:aletKunyeOzet(l), img:l.img||'', obj:l})); }
+function acAletLib(){ const el=document.getElementById('a_lib'); if(!el)return;
+  el.removeAttribute('readonly'); el.value=''; el.focus();
+  acOpen(el, aletLibSrc(), (it,isNew)=>{ if(isNew){ el.setAttribute('readonly',''); return; } aletPickLib(it.id); }, false);
+}
+function aletPickLib(libId){ const l=aletLib().find(i=>i.id===libId); if(!l)return;
+  window._aletPick=l.id;
+  const el=document.getElementById('a_lib'); if(el){ el.value=(l.kod?l.kod+' — ':'')+(l.ad||''); el.setAttribute('readonly',''); }
+  const info=document.getElementById('a_libinfo'); if(info){ info.className='lib-match match-found'; info.textContent=aletKunyeOzet(l); }
+  const box=document.getElementById('a_kunyeBox'); if(box) box.innerHTML=aletKunyeBoxHtml(l);
+  setTimeout(()=>{ const q=document.getElementById('a_adet'); if(q)q.focus(); },0);
+}
+// Kutuphaneye atlama: form icerigi taslak olarak saklanir, kunye kaydedilince forma
+// geri donulur ve yeni kunye secili gelir (malzeme modalindaki _matReturn deseninin aynisi).
+let _aletDraft=null;
+function aletFormOku(itemId){ const g=i=>{ const el=document.getElementById(i); return el?el.value:''; };
+  return {_itemId:itemId||null,libId:window._aletPick||null,adet:g('a_adet'),seri:g('a_seri'),durum:g('a_durum'),
+    tarih:g('a_tarih'),zimkod:g('a_zimkod'),zimmet:g('a_zimmet'),konum:g('a_konum'),note:g('a_note')}; }
+function aletLibEkleFromForm(itemId){
+  _aletDraft=aletFormOku(itemId);
+  closeModal(); // form taslakta duruyor - iki modal ust uste durmasin
+  window._afterAletLibSave=l=>{ if(_aletDraft) _aletDraft.libId=l.id; };
+  window._aletLibReturn=()=>{ openAletModal(_aletDraft&&_aletDraft._itemId||null); };
+  openAletLibModal();
+}
+function openAletModal(id){ if(!canEdit('alet')) return;
+  const x=id?DB.alet.items.find(i=>i.id===id):null;
+  if(!x && aletLib().length===0 && !_aletDraft){
+    toast('Once Mekanik (Alet) kutuphanesine alet tanimlayin','err');
+    if(canCreate('alet')) openAletLib();
+    return;
+  }
+  modalImg=null; modalImg2=null;
+  const l=aletLibOf(x); window._aletPick=l?l.id:null;
+  const eski=!!(x&&!x.libId); // kutuphane oncesi kayit: kunyesi kendi icinde
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:620px"><div class="modal-head"><h3>${x?'Alet Kaydi Duzenle':'El Aleti Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <div class="frow"><label>Alet *  <span class="t-meta">(Mekanik kutuphanesinden secin)</span></label>
+      <div class="ac-wrap"><input id="a_lib" placeholder="Alet adi, urun kodu veya barkod ara..." autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" ontouchstart="this.removeAttribute('readonly')" onclick="acAletLib()" style="cursor:pointer" value="${l?esc((l.kod?l.kod+' — ':'')+(l.ad||'')):(eski?esc(x.ad||''):'')}"></div>
+      <div id="a_libinfo" class="lib-match ${l?'match-found':'match-new'}" style="margin-top:6px">${l?esc(aletKunyeOzet(l)):(eski?'Bu kayit kutuphaneye bagli degil - kunyesi kendi icinde tutuluyor. Kutuphaneden alet secerseniz kunye oradan gelir.':'Alet secilmedi (zorunlu)')}</div>
+      <div id="a_kunyeBox" style="margin-top:8px">${aletKunyeBoxHtml(l||(eski?x:null))}</div>
+      ${canCreate('alet')?`<button class="btn btn-ghost" style="margin-top:8px;padding:6px 11px;font-size:12px" onclick="aletLibEkleFromForm(${x?`'${x.id}'`:'null'})">+ Kutuphaneye Yeni Alet Ekle</button>`:''}
+    </div>
+    <div class="frow two"><div><label>Adet *</label><input id="a_adet" type="number" min="1" step="1" value="${x?aletAdet(x):1}"></div><div><label>Seri Numarasi  <span class="t-meta">(tek adette zorunlu)</span></label><input id="a_seri" value="${x?esc(x.seri||''):''}" placeholder="orn. SN-2024-0918"></div></div>
+    <div class="frow two"><div><label>Durum</label><select id="a_durum">${ALET_DURUM.map(([v,lbl])=>`<option value="${v}" ${x&&x.durum===v?'selected':''}>${lbl}</option>`).join('')}</select></div><div><label>Tarih</label><input id="a_tarih" type="date"></div></div>
+    <div class="frow two"><div><label>Zimmet Kodu</label><input id="a_zimkod" value="${x?esc(x.zimkod||''):''}" placeholder="orn. ZM-2026-014"></div><div><label>Zimmetli Kisi</label><input id="a_zimmet" value="${x?esc(x.zimmet||''):''}" placeholder="orn. Ahmet Y."></div></div>
+    <div class="frow"><label>Konum</label><input id="a_konum" value="${x?esc(x.konum||''):''}" placeholder="orn. A Blok / 2. Kat Depo"></div>
     <div class="frow"><label>Not</label><textarea id="a_note" placeholder="Kalibrasyon, aksesuar, durum notu...">${x?esc(x.note||''):''}</textarea></div>
-    <div class="frow"><label>Alet Fotografi  <span class="t-meta">(dosya secin veya internetten resim linki yapistirin)</span></label>
-      <div class="drop ${x&&x.img?'has':''}" id="aImgDrop" onclick="document.getElementById('aImgInput').click()">${x&&x.img?`<img class="img-prev" src="${x.img}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div>
-      <input type="file" id="aImgInput" accept="image/*" class="hidden" onchange="pickImg(event,'aImgDrop')">
-      <input id="a_imgUrl" style="margin-top:7px" placeholder="veya resim linki: https://..." value="${x&&x.img&&/^https?:/i.test(x.img)?esc(x.img):''}" onchange="setAletImgUrl(this.value)"></div>
-    <div class="frow"><label>Alet Fotografi 2  <span class="t-meta">(opsiyonel - 2 fotograf girilirse buyutulen goruntude sag/sol okla gecis yapilir)</span></label>
-      <div class="drop ${x&&x.img2?'has':''}" id="aImg2Drop" onclick="document.getElementById('aImg2Input').click()">${x&&x.img2?`<img class="img-prev" src="${x.img2}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div>
-      <input type="file" id="aImg2Input" accept="image/*" class="hidden" onchange="pickImg2(event,'aImg2Drop')">
-      <input id="a_img2Url" style="margin-top:7px" placeholder="veya resim linki: https://..." value="${x&&x.img2&&/^https?:/i.test(x.img2)?esc(x.img2):''}" onchange="setAletImgUrl2(this.value)"></div>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveAlet(${x?`'${x.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   document.getElementById('a_tarih').value=x&&x.tarih?new Date(x.tarih).toISOString().slice(0,10):new Date().toISOString().slice(0,10);
-  // Tarih ve Durum listede YOK: ikisi de varsayilanli, bos formun kapanmasini engellememeli
-  setModalGuard(()=>formDoluMu(['a_kod','a_ad','a_marka','a_birim','a_barkod','a_seri','a_renk','a_olcu','a_agirlik','a_madde','a_zimmet','a_note','a_imgUrl','a_img2Url'],modalImg||modalImg2));
+  // kutuphaneye gidip donuldiyse form oldugu gibi geri yuklenir
+  if(_aletDraft){ const d=_aletDraft; _aletDraft=null;
+    const set=(i,v)=>{ const el=document.getElementById(i); if(el&&v!=null&&v!=='') el.value=v; };
+    set('a_adet',d.adet); set('a_seri',d.seri); set('a_durum',d.durum); set('a_tarih',d.tarih);
+    set('a_zimkod',d.zimkod); set('a_zimmet',d.zimmet); set('a_konum',d.konum); set('a_note',d.note);
+    if(d.libId) aletPickLib(d.libId);
+  }
+  setModalGuard(()=>formDoluMu(['a_seri','a_zimkod','a_zimmet','a_konum','a_note'],window._aletPick||(x&&x.libId)));
 }
-async function saveAlet(id){ if(!guard('define',{bina:PBINA}))return; const ad=document.getElementById('a_ad').value.trim(); const seri=document.getElementById('a_seri').value.trim();
-  if(!ad){toast("Malzeme adi zorunlu","err");return;} if(!seri){toast("Seri numarasi zorunlu","err");return;}
-  const agirlikRaw=document.getElementById('a_agirlik').value.trim();
-  if(agirlikRaw!==''&&isNaN(Number(agirlikRaw))){toast("Agirlik sayisal olmali","err");return;}
-  // FOTOGRAF LINKI - son soz ALANIN kaydetme anindaki degeridir (ayni kural saveMaterial'de de var):
-  // link kutusu bosaltilmissa linkle eklenmis fotograf silinir. Dosyadan yuklenen (data:) fotograf
-  // etkilenmez - onun linki bu kutuda hic gorunmez, bos kutu yuklenmis fotografi silmemeli.
-  const imgUrlNow=String((document.getElementById('a_imgUrl')||{}).value||'').trim();
-  if(!imgUrlNow && modalImg && /^https?:\/\//i.test(modalImg)) modalImg=null;
-  const img2UrlNow=String((document.getElementById('a_img2Url')||{}).value||'').trim();
-  if(!img2UrlNow && modalImg2 && /^https?:\/\//i.test(modalImg2)) modalImg2=null;
+async function saveAlet(id){ if(!guard('define',{bina:PBINA}))return;
+  const x=id?DB.alet.items.find(i=>i.id===id):null;
+  const libId=window._aletPick||null;
+  // eski (kutuphane oncesi) kayit duzenleniyorsa secim zorunlu degil - kendi kunyesiyle kalir
+  if(!libId && !(x && !x.libId)){ toast("Kutuphaneden alet secin","err"); return; }
+  const adetRaw=document.getElementById('a_adet').value.trim();
+  const adet=Number(adetRaw||1);
+  if(!(adet>0)){ toast("Adet 0'dan buyuk olmali","err"); return; }
+  const seri=document.getElementById('a_seri').value.trim();
+  // seri no TEK adette zorunlu: 5 adetlik bir zimmet satirinin tek seri numarasi olmaz
+  if(adet===1 && !seri){ toast("Tek alet icin seri numarasi zorunlu","err"); return; }
   const g=i=>document.getElementById(i).value.trim();
-  const data={ad,seri,kod:g('a_kod'),marka:g('a_marka'),birim:g('a_birim')||'ADET',barkod:g('a_barkod'),renk:g('a_renk'),olcu:g('a_olcu'),agirlik:agirlikRaw!==''?Number(agirlikRaw):null,madde:g('a_madde'),durum:document.getElementById('a_durum').value,tarih:new Date(document.getElementById('a_tarih').value||Date.now()).getTime(),zimmet:g('a_zimmet'),note:g('a_note'),img:modalImg,img2:modalImg2};
+  const data={adet,seri,durum:document.getElementById('a_durum').value,
+    tarih:new Date(document.getElementById('a_tarih').value||Date.now()).getTime(),
+    zimkod:g('a_zimkod'),zimmet:g('a_zimmet'),konum:g('a_konum'),note:g('a_note')};
+  if(libId) data.libId=libId;
   if(id){
-    const x=DB.alet.items.find(i=>i.id===id);
     const updated={...x,...data};
     await sbUpdateAletItem(id,updated);
     Object.assign(x,data);
@@ -11006,11 +11176,99 @@ async function saveAlet(id){ if(!guard('define',{bina:PBINA}))return; const ad=d
   closeModal(); render(); toast(id?"Alet guncellendi":"Alet eklendi");
 }
 async function delAlet(id){ if(!guard('delete'))return; if(!confirm("Bu aleti silmek istiyor musunuz?"))return; await sbDeleteAletItem(id); DB.alet.items=DB.alet.items.filter(i=>i.id!==id); render(); toast("Alet silindi"); }
+
+/* ---------- Mekanik (Alet) kutuphanesi: kunye modali ---------- */
+function setAletLibImgUrl(v){ applyImgUrl(v,'kImgDrop',1); }
+function setAletLibImgUrl2(v){ applyImgUrl(v,'kImg2Drop',2); }
+// X/Iptal: El Aleti formundan gelindiyse forma geri don, yoksa normal kapanis
+function aletLibModalClose(){ const ret=window._aletLibReturn;
+  window._aletLibReturn=null; window._afterAletLibSave=null;
+  closeModal(); if(ret) ret(); }
+function openAletLibModal(id){ if(!canEdit('alet')) return;
+  const x=id?aletLib().find(i=>i.id===id):null;
+  modalImg=(x&&x.img)||null; modalImg2=(x&&x.img2)||null;
+  const grps=aletLibGroups();
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${x?'Alet Kunyesi Duzenle':'Kutuphaneye Alet Ekle'}</h3><button class="mini-btn" onclick="aletLibModalClose()">x</button></div><div class="modal-body">
+    <div class="frow two"><div><label>Urun Kodu</label><input id="k_kod" value="${x?esc(x.kod||''):''}" placeholder="orn. 121491"></div><div><label>Grup</label><input id="k_grup" list="aletGrpList" value="${x?esc(x.grup||''):''}" placeholder="orn. ELEKTRIKLI EL ALETI"><datalist id="aletGrpList">${grps.map(g=>`<option value="${esc(g)}">`).join('')}</datalist></div></div>
+    <div class="frow"><label>Malzeme Adi ve Ozelligi *</label><input id="k_ad" value="${x?esc(x.ad||''):''}" placeholder="orn. Darbeli Matkap 18V / SDS-Plus"></div>
+    <div class="frow two"><div><label>Marka / Model</label><input id="k_marka" value="${x?esc(x.marka||''):''}" placeholder="orn. Bosch GSB 18V"></div><div><label>Birim</label><input id="k_birim" value="${x?esc(x.birim||'ADET'):'ADET'}" placeholder="ADET"></div></div>
+    <div class="frow two"><div><label>Barkod</label><input id="k_barkod" value="${x?esc(x.barkod||''):''}" placeholder="orn. 8690000000000"></div><div><label>Renk</label><input id="k_renk" value="${x?esc(x.renk||''):''}" placeholder="orn. Mavi"></div></div>
+    <div class="frow two"><div><label>Olcu ve Boyut</label><input id="k_olcu" value="${x?esc(x.olcu||''):''}" placeholder="orn. 320x210x90 mm"></div><div><label>Agirlik (kg)</label><input id="k_agirlik" type="number" step="any" min="0" value="${x&&x.agirlik!=null?x.agirlik:''}" placeholder="0"></div></div>
+    <div class="frow"><label>Madde</label><input id="k_madde" value="${x?esc(x.madde||''):''}" placeholder="orn. 12"></div>
+    <div class="frow"><label>Not</label><textarea id="k_note" placeholder="Teknik ozellik, kalibrasyon araligi, aksesuar...">${x?esc(x.note||''):''}</textarea></div>
+    <div class="frow"><label>Alet Fotografi  <span class="t-meta">(dosya secin veya internetten resim linki yapistirin)</span></label>
+      <div class="drop ${x&&x.img?'has':''}" id="kImgDrop" onclick="document.getElementById('kImgInput').click()">${x&&x.img?`<img class="img-prev" src="${x.img}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div>
+      <input type="file" id="kImgInput" accept="image/*" class="hidden" onchange="pickImg(event,'kImgDrop')">
+      <input id="k_imgUrl" style="margin-top:7px" placeholder="veya resim linki: https://..." value="${x&&x.img&&/^https?:/i.test(x.img)?esc(x.img):''}" onchange="setAletLibImgUrl(this.value)"></div>
+    <div class="frow"><label>Alet Fotografi 2  <span class="t-meta">(opsiyonel - 2 fotograf girilirse buyutulen goruntude sag/sol okla gecis yapilir)</span></label>
+      <div class="drop ${x&&x.img2?'has':''}" id="kImg2Drop" onclick="document.getElementById('kImg2Input').click()">${x&&x.img2?`<img class="img-prev" src="${x.img2}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div>
+      <input type="file" id="kImg2Input" accept="image/*" class="hidden" onchange="pickImg2(event,'kImg2Drop')">
+      <input id="k_img2Url" style="margin-top:7px" placeholder="veya resim linki: https://..." value="${x&&x.img2&&/^https?:/i.test(x.img2)?esc(x.img2):''}" onchange="setAletLibImgUrl2(this.value)"></div>
+    ${x?(()=>{ const kul=DB.alet.items.filter(i=>i.libId===x.id).length;
+      return kul?`<p style="font-size:11px;color:var(--dim);font-family:var(--mono)">Bu kunye ${kul} alet kaydinda kullaniliyor. Degisiklik hepsini etkiler.</p>`:''; })():''}
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="aletLibModalClose()">Iptal</button><button class="btn btn-add" onclick="saveAletLib(${x?`'${x.id}'`:'null'})">Kaydet</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  setModalGuard(()=>formDoluMu(['k_kod','k_grup','k_ad','k_marka','k_barkod','k_renk','k_olcu','k_agirlik','k_madde','k_note','k_imgUrl','k_img2Url'],modalImg||modalImg2),aletLibModalClose);
+}
+async function saveAletLib(id){ if(!guard('define',{bina:PBINA}))return;
+  const g=i=>document.getElementById(i).value.trim();
+  const ad=g('k_ad'); if(!ad){toast("Malzeme adi zorunlu","err");return;}
+  const agirlikRaw=g('k_agirlik');
+  if(agirlikRaw!==''&&isNaN(Number(agirlikRaw))){toast("Agirlik sayisal olmali","err");return;}
+  const kod=g('k_kod');
+  // bir urun kodu kutuphanede yalnizca TEK kunyeye ait olabilir (malzeme kutuphanesindeki kural)
+  if(kod && aletLib().some(l=>l.id!==id && (l.kod||'').toLowerCase()===kod.toLowerCase())){
+    toast("Bu urun kodu kutuphanede zaten var","err"); return; }
+  // FOTOGRAF LINKI - son soz ALANIN kaydetme anindaki degeridir (bkz. saveMaterial)
+  const imgUrlNow=String((document.getElementById('k_imgUrl')||{}).value||'').trim();
+  if(!imgUrlNow && modalImg && /^https?:\/\//i.test(modalImg)) modalImg=null;
+  const img2UrlNow=String((document.getElementById('k_img2Url')||{}).value||'').trim();
+  if(!img2UrlNow && modalImg2 && /^https?:\/\//i.test(modalImg2)) modalImg2=null;
+  const data={kod,ad,grup:g('k_grup'),marka:g('k_marka'),birim:g('k_birim')||'ADET',barkod:g('k_barkod'),
+    renk:g('k_renk'),olcu:g('k_olcu'),agirlik:agirlikRaw!==''?Number(agirlikRaw):null,madde:g('k_madde'),
+    note:g('k_note'),img:modalImg,img2:modalImg2};
+  let entity;
+  if(id){ const x=aletLib().find(i=>i.id===id); entity={...x,...data};
+    await sbUpdateAletLibItem(id,entity); Object.assign(x,data);
+  } else { entity={id:uid(),...data};
+    await sbInsertAletLibItem(entity); aletLib().push(entity);
+  }
+  const cb=window._afterAletLibSave, ret=window._aletLibReturn;
+  window._afterAletLibSave=null; window._aletLibReturn=null;
+  closeModal();
+  if(cb) cb(entity);
+  if(ret) ret(); else render();
+  toast(id?"Kunye guncellendi":"Kutuphaneye eklendi");
+}
+async function delAletLib(id){ if(!guard('delete'))return;
+  const l=aletLib().find(i=>i.id===id); if(!l)return;
+  // kullanimda olan kunye sessizce silinmez - kayitlar kunyesiz kalirdi
+  const kul=DB.alet.items.filter(i=>i.libId===id).length;
+  if(kul){ toast(`Bu kunye ${kul} alet kaydinda kullaniliyor - once o kayitlari silin veya baska alete tasiyin`,"err"); return; }
+  if(!confirm(`"${l.ad}" kutuphaneden silinsin mi?`))return;
+  await sbDeleteAletLibItem(id);
+  DB.alet.lib=aletLib().filter(i=>i.id!==id);
+  render(); toast("Kunye silindi");
+}
+function exportAletLibExcel(){ const lib=aletLib(); if(lib.length===0){toast("Veri yok","err");return;}
+  const wb=XLSX.utils.book_new();
+  const rows=[["Urun Kodu","Malzeme Adi ve Ozelligi","Grup","Marka/Model","Birim","Barkod","Renk","Olcu ve Boyut","Agirlik","Madde","Not","Foto","Kayit"]];
+  lib.slice().sort((a,b)=>(a.grup||'').localeCompare(b.grup||'','tr')||(a.ad||'').localeCompare(b.ad||'','tr'))
+    .forEach(x=>rows.push([x.kod||'',x.ad||'',x.grup||'',x.marka||'',x.birim||'',x.barkod||'',x.renk||'',x.olcu||'',
+      (x.agirlik!=null&&x.agirlik!=='')?Number(x.agirlik):'',x.madde||'',x.note||'',
+      [x.img,x.img2].filter(Boolean).length||'-',DB.alet.items.filter(i=>i.libId===x.id).length||'-']));
+  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:14},{wch:32},{wch:18},{wch:18},{wch:8},{wch:16},{wch:12},{wch:18},{wch:9},{wch:9},{wch:26},{wch:6},{wch:7}];
+  XLSX.utils.book_append_sheet(wb,ws,"Mekanik Kutuphane");
+  XLSX.writeFile(wb,`Mekanik_Alet_Kutuphanesi_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel raporu indirildi");
+}
 function exportAletExcel(){ const items=DB.alet.items; if(items.length===0){toast("Veri yok","err");return;}
   const wb=XLSX.utils.book_new(); const m={depo:'Depoda',saha:'Sahada',tamir:'Tamirde',kayip:'Kayip'};
-  const rows=[["Urun Kodu","Malzeme Adi ve Ozelligi","Marka/Model","Birim","Barkod","Seri No","Renk","Olcu ve Boyut","Agirlik","Madde","Durum","Zimmet/Konum","Tarih","Not","Foto"]];
-  items.slice().sort((a,b)=>(a.ad||'').localeCompare(b.ad||'','tr')).forEach(x=>rows.push([x.kod||'',x.ad,x.marka||'',x.birim||'',x.barkod||'',x.seri||'',x.renk||'',x.olcu||'',x.agirlik!=null&&x.agirlik!==''?Number(x.agirlik):'',x.madde||'',m[x.durum||'depo'],x.zimmet||'',x.tarih?fmtDate(x.tarih):'',x.note||'',[x.img,x.img2].filter(Boolean).length||'-']));
-  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:14},{wch:32},{wch:18},{wch:8},{wch:16},{wch:18},{wch:12},{wch:18},{wch:9},{wch:9},{wch:10},{wch:22},{wch:12},{wch:26},{wch:6}];
+  const rows=[["Urun Kodu","Malzeme Adi ve Ozelligi","Marka/Model","Birim","Barkod","Renk","Olcu ve Boyut","Agirlik","Madde","Seri No","Adet","Durum","Zimmet Kodu","Zimmetli Kisi","Konum","Tarih","Not","Foto"]];
+  items.slice().sort((a,b)=>(aletKunye(a).ad||'').localeCompare(aletKunye(b).ad||'','tr')).forEach(x=>{ const k=aletKunye(x);
+    rows.push([k.kod||'',k.ad||'',k.marka||'',k.birim||'',k.barkod||'',k.renk||'',k.olcu||'',
+      (k.agirlik!=null&&k.agirlik!=='')?Number(k.agirlik):'',k.madde||'',x.seri||'',aletAdet(x),m[x.durum||'depo'],
+      x.zimkod||'',x.zimmet||'',x.konum||'',x.tarih?fmtDate(x.tarih):'',x.note||'',[k.img,k.img2].filter(Boolean).length||'-']); });
+  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:14},{wch:32},{wch:18},{wch:8},{wch:16},{wch:12},{wch:18},{wch:9},{wch:9},{wch:18},{wch:7},{wch:10},{wch:14},{wch:20},{wch:22},{wch:12},{wch:26},{wch:6}];
   XLSX.utils.book_append_sheet(wb,ws,"El Aletleri"); XLSX.writeFile(wb,`El_Aletleri_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel raporu indirildi");
 }
 
@@ -15939,22 +16197,17 @@ async function nordDelDraftRoute(src,id){
 }
 
 /* ===================================================================
-   EL ALETLERI - FATURA  (otomatik alet ekleme + akilli arama)
-   her satir bir alet; ayni isimden varsa kullanici uyarilir
+   EL ALETLERI - FATURA  (faturadan toplu alet girisi)
+   Her satir bir alet kaydidir; kunye Mekanik (Alet) kutuphanesinden secilir.
+   Kutuphanede olmayan bir ad yazilirsa kunye de o anda kutuphaneye eklenir -
+   boylece fatura girisi kutuphaneyi atlatan ikinci bir kunye kaynagi olmaz.
    =================================================================== */
 let aOrderLines=[];
-function aletSrc(){
-  const map={};
-  DB.alet.items.forEach(x=>{ const k=(x.ad||'').trim().toLowerCase();
-    if(!map[k]) map[k]={ad:x.ad,marka:x.marka||'',kod:x.kod||'',barkod:x.barkod||'',
-      alt:(x.kod||'')+' '+(x.marka||'')+' '+(x.barkod||'')+' '+(x.seri||''),
-      sub:[x.kod,x.marka].filter(Boolean).join(' · ')+(x.seri?' · '+x.seri:'')}; });
-  return Object.values(map).map(o=>({ad:o.ad,alt:o.alt,sub:o.sub,obj:o}));
-}
+function aBosSatir(){ return {libId:'',ad:'',adet:1,seri:''}; }
 function openAletOrderModal(){ if(!canCreate('alet')) return; modalPdf=null; aOrderLines=[aBosSatir()];
-  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal wide" style="max-width:820px"><div class="modal-head"><h3>Fatura ile Alet Girisi</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal wide" style="max-width:760px"><div class="modal-head"><h3>Fatura ile Alet Girisi</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow two"><div><label>Fatura No *</label><input id="ao_no" placeholder="orn. FTR-2026-0210"></div><div><label>Tarih</label><input id="ao_date" type="date"></div></div>
-    <div class="frow"><label>Aletler (her satir bir alet - gecmiste ayni isim varsa urun kodu, marka ve barkod otomatik gelir)</label>
+    <div class="frow"><label>Aletler (her satir bir kayit - kunye Mekanik kutuphanesinden gelir)</label>
       <div id="aolines"></div>
       <button class="add-line" onclick="addALine()">+ Alet Satiri Ekle</button>
     </div>
@@ -15963,34 +16216,33 @@ function openAletOrderModal(){ if(!canCreate('alet')) return; modalPdf=null; aOr
   document.body.insertAdjacentHTML('beforeend',html);
   document.getElementById('ao_date').value=new Date().toISOString().slice(0,10);
   renderALines();
-  // satir alanlari aOrderLines'ta tutulur; alet adi ise DOM'da (autocomplete) - ikisine de bakilir
   setModalGuard(()=>formDoluMu(['ao_no'],modalPdf||aOrderLines.some((l,i)=>{
     const el=document.getElementById('al_ad_'+i);
-    return [(el&&el.value)||l.ad,l.kod,l.marka,l.barkod,l.seri].some(v=>String(v||'').trim());
+    return [(el&&el.value)||l.ad,l.libId,l.seri].some(v=>String(v||'').trim());
   })));
 }
 function renderALines(){ const c=document.getElementById('aolines'); if(!c)return;
   c.innerHTML=aOrderLines.map((l,i)=>{
-    const dup=DB.alet.items.find(x=>x.ad.trim().toLowerCase()===(l.ad||'').trim().toLowerCase());
-    const info=l.ad?(dup?`<div class="lib-match match-found">Bu isimde alet zaten var - yeni kopya (ayri seri) olarak eklenir</div>`:`<div class="lib-match match-new">Yeni alet eklenecek</div>`):'';
-    return `<div class="oline" style="grid-template-columns:110px 1fr 120px 130px 120px 34px">
-      <input placeholder="Urun Kodu" value="${esc(l.kod||'')}" oninput="updALine(${i},'kod',this.value)">
-      <div class="ac-wrap"><input id="al_ad_${i}" placeholder="Malzeme adi ve ozelligi (ara...)" value="${esc(l.ad)}" autocomplete="off" onfocus="acAlet(${i})"></div>
-      <input placeholder="Marka/Model" value="${esc(l.marka)}" oninput="updALine(${i},'marka',this.value)">
-      <input placeholder="Barkod" value="${esc(l.barkod||'')}" oninput="updALine(${i},'barkod',this.value)">
+    const lib=l.libId?aletLib().find(k=>k.id===l.libId):null;
+    const info=lib?`<div class="lib-match match-found">Kutuphaneden: ${esc(aletKunyeOzet(lib))}</div>`
+      :(String(l.ad||'').trim()?`<div class="lib-match match-new">Bu ad kutuphanede yok - kunye olarak da eklenecek</div>`:'');
+    return `<div class="oline" style="grid-template-columns:1fr 90px 140px 34px">
+      <div class="ac-wrap"><input id="al_ad_${i}" placeholder="Alet ara (ad, urun kodu, barkod)..." value="${esc(l.ad)}" autocomplete="off" onfocus="acAlet(${i})" oninput="updALine(${i},'ad',this.value)"></div>
+      <input type="number" min="1" step="1" placeholder="Adet" value="${Number(l.adet)||1}" oninput="updALine(${i},'adet',this.value)">
       <input placeholder="Seri No" value="${esc(l.seri)}" oninput="updALine(${i},'seri',this.value)">
       <button class="mini-btn del" onclick="rmALine(${i})">${icoTrash()}</button>
       ${info}</div>`;
   }).join('');
 }
 function acAlet(i){ const el=document.getElementById('al_ad_'+i);
-  acOpen(el, aletSrc(), (it,isNew)=>{ aOrderLines[i].ad=it.ad;
-    // gecmisteki kunye yalnizca BOS alanlari doldurur: kullanicinin elle yazdigi deger ezilmez
-    if(!isNew){ ['marka','kod','barkod'].forEach(k=>{ if(it[k]&&!aOrderLines[i][k]) aOrderLines[i][k]=it[k]; }); }
+  acOpen(el, aletLibSrc(), (it,isNew)=>{
+    if(isNew){ aOrderLines[i].libId=''; aOrderLines[i].ad=it.ad; }   // kutuphanede yok - kayitta acilir
+    else { aOrderLines[i].libId=it.id; aOrderLines[i].ad=it.ad||''; }
     renderALines(); setTimeout(()=>{const n=document.getElementById('al_ad_'+i);if(n)n.focus();},0); }, true);
 }
-function updALine(i,k,v){ aOrderLines[i][k]=v; }
-function aBosSatir(){ return {ad:'',marka:'',seri:'',kod:'',barkod:''}; }
+// ad elle degistirilirse kutuphane baglantisi duser: yazilan ad ile secilen kunye ayrismasin
+function updALine(i,k,v){ aOrderLines[i][k]=v; if(k==='ad'){ const lib=aOrderLines[i].libId?aletLib().find(l=>l.id===aOrderLines[i].libId):null;
+  if(lib && String(v||'').trim()!==String(lib.ad||'').trim()) aOrderLines[i].libId=''; } }
 function addALine(){ aOrderLines.push(aBosSatir()); renderALines(); }
 function rmALine(i){ aOrderLines.splice(i,1); if(aOrderLines.length===0)aOrderLines.push(aBosSatir()); renderALines(); }
 async function saveAletOrder(){
@@ -15998,12 +16250,27 @@ async function saveAletOrder(){
   const no=document.getElementById('ao_no').value.trim(); if(!no){toast("Fatura no zorunlu","err");return;}
   const date=new Date(document.getElementById('ao_date').value||Date.now()).getTime();
   aOrderLines.forEach((l,i)=>{ const el=document.getElementById('al_ad_'+i); if(el)l.ad=el.value; });
-  const valid=aOrderLines.filter(l=>l.ad.trim());
-  if(valid.length===0){toast("En az bir alet adi girin","err");return;}
-  const newItems=valid.map(l=>({id:uid(),ad:l.ad.trim(),seri:(l.seri||'').trim(),kod:(l.kod||'').trim(),marka:(l.marka||'').trim(),barkod:(l.barkod||'').trim(),birim:'ADET',durum:'depo',tarih:date,zimmet:'',note:'Fatura: '+no,img:null,img2:null}));
+  const valid=aOrderLines.filter(l=>String(l.ad||'').trim()||l.libId);
+  if(valid.length===0){toast("En az bir alet secin","err");return;}
+  // kutuphanede olmayan adlar once kunye olarak eklenir (ayni ad ikinci kez acilmaz)
+  const yeniKunyeler=[];
+  for(const l of valid){
+    if(l.libId) continue;
+    const ad=String(l.ad||'').trim();
+    const varOlan=aletLib().find(k=>(k.ad||'').trim().toLowerCase()===ad.toLowerCase());
+    if(varOlan){ l.libId=varOlan.id; continue; }
+    const yeni=yeniKunyeler.find(k=>(k.ad||'').trim().toLowerCase()===ad.toLowerCase());
+    if(yeni){ l.libId=yeni.id; continue; }
+    const k={id:uid(),kod:'',ad,grup:'',marka:'',birim:'ADET',barkod:'',renk:'',olcu:'',agirlik:null,madde:'',note:'Fatura ile olusturuldu: '+no,img:null,img2:null};
+    yeniKunyeler.push(k); l.libId=k.id;
+  }
+  if(yeniKunyeler.length){ await sbInsertAletLibItems(yeniKunyeler); yeniKunyeler.forEach(k=>aletLib().push(k)); }
+  const newItems=valid.map(l=>({id:uid(),libId:l.libId,adet:Number(l.adet)>0?Number(l.adet):1,seri:(l.seri||'').trim(),
+    durum:'depo',tarih:date,zimkod:'',zimmet:'',konum:'',note:'Fatura: '+no}));
   await sbInsertAletItems(newItems);
   newItems.forEach(e=>DB.alet.items.push(e));
-  closeModal(); render(); toast(`Fatura kaydedildi - ${newItems.length} alet eklendi`);
+  closeModal(); render();
+  toast(`Fatura kaydedildi - ${newItems.length} alet eklendi${yeniKunyeler.length?` (${yeniKunyeler.length} yeni kunye)`:''}`);
 }
 
 /* ==================================================================
@@ -17236,10 +17503,15 @@ function cmdkSearch(q){
       q,[o.no,o.tedarikci,(o.lines||[]).map(l=>[l.ad,l.kod,l.unit,l.qty].join(' ')).join(' '),'gecici siparis fatura']));
   }
   if(DB&&DB.alet&&cmdkCan('alet')){
-    (DB.alet.items||[]).forEach(a=>cmdkAdd(out,{kind:'Alet',name:a.ad||a.seri||'El aleti',
-      meta:[a.seri,a.marka,a.durum,a.zimmet].filter(Boolean).join(' / '),
-      go:()=>{ switchSection('alet'); SEARCH=a.seri||a.ad||a.marka||''; render(); }},
-      q,[a.ad,a.seri,a.marka,a.durum,a.zimmet,a.note,'alet el aleti zimmet seri']));
+    (DB.alet.items||[]).forEach(a=>{ const k=aletKunye(a);
+      cmdkAdd(out,{kind:'Alet',name:k.ad||a.seri||'El aleti',
+        meta:[a.seri,k.marka,a.durum,a.zimmet,a.konum].filter(Boolean).join(' / '),
+        go:()=>{ switchSection('alet'); SEARCH=a.seri||k.ad||k.marka||''; render(); }},
+        q,[k.ad,k.kod,k.marka,k.barkod,a.seri,a.durum,a.zimkod,a.zimmet,a.konum,a.note,'alet el aleti zimmet seri']); });
+    (DB.alet.lib||[]).forEach(l=>cmdkAdd(out,{kind:'Alet Kunyesi',name:l.ad||l.kod||'Kunye',
+      meta:[l.kod,l.marka,l.grup].filter(Boolean).join(' / '),
+      go:()=>{ openAletLib(); SEARCH=l.kod||l.ad||''; render(); }},
+      q,[l.ad,l.kod,l.marka,l.barkod,l.grup,'mekanik alet kutuphane kunye']));
   }
   if(DB&&DB.saha&&cmdkCan('saha')){
     (DB.saha.panels||[]).forEach(p=>cmdkAdd(out,{kind:'Pano',name:p.ad||p.kod||'Pano',

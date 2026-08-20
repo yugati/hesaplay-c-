@@ -745,6 +745,31 @@ DROP TRIGGER IF EXISTS tutanaklar_updated_at ON public.tutanaklar;
 CREATE TRIGGER tutanaklar_updated_at BEFORE UPDATE ON public.tutanaklar
   FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
 
+-- ─── 26. ALET_LIB (Mekanik (Alet) kütüphanesi) ──────────────────
+-- El Aletleri modülünün künye kaynağı; proje tarafındaki proje_materials'ın
+-- karşılığıdır. alet_items artık künyeyi kendi içinde taşımak yerine libId ile
+-- buraya bağlanır (adet/zimmet/konum kayıtta kalır).
+-- data: {kod, ad, grup, marka, birim, barkod, renk, olcu, agirlik, madde, note, img, img2}
+-- Ayrıntı ve tek başına çalıştırılabilir sürüm: migration_alet_lib.sql
+CREATE TABLE IF NOT EXISTS public.alet_lib (
+  id          TEXT        NOT NULL PRIMARY KEY,
+  data        JSONB       NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS alet_lib_created_at_idx ON public.alet_lib (created_at);
+CREATE INDEX IF NOT EXISTS alet_lib_kod_idx        ON public.alet_lib ((data->>'kod'));
+
+-- Yeni tablo: anon politikası HİÇ açılmaz (aşağıdaki blok zaten kapatırdı, ama
+-- kapıyı hiç açmamak doğrusu).
+ALTER TABLE public.alet_lib ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.alet_lib FROM anon, authenticated;
+
+DROP TRIGGER IF EXISTS alet_lib_updated_at ON public.alet_lib;
+CREATE TRIGGER alet_lib_updated_at BEFORE UPDATE ON public.alet_lib
+  FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+
 -- ============================================================
 -- AŞAMA 3 — ANON ERİŞİMİNİ KAPAT  (dosyanın EN SONU, sırası önemli)
 --
