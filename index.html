@@ -3946,7 +3946,29 @@ async function migrateSiparisSection(){
 }
 function closeUsers(){ PUSERS=false; render(); }
 let AUDIT_FU="", AUDIT_FA="";  // filtre: kullanici, islem
-function openAudit(){ if(!isAdmin()){toast('Yetkiniz yok','err');return;} PAUDIT=true; PUSERS=false; PLIB=false; PDEF=false; PCOMP=false; PEKIP=false; PBINAY=false; AUDIT_FU=""; AUDIT_FA=""; SEARCH=""; render(); }
+/* DENETIM KAYDI GEC YUKLENIR (kota). Acilista inmiyordu-inmiyor: olculen 347 KB'lik
+   yuk yalnizca bu ekrana girilince ya da yedek alinirken bir kez cekilir ve oturum
+   boyunca bellekte kalir (bkz. src/supabase.js sbLoadAllData notu). */
+let _AUDIT_YUKLENDI=false;
+async function auditYukle(){
+  if(_AUDIT_YUKLENDI) return;
+  if(!isAdmin()){ _AUDIT_YUKLENDI=true; return; }   // yonetici olmayan zaten okuyamaz (403)
+  try{
+    const kayitlar=await sbGetAuditLog();           // en yeniden eskiye, en fazla 2000
+    /* DB.meta.audit ARTAN sirada tutulur: renderAudit/exportAudit .reverse() ile en
+       yeniyi basa aliyor, logAction ise sona push edip slice(-2000) yapiyor. Sunucudan
+       azalan geldigi icin burada ters cevrilir - siralamayi tek yerde duzeltmek, iki
+       okuyucuyu birden degistirmekten guvenli. */
+    DB.meta.audit=(kayitlar||[]).slice().reverse();
+    _AUDIT_YUKLENDI=true;
+  }catch(e){
+    // bayrak KALKMAZ: gecici bir ag hatasindan sonra tekrar denensin
+    console.warn('Denetim kaydi yuklenemedi:',e);
+    toast('Denetim kaydi yuklenemedi - tekrar deneyin','err');
+  }
+}
+async function openAudit(){ if(!isAdmin()){toast('Yetkiniz yok','err');return;} PAUDIT=true; PUSERS=false; PLIB=false; PDEF=false; PCOMP=false; PEKIP=false; PBINAY=false; AUDIT_FU=""; AUDIT_FA=""; SEARCH=""; render();
+  await auditYukle(); if(PAUDIT) render(); }
 function closeAudit(){ PAUDIT=false; render(); }
 function setAuditFU(v){ AUDIT_FU=v; render(); }
 function setAuditFA(v){ AUDIT_FA=v; render(); }
@@ -3969,7 +3991,7 @@ function renderAudit(){
       <td><span class="cat-tag" style="background:${col}22;color:${col}">${esc(AUDIT_LABELS[a.action]||a.action)}</span></td>
       <td class="t-meta" style="font-size:12px">${esc(a.detail||'')}</td>
     </tr>`;
-  }).join('') || `<tr><td colspan="4" style="text-align:center;color:var(--mute);padding:30px">Kayit bulunamadi</td></tr>`;
+  }).join('') || `<tr><td colspan="4" style="text-align:center;color:var(--mute);padding:30px">${_AUDIT_YUKLENDI?'Kayit bulunamadi':'Denetim kaydi yukleniyor...'}</td></tr>`;
   const uOpts=`<option value="">Tum kullanicilar</option>`+users.map(u=>`<option value="${esc(u)}" ${AUDIT_FU===u?'selected':''}>${esc(u)}</option>`).join('');
   const aOpts=`<option value="">Tum islemler</option>`+actions.map(a=>`<option value="${esc(a)}" ${AUDIT_FA===a?'selected':''}>${esc(AUDIT_LABELS[a]||a)}</option>`).join('');
   return `<div class="sel-wrap" style="max-width:1300px">
@@ -9974,7 +9996,7 @@ async function confirmWipe(){
     const safetyEl=document.getElementById('wipe-safety');
     if(safetyEl&&safetyEl.checked){
       errEl.textContent='Guvenlik yedegi indiriliyor...';
-      downloadJSON(makeBackupEnvelope(),backupFname('_guvenlik'));
+      downloadJSON(await makeBackupEnvelope(),backupFname('_guvenlik'));
     }
     errEl.textContent='Siliniyor...';
     const labels=Object.fromEntries(WIPE_CATS.map(c=>[c.key,c.label]));
@@ -13468,7 +13490,7 @@ async function confirmRaporSil(){
       if(btn)btn.disabled=false; const p=document.getElementById('rsil-pass'); if(p){p.value='';p.focus();} return;
     }
     const yedek=document.getElementById('rsil-yedek');
-    if(yedek&&yedek.checked){ errEl.textContent='Guvenlik yedegi indiriliyor...'; downloadJSON(makeBackupEnvelope(),backupFname('_rapor-silmeden-once')); }
+    if(yedek&&yedek.checked){ errEl.textContent='Guvenlik yedegi indiriliyor...'; downloadJSON(await makeBackupEnvelope(),backupFname('_rapor-silmeden-once')); }
     errEl.textContent='Siliniyor...';
     const ids=hedef.map(e=>e.id);
     const moveIds=hedef.filter(e=>e._moveId).map(e=>e._moveId);
@@ -18354,7 +18376,11 @@ function backupCounts(db){
     {label:'Gunluk is (gorev)',n:(db&&db.gunlukIsler||[]).length}
   ];
 }
-function makeBackupEnvelope(){
+/* async: denetim kaydi artik acilista inmiyor, yedek alinmadan once bir kez cekilir.
+   Yoksa "yedek al" diyen yonetici gecmisi BOS bir zarf indirir ve geri yuklemede
+   denetim gecmisi sessizce kaybolurdu. */
+async function makeBackupEnvelope(){
+  await auditYukle();
   saveDB();
   return { app:BACKUP_APP_ID, format:2, createdAt:new Date().toISOString(),
     user:CURRENT_USER?CURRENT_USER.username:'',
@@ -18400,8 +18426,8 @@ function exportBackup(){
   </div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
 }
-function doExportBackup(){
-  const size=downloadJSON(makeBackupEnvelope(),backupFname());
+async function doExportBackup(){
+  const size=downloadJSON(await makeBackupEnvelope(),backupFname());
   localStorage.setItem('lastBackupAt',String(Date.now()));
   logAction('backup',`Yedek indirildi (${fmtBytes(size)})`);
   updateBackupBadge();
@@ -18463,7 +18489,7 @@ async function confirmRestore(){
     const prevDB=DB;
     if(document.getElementById('rst-safety').checked){
       errEl.textContent='Guvenlik yedegi indiriliyor...';
-      downloadJSON(makeBackupEnvelope(),backupFname('_guvenlik'));
+      downloadJSON(await makeBackupEnvelope(),backupFname('_guvenlik'));
     }
     errEl.textContent='Mevcut veri temizleniyor...';
     await sbWipeAllData();

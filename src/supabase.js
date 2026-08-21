@@ -852,10 +852,17 @@ export async function sbLoadAllData(scope) {
     })
   }
   if (needCompanies) tasks.companies = sbGetAll('companies').catch(() => [])
-  // Denetim kaydini yalnizca YONETICI okuyabilir (Asama 2 - sunucu tarafi kontrol).
-  // Hataya toleransli: bolumu tanimlanmamis bir kullanici tam yukleme yapsa bile
-  // 403 yuzunden acilis kirilmasin, denetim listesi bos gelsin yeter.
-  if (!scope) tasks.auditRes = veriSelect('audit_log', { columns: 'data', order: [{ col: 'created_at', asc: true }], limit: 2000 }).catch(() => [])
+  /* DENETIM KAYDI ACILISTA YUKLENMEZ (kota).
+     Eskiden burada 2000 satirin TAM verisi cekiliyordu: olculdu, ~347 KB - ve
+     columns:'data' ile DOGRUDAN cekildigi icin artimli onbellege hic girmiyordu,
+     yani her acilista bastan iniyordu. Acilis yukunun buyuk cogunlugu buydu.
+     Kayit yalnizca Denetim Kaydi ekraninda ve yedek alinirken gerekli; oraya
+     girildiginde sbGetAuditLog() ile bir kez yuklenir (index.html auditYukle).
+
+     AYRICA BIR HATA KAPANDI: eski sorgu created_at ASC + limit 2000 idi, yani
+     5600 kayitlik gecmisin EN ESKI 2000'ini getiriyordu. Ekranda gorulen en yeni
+     kayit ilk gunun ikinci dakikasindaydi - aradan gecen tum aylar gorunmuyordu.
+     sbGetAuditLog() DESC siralar, artik en yeni kayitlar gelir. */
 
   const keys = Object.keys(tasks)
   // Yukleme ekranina GERCEK ilerleme bildirilir: her tablo tamamlandiginda hangi tablonun
@@ -875,7 +882,6 @@ export async function sbLoadAllData(scope) {
   const ekipler = (r.raporEkiplerRes || []).map(x => x.name)
   const buildings = (r.projeBuildingsRes || []).map(x => x.code)
   const sections = (r.projeSectionsRes || []).map(x => x.name)
-  const auditEntries = (r.auditRes || []).map(x => x.data)
   const settingsMap = {}
   ;(r.settingsRes || []).forEach(s => { settingsMap[s.key] = s.value })
 
@@ -935,7 +941,7 @@ export async function sbLoadAllData(scope) {
       tavaSeedV: settingsMap.tavaSeedV != null ? settingsMap.tavaSeedV : 4,
       specWipeV: settingsMap.specWipeV != null ? settingsMap.specWipeV : 1,
       matLibV: settingsMap.matLibV != null ? settingsMap.matLibV : 1,
-      audit: auditEntries,
+      audit: [],   // gec yuklenir - bkz. yukaridaki not
     },
   }
 }
