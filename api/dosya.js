@@ -19,11 +19,21 @@ const INDIRME_OMRU = 300 // sn - sekmede acilmasina yeter, link paylasilirsa kis
    istemci 'path' ile kovadaki baska bir dosyayi isteyebilir ya da istedigi turde
    dosya yukleyebilirdi. */
 const KOVALAR = {
-  belgeler: { onek: /^(siparis|hareket|tutanak)\//, uzantilar: ['pdf'] },
-  'bina-modelleri': { onek: /^model\//, uzantilar: ['glb', 'gltf'] },
+  belgeler: { onek: /^(siparis|hareket|tutanak|gorev)\// },
+  'bina-modelleri': { onek: /^model\// },
 }
-// kind -> kova
-const TUR_KOVA = { siparis: 'belgeler', hareket: 'belgeler', tutanak: 'belgeler', model: 'bina-modelleri' }
+/* kind -> kova + izin verilen uzanti.
+   UZANTI LISTESI KOVA BASINA DEGIL TUR BASINA tanimlidir: gorev ekran goruntuleri de
+   'belgeler' kovasinda durur ama oraya PDF degil yalnizca gorsel girebilir; ayni
+   sekilde fatura yollarina da gorsel giremez. Kova basina tek liste olsaydi iki tur
+   birbirinin iznini sessizce genisletirdi. */
+const TURLER = {
+  siparis: { kova: 'belgeler', uzantilar: ['pdf'] },
+  hareket: { kova: 'belgeler', uzantilar: ['pdf'] },
+  tutanak: { kova: 'belgeler', uzantilar: ['pdf'] },
+  gorev: { kova: 'belgeler', uzantilar: ['jpg', 'jpeg', 'png', 'webp'] },
+  model: { kova: 'bina-modelleri', uzantilar: ['glb', 'gltf'] },
+}
 
 function kovaSec(ad) {
   const k = ad || 'belgeler'
@@ -35,9 +45,9 @@ function yolGecerli(kova, p) {
   if (!KOVALAR[kova].onek.test(p)) return false
   return /^[A-Za-z0-9/_.-]+$/.test(p)
 }
-function uzanti(kova, ad) {
+function uzanti(tur, ad) {
   const e = String(ad || '').split('.').pop().toLowerCase()
-  return KOVALAR[kova].uzantilar.includes(e) ? e : null
+  return tur.uzantilar.includes(e) ? e : null
 }
 function rastgele() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4)
@@ -64,10 +74,11 @@ export default async function handler(req, res) {
     // Govde: { kind:'siparis'|'hareket'|'tutanak'|'model', id:'<kayit id>', name:'dosya.pdf' }
     if (req.method === 'POST') {
       const { kind, id, name } = req.body || {}
-      const kova = TUR_KOVA[kind]
-      if (!kova) { res.status(400).json({ error: 'Gecersiz tur' }); return }
+      const tur = TURLER[kind]
+      if (!tur) { res.status(400).json({ error: 'Gecersiz tur' }); return }
+      const kova = tur.kova
       if (!id || !/^[A-Za-z0-9_-]{1,40}$/.test(String(id))) { res.status(400).json({ error: 'Gecersiz kayit id' }); return }
-      const ext = uzanti(kova, name)
+      const ext = uzanti(tur, name)
       if (!ext) { res.status(400).json({ error: 'Bu turde dosya yuklenemez' }); return }
 
       const path = `${kind === 'model' ? 'model' : kind}/${id}/${rastgele()}.${ext}`

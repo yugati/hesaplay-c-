@@ -1642,6 +1642,20 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .gi-add{background:var(--primary);border:none;color:#fff;border-radius:7px;padding:3px 9px;font-size:10px;font-weight:700;font-family:var(--mono);letter-spacing:.2px;text-transform:none;cursor:pointer;flex:0 0 auto;margin-left:auto}
 .gi-add:hover{filter:brightness(1.12)}
 .gi-warn{background:color-mix(in srgb,var(--warning) 12%,transparent);border:1px solid color-mix(in srgb,var(--warning) 38%,transparent);color:var(--warning);border-radius:8px;padding:7px 9px;font-size:10.5px;line-height:1.45;margin-bottom:8px;flex:0 0 auto}
+/* EKRAN GORUNTUSU KUTUSU: Ctrl+V ile yapistirma, surukle-birak ya da tiklayip secme */
+.gi-foto{position:relative;border:1.5px dashed var(--line);border-radius:10px;background:var(--bg);min-height:96px;display:flex;align-items:center;justify-content:center;text-align:center;padding:12px;cursor:pointer;transition:border-color .15s,background .15s;overflow:hidden}
+.gi-foto:hover,.gi-foto.uzerinde{border-color:var(--primary);background:color-mix(in srgb,var(--primary) 7%,var(--bg))}
+.gi-foto.dolu{padding:0;border-style:solid;cursor:zoom-in;min-height:0}
+.gi-foto img{display:block;width:100%;max-height:230px;object-fit:contain;background:var(--panel2)}
+.gi-foto-ph{font-size:11.5px;color:var(--mute);line-height:1.6}
+.gi-foto-ph b{display:block;color:var(--ink);font-size:12.5px;font-weight:700;margin-bottom:2px}
+.gi-foto-ph kbd{font-family:var(--mono);font-size:10.5px;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+.gi-foto-sil{position:absolute;top:7px;right:7px;width:24px;height:24px;border-radius:7px;border:1px solid var(--line);background:color-mix(in srgb,var(--panel) 88%,transparent);color:var(--red);font-weight:800;font-size:12px;line-height:1;cursor:pointer;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+.gi-foto-sil:hover{border-color:var(--red);background:var(--panel)}
+.gi-foto-not{position:absolute;left:7px;bottom:7px;font-family:var(--mono);font-size:9.5px;color:var(--mute);background:color-mix(in srgb,var(--panel) 82%,transparent);border:1px solid var(--line);border-radius:5px;padding:1px 6px;-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
+/* detay modalindaki goruntu - tiklayinca lightbox'ta buyur */
+.gid-foto{width:100%;border:1px solid var(--line);border-radius:10px;background:var(--panel2);max-height:280px;object-fit:contain;cursor:zoom-in;display:block}
+.gid-foto-bos{font-size:11.5px;color:var(--dim);padding:10px 0}
 /* gorev detay modali */
 .gid-row{display:flex;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line);font-size:12.5px}
 .gid-row:last-child{border-bottom:none}
@@ -3465,6 +3479,7 @@ function giItemHtml(t){
   else if(den==='revizyon') bayrak+=rozet('REVIZYON','var(--warning)');
   else if(t.durum==='bitti') bayrak+=rozet('DENETIM','var(--violet)');
   else if(giGecikmisMi(t)) bayrak+=rozet('GECIKTI','var(--danger)');
+  if(t.foto&&t.foto.path) bayrak+=rozet('FOTO','var(--primary)');
   // 'Gun' modunda tarih zaten baslikta yaziyor - satirda tekrar edilmez
   const meta=[_GI.mod!=='gun'?giKisaTarih(t.tarih):'', t.bina||'', t.konum||'', t.sorumlu||''].filter(Boolean).join(' · ');
   return `<div class="gi-item" title="${esc(t.baslik||'')}" onclick="openGunlukIsDetay('${t.id}')">
@@ -3479,6 +3494,142 @@ function giSetMod(m){ _GI.mod=m; giRefresh(); }
 function giAyKaydir(d){ const p=giParcala(_GI.ay+'-01'); const t=new Date(p[0],p[1]-1+d,1);
   _GI.ay=t.getFullYear()+'-'+giZ(t.getMonth()+1); giRefresh(); }
 function giBugunGit(){ giSetGun(giBugun()); }
+
+/* ── EKRAN GORUNTUSU (gorev eki) ──────────────────────────────────────────────
+   Windows'ta Win+Shift+S ile alinan ekran alintisi panoya duser; gorev formunda
+   Ctrl+V ile dogrudan yapistirilir. Surukle-birak ve dosya secme de calisir.
+
+   NEREYE KAYDEDILIR: goruntunun KENDISI kayda GOMULMEZ. Private 'belgeler'
+   kovasina yuklenir, gorev kaydinda yalnizca yolu durur (fatura PDF'leriyle ayni
+   mimari). Base64 olarak data icine konsaydi TUM gorevler her acilista indigi
+   icin acilis payload'i yeniden sisecekti - 33 MB'lik acilisi 1.67 MB'a indiren
+   is tam olarak bunu temizlemekti.
+
+   OLCU NEDEN 1600px: malzeme fotografi icin kullanilan compressImg 900px'e
+   kirpiyor; ekran alintisinda o boyutta YAZI okunmuyor. Ekran goruntusunun tek
+   isi zaten yaziyi/ekrani gostermek, bu yuzden ayri sikistirici kullanilir. */
+const GI_FOTO_MAX=1600, GI_FOTO_KALITE=0.85, GI_FOTO_GIRIS_SINIRI=25*1024*1024;
+let _giFoto=null;        // {blob,url,w,h} - secilmis ama HENUZ yuklenmemis goruntu
+let _giFotoMevcut='';    // duzenlenen gorevde zaten kayitli olan yol
+let _giFotoSil=false;    // mevcut goruntu "kaldir" ile dusuruldu mu
+let _giPasteBagli=false;
+/* Cozme sirasi sayaci: goruntu FileReader -> Image -> toBlob zinciriyle ASENKRON
+   islenir. Kullanici pes pese iki kez yapistirirsa (ya da yapistirip hemen Kaldir'a
+   basarsa) gec biten eski islem yenisini ezebilirdi. Her yeni istek sayaci artirir,
+   isini bitiren yalnizca hala GUNCEL ise sonucu yazar. */
+let _giFotoSira=0;
+
+// modal her acildiginda temiz baslasin (onceki secimin objectURL'i de birakilir)
+function giFotoSifirla(mevcutYol){
+  _giFotoSira++;                       // yolda olan cozme islemi sonucunu yazmasin
+  if(_giFoto&&_giFoto.url) URL.revokeObjectURL(_giFoto.url);
+  _giFoto=null; _giFotoSil=false; _giFotoMevcut=mevcutYol||'';
+}
+
+/* Belge YAPISTIRMA: yalnizca gorev modali acikken devreye girer, kapaliyken
+   sayfadaki hicbir yapistirmaya dokunmaz. Bir kez baglanir - modalin her
+   kapanis yolunda (Iptal / X / Kaydet / disa tiklama / Esc) listener sokme
+   ugrasi olmasin diye kosul dinleyicinin ICINDE. */
+function giPasteBagla(){
+  if(_giPasteBagli) return; _giPasteBagli=true;
+  document.addEventListener('paste',e=>{
+    if(!document.getElementById('giFotoKutu')) return;      // gorev modali kapali
+    const it=(e.clipboardData&&e.clipboardData.items)||[];
+    for(let i=0;i<it.length;i++){
+      if(it[i].kind==='file' && /^image\//.test(it[i].type||'')){
+        const f=it[i].getAsFile();
+        if(f){ e.preventDefault(); giFotoAl(f); return; }
+      }
+    }
+    // gorsel yoksa dokunma: metin yapistirma alanlarda normal calissin
+  });
+}
+
+/* Kutuya tiklama: BOS ise dosya secici acilir, DOLU ise goruntu buyur.
+   Dolu kutuda da secici acilsaydi sadece bakmak isteyen kullanicinin onune
+   beklenmedik bir dosya penceresi cikardi; degistirmek icin once Kaldir. */
+function giFotoKutuTikla(){
+  if(_giFoto){ lightbox(_giFoto.url); return; }
+  if(_giFotoMevcut&&!_giFotoSil){
+    Promise.resolve(window.sbBelgeUrl&&window.sbBelgeUrl(_giFotoMevcut))
+      .then(u=>{ if(u) lightbox(u); })
+      .catch(()=>toast('Goruntu acilamadi','err'));
+    return;
+  }
+  const el=document.getElementById('gi_foto_dosya'); if(el) el.click();
+}
+function giFotoSurukle(e,uzerinde){ e.preventDefault(); const el=document.getElementById('giFotoKutu');
+  if(el) el.classList.toggle('uzerinde',!!uzerinde); }
+function giFotoBirak(e){
+  giFotoSurukle(e,false);
+  const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];
+  if(f) giFotoAl(f);
+}
+function giFotoSec(e){ const f=e.target.files&&e.target.files[0]; if(f) giFotoAl(f); e.target.value=''; }
+
+function giFotoAl(file){
+  if(!file||!/^image\//.test(file.type||'')){ toast('Yalnizca gorsel eklenebilir','err'); return; }
+  if(file.size>GI_FOTO_GIRIS_SINIRI){ toast('Gorsel cok buyuk (en fazla 25 MB)','err'); return; }
+  const sira=++_giFotoSira;
+  const r=new FileReader();
+  r.onerror=()=>toast('Gorsel okunamadi','err');
+  r.onload=()=>{
+    const img=new Image();
+    img.onerror=()=>toast('Gorsel cozulemedi','err');
+    img.onload=()=>{
+      let w=img.width,h=img.height;
+      if(!w||!h){ toast('Gorsel bos gorunuyor','err'); return; }
+      if(w>GI_FOTO_MAX||h>GI_FOTO_MAX){ const s=Math.min(GI_FOTO_MAX/w,GI_FOTO_MAX/h); w=Math.round(w*s); h=Math.round(h*s); }
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      const ctx=c.getContext('2d');
+      /* PNG ekran alintisi saydam olabilir (pencere kosesi, golge). JPEG saydamligi
+         SIYAH'a cevirir - once beyaz zemin basilir, yoksa kose lekeleri cikardi. */
+      ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,w,h);
+      ctx.drawImage(img,0,0,w,h);
+      c.toBlob(b=>{
+        if(sira!==_giFotoSira) return;   // bu arada baska gorsel secildi ya da kaldirildi
+        if(!b){ toast('Gorsel islenemedi','err'); return; }
+        if(_giFoto&&_giFoto.url) URL.revokeObjectURL(_giFoto.url);
+        _giFoto={blob:b,url:URL.createObjectURL(b),w,h};
+        _giFotoSil=false;
+        giFotoCiz();
+        toast('Ekran goruntusu eklendi ('+Math.round(b.size/1024)+' KB) - Kaydet ile yuklenir');
+      },'image/jpeg',GI_FOTO_KALITE);
+    };
+    img.src=r.result;
+  };
+  r.readAsDataURL(file);
+}
+
+function giFotoKaldir(){
+  _giFotoSira++;                       // yolda olan cozme islemi kaldirilani geri getirmesin
+  if(_giFoto){ if(_giFoto.url) URL.revokeObjectURL(_giFoto.url); _giFoto=null; }
+  else if(_giFotoMevcut) _giFotoSil=true;   // dosya SILINMEZ - kayit basariyla yazildiktan sonra silinir
+  giFotoCiz();
+}
+
+function giFotoCiz(){
+  const el=document.getElementById('giFotoKutu'); if(!el) return;
+  const kaldirBtn='<button type="button" class="gi-foto-sil" title="Kaldir" onclick="event.stopPropagation();giFotoKaldir()">x</button>';
+  if(_giFoto){
+    el.className='gi-foto dolu';
+    el.innerHTML=`<img src="${_giFoto.url}" alt="ekran goruntusu">${kaldirBtn}<span class="gi-foto-not">${_giFoto.w}x${_giFoto.h} · ${Math.round(_giFoto.blob.size/1024)} KB</span>`;
+    return;
+  }
+  if(_giFotoMevcut&&!_giFotoSil){
+    el.className='gi-foto dolu';
+    el.innerHTML=`<img id="giFotoMevcutImg" alt="ekran goruntusu">${kaldirBtn}<span class="gi-foto-not">kayitli</span>`;
+    // kova private: goruntu kisa omurlu imzali adresle gelir
+    Promise.resolve(window.sbBelgeUrl&&window.sbBelgeUrl(_giFotoMevcut))
+      .then(u=>{ const im=document.getElementById('giFotoMevcutImg'); if(im&&u) im.src=u; })
+      .catch(()=>{ const im=document.getElementById('giFotoMevcutImg'); if(im) im.alt='goruntu acilamadi'; });
+    return;
+  }
+  el.className='gi-foto';
+  el.innerHTML=`<div class="gi-foto-ph"><b>Ekran goruntusu yapistirin</b>
+    <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> ile alip <kbd>Ctrl</kbd>+<kbd>V</kbd> yapin<br>
+    ya da dosyayi surukleyin / tiklayip secin</div>`;
+}
 
 // ── gorev ekleme / duzenleme ────────────────────────────────────────────────
 function openGunlukIsModal(id){
@@ -3510,13 +3661,19 @@ function openGunlukIsModal(id){
         <div><label>Oncelik</label><select id="gi_oncelik">${Object.keys(GI_ONCELIK).map(k=>opt(k,GI_ONCELIK[k].lbl,t?(t.oncelik||'normal'):'normal')).join('')}</select></div>
         <div><label>Durum</label><select id="gi_durum">${Object.keys(GI_DURUM).map(k=>opt(k,GI_DURUM[k].lbl,t?(t.durum||'bekliyor'):'bekliyor')).join('')}</select></div>
       </div>
-      <div class="frow" style="margin-bottom:0"><label>Aciklama <span class="t-meta">(opsiyonel)</span></label><textarea id="gi_aciklama" placeholder="ne yapilacak, nelere dikkat edilecek">${t?esc(t.aciklama||''):''}</textarea></div>
+      <div class="frow"><label>Aciklama <span class="t-meta">(opsiyonel)</span></label><textarea id="gi_aciklama" placeholder="ne yapilacak, nelere dikkat edilecek">${t?esc(t.aciklama||''):''}</textarea></div>
+      <div class="frow" style="margin-bottom:0"><label>Ekran Goruntusu <span class="t-meta">(opsiyonel)</span></label>
+        <div id="giFotoKutu" class="gi-foto" onclick="giFotoKutuTikla()"
+             ondragover="giFotoSurukle(event,true)" ondragleave="giFotoSurukle(event,false)" ondrop="giFotoBirak(event)"></div>
+        <input type="file" id="gi_foto_dosya" accept="image/*" style="display:none" onchange="giFotoSec(event)"></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveGunlukIs(${t?`'${t.id}'`:'null'})">Kaydet</button></div>
   </div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
-  // kaza ile kapanma korumasi: tarih/oncelik/durum hep dolu oldugu icin listeye KONMAZ
-  setModalGuard(()=>formDoluMu(['gi_baslik','gi_konum','gi_aciklama']));
+  giFotoSifirla(t&&t.foto?t.foto.path:''); giFotoCiz(); giPasteBagla();
+  // kaza ile kapanma korumasi: secilmis ekran goruntusu de "bilgi girildi" sayilir,
+  // yoksa yapistirilan goruntu disa tiklamayla sessizce ucardi
+  setModalGuard(()=>formDoluMu(['gi_baslik','gi_konum','gi_aciklama'],!!_giFoto));
   const inp=document.getElementById('gi_baslik'); if(inp) setTimeout(()=>inp.focus(),0);
 }
 
@@ -3545,10 +3702,27 @@ async function saveGunlukIs(id){
   const bina=al('gi_bina');
   if(bina&&!canSeeBuilding(bina)){ toast('Bu bina icin yetkiniz yok','err'); return; }
   const simdi=Date.now(), ben=(CURRENT_USER&&CURRENT_USER.username)||'?';
+  const gorevId=eski?eski.id:uid();   // yukleme yolu kayit id'sini icerdigi icin ONCE uretilir
+  /* EKRAN GORUNTUSU kayittan ONCE yuklenir: ters sirada yukleme basarisiz olsaydi
+     kayit "goruntusu var" der ama kovada dosya olmazdi. Degistirilen/kaldirilan eski
+     dosya ise kayit basariyla yazildiktan SONRA silinir - once silinip kayit yazilamazsa
+     mevcut goruntu bosuna yok olurdu. */
+  let foto=(eski&&eski.foto)||null;
+  const eskiYol=foto&&foto.path?foto.path:'';
+  let silinecekYol='';
+  if(_giFoto){
+    try{
+      const dosya=new File([_giFoto.blob],'ekran-'+Date.now()+'.jpg',{type:'image/jpeg'});
+      const y=await window.sbBelgeYukle('gorev',gorevId,dosya);
+      if(!y||!y.path) throw new Error('yukleme yanit vermedi');
+      foto={path:y.path,w:_giFoto.w,h:_giFoto.h,boyut:y.size||_giFoto.blob.size,ts:simdi};
+      silinecekYol=eskiYol;
+    }catch(e){ toast('Ekran goruntusu yuklenemedi: '+((e&&e.message)||e),'err'); return; }
+  } else if(_giFotoSil&&eskiYol){ foto=null; silinecekYol=eskiYol; }
   const kayit={
     ...(eski||{}),
-    id:eski?eski.id:uid(),
-    baslik, tarih, bina,
+    id:gorevId,
+    baslik, tarih, bina, foto,
     konum:al('gi_konum'), sorumlu:al('gi_sorumlu'), aciklama:al('gi_aciklama'),
     oncelik:al('gi_oncelik')||'normal',
     durum:al('gi_durum')||'bekliyor',
@@ -3565,6 +3739,9 @@ async function saveGunlukIs(id){
   if(!DB.gunlukIsler) DB.gunlukIsler=[];
   const i=DB.gunlukIsler.findIndex(x=>x&&x.id===kayit.id);
   if(i>=0) DB.gunlukIsler[i]=kayit; else DB.gunlukIsler.push(kayit);
+  // kayit yazildi: degistirilen/kaldirilan dosya artik hicbir kayitta gecmiyor
+  if(silinecekYol&&window.sbBelgeSil) window.sbBelgeSil(silinecekYol);
+  giFotoSifirla('');
   logAction('define',(eski?'Gunluk is guncellendi: ':'Gunluk is olusturuldu: ')+baslik+' ('+tarih+')');
   closeModal();
   // takvim kaydedilen gune atlar: eklenen gorev aninda listede gorunsun
@@ -3615,6 +3792,7 @@ function openGunlukIsDetay(id){
       ${satir('Aciklama',esc(t.aciklama||'').replace(/\n/g,'<br>'))}
       ${satir('Olusturan',esc(t.olusturan||'')+(t.olusturmaTs?' · '+fmtDate(t.olusturmaTs):''))}
       ${t.guncellemeTs&&t.guncellemeTs!==t.olusturmaTs?satir('Son Guncelleme',esc(t.guncelleyen||'')+' · '+fmtDate(t.guncellemeTs)):''}
+      ${(t.foto&&t.foto.path)?`<div class="gid-sec"><div class="gid-sec-h">Ekran Goruntusu</div><img id="gidFoto" class="gid-foto" alt="yukleniyor..."></div>`:''}
       <div class="gid-sec"><div class="gid-sec-h">Durum</div><div class="gid-btns">${durumBtn}</div></div>
       <div class="gid-sec"><div class="gid-sec-h">Denetleme</div>${denetimIc}</div>
     </div>
@@ -3625,6 +3803,13 @@ function openGunlukIsDetay(id){
     </div>
   </div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
+  /* Goruntu private kovada: imzali adres asenkron gelir, modal ACILDIKTAN sonra
+     yerine oturur. Tiklayinca mevcut lightbox'ta buyur. */
+  if(t.foto&&t.foto.path&&window.sbBelgeUrl){
+    window.sbBelgeUrl(t.foto.path).then(u=>{ const im=document.getElementById('gidFoto');
+      if(!im||!u) return; im.src=u; im.onclick=()=>lightbox(u); })
+      .catch(()=>{ const im=document.getElementById('gidFoto'); if(im) im.alt='goruntu acilamadi'; });
+  }
 }
 
 /* Ortak yazma yolu: kaydin bir kopyasi uzerinde degisiklik yapilir, sunucu kabul
@@ -3675,6 +3860,8 @@ async function giSil(id){
   try{ await sbDeleteGunlukIs(id); }
   catch(e){ giYazHatasi(e,'silinemedi'); return; }
   DB.gunlukIsler=(DB.gunlukIsler||[]).filter(x=>!x||x.id!==id);
+  // kayit gitti: eki de kovada oksuz kalmasin
+  if(t.foto&&t.foto.path&&window.sbBelgeSil) window.sbBelgeSil(t.foto.path);
   logAction('delete','Gunluk is silindi: '+(t.baslik||'')+' ('+(t.tarih||'')+')');
   closeModal(); giRefresh();
   toast('Gorev silindi');
