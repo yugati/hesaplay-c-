@@ -674,6 +674,23 @@ tbody tr:hover{background:var(--hover)}
 .brand-cell{display:flex;flex-direction:column;align-items:flex-start;gap:3px;max-width:230px}
 .brand-cell .cat-tag{white-space:nowrap;cursor:pointer;text-align:left}
 .brand-cell .cat-tag.expanded{white-space:normal;word-break:break-word;line-height:1.4}
+/* MARKA KUTUPHANESI: cip secici, logo onizleme, "listede olmayan" paneli */
+.marka-cips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px;min-height:24px;align-items:center}
+.marka-cip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:3px 8px;font-size:11.5px;font-weight:600;font-family:var(--mono);color:var(--ink);white-space:nowrap}
+.marka-cip img{width:18px;height:18px;object-fit:contain;border-radius:3px;background:#fff}
+.marka-cip b{cursor:pointer;opacity:.55;font-weight:700;font-size:13px;line-height:1}
+.marka-cip b:hover{opacity:1;color:var(--red)}
+.marka-cip i{font-style:normal;opacity:.6;font-size:10px}
+/* kesik cerceve = deger kayitta duruyor ama marka listesinde yok */
+.marka-cip.yabanci{border-style:dashed;color:var(--mute)}
+.marka-bar{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.marka-bar select{flex:0 1 240px;min-width:180px}
+.marka-bar input{flex:1;min-width:150px}
+.marka-onizle{display:flex;align-items:center;justify-content:center;min-height:70px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:8px}
+.marka-onizle img{max-width:100%;max-height:78px;object-fit:contain}
+.marka-eksik{margin-top:14px;border:1px dashed var(--line);border-radius:12px;padding:14px}
+.marka-eksik-liste{display:flex;flex-wrap:wrap;gap:5px}
+.marka-topla-liste{display:flex;flex-direction:column;gap:6px;max-height:calc(46 * var(--vh));overflow-y:auto;padding-right:3px}
 .chk-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:4px}
 .chk{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text);cursor:pointer;padding:7px 10px;background:var(--bg);border:1px solid var(--line);border-radius:8px}
 .chk input{width:15px;height:15px;accent-color:var(--blue);cursor:pointer}
@@ -5254,6 +5271,7 @@ function renderMaterialLib(){
   // dugmesinden de girilebiliyor, yalnizca 'alet' yetkisi olan proje malzemelerini gormemeli
   if(MATF.scope==='proje' && !(canSee('kutuphane')||canSee('proje')))
     MATF.scope=canSee('alet')?'alet':(canSee('gecici')?'gecici':'proje');
+  if(MATF.scope==='marka') return renderMaterialLibMarka();
   if(MATF.scope==='gecici') return renderMaterialLibGecici();
   if(MATF.scope==='alet') return renderMaterialLibAlet();
   const matsAll=matLibFilteredSorted();
@@ -5370,11 +5388,306 @@ function renderMaterialLib(){
 }
 // kutuphane kapsam anahtari: Proje (sartname malzemeleri) / Mobilizasyon (Gecici Elektrik).
 // Iki liste birbirinden tamamen ayridir - mobilizasyon kalemleri proje kutuphanesine karismaz.
+/* MARKA KUTUPHANESI ==========================================================
+   Marka, uc kutuphanenin (Proje / Mobilizasyon / Mekanik) ORTAK sozlugudur ve
+   Malzeme Kutuphanesi'nin DORDUNCU sekmesi olarak yasar (bkz. matScopeBar).
+
+   NEREDE DURUYOR: app_settings'te 'markalar' anahtari - yani DB.meta.markalar.
+   Ayri bir varlik tablosu KURULMADI. Sebep: liste onlarca kayitlik, app_settings
+   zaten acilista artimli iniyor ve degismedigi surece IndexedDB onbelleginden
+   geliyor (src/supabase.js anahtarDegerGetir). Ayri tablo, Supabase'de ELLE
+   calistirilacak bir migration daha demekti. Ustelik yukleyicide
+   meta:{...settingsMap} oldugu icin yeni anahtar hicbir yukleme kodu
+   degismeden DB.meta'ya kendiliginden dusuyor.
+
+   KAYIT: {id, ad, logo}   logo = disaridan resim linki (dosya yuklenmez).
+
+   TASARIM KARARI - kutuphane SOZLUK'tur, yabanci anahtar DEGIL: malzeme
+   kaydinda marka hala AD olarak durur (m.brand / x.marka). Boylece markayi
+   sartname, alternatif ve siparis satirlarina KOPYALAYAN 15+ yer (sp.brand,
+   alt.brand, Excel ice/disa aktarma...) tek satiri degismeden calisir. Bedeli:
+   listede ad degistirmek kopyalari da guncelleyen ayri bir istir -
+   markaAdiDegistir tam olarak bunu yapar. */
+function markaListesi(){ return ((DB&&DB.meta&&DB.meta.markalar)||[]).filter(x=>x&&x.ad); }
+function markaSirali(){ return markaListesi().slice().sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'tr')); }
+function markaBul(ad){ const n=norm(ad).trim(); if(!n)return null; return markaListesi().find(x=>norm(x.ad).trim()===n)||null; }
+function markaLogosu(ad){ const m=markaBul(ad); return (m&&m.logo)||''; }
+async function markaListesiYaz(list){
+  if(!DB.meta) DB.meta={};
+  DB.meta.markalar=list;
+  try{ await sbSetSetting('markalar',list); }
+  catch(e){ toast('Marka listesi kaydedilemedi: '+((e&&e.message)||e),'err'); throw e; }
+}
+
+/* Kayitlarda FIILEN gecen markalar ve kacar kez gectikleri. Ek sorgu YOK: uc
+   kutuphane de zaten bellekte, tarama sifir egress. */
+function markaKayitlardakiler(){
+  const harita=new Map();   // norm(ad) -> {ad,proje,gecici,alet}
+  const ekle=(ad,alan)=>{ const t=String(ad||'').trim(); if(!t)return;
+    const k=norm(t).trim(); const r=harita.get(k)||{ad:t,proje:0,gecici:0,alet:0}; r[alan]++; harita.set(k,r); };
+  ((DB.proje&&DB.proje.materials)||[]).forEach(m=>{ if(!m.is_deleted) matBrandParts(m.brand).forEach(b=>ekle(b,'proje')); });
+  ((DB.gecici&&DB.gecici.lib)||[]).forEach(x=>ekle(x.marka,'gecici'));
+  (aletLib()||[]).forEach(x=>ekle(x.marka,'alet'));
+  return harita;
+}
+function markaKullanim(ad,harita){ const h=harita||markaKayitlardakiler();
+  return h.get(norm(ad).trim())||{ad:String(ad||''),proje:0,gecici:0,alet:0}; }
+function markaToplam(k){ return (k.proje||0)+(k.gecici||0)+(k.alet||0); }
+// kayitta yaziyor ama listede yok - cok kullanilan en ustte
+function markaBilinmeyenler(){
+  return [...markaKayitlardakiler().values()].filter(r=>!markaBul(r.ad))
+    .sort((a,b)=>markaToplam(b)-markaToplam(a)||String(a.ad).localeCompare(String(b.ad),'tr'));
+}
+
+/* -- Marka secici -------------------------------------------------------------
+   Uc kutuphanenin marka alani da bunu kullanir. GERCEK DEGER gizli input'ta
+   durur (id parametresi): saveMaterial / saveLib / saveAletLib bugunku gibi
+   getElementById(id).value okumaya devam eder, tek satiri degismez.
+   coklu=true (Proje) birden cok marka tutar; deger satir satir yazilir - marka
+   hucresinin ve filtrenin bugunku ayrimiyla ayni (bkz. matBrandParts).
+   Listede OLMAYAN mevcut degerler silinmez, kesik cerceveli cip olarak durur. */
+const _markaSecim={};
+function markaAlaniHtml(id,deger,coklu){
+  const parcalar=coklu?matBrandParts(deger):(String(deger||'').trim()?[String(deger).trim()]:[]);
+  _markaSecim[id]=parcalar.slice();
+  return `<input type="hidden" id="${id}" value="${esc(parcalar.join('\n'))}">
+    <div id="${id}_cips" class="marka-cips">${markaCipsHtml(id,coklu)}</div>
+    <div class="marka-bar">
+      <select id="${id}_sel" onchange="markaSecUygula('${id}',${!!coklu})">${markaSecSecenekleri()}</select>
+      <input id="${id}_yeni" class="hidden" placeholder="Yeni marka adi" onkeydown="markaYeniTus(event,'${id}',${!!coklu})">
+      <button type="button" id="${id}_yenibtn" class="btn btn-ghost hidden" style="padding:6px 12px;font-size:12px" onclick="markaYeniEkle('${id}',${!!coklu})">Listeye Ekle</button>
+    </div>`;
+}
+function markaSecSecenekleri(){
+  return `<option value="">- marka secin -</option>`
+    +markaSirali().map(m=>`<option value="${esc(m.ad)}">${esc(m.ad)}</option>`).join('')
+    +`<option value="__yeni">+ Yeni marka...</option>`;
+}
+function markaCipsHtml(id,coklu){
+  const list=_markaSecim[id]||[];
+  if(!list.length) return `<span class="t-meta" style="font-size:11px">Marka secilmedi</span>`;
+  return list.map((ad,i)=>{ const lg=markaLogosu(ad), listede=!!markaBul(ad);
+    return `<span class="marka-cip${listede?'':' yabanci'}"${listede?'':' title="Bu deger marka listesinde yok - Marka sekmesinden ekleyebilirsiniz"'}>${lg?`<img src="${esc(lg)}" alt="">`:''}${esc(ad)}<b onclick="markaCipSil('${id}',${i},${!!coklu})">&times;</b></span>`;
+  }).join('');
+}
+function markaCizCips(id,coklu){
+  const box=document.getElementById(id+'_cips'); if(box) box.innerHTML=markaCipsHtml(id,coklu);
+  const gizli=document.getElementById(id); if(gizli) gizli.value=(_markaSecim[id]||[]).join('\n');
+}
+function markaCipSil(id,i,coklu){ (_markaSecim[id]||[]).splice(i,1); markaCizCips(id,coklu); }
+function markaCipEkle(id,ad,coklu){
+  const t=String(ad||'').trim(); if(!t) return;
+  if(!_markaSecim[id]) _markaSecim[id]=[];
+  if(!coklu) _markaSecim[id]=[t];
+  else if(!_markaSecim[id].some(x=>norm(x).trim()===norm(t).trim())) _markaSecim[id].push(t);
+  markaCizCips(id,coklu);
+}
+function markaSecUygula(id,coklu){
+  const sel=document.getElementById(id+'_sel'); if(!sel) return;
+  const v=sel.value;
+  const yeni=document.getElementById(id+'_yeni'), btn=document.getElementById(id+'_yenibtn');
+  if(v==='__yeni'){ if(yeni){ yeni.classList.remove('hidden'); yeni.focus(); } if(btn) btn.classList.remove('hidden'); return; }
+  if(yeni) yeni.classList.add('hidden');
+  if(btn) btn.classList.add('hidden');
+  sel.value='';
+  if(v) markaCipEkle(id,v,coklu);
+}
+function markaYeniTus(e,id,coklu){ if(e.key!=='Enter') return; e.preventDefault(); markaYeniEkle(id,coklu); }
+async function markaYeniEkle(id,coklu){
+  const inp=document.getElementById(id+'_yeni'); if(!inp) return;
+  const ad=String(inp.value||'').trim();
+  if(!ad){ toast('Marka adi girin','err'); return; }
+  if(!canEdit('kutuphane')){ toast('Marka ekleme yetkiniz yok','err'); return; }
+  if(!markaBul(ad)){
+    try{ await markaListesiYaz([...markaListesi(),{id:uid(),ad,logo:''}]); }catch(e){ return; }
+    logAction('editMaterial','Marka listeye eklendi: '+ad);
+  }
+  inp.value=''; inp.classList.add('hidden');
+  const btn=document.getElementById(id+'_yenibtn'); if(btn) btn.classList.add('hidden');
+  const sel=document.getElementById(id+'_sel'); if(sel){ sel.innerHTML=markaSecSecenekleri(); sel.value=''; }
+  markaCipEkle(id,ad,coklu);
+  toast('Marka listeye eklendi: '+ad);
+}
+
+/* -- Marka sekmesi ---------------------------------------------------------- */
+function renderMaterialLibMarka(){
+  const harita=markaKayitlardakiler();
+  const hepsi=markaSirali();
+  const liste=SEARCH?hepsi.filter(m=>matchText(m.ad,SEARCH)):hepsi;
+  const bilinmeyen=markaBilinmeyenler();
+  const duzen=canEdit('kutuphane');
+  const icoDuzenle='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg>';
+  let rows='';
+  if(!liste.length){
+    rows=`<tr><td colspan="7"><div class="empty" style="padding:30px"><p>${hepsi.length?'Eslesen marka yok':'Marka listesi bos'}</p><span style="font-size:12px">${hepsi.length?'Aramayi temizleyin':'"Marka Ekle" ile baslayin - ya da kayitlarda gecen markalari "Kayitlardan Topla" ile tek seferde listeye alin'}</span></div></td></tr>`;
+  } else {
+    liste.forEach(m=>{
+      const k=markaKullanim(m.ad,harita), t=markaToplam(k);
+      rows+=`<tr>
+        <td>${m.logo?`<img class="thumb" src="${esc(m.logo)}" onclick="lightbox('${esc(m.logo)}')" alt="">`:phThumb()}</td>
+        <td><div class="t-name">${esc(m.ad)}</div></td>
+        <td class="t-meta">${k.proje||'-'}</td>
+        <td class="t-meta">${k.gecici||'-'}</td>
+        <td class="t-meta">${k.alet||'-'}</td>
+        <td class="t-meta">${t?`<b>${fmtNum(t)}</b>`:'-'}</td>
+        <td><div class="row-actions">
+          ${duzen?`<button class="mini-btn" title="Duzenle" onclick="openMarkaModal('${m.id}')">${icoDuzenle}</button>`:''}
+          ${canDelete('kutuphane')?`<button class="mini-btn del" title="Listeden sil" onclick="delMarka('${m.id}')">${icoTrash()}</button>`:''}
+        </div></td></tr>`;
+    });
+  }
+  const eksikPanel=bilinmeyen.length?`<div class="marka-eksik">
+    <div class="gid-sec-h" style="margin-bottom:7px">Kayitlarda gecen ama listede olmayan: ${bilinmeyen.length}</div>
+    <div class="marka-eksik-liste">${bilinmeyen.slice(0,40).map(r=>`<span class="marka-cip yabanci">${esc(r.ad)}<i>${markaToplam(r)}</i></span>`).join('')}${bilinmeyen.length>40?`<span class="t-meta" style="font-size:11px;align-self:center">+${bilinmeyen.length-40} tane daha</span>`:''}</div>
+    ${duzen?`<button class="btn btn-ghost" style="margin-top:10px;padding:6px 12px;font-size:12px" onclick="openMarkaToplaModal()">Listeye Ekle...</button>`:''}
+  </div>`:'';
+  return `<div class="sel-wrap" style="max-width:none">
+    <div class="sel-bc"><button onclick="closeMaterialLib()">${icoArr('left')} Binalara Don</button></div>
+    <div class="sel-head"><h2>Malzeme Kutuphanesi</h2><p>Marka listesi - Proje, Mobilizasyon ve Mekanik kutuphanelerinin ORTAK marka sozlugu</p></div>
+    ${matScopeBar()}
+    <div class="matlib-filterbar">
+    <div class="toolbar">${searchBox('Marka ara...')}
+      ${duzen?`<button class="btn btn-ciplak" title="Listeye yeni marka ekle" aria-label="Marka ekle" onclick="openMarkaModal()">${icoMalEkle()}</button>`:''}
+      ${duzen&&bilinmeyen.length?`<button class="btn btn-ciplak" title="Kayitlardan Topla - uc kutuphanedeki kayitlarda gecen ama listede olmayan ${bilinmeyen.length} degeri listeye alir; kayitlara dokunmaz" aria-label="Kayitlardan topla" onclick="openMarkaToplaModal()">${icoPlus()}<b class="ciplak-say">${bilinmeyen.length}</b></button>`:''}</div>
+    </div>
+    <div class="tablewrap"><table><thead><tr><th style="width:52px"></th><th>Marka</th><th>Proje</th><th>Mobilizasyon</th><th>Mekanik</th><th>Toplam</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${eksikPanel}
+  </div>`;
+}
+
+function markaOnizleHata(img){ const s=document.createElement('span'); s.className='t-meta'; s.style.fontSize='11px'; s.textContent='Logo linki acilamadi'; img.replaceWith(s); }
+function markaLogoOnizle(){
+  const v=String((document.getElementById('mk_logo')||{}).value||'').trim();
+  const box=document.getElementById('mk_onizle'); if(!box) return;
+  box.innerHTML=v?`<img src="${esc(v)}" alt="" onerror="markaOnizleHata(this)">`:'<span class="t-meta" style="font-size:11px">Logo linki girilmedi</span>';
+}
+function openMarkaModal(id){
+  if(!canEdit('kutuphane')){ toast('Bu islem icin yetkiniz yok','err'); return; }
+  const m=id?markaListesi().find(x=>x.id===id):null;
+  const kullanim=m?markaToplam(markaKullanim(m.ad)):0;
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:480px">
+    <div class="modal-head"><h3>${m?'Markayi Duzenle':'Yeni Marka'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body">
+      <div class="frow"><label>Marka Adi *</label><input id="mk_ad" value="${m?esc(m.ad):''}" placeholder="orn. Hilti" onkeydown="if(event.key==='Enter')saveMarka(${m?`'${m.id}'`:'null'})"></div>
+      <div class="frow"><label>Logo Linki <span class="t-meta">(opsiyonel - internetteki resmin adresi)</span></label>
+        <input id="mk_logo" value="${m&&m.logo?esc(m.logo):''}" placeholder="https://..." oninput="markaLogoOnizle()"></div>
+      <div class="frow" style="margin-bottom:0"><label>Onizleme</label>
+        <div class="marka-onizle" id="mk_onizle">${m&&m.logo?`<img src="${esc(m.logo)}" alt="" onerror="markaOnizleHata(this)">`:'<span class="t-meta" style="font-size:11px">Logo linki girilmedi</span>'}</div></div>
+      ${m&&kullanim?`<p class="t-meta" style="font-size:11px;margin-top:12px;line-height:1.5">Bu marka su an <b>${fmtNum(kullanim)}</b> kayitta yaziyor. Adini degistirirseniz o kayitlarda ve bagli sartname satirlarinda da guncellenir.</p>`:''}
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveMarka(${m?`'${m.id}'`:'null'})">Kaydet</button></div>
+  </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  setModalGuard(()=>formDoluMu(['mk_ad','mk_logo']));
+  const i=document.getElementById('mk_ad'); if(i) setTimeout(()=>i.focus(),0);
+}
+
+/* Listede ad degistirmek: marka kayitlarda AD olarak durdugu icin (bkz. yukaridaki
+   tasarim karari) uc kutuphanedeki ve bagli sartname satirlarindaki KOPYALAR da
+   guncellenir - yoksa kutuphanede "Hilti", sartnamede eski yazim kalirdi. */
+async function markaAdiDegistir(eski,yeni){
+  /* Karsilastirma norm() ile yapilir ama ERKEN CIKIS ham metne bakar: asil
+     istenen temizlik cogu zaman "hilti -> Hilti" gibi YAZIM duzeltmesidir ve
+     norm'a gore o ikisi ayni goruntugu icin norm ile karsilastirsak hicbir sey
+     yapmadan donerdik. */
+  const n=norm(eski).trim(); if(!n||String(eski)===String(yeni)) return 0;
+  const simdi=Date.now(); const ops=[]; let say=0;
+  ((DB.proje&&DB.proje.materials)||[]).forEach(m=>{
+    if(m.is_deleted) return;
+    const p=matBrandParts(m.brand);
+    if(!p.some(b=>norm(b).trim()===n)) return;
+    m.brand=p.map(b=>norm(b).trim()===n?yeni:b).join('\n'); m.updatedAt=simdi; say++;
+    ops.push(sbUpdateProjeMaterial(m.id,{...m}));
+    materialUsage(m.id).forEach(sp=>{ sp.brand=m.brand; ops.push(sbUpdateProjeSpec(sp.id,{...sp})); });
+  });
+  ((DB.gecici&&DB.gecici.lib)||[]).forEach(x=>{ if(norm(x.marka||'').trim()!==n) return;
+    x.marka=yeni; say++; ops.push(sbUpdateGeciciLibItem(x.id,{...x})); });
+  (aletLib()||[]).forEach(x=>{ if(norm(x.marka||'').trim()!==n) return;
+    x.marka=yeni; say++; ops.push(sbUpdateAletLibItem(x.id,{...x})); });
+  await Promise.all(ops);
+  return say;
+}
+
+async function saveMarka(id){
+  if(!canEdit('kutuphane')){ toast('Bu islem icin yetkiniz yok','err'); return; }
+  const ad=String((document.getElementById('mk_ad')||{}).value||'').trim();
+  if(!ad){ toast('Marka adi zorunlu','err'); return; }
+  const logo=String((document.getElementById('mk_logo')||{}).value||'').trim();
+  const liste=markaListesi().map(x=>({...x}));
+  const cakisma=liste.find(x=>x.id!==id&&norm(x.ad).trim()===norm(ad).trim());
+  if(cakisma){ toast('Bu marka listede zaten var: '+cakisma.ad,'err'); return; }
+  const kayit=id?liste.find(x=>x.id===id):null;
+  if(id&&!kayit){ toast('Marka bulunamadi','err'); return; }
+  const eskiAd=kayit?kayit.ad:'';
+  const adDegisti=!!(kayit&&eskiAd!==ad);
+  /* Once KAYITLARA yayilir, sonra liste yazilir: ters sirada yayilim yarida
+     kalsaydi listede yeni ad, kayitlarda eski ad kalir ve fark gorunmezdi. */
+  let yayildi=0;
+  if(adDegisti){
+    try{ yayildi=await markaAdiDegistir(eskiAd,ad); }
+    catch(e){ toast('Marka kayitlarda guncellenemedi: '+((e&&e.message)||e),'err'); return; }
+  }
+  if(kayit){ kayit.ad=ad; kayit.logo=logo; } else liste.push({id:uid(),ad,logo});
+  try{ await markaListesiYaz(liste); }catch(e){ return; }
+  logAction('editMaterial',(id?'Marka guncellendi: ':'Marka eklendi: ')+(adDegisti?eskiAd+' -> '+ad:ad));
+  closeModal(); render();
+  toast(id?('Marka guncellendi'+(yayildi?' - '+fmtNum(yayildi)+' kayitta da degisti':'')):'Marka eklendi');
+}
+
+async function delMarka(id){
+  if(!canDelete('kutuphane')){ toast('Silme yetkiniz yok','err'); return; }
+  const m=markaListesi().find(x=>x.id===id); if(!m) return;
+  const k=markaKullanim(m.ad), t=markaToplam(k);
+  /* Silinen sey yalnizca SOZLUK kaydidir; kayitlardaki marka yazisina dokunulmaz.
+     Kullaniciya bunu acikca soylemek sart - "sil" burada veri silmiyor. */
+  const mesaj='"'+m.ad+'" marka LISTESINDEN silinecek.\n\n'
+    +(t?('Bu marka su an '+t+' kayitta yaziyor (Proje '+k.proje+' / Mobilizasyon '+k.gecici+' / Mekanik '+k.alet+').\nO kayitlardaki marka yazisi SILINMEZ - yalnizca secim listesinden ve logo eslesmesinden duser.')
+       :'Bu marka hicbir kayitta kullanilmiyor.')
+    +'\n\nDevam edilsin mi?';
+  if(!confirm(mesaj)) return;
+  try{ await markaListesiYaz(markaListesi().filter(x=>x.id!==id)); }catch(e){ return; }
+  logAction('delete','Marka listeden silindi: '+m.ad);
+  render(); toast('Marka listeden silindi');
+}
+
+/* Kayitlardan topla: mevcut serbest metin markalari tek seferde sozluge alir.
+   Kayitlara DOKUNMAZ - yalnizca listeye ekler. */
+function openMarkaToplaModal(){
+  if(!canEdit('kutuphane')){ toast('Bu islem icin yetkiniz yok','err'); return; }
+  const eksik=markaBilinmeyenler();
+  if(!eksik.length){ toast('Kayitlardaki tum markalar zaten listede'); return; }
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:560px">
+    <div class="modal-head"><h3>Kayitlardan Marka Topla</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body">
+      <p class="t-meta" style="font-size:11.5px;line-height:1.55;margin-bottom:12px">Asagidaki <b>${eksik.length}</b> deger uc kutuphanedeki kayitlarda yaziyor ama marka listesinde yok. Isaretlediklerinizi listeye ekler, <b>kayitlarin kendisine dokunmaz</b>. Yanindaki sayi kac kayitta gectigidir - tek kayitta gecen degerler cogu zaman yazim hatasi ya da marka degil model adidir, onlari isaretsiz birakabilirsiniz.</p>
+      <div class="marka-topla-liste">${eksik.map(r=>`<label class="chk"><input type="checkbox" class="marka-topla-chk" ${markaToplam(r)>1?'checked':''} value="${esc(r.ad)}"><span>${esc(r.ad)} <i style="font-style:normal;opacity:.55;font-family:var(--mono);font-size:11px">- ${markaToplam(r)}</i></span></label>`).join('')}</div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="markaTopla()">Listeye Ekle</button></div>
+  </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  setModalGuard(()=>false);
+}
+async function markaTopla(){
+  if(!canEdit('kutuphane')){ toast('Bu islem icin yetkiniz yok','err'); return; }
+  const secili=[...document.querySelectorAll('.marka-topla-chk')].filter(c=>c.checked).map(c=>c.value);
+  if(!secili.length){ toast('Hic marka isaretlenmedi','err'); return; }
+  const liste=markaListesi().map(x=>({...x}));
+  let n=0;
+  secili.forEach(ad=>{ const t=String(ad||'').trim(); if(!t) return;
+    if(liste.some(x=>norm(x.ad).trim()===norm(t).trim())) return;
+    liste.push({id:uid(),ad:t,logo:''}); n++; });
+  if(!n){ toast('Bu markalar zaten listede'); closeModal(); return; }
+  try{ await markaListesiYaz(liste); }catch(e){ return; }
+  logAction('editMaterial',n+' marka kayitlardan listeye eklendi');
+  closeModal(); render(); toast(fmtNum(n)+' marka listeye eklendi');
+}
+
 function matScopeBar(){
   return `<div class="seg" style="margin-bottom:12px;display:inline-flex">
     ${(canSee('kutuphane')||canSee('proje'))?`<button class="${MATF.scope==='proje'?'on':''}" onclick="setMatScope('proje')">Proje</button>`:''}
     ${canSee('gecici')?`<button class="${MATF.scope==='gecici'?'on':''}" onclick="setMatScope('gecici')" title="Gecici Elektrik kutuphanesi - proje malzemelerinden ayri tutulur">Mobilizasyon (Gecici Elektrik)</button>`:''}
     ${canSee('alet')?`<button class="${MATF.scope==='alet'?'on':''}" onclick="setMatScope('alet')" title="El aletlerinin kunye kaynagi - zimmet/adet kayitlari El Aletleri bolumunde tutulur">Mekanik (Alet)</button>`:''}
+    ${(canSee('kutuphane')||canSee('proje')||canSee('gecici')||canSee('alet'))?`<button class="${MATF.scope==='marka'?'on':''}" onclick="setMatScope('marka')" title="Marka listesi - ustteki uc kutuphanenin ORTAK marka sozlugu">Marka</button>`:''}
   </div>`;
 }
 // Mobilizasyon kapsami: gecici elektrik kutuphanesi ayni yapisal filtre paneliyle listelenir.
@@ -5574,7 +5887,7 @@ function openMaterialModal(id,keepReturn){
   const cats=[...new Set([...(DB.proje.sections||PROJ_CATS),...(DB.proje.materials||[]).map(x=>x.cat).filter(Boolean),...useCats])];
   const html=`<div class="modal-bg" onclick="matModalBgClick(event)"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${m?'Malzeme Duzenle':'Yeni Malzeme'}</h3><button class="mini-btn" onclick="matModalClose()">x</button></div><div class="modal-body">
     <div class="frow"><label>Malzeme Adi *</label><input id="mt_name" value="${m?esc(m.name):''}" placeholder="orn. Galvaniz Kablo Tavasi 200mm"></div>
-    <div class="frow two"><div><label>Urun Kodu</label><input id="mt_code" value="${m?esc(m.code||''):''}" placeholder="orn. 121491"></div><div><label>Marka  <span class="t-meta">(her satir ayri gosterilir)</span></label><textarea id="mt_brand" rows="2" style="min-height:38px" placeholder="orn. Hilti, Schneider">${m?esc(m.brand||''):''}</textarea></div></div>
+    <div class="frow two"><div><label>Urun Kodu</label><input id="mt_code" value="${m?esc(m.code||''):''}" placeholder="orn. 121491"></div><div><label>Marka  <span class="t-meta">(listeden secin - birden fazla olabilir)</span></label>${markaAlaniHtml('mt_brand',m?m.brand:'',true)}</div></div>
     <div class="frow"><label>Varyant Kodlar  <span class="t-meta">(ayni urunun bilindigi diger kodlar - Enter veya virgul ile ekleyin; arama ve Excel eslestirmede ana kod gibi calisir)</span></label>
       <div id="mt_altCodesBox" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:24px"></div>
       <input id="mt_altCodeInput" placeholder="orn. 121491-EU, HL121491" oninput="altCodeInputChange(event)" onkeydown="altCodeInputKeydown(event)">
@@ -12110,7 +12423,8 @@ function openLibModal(id){ if(!canEdit('gecici')) return; modalImg=null; const x
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>${x?'Malzeme Duzenle':'Kutuphaneye Malzeme Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow"><label>Malzeme Adi *</label><input id="l_ad" value="${x?esc(x.ad):''}" placeholder="orn. 5X32A ERKEK FIS 380V"></div>
     <div class="frow two"><div><label>Stok Kodu</label><input id="l_kod" value="${x?esc(x.kod||''):''}"></div><div><label>Grup</label><input id="l_grup" list="grpList" value="${x?esc(x.grup||''):''}" placeholder="SIGORTA / KABLO..."><datalist id="grpList">${grps.map(g=>`<option value="${esc(g)}">`).join('')}</datalist></div></div>
-    <div class="frow three"><div><label>Marka</label><input id="l_marka" value="${x?esc(x.marka||''):''}"></div><div><label>Birim</label><input id="l_unit" value="${x?esc(x.unit||'ADET'):'ADET'}"></div><div><label>Renk</label><input id="l_renk" value="${x?esc(x.renk||''):''}"></div></div>
+    <div class="frow"><label>Marka  <span class="t-meta">(ortak marka listesinden)</span></label>${markaAlaniHtml('l_marka',x?x.marka:'',false)}</div>
+    <div class="frow two"><div><label>Birim</label><input id="l_unit" value="${x?esc(x.unit||'ADET'):'ADET'}"></div><div><label>Renk</label><input id="l_renk" value="${x?esc(x.renk||''):''}"></div></div>
     <div class="frow two"><div><label>Barkod</label><input id="l_barkod" value="${x?esc(x.barkod||''):''}"></div><div><label>${x?'Bakiye':'Baslangic Bakiyesi'}</label><input id="l_bakiye" type="number" step="any" value="${x?x.bakiye:0}"></div></div>
     <div class="frow"><label>Urun Fotografi</label><div class="drop ${x&&x.img?'has':''}" id="lImgDrop" onclick="document.getElementById('lImgInput').click()">${x&&x.img?`<img class="img-prev" src="${x.img}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div><input type="file" id="lImgInput" accept="image/*" class="hidden" onchange="pickImg(event,'lImgDrop')"></div>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveLib(${x?`'${x.id}'`:'null'})">Kaydet</button></div></div></div>`;
@@ -12564,7 +12878,8 @@ function openAletLibModal(id){ if(!canEdit('alet')) return;
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${x?'Alet Kunyesi Duzenle':'Kutuphaneye Alet Ekle'}</h3><button class="mini-btn" onclick="aletLibModalClose()">x</button></div><div class="modal-body">
     <div class="frow two"><div><label>Urun Kodu</label><input id="k_kod" value="${x?esc(x.kod||''):''}" placeholder="orn. 121491"></div><div><label>Grup</label><input id="k_grup" list="aletGrpList" value="${x?esc(x.grup||''):''}" placeholder="orn. ELEKTRIKLI EL ALETI"><datalist id="aletGrpList">${grps.map(g=>`<option value="${esc(g)}">`).join('')}</datalist></div></div>
     <div class="frow"><label>Malzeme Adi ve Ozelligi *</label><input id="k_ad" value="${x?esc(x.ad||''):''}" placeholder="orn. Darbeli Matkap 18V / SDS-Plus"></div>
-    <div class="frow two"><div><label>Marka / Model</label><input id="k_marka" value="${x?esc(x.marka||''):''}" placeholder="orn. Bosch GSB 18V"></div><div><label>Birim</label><input id="k_birim" value="${x?esc(x.birim||'ADET'):'ADET'}" placeholder="ADET"></div></div>
+    <div class="frow"><label>Marka  <span class="t-meta">(ortak marka listesinden - model adi Olcu/Not alanina yazilir)</span></label>${markaAlaniHtml('k_marka',x?x.marka:'',false)}</div>
+    <div class="frow"><label>Birim</label><input id="k_birim" value="${x?esc(x.birim||'ADET'):'ADET'}" placeholder="ADET"></div>
     <div class="frow two"><div><label>Barkod</label><input id="k_barkod" value="${x?esc(x.barkod||''):''}" placeholder="orn. 8690000000000"></div><div><label>Renk</label><input id="k_renk" value="${x?esc(x.renk||''):''}" placeholder="orn. Mavi"></div></div>
     <div class="frow two"><div><label>Olcu ve Boyut</label><input id="k_olcu" value="${x?esc(x.olcu||''):''}" placeholder="orn. 320x210x90 mm"></div><div><label>Agirlik (kg)</label><input id="k_agirlik" type="number" step="any" min="0" value="${x&&x.agirlik!=null?x.agirlik:''}" placeholder="0"></div></div>
     <div class="frow"><label>Madde</label><input id="k_madde" value="${x?esc(x.madde||''):''}" placeholder="orn. 12"></div>
