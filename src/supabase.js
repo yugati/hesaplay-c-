@@ -650,6 +650,17 @@ export async function sbDeleteProjeOrder(id) { return sbDeleteEntity('proje_orde
 // Şirketler (sipariş/fatura girişinde seçilen firma listesi)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Gunluk Isler — bina secim panosundaki takvimli gorev takibi
+// Tablo migration_gunluk_isler.sql ile kurulur; kurulmamissa acilis kilitlenmesin
+// diye yukleme hataya toleranslidir (alet_lib / tutanaklar ile ayni desen).
+// ─────────────────────────────────────────────────────────────────────────────
+export async function sbGetGunlukIsler() { return sbGetAll('gunluk_isler') }
+export async function sbInsertGunlukIs(e) { return sbInsertEntity('gunluk_isler', e) }
+export async function sbUpdateGunlukIs(id, e) { return sbUpdateEntity('gunluk_isler', id, e) }
+export async function sbDeleteGunlukIs(id) { return sbDeleteEntity('gunluk_isler', id) }
+export async function sbWipeGunlukIslerData() { await sbDeleteAll('gunluk_isler') }
+
 export async function sbGetCompanies() { return sbGetAll('companies') }
 export async function sbInsertCompany(e) { return sbInsertEntity('companies', e) }
 export async function sbUpdateCompany(id, e) { return sbUpdateEntity('companies', id, e) }
@@ -831,6 +842,15 @@ export async function sbLoadAllData(scope) {
     // migration henüz çalıştırılmamışsa tüm veri yüklemesini kilitlememesi için hataya toleranslı.
     tasks.projeBinaModelleri = sbGetAll('proje_bina_modelleri').catch(() => [])
   }
+  // GUNLUK ISLER yalnizca proje panosunda gorunur - baska modul bu tabloyu istemez.
+  // Tablo migration_gunluk_isler.sql ile kurulur; kurulmamissa TUM yuklemeyi
+  // kilitlememesi icin hataya toleransli. Eksikse panel "once SQL'i calistirin" der.
+  if (need('proje')) {
+    tasks.gunlukIsler = sbGetAll('gunluk_isler').catch(() => {
+      if (typeof window !== 'undefined') window.__gunlukTableMissing = true
+      return []
+    })
+  }
   if (needCompanies) tasks.companies = sbGetAll('companies').catch(() => [])
   // Denetim kaydini yalnizca YONETICI okuyabilir (Asama 2 - sunucu tarafi kontrol).
   // Hataya toleransli: bolumu tanimlanmamis bir kullanici tam yukleme yapsa bile
@@ -873,6 +893,7 @@ export async function sbLoadAllData(scope) {
   return {
     companies: r.companies || [],
     tutanaklar: r.tutanaklar || [],
+    gunlukIsler: r.gunlukIsler || [],
     alet: { items: r.aletItems || [], lib: r.aletLib || [] },
     saha: {
       bg: (r.sahaSettings && r.sahaSettings.bg) || null,
@@ -951,6 +972,8 @@ export async function sbMigrateLocalDB(localDB) {
     push('Ekipler', sbInsertRaporEkipler(localDB.rapor.ekipler))
   if (localDB.tutanaklar?.length)
     push('Tutanaklar', sbInsertEntities('tutanaklar', localDB.tutanaklar))
+  if (localDB.gunlukIsler?.length)
+    push('Gunluk Isler', sbInsertEntities('gunluk_isler', localDB.gunlukIsler))
   if (localDB.gecici?.lib?.length)
     push('Gecici Elektrik Kutuphanesi', sbInsertEntities('gecici_lib', localDB.gecici.lib))
   if (localDB.gecici?.moves?.length)
@@ -1020,6 +1043,7 @@ export async function sbWipeAllData() {
     'proje_bina_modelleri', 'proje_lokasyonlar', 'proje_alternatives', 'companies',
     'alet_items', 'alet_lib', 'saha_panels', 'saha_lines', 'saha_sockets',
     'rapor_entries', 'tutanaklar', 'gecici_lib', 'gecici_moves', 'gecici_orders',
+    'gunluk_isler',
   ]
   await Promise.allSettled([
     ...textIdTables.map(t => sbDeleteAll(t)),

@@ -63,7 +63,8 @@ async function liste(t, kolon, sirala) {
 
 const TABLOLAR = ['companies', 'tutanaklar', 'alet_items', 'alet_lib', 'saha_panels', 'saha_lines', 'saha_sockets',
   'rapor_entries', 'gecici_lib', 'gecici_moves', 'gecici_orders', 'proje_sartnames', 'proje_materials',
-  'proje_specs', 'proje_items', 'proje_orders', 'proje_alternatives', 'proje_bina_modelleri', 'proje_lokasyonlar'];
+  'proje_specs', 'proje_items', 'proje_orders', 'proje_alternatives', 'proje_bina_modelleri', 'proje_lokasyonlar',
+  'gunluk_isler'];
 
 console.log('== TAM YEDEK ==');
 console.log('Kaynak:', env.VITE_SUPABASE_URL, '\n');
@@ -95,7 +96,7 @@ console.log('\nayarlar:', Object.keys(settings).length, '| saha ayarlari:', Obje
 
 const d = x => ham[x].map(r => r.data);
 const DB = {
-  companies: d('companies'), tutanaklar: d('tutanaklar'),
+  companies: d('companies'), tutanaklar: d('tutanaklar'), gunlukIsler: d('gunluk_isler'),
   alet: { items: d('alet_items'), lib: d('alet_lib') },
   saha: { bg: sahaSet.bg || null, bgName: sahaSet.bgName || '', panels: d('saha_panels'), lines: d('saha_lines'), sockets: d('saha_sockets') },
   rapor: { entries: d('rapor_entries'), ekipler, meta: {} },
@@ -120,7 +121,8 @@ const counts = {
   'Alternatif urun': p.alternatives.length, 'Sirket': DB.companies.length, 'Lokasyon (parcali giris)': p.lokasyonlar.length,
   'Sartname tanimi': p.sartnames.length, 'Gecici elektrik urunu': g.lib.length, 'Gecici elektrik hareketi': g.moves.length,
   'El aleti': a.items.length, 'Saha plani ogesi': s.panels.length + s.lines.length + s.sockets.length,
-  'Gunluk rapor kaydi': r.entries.length, 'Tutanak': DB.tutanaklar.length
+  'Gunluk rapor kaydi': r.entries.length, 'Tutanak': DB.tutanaklar.length,
+  'Gunluk is (gorev)': DB.gunlukIsler.length
 };
 
 const dt = new Date(), z = x => String(x).padStart(2, '0');

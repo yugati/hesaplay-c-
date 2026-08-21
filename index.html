@@ -96,6 +96,21 @@
 /* tema gecisinde 250ms yumusak animasyon (gecici olarak html'e eklenir) */
 html.theme-anim, html.theme-anim *, html.theme-anim *::before, html.theme-anim *::after{
   transition:background-color .25s ease,color .25s ease,border-color .25s ease,box-shadow .25s ease!important}
+/* ══ ARAYUZ OLCEGI ════════════════════════════════════════════════
+   Uygulama, tarayici yakinlastirmasi %100'deyken de daha once yalnizca %90'da
+   gorunen sikilikta acilir. Sayfa tarayicinin kendi yakinlastirmasini DEGISTIREMEZ;
+   yapilabilecek sey belgenin kendisini olceklemektir (CSS zoom).
+   DIKKAT: tarayici yakinlastirmasi bununla CARPILIR. Ctrl+0 ile %100'e alin,
+   yoksa %90 x %90 = %81 gorursunuz.
+   Telefonda kapali (yazi okunmayacak kadar kuculurdu), baskida da kapali.
+   JS ile konumlanan ogeler (ac-drop acilir listesi, saha tuvali, akis semasi)
+   bu olcegi uiScale() ile telafi eder: getBoundingClientRect GORSEL piksel doner,
+   style.top / style.left ise zoomlu belgede YEREL piksel sayilir. Telafi edilmezse
+   acilir liste girdinin tam altina degil %10 yukarisina duser (olculdu). */
+:root{--ui-scale:0.9}
+html{zoom:var(--ui-scale)}
+@media(max-width:767px){:root{--ui-scale:1}}
+@media print{:root{--ui-scale:1}}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
@@ -1516,9 +1531,9 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
    Eskiden ust satir ayri bir izgaraydi (.dash-hero, 1fr / 1.35fr): seam alt satirla
    ortusmuyor, sayfa asimetrik gorunuyordu. grid-auto-rows minimumu kisa kartlarin
    basik kalmasini engeller, icerik buyudukce satir birlikte uzar. */
-.dash-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(210px,auto);gap:14px;margin-top:20px}
+.dash-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:272px;grid-auto-rows:minmax(210px,auto);gap:14px;margin-top:20px}
 .dash-grid>*{min-width:0}
-@media(max-width:900px){.dash-grid{grid-template-columns:minmax(0,1fr);grid-auto-rows:auto}}
+@media(max-width:900px){.dash-grid{grid-template-columns:minmax(0,1fr);grid-template-rows:auto;grid-auto-rows:auto}}
 /* -- dashboard ust blok: donut grafikler + bina bazli ilerleme tablosu -- */
 .dash-donuts{display:flex;align-items:center;justify-content:space-around;gap:12px;flex-wrap:wrap}
 .donut{text-align:center;padding:4px 2px}
@@ -1553,6 +1568,115 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .dash-row .dr-meta{min-width:0;font-family:var(--mono);font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
 .dash-row .dr-qty{min-width:0;font-family:var(--mono);font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
 .dash-empty{padding:18px 0;text-align:center;color:var(--dim);font-size:12px}
+/* ══ GIRIS PANOSU - BINALAR KARTI ═══════════════════════════════════════════
+   Binalar artik panonun SOL UST hucresinde bir kart icinde yasiyor. Eskiden
+   panonun USTUNDE serbest bir izgaraydi: bina sayisi arttikca sayfayi asagi
+   ittiriyor, ozet kartlari ekranin disinda kaliyordu.
+   AYNI ANDA EN FAZLA UC BINA gorunur (uc sutun x tek satir); dordunculer kart
+   icinde dikey kayar. Bunun calismasi icin ilk izgara satiri SABIT yukseklikte
+   olmak zorunda (bkz. .dash-grid grid-template-rows) - satir esnek olsaydi
+   yanindaki takvim karti onu uzatir, binalar ikinci sirayi gostermeye baslardi. */
+.dash-card.flexcard{display:flex;flex-direction:column;min-height:0}
+.dash-card.flexcard>.dash-title{flex:0 0 auto}
+/* negatif margin: kaydirma cubugu kartin ic kenarina yaslansin, kartlar kaymasin */
+.bina-scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding-right:4px;margin-right:-4px}
+.bina-card .sel-grid{grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:190px;gap:10px}
+/* uc sutunda kart daralir: kunye kompaktlasir, uzun bina adi noktalanir (tasmaz) */
+.bina-card .sel-card{padding:11px}
+.bina-card .sel-card-head{gap:9px;margin-bottom:9px}
+.bina-card .sel-card-ico{width:32px;height:32px;border-radius:9px}
+.bina-card .sel-card-ico svg{width:17px;height:17px}
+.bina-card .sel-card-name{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bina-card .sel-card-sub{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bina-card .sel-card-foot{margin-top:8px;padding-top:8px;gap:3px}
+.bina-card .card-tool-btn{padding:3px 5px;font-size:8.5px}
+.bina-card .sel-card:hover{transform:none}   /* kayan kutuda ziplama titreme yaratiyordu */
+/* kart basliginin sagindaki sayac / kaydirma ipucu */
+.dash-title .dt-note{margin-left:auto;font-weight:600;font-size:9.5px;color:var(--dim);text-transform:none;letter-spacing:0;white-space:nowrap}
+
+/* ══ GUNLUK ISLER (TAKVIMLI GOREV TAKIBI) ═══════════════════════════════════
+   Sol: ay takvimi (gun hucrelerinde durum noktalari). Sag: secili gunun -
+   ya da "Onay Bekleyen" / "Geciken" suzgecinin - gorev listesi.
+   Iki sutun da kendi icinde kayar; kart yuksekligi sabit satirdan gelir. */
+/* hic bina yokken pano tek kart tasir: takvim iki sutunu birden kaplar,
+   yoksa sag yari bos kalir ve sayfa yamuk gorunur */
+.dash-grid.gi-solo{grid-template-rows:300px}
+.dash-grid.gi-solo>.gi-card{grid-column:1/-1}
+.gi-panel{flex:1;min-height:0;display:flex;flex-direction:column}
+.gi-body{flex:1;min-height:0;display:grid;grid-template-columns:212px minmax(0,1fr);gap:12px}
+.gi-cal{display:flex;flex-direction:column;min-width:0;min-height:0}
+.gi-cal-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:6px}
+.gi-cal-head b{font-size:11.5px;font-weight:700;font-family:var(--mono);letter-spacing:.2px;color:var(--ink)}
+.gi-nav{background:var(--panel2);border:1px solid var(--line);color:var(--mute);border-radius:6px;width:21px;height:21px;line-height:1;font-size:13px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto}
+.gi-nav:hover{color:var(--ink);border-color:var(--dim)}
+.gi-dow{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:3px}
+.gi-dow span{font-size:8.5px;font-weight:700;text-align:center;color:var(--dim);text-transform:uppercase;letter-spacing:.3px}
+.gi-days{display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:1fr;gap:2px;flex:1;min-height:0}
+.gi-day{position:relative;border:1px solid transparent;border-radius:6px;background:var(--panel2);font-family:var(--mono);font-size:10.5px;font-weight:600;color:var(--mute);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .12s,border-color .12s,color .12s;min-height:0;min-width:0}
+.gi-day:hover{background:var(--hover);color:var(--ink)}
+.gi-day.dis{background:transparent;color:var(--dim);opacity:.3;cursor:default;pointer-events:none}
+.gi-day.today{border-color:var(--primary);color:var(--primary)}
+.gi-day.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.gi-day.on .gi-dot{outline:1px solid rgba(255,255,255,.55)}
+.gi-dots{position:absolute;left:0;right:0;bottom:2px;display:flex;justify-content:center;gap:2px;pointer-events:none}
+.gi-dot{display:block;width:4px;height:4px;border-radius:50%}
+.gi-list-wrap{display:flex;flex-direction:column;min-width:0;min-height:0}
+.gi-tabs{display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap}
+.gi-tab{background:var(--panel2);border:1px solid var(--line);color:var(--mute);border-radius:20px;padding:2px 9px;font-size:9.5px;font-weight:700;font-family:var(--mono);letter-spacing:.2px;cursor:pointer;white-space:nowrap}
+.gi-tab:hover{color:var(--ink);border-color:var(--dim)}
+.gi-tab.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.gi-tab i{font-style:normal;opacity:.8}
+.gi-daylbl{font-size:10.5px;font-family:var(--mono);color:var(--dim);margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gi-list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding-right:3px;margin-right:-3px}
+.gi-item{display:flex;align-items:flex-start;gap:8px;padding:6px 5px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:6px;transition:background .12s}
+.gi-item:hover{background:var(--hover)}
+.gi-item:last-child{border-bottom:none}
+.gi-st{flex:0 0 8px;width:8px;height:8px;border-radius:50%;margin-top:5px}
+.gi-txt{min-width:0;flex:1}
+.gi-name{display:block;font-size:12.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gi-name.done{text-decoration:line-through;color:var(--mute)}
+.gi-meta{display:block;font-size:10px;font-family:var(--mono);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.gi-flags{display:flex;gap:4px;align-items:center;flex:0 0 auto;margin-top:3px}
+.gi-flag{font-size:8.5px;font-weight:700;font-family:var(--mono);padding:1px 5px;border-radius:5px;letter-spacing:.2px;white-space:nowrap}
+/* .dash-title uppercase + letter-spacing tasiyor; dugme onu devralmasin */
+.gi-add{background:var(--primary);border:none;color:#fff;border-radius:7px;padding:3px 9px;font-size:10px;font-weight:700;font-family:var(--mono);letter-spacing:.2px;text-transform:none;cursor:pointer;flex:0 0 auto;margin-left:auto}
+.gi-add:hover{filter:brightness(1.12)}
+.gi-warn{background:color-mix(in srgb,var(--warning) 12%,transparent);border:1px solid color-mix(in srgb,var(--warning) 38%,transparent);color:var(--warning);border-radius:8px;padding:7px 9px;font-size:10.5px;line-height:1.45;margin-bottom:8px;flex:0 0 auto}
+/* gorev detay modali */
+.gid-row{display:flex;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line);font-size:12.5px}
+.gid-row:last-child{border-bottom:none}
+.gid-row span{flex:0 0 108px;color:var(--mute);font-size:11px;text-transform:uppercase;letter-spacing:.3px;font-weight:700}
+.gid-row b{flex:1;min-width:0;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
+.gid-sec{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+.gid-sec-h{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--mute);font-family:var(--mono);margin-bottom:8px}
+.gid-btns{display:flex;gap:6px;flex-wrap:wrap}
+.gid-btn{background:var(--panel2);border:1px solid var(--line);color:var(--mute);border-radius:8px;padding:5px 11px;font-size:11px;font-weight:700;font-family:var(--mono);cursor:pointer;transition:border-color .12s,color .12s}
+.gid-btn:hover{border-color:var(--dim);color:var(--ink)}
+.gid-btn.on{color:#fff}
+
+/* dar ekranlar: takvim sutunu daralir, 620px altinda takvim ustte listeye yigilir */
+@media(max-width:1150px){.gi-body{grid-template-columns:186px minmax(0,1fr);gap:9px}}
+@media(max-width:900px){
+  /* pano tek sutuna dustu: satir yuksekligi artik esnek, kaydirma alanlari
+     kendi tavanlarini tasimali (flex boyu dayanacak sabit yukseklik kalmadi) */
+  .bina-scroll{max-height:400px}
+  .gi-body{min-height:300px}
+}
+@media(max-width:767px){
+  /* .sel-grid tek sutuna dusuyor (yukaridaki 767px blogu); bina karti daha
+     yuksek ozgulluklu oldugu icin acikca sifirlanmali - yoksa telefonda da
+     uc sutunda kalirdi */
+  .bina-card .sel-grid{grid-template-columns:minmax(0,1fr);grid-auto-rows:auto}
+  .bina-card .sel-card{padding:14px}
+  .bina-card .sel-card-name{font-size:15px}
+}
+@media(max-width:620px){
+  .gi-body{grid-template-columns:minmax(0,1fr);grid-auto-rows:auto;min-height:0}
+  .gi-cal{height:216px}
+  .gi-list{max-height:230px}
+  .gid-row{flex-direction:column;gap:2px}
+  .gid-row span{flex:none}
+}
 /* -- sag detay paneli (drawer): satira tiklayinca sayfa degismeden sagdan acilir -- */
 .modal-bg.drawer-bg{justify-content:flex-end;align-items:stretch;padding:0}
 .modal.drawer{max-width:600px;width:100%;height:100%;max-height:100vh;border-radius:0;border:none;border-left:1px solid var(--line);
@@ -2285,6 +2409,8 @@ function migrate(){
   if(!DB.companies) DB.companies=[];
   // MALZEME TESLIM TUTANAKLARI (TR/RU) - Rapor'un altindaki "Tutanak Ac" ekrani
   if(!DB.tutanaklar) DB.tutanaklar=[];
+  // GUNLUK ISLER (takvimli gorev takibi) - giris panosunun sag ust hucresi
+  if(!DB.gunlukIsler) DB.gunlukIsler=[];
   if(!DB.alet) DB.alet={items:[],lib:[]};
   // Mekanik (Alet) kutuphanesi sonradan eklendi: eski oturumlarda alan hic olmayabilir
   if(!DB.alet.lib) DB.alet.lib=[];
@@ -2627,6 +2753,19 @@ function tavaSeedSpecs(){ return TAVA_SPEC_SEED.map(s=>({id:uid(),code:s.code,na
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const fmtDate=ts=>{ if(ts==null||ts==='')return''; const d=new Date(ts); return isNaN(d)?String(ts):d.toLocaleDateString('tr-TR',{day:'2-digit',month:'2-digit',year:'numeric'}); };
 const fmtNum=n=>(Math.round((Number(n)||0)*100)/100).toLocaleString('tr-TR');
+/* GECERLI arayuz olcegi. Sabit 0.9 DEGIL hesaplanmis deger okunur: olcek telefonda
+   ve baskida medya sorgusuyla 1'e dusuyor, zoom desteklemeyen tarayicida da 1 kalir -
+   telafiyi sabite baglamak o durumlarda tersine bozulmaya yol acardi.
+   Deger onbelleklenir (acPos kaydirma sirasinda calisiyor), pencere olcusu
+   degisince medya sorgusu de degisebilecegi icin sifirlanir. */
+let _uiScale=null;
+function uiScale(){
+  if(_uiScale==null){ let z=NaN;
+    try{ z=parseFloat(getComputedStyle(document.documentElement).zoom); }catch(e){}
+    _uiScale=(z>0&&isFinite(z))?z:1; }
+  return _uiScale;
+}
+window.addEventListener('resize',()=>{ _uiScale=null; });
 
 const pwInput=document.getElementById('pw');
 const userInput=document.getElementById('username');
@@ -3072,12 +3211,15 @@ function renderBinaSecim(){
     <p>${visible.length===0?'Henuz bina tanimlanmadi':'Tum binalar pasif durumda'}</p>
     <span style="font-size:12px">${visible.length===0?(can('define')?'Soldaki menuden "Yeni Bina" ile ilk binanizi olusturun veya Excel iceri aktarimi kullanin':'Yonetici henuz bina tanimlamamis'):(can('define')?'"Binalar" menusunden aktif hale getirebilirsiniz':'Yonetici tum binalari pasife almis')}</span></div>`:'';
   const pasifNote=(pasifCount&&can('define'))?`<p style="font-size:12px;color:var(--dim);margin:-14px 0 18px">${pasifCount} bina pasif oldugu icin gizli - <button onclick="openBinalarYonetim()" style="background:none;border:none;color:var(--amber);cursor:pointer;padding:0;font-size:12px;text-decoration:underline">Binalar</button> ekranindan yonetebilirsiniz</p>`:'';
+  /* Bina kartlari artik dogrudan buraya basilmaz: panonun SOL UST hucresindeki
+     "Binalar" kartinin icine girer (renderDashWidgets). Boylece giris sayfasi
+     simetrik bir 2x3 izgara olur ve bina sayisi arttikca ozet kartlari ekranin
+     asagisina itilmez - fazla bina kart icinde kayar. */
   return `<div class="sel-wrap">
     <div class="sel-head"><h2>Bina Secimi</h2><p>Calismak istediginiz binayi secin</p></div>
     ${pasifNote}
-    <div class="sel-grid">${cards}</div>
     ${emptyMsg}
-    ${renderDashWidgets(bins)}
+    ${renderDashWidgets(bins,cards)}
   </div>`;
 }
 /* ==================================================================
@@ -3085,10 +3227,12 @@ function renderBinaSecim(){
    - Genel tedarik/montaj yuzdesi, son hareketler, en cok eksik kalemler
    - Yalnizca kullanicinin gorebildigi binalarin verisiyle hesaplanir
    ================================================================== */
-function renderDashWidgets(bins){
+function renderDashWidgets(bins,binaCards){
   const vis=new Set(bins);
   const specs=DB.proje.specs.filter(s=>!s.is_deleted && vis.has(s.bina) && !s.exclude);
-  if(!specs.length) return '';
+  /* SARTNAME YOKKEN DE PANO KURULUR. Eskiden burada bos string donuluyordu; artik
+     panonun ilk satirinda binalar ve Gunluk Isler var, ikisi de sartnameden
+     bagimsiz calisir. Ozet kartlari bos durumlarini kendileri gosterir. */
   let tt=0,gg=0,mm=0; const eksik=[];
   specs.forEach(s=>{ const t=Number(s.target)||0; const{got}=specProgress(s); const{installed}=specMontajProgress(s);
     tt+=t; gg+=got; mm+=installed;
@@ -3143,10 +3287,397 @@ function renderDashWidgets(bins){
       <span class="dr-name" title="${esc(x.sp.name)}">${esc(x.sp.name)}</span>
       <span class="dr-meta" title="${esc(x.sp.bina||'')} · ${esc(x.sp.cat||'')}">${esc(x.sp.bina||'')} · ${esc(x.sp.cat||'')}</span></div>`; }).join('')
     :'<div class="dash-empty">Eksik kalem yok - tum hedefler karsilandi</div>';
-  return `<div class="dash-grid">${hero}
+  /* PANO IZGARASI (2 sutun x 3 satir - fotograftaki simetrik duzen):
+       1. satir: Binalar            | Gunluk Isler (takvim)
+       2. satir: Donut ozet         | Bina Bazli Ilerleme
+       3. satir: Son Hareketler     | Eksik Malzemeler
+     Ilk satirin yuksekligi CSS'te sabit (.dash-grid grid-template-rows): binalar
+     kartinda ayni anda en fazla UC bina gorunsun diye. */
+  const binaKart=`<div class="dash-card flexcard bina-card">
+      <div class="dash-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/><path d="M9 9v.01M9 12v.01M9 15v.01"/></svg>Binalar<span class="dt-note">${bins.length} bina${bins.length>3?' &middot; kaydirin':''}</span></div>
+      <div class="bina-scroll"><div class="sel-grid">${binaCards||''}</div></div>
+    </div>`;
+  /* Hic bina yoksa ozet kartlarinin hepsi bos cikar - onlari basmak yerine yalnizca
+     Gunluk Isler gosterilir (takvim binadan bagimsizdir, yeni kurulumda da calisir).
+     Bina listesi bos oldugunu soyleyen mesaj zaten panonun ustunde duruyor. */
+  if(!bins.length) return `<div class="dash-grid gi-solo">${renderGunlukIslerCard()}</div>`;
+  return `<div class="dash-grid">${binaKart}${renderGunlukIslerCard()}${hero}
     <div class="dash-card"><div class="dash-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>Son Hareketler</div>${hareketHtml}</div>
     <div class="dash-card"><div class="dash-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>Eksik Malzemeler <span style="text-transform:none;letter-spacing:0;font-weight:500">(en cok kalan)</span></div>${eksikHtml}</div>
   </div>`;
+}
+/* ══════════════════════════════════════════════════════════════════════════
+   GUNLUK ISLER - TAKVIMLI GOREV TAKIBI  (giris panosu, sag ust hucre)
+
+   NE ISE YARAR: bir gune gorev acilir (baslik, bina, sorumlu, oncelik),
+   is ilerledikce durumu degisir (Bekliyor -> Devam -> Bitti), en sonunda bir
+   DENETCI onaylar ya da revizyon ister. Takvimde her gunun altindaki renkli
+   noktalar o gunde hangi durumlarda is oldugunu gosterir.
+
+   VERI: Supabase 'gunluk_isler' tablosu (id + JSONB data), kurulumu
+   migration_gunluk_isler.sql. Tablo yoksa uygulama ACILMAYA DEVAM EDER -
+   yukleme hataya toleranslidir (src/supabase.js) ve panel uyari bandi gosterir.
+
+   YETKI: proje modulunden gelir (bkz. lib/yetki.js YAZMA_MODULU.gunluk_isler).
+   Denetleme (onay/revizyon) ayrica yonetici seviyesi ister - bkz. giCanDenetle.
+   ══════════════════════════════════════════════════════════════════════════ */
+const GI_AYLAR=['Ocak','Subat','Mart','Nisan','Mayis','Haziran','Temmuz','Agustos','Eylul','Ekim','Kasim','Aralik'];
+const GI_DOW=['Pt','Sa','Ca','Pe','Cu','Ct','Pz'];
+const GI_DOW_UZUN=['Pazartesi','Sali','Carsamba','Persembe','Cuma','Cumartesi','Pazar'];
+const GI_DURUM={bekliyor:{lbl:'Bekliyor',renk:'var(--dim)'},devam:{lbl:'Devam Ediyor',renk:'var(--primary)'},bitti:{lbl:'Bitti',renk:'var(--success)'}};
+const GI_ONCELIK={dusuk:{lbl:'Dusuk',renk:'var(--dim)'},normal:{lbl:'Normal',renk:'var(--mute)'},yuksek:{lbl:'Yuksek',renk:'var(--danger)'}};
+const GI_DENETIM={yok:{lbl:'Denetlenmedi',renk:'var(--dim)'},onay:{lbl:'Onaylandi',renk:'var(--success)'},revizyon:{lbl:'Revizyon Istendi',renk:'var(--warning)'}};
+/* mod: 'gun' (takvimde secili gun) | 'onay' (denetim bekleyenler) | 'gecikmis' (tarihi gecmis, bitmemis)
+   ay/gun 'YYYY-MM' / 'YYYY-MM-DD' - render disinda kalici durum burada tutulur */
+let _GI={ay:'',gun:'',mod:'gun'};
+
+const giZ=n=>String(n).padStart(2,'0');
+/* YEREL gun anahtari. toISOString() KULLANILMAZ: o UTC'ye cevirir ve TR saatinde
+   gece yarisindan onceki saatlerde gunu bir geri kaydirirdi (23:30'da eklenen is
+   bir onceki gune duserdi). */
+const giKey=d=>d.getFullYear()+'-'+giZ(d.getMonth()+1)+'-'+giZ(d.getDate());
+const giBugun=()=>giKey(new Date());
+function giParcala(k){ const p=String(k||'').split('-').map(Number); return (p.length===3&&p[0])?p:null; }
+function giKisaTarih(k){ const p=giParcala(k); return p?p[2]+' '+GI_AYLAR[p[1]-1]:''; }
+function giUzunTarih(k){ const p=giParcala(k); if(!p) return '';
+  const dow=(new Date(p[0],p[1]-1,p[2]).getDay()+6)%7;   // Pazartesi=0
+  return p[2]+' '+GI_AYLAR[p[1]-1]+' '+p[0]+' · '+GI_DOW_UZUN[dow]; }
+function giInit(){ if(!_GI.gun) _GI.gun=giBugun(); if(!_GI.ay) _GI.ay=_GI.gun.slice(0,7); }
+
+/* GORUNURLUK: bina yetkisi burada da gecerli - baska binanin gorevi listede cikmaz.
+   Binasi bos olan gorev "genel" sayilir ve herkese gorunur. */
+function giAll(){ return (DB.gunlukIsler||[]).filter(t=>t&&t.id&&!t.is_deleted&&(!t.bina||canSeeBuilding(t.bina))); }
+function giBul(id){ return (DB.gunlukIsler||[]).find(t=>t&&t.id===id)||null; }
+function giOnayBekliyorMu(t){ return t.durum==='bitti' && ((t.denetim&&t.denetim.durum)||'yok')!=='onay'; }
+function giGecikmisMi(t){ return t.durum!=='bitti' && !!t.tarih && t.tarih<giBugun(); }
+// sira: once bitmemisler, sonra oncelik, sonra ada gore
+function giSirala(a,b){ const d={bekliyor:0,devam:1,bitti:2}, o={yuksek:0,normal:1,dusuk:2};
+  return (d[a.durum]!=null?d[a.durum]:0)-(d[b.durum]!=null?d[b.durum]:0)
+    || (o[a.oncelik]!=null?o[a.oncelik]:1)-(o[b.oncelik]!=null?o[b.oncelik]:1)
+    || String(a.baslik||'').localeCompare(String(b.baslik||''),'tr'); }
+
+function giCanCreate(){ return canCreate('proje'); }
+function giCanUpdate(){ return canUpdate('proje'); }
+function giCanDelete(){ return canDelete('proje'); }
+/* DENETLEME yonetici isidir. Yonetici olmayan icin proje modulunde HEM guncelleme
+   HEM silme yetkisi aranir: silme bu uygulamada "sef" seviyesinin isareti, guncelleme
+   ise kaydin sunucuda yazilabilmesi icin sart (sbUpdateGunlukIs 'proje/update' ister) -
+   yalnizca silme yetkisi olan birine dugmeyi gosterip sunucuda 403 aldirmayalim. */
+function giCanDenetle(){ return isAdmin() || (canUpdate('proje') && canDelete('proje')); }
+
+// ── panel ────────────────────────────────────────────────────────────────────
+function icoTakvim(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>'; }
+
+function renderGunlukIslerCard(){
+  giInit();
+  const ekle=giCanCreate()?`<button class="gi-add" title="Bu gune yeni gorev ekle" onclick="openGunlukIsModal(null)">+ Gorev</button>`:'';
+  return `<div class="dash-card flexcard gi-card">
+    <div class="dash-title">${icoTakvim()}Gunluk Isler${ekle}</div>
+    <div id="giPanel" class="gi-panel">${giPanelInner()}</div>
+  </div>`;
+}
+/* Panel govdesi AYRI: takvimde ay/gun degistirmek tum sayfayi degil yalnizca bu
+   dugumu tazeler (render() cagrilsa bina listesinin kaydirma konumu sifirlanirdi). */
+function giRefresh(){ const el=document.getElementById('giPanel'); if(el) el.innerHTML=giPanelInner(); else render(); }
+function giPanelInner(){
+  const uyari=window.__gunlukTableMissing
+    ? `<div class="gi-warn">Gunluk Isler tablosu Supabase'de bulunamadi. <b>migration_gunluk_isler.sql</b> dosyasini SQL Editor'de bir kez calistirip sayfayi yenileyin.</div>`
+    : '';
+  return uyari+`<div class="gi-body">${giCalHtml()}${giListHtml()}</div>`;
+}
+
+function giCalHtml(){
+  const p=giParcala(_GI.ay+'-01')||giParcala(giBugun()+'');
+  const y=p[0], m=p[1];
+  const bas=(new Date(y,m-1,1).getDay()+6)%7;      // ayin ilk gunu haftanin kacinci gunu (Pt=0)
+  const gunSayisi=new Date(y,m,0).getDate();
+  const oncekiSon=new Date(y,m-1,0).getDate();
+  const bugun=giBugun(), ayOnEki=y+'-'+giZ(m);
+  /* Gun sayaclarini TEK gecişte kur: her hucrede ayri filter calistirmak 31 hucre x
+     tum gorevler demekti; ay degistirmek buyuk listede fark ediliyordu. */
+  const sayac={};
+  giAll().forEach(t=>{ const k=t.tarih||''; if(k.slice(0,7)!==ayOnEki) return;
+    const s=sayac[k]||(sayac[k]={bekliyor:0,devam:0,bitti:0,n:0});
+    s[GI_DURUM[t.durum]?t.durum:'bekliyor']++; s.n++; });
+  let hucre='';
+  for(let i=0;i<bas;i++) hucre+=`<div class="gi-day dis">${oncekiSon-bas+1+i}</div>`;
+  for(let g=1;g<=gunSayisi;g++){
+    const k=ayOnEki+'-'+giZ(g), s=sayac[k];
+    const nokta=s?`<span class="gi-dots">`
+      +(s.bekliyor?`<i class="gi-dot" style="background:${GI_DURUM.bekliyor.renk}"></i>`:'')
+      +(s.devam?`<i class="gi-dot" style="background:${GI_DURUM.devam.renk}"></i>`:'')
+      +(s.bitti?`<i class="gi-dot" style="background:${GI_DURUM.bitti.renk}"></i>`:'')
+      +`</span>`:'';
+    const cls=(k===_GI.gun&&_GI.mod==='gun'?' on':'')+(k===bugun?' today':'');
+    hucre+=`<div class="gi-day${cls}" title="${g} ${GI_AYLAR[m-1]} - ${s?s.n+' gorev':'gorev yok'}" onclick="giSetGun('${k}')">${g}${nokta}</div>`;
+  }
+  const kalan=(7-((bas+gunSayisi)%7))%7;           // izgara 7'nin katina tamamlansin
+  for(let i=1;i<=kalan;i++) hucre+=`<div class="gi-day dis">${i}</div>`;
+  return `<div class="gi-cal">
+    <div class="gi-cal-head">
+      <button class="gi-nav" title="Onceki ay" onclick="giAyKaydir(-1)">&lsaquo;</button>
+      <b title="Bugune don" style="cursor:pointer" onclick="giBugunGit()">${GI_AYLAR[m-1]} ${y}</b>
+      <button class="gi-nav" title="Sonraki ay" onclick="giAyKaydir(1)">&rsaquo;</button>
+    </div>
+    <div class="gi-dow">${GI_DOW.map(d=>`<span>${d}</span>`).join('')}</div>
+    <div class="gi-days">${hucre}</div>
+  </div>`;
+}
+
+function giListHtml(){
+  const hepsi=giAll();
+  const onayN=hepsi.filter(giOnayBekliyorMu).length;
+  const gecikenN=hepsi.filter(giGecikmisMi).length;
+  const gunN=hepsi.filter(t=>t.tarih===_GI.gun).length;   // secili gunun is sayisi (mod'dan bagimsiz)
+  const tab=(k,l,n,renk)=>`<button class="gi-tab${_GI.mod===k?' on':''}" onclick="giSetMod('${k}')">${l}${n?` <i${renk&&_GI.mod!==k?` style="color:${renk}"`:''}>${n}</i>`:''}</button>`;
+  let liste, etiket;
+  if(_GI.mod==='onay'){
+    liste=hepsi.filter(giOnayBekliyorMu).sort((a,b)=>String(a.tarih||'').localeCompare(String(b.tarih||'')));
+    etiket='Bitirilmis ama henuz onaylanmamis isler';
+  } else if(_GI.mod==='gecikmis'){
+    liste=hepsi.filter(giGecikmisMi).sort((a,b)=>String(a.tarih||'').localeCompare(String(b.tarih||'')));
+    etiket='Tarihi gecti, hala bitmedi';
+  } else {
+    liste=hepsi.filter(t=>t.tarih===_GI.gun).sort(giSirala);
+    etiket=giUzunTarih(_GI.gun);
+  }
+  const bos=_GI.mod==='onay'?'Onay bekleyen is yok'
+    :_GI.mod==='gecikmis'?'Geciken is yok'
+    :(giCanCreate()?'Bu gunde gorev yok - "+ Gorev" ile ekleyin':'Bu gunde gorev yok');
+  return `<div class="gi-list-wrap">
+    <div class="gi-tabs">
+      ${tab('gun','Gun',gunN)}
+      ${tab('onay','Onay',onayN,'var(--violet)')}
+      ${tab('gecikmis','Geciken',gecikenN,'var(--danger)')}
+    </div>
+    <div class="gi-daylbl">${esc(etiket)}</div>
+    <div class="gi-list">${liste.length?liste.map(giItemHtml).join(''):`<div class="dash-empty">${bos}</div>`}</div>
+  </div>`;
+}
+
+function giItemHtml(t){
+  const d=GI_DURUM[t.durum]||GI_DURUM.bekliyor;
+  const den=(t.denetim&&t.denetim.durum)||'yok';
+  const rozet=(txt,renk)=>`<span class="gi-flag" style="color:${renk};background:color-mix(in srgb,${renk} 16%,transparent)">${txt}</span>`;
+  let bayrak='';
+  if(t.oncelik==='yuksek' && t.durum!=='bitti') bayrak+=rozet('ACIL','var(--danger)');
+  if(den==='onay') bayrak+=rozet('ONAY','var(--success)');
+  else if(den==='revizyon') bayrak+=rozet('REVIZYON','var(--warning)');
+  else if(t.durum==='bitti') bayrak+=rozet('DENETIM','var(--violet)');
+  else if(giGecikmisMi(t)) bayrak+=rozet('GECIKTI','var(--danger)');
+  // 'Gun' modunda tarih zaten baslikta yaziyor - satirda tekrar edilmez
+  const meta=[_GI.mod!=='gun'?giKisaTarih(t.tarih):'', t.bina||'', t.konum||'', t.sorumlu||''].filter(Boolean).join(' · ');
+  return `<div class="gi-item" title="${esc(t.baslik||'')}" onclick="openGunlukIsDetay('${t.id}')">
+    <span class="gi-st" style="background:${d.renk}"></span>
+    <span class="gi-txt"><span class="gi-name${t.durum==='bitti'?' done':''}">${esc(t.baslik||'(basliksiz)')}</span>${meta?`<span class="gi-meta">${esc(meta)}</span>`:''}</span>
+    ${bayrak?`<span class="gi-flags">${bayrak}</span>`:''}
+  </div>`;
+}
+
+function giSetGun(k){ _GI.gun=k; _GI.ay=k.slice(0,7); _GI.mod='gun'; giRefresh(); }
+function giSetMod(m){ _GI.mod=m; giRefresh(); }
+function giAyKaydir(d){ const p=giParcala(_GI.ay+'-01'); const t=new Date(p[0],p[1]-1+d,1);
+  _GI.ay=t.getFullYear()+'-'+giZ(t.getMonth()+1); giRefresh(); }
+function giBugunGit(){ giSetGun(giBugun()); }
+
+// ── gorev ekleme / duzenleme ────────────────────────────────────────────────
+function openGunlukIsModal(id){
+  const t=id?giBul(id):null;
+  const yetkili=t ? giCanUpdate() : giCanCreate();
+  if(!yetkili){ toast('Bu islem icin yetkiniz yok','err'); return; }
+  giInit();
+  const binalar=projBuildings().filter(b=>canSeeBuilding(b)&&!isBinaPasif(b));
+  const secBina=t?(t.bina||''):(PBINA||'');
+  const opt=(v,l,sel)=>`<option value="${esc(v)}"${sel===v?' selected':''}>${esc(l)}</option>`;
+  // sorumlu serbest metin: kullanici listesi her ekranda yuklu degil, ama daha once
+  // girilen adlar datalist ile onerilir (yazim birligi bozulmasin)
+  const kisiler=[...new Set([...(DB.gunlukIsler||[]).map(x=>x&&x.sorumlu).filter(Boolean),
+    ...(CURRENT_USER?[CURRENT_USER.username]:[])])].sort((a,b)=>String(a).localeCompare(String(b),'tr'));
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:560px">
+    <div class="modal-head"><h3>${t?'Gorevi Duzenle':'Yeni Gorev'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body">
+      <div class="frow"><label>Gorev Basligi *</label><input id="gi_baslik" value="${t?esc(t.baslik||''):''}" placeholder="orn. 3. kat kablo tavasi montaji" onkeydown="if(event.key==='Enter')saveGunlukIs(${t?`'${t.id}'`:'null'})"></div>
+      <div class="frow two">
+        <div><label>Tarih *</label><input id="gi_tarih" type="date" value="${t?esc(t.tarih||_GI.gun):_GI.gun}"></div>
+        <div><label>Sorumlu</label><input id="gi_sorumlu" list="giKisiListesi" value="${t?esc(t.sorumlu||''):(CURRENT_USER?esc(CURRENT_USER.username):'')}" placeholder="kime ait">
+          <datalist id="giKisiListesi">${kisiler.map(k=>`<option value="${esc(k)}"></option>`).join('')}</datalist></div>
+      </div>
+      <div class="frow two">
+        <div><label>Bina</label><select id="gi_bina">${opt('','— Genel (bina bagimsiz) —',secBina)}${binalar.map(b=>opt(b,b,secBina)).join('')}</select></div>
+        <div><label>Konum <span class="t-meta">(kat / oda)</span></label><input id="gi_konum" value="${t?esc(t.konum||''):''}" placeholder="orn. 3. kat"></div>
+      </div>
+      <div class="frow two">
+        <div><label>Oncelik</label><select id="gi_oncelik">${Object.keys(GI_ONCELIK).map(k=>opt(k,GI_ONCELIK[k].lbl,t?(t.oncelik||'normal'):'normal')).join('')}</select></div>
+        <div><label>Durum</label><select id="gi_durum">${Object.keys(GI_DURUM).map(k=>opt(k,GI_DURUM[k].lbl,t?(t.durum||'bekliyor'):'bekliyor')).join('')}</select></div>
+      </div>
+      <div class="frow" style="margin-bottom:0"><label>Aciklama <span class="t-meta">(opsiyonel)</span></label><textarea id="gi_aciklama" placeholder="ne yapilacak, nelere dikkat edilecek">${t?esc(t.aciklama||''):''}</textarea></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveGunlukIs(${t?`'${t.id}'`:'null'})">Kaydet</button></div>
+  </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  // kaza ile kapanma korumasi: tarih/oncelik/durum hep dolu oldugu icin listeye KONMAZ
+  setModalGuard(()=>formDoluMu(['gi_baslik','gi_konum','gi_aciklama']));
+  const inp=document.getElementById('gi_baslik'); if(inp) setTimeout(()=>inp.focus(),0);
+}
+
+/* Yazma hatasini yorumlar: tablo hic kurulmamissa kullaniciya NE YAPACAGINI soyler.
+   Tutanak akisindaki dersin aynisi: bayraga bakip pesinen reddetmiyoruz, YAZMAYI
+   DENIYORUZ - SQL bu arada calistirilmis olabilir. */
+function giYazHatasi(e,fiil){
+  const msj=String((e&&e.message)||e||'');
+  const tabloYok=/gunluk_isler|schema cache|does not exist|PGRST205|relation .* does not exist/i.test(msj);
+  if(tabloYok) window.__gunlukTableMissing=true;
+  toast(tabloYok
+    ? 'Gunluk Isler tablosu Supabase\'de yok. migration_gunluk_isler.sql dosyasini SQL Editor\'de bir kez calistirip sayfayi yenileyin.'
+    : 'Gorev '+fiil+': '+msj,'err');
+}
+
+async function saveGunlukIs(id){
+  const eski=id?giBul(id):null;
+  if(id&&!eski){ toast('Gorev bulunamadi','err'); return; }
+  const yetkili=eski ? giCanUpdate() : giCanCreate();
+  if(!yetkili){ toast('Bu islem icin yetkiniz yok','err'); return; }
+  const al=k=>{ const e=document.getElementById(k); return e?String(e.value||'').trim():''; };
+  const baslik=al('gi_baslik');
+  if(!baslik){ toast('Gorev basligi zorunlu','err'); return; }
+  const tarih=al('gi_tarih');
+  if(!giParcala(tarih)){ toast('Gecerli bir tarih secin','err'); return; }
+  const bina=al('gi_bina');
+  if(bina&&!canSeeBuilding(bina)){ toast('Bu bina icin yetkiniz yok','err'); return; }
+  const simdi=Date.now(), ben=(CURRENT_USER&&CURRENT_USER.username)||'?';
+  const kayit={
+    ...(eski||{}),
+    id:eski?eski.id:uid(),
+    baslik, tarih, bina,
+    konum:al('gi_konum'), sorumlu:al('gi_sorumlu'), aciklama:al('gi_aciklama'),
+    oncelik:al('gi_oncelik')||'normal',
+    durum:al('gi_durum')||'bekliyor',
+    denetim:(eski&&eski.denetim)||{durum:'yok',kisi:'',ts:0,not:''},
+    olusturan:eski?eski.olusturan:ben, olusturmaTs:eski?eski.olusturmaTs:simdi,
+    guncelleyen:ben, guncellemeTs:simdi,
+  };
+  /* Once SUNUCUYA yazilir, sonra yerel listeye alinir. Ters sirada olsaydi yazma
+     basarisiz oldugunda gorev ekranda gorunur, sayfa yenilenince kaybolurdu. */
+  try{
+    if(eski) await sbUpdateGunlukIs(kayit.id,kayit); else await sbInsertGunlukIs(kayit);
+  }catch(e){ giYazHatasi(e,eski?'guncellenemedi':'kaydedilemedi'); return; }
+  window.__gunlukTableMissing=false;      // yazabildiysek uyari bandi kalksin
+  if(!DB.gunlukIsler) DB.gunlukIsler=[];
+  const i=DB.gunlukIsler.findIndex(x=>x&&x.id===kayit.id);
+  if(i>=0) DB.gunlukIsler[i]=kayit; else DB.gunlukIsler.push(kayit);
+  logAction('define',(eski?'Gunluk is guncellendi: ':'Gunluk is olusturuldu: ')+baslik+' ('+tarih+')');
+  closeModal();
+  // takvim kaydedilen gune atlar: eklenen gorev aninda listede gorunsun
+  _GI.gun=tarih; _GI.ay=tarih.slice(0,7); _GI.mod='gun';
+  giRefresh();
+  toast(eski?'Gorev guncellendi':'Gorev eklendi');
+}
+
+// ── gorev detayi + durum / denetim ──────────────────────────────────────────
+function openGunlukIsDetay(id){
+  const t=giBul(id); if(!t){ toast('Gorev bulunamadi','err'); return; }
+  const d=GI_DURUM[t.durum]||GI_DURUM.bekliyor;
+  const den=(t.denetim&&t.denetim.durum)||'yok', denBilgi=GI_DENETIM[den]||GI_DENETIM.yok;
+  const satir=(l,v)=>v?`<div class="gid-row"><span>${l}</span><b>${v}</b></div>`:'';
+  const durumBtn=Object.keys(GI_DURUM).map(k=>{
+    const on=k===t.durum;
+    return `<button class="gid-btn${on?' on':''}" ${on?`style="background:${GI_DURUM[k].renk};border-color:${GI_DURUM[k].renk}"`:''} ${giCanUpdate()?`onclick="giSetDurum('${t.id}','${k}')"`:'disabled'}>${GI_DURUM[k].lbl}</button>`;
+  }).join('');
+  /* DENETIM BOLUMU: yetkili icin onay/revizyon dugmeleri + not alani; yetkisiz icin
+     yalnizca sonuc. "Bitti" isaretlenmemis bir is denetime ACILMAZ - denetim, isin
+     bittigi iddiasinin kontrolu demek. */
+  let denetimIc;
+  if(!giCanDenetle()){
+    denetimIc=`<div style="font-size:12px;color:var(--mute)">Denetleme yetkisi yonetici (veya proje sefi) hesabindadir.</div>`;
+  } else if(t.durum!=='bitti'){
+    denetimIc=`<div style="font-size:12px;color:var(--mute)">Gorev "Bitti" olarak isaretlenince denetlenebilir.</div>`;
+  } else {
+    denetimIc=`<div class="frow" style="margin-bottom:9px"><label>Denetim Notu <span class="t-meta">(opsiyonel)</span></label>
+        <input id="gi_dnot" value="${esc((t.denetim&&t.denetim.not)||'')}" placeholder="orn. olcu uygun, kablo etiketleri eksik"></div>
+      <div class="gid-btns">
+        <button class="gid-btn${den==='onay'?' on':''}" ${den==='onay'?'style="background:var(--success);border-color:var(--success)"':''} onclick="giDenetle('${t.id}','onay')">Onayla</button>
+        <button class="gid-btn${den==='revizyon'?' on':''}" ${den==='revizyon'?'style="background:var(--warning);border-color:var(--warning)"':''} onclick="giDenetle('${t.id}','revizyon')">Revizyon Iste</button>
+        ${den!=='yok'?`<button class="gid-btn" onclick="giDenetle('${t.id}','yok')">Denetimi Geri Al</button>`:''}
+      </div>`;
+  }
+  const denSatir=den==='yok'?'':`${esc(denBilgi.lbl)}${(t.denetim&&t.denetim.kisi)?' · '+esc(t.denetim.kisi):''}${(t.denetim&&t.denetim.ts)?' · '+fmtDate(t.denetim.ts):''}`;
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:560px">
+    <div class="modal-head"><h3 style="display:flex;align-items:center;gap:8px"><span class="gi-st" style="background:${d.renk};margin:0"></span>Gorev Detayi</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body">
+      <div style="font-size:16px;font-weight:800;margin-bottom:4px;overflow-wrap:anywhere">${esc(t.baslik||'(basliksiz)')}</div>
+      <div style="font-family:var(--mono);font-size:11.5px;color:var(--dim);margin-bottom:14px">${esc(giUzunTarih(t.tarih))}${giGecikmisMi(t)?` <span style="color:var(--danger);font-weight:700">· GECIKTI</span>`:''}</div>
+      ${satir('Bina',esc(t.bina||'Genel'))}
+      ${satir('Konum',esc(t.konum||''))}
+      ${satir('Sorumlu',esc(t.sorumlu||''))}
+      ${satir('Oncelik',`<span style="color:${(GI_ONCELIK[t.oncelik]||GI_ONCELIK.normal).renk}">${(GI_ONCELIK[t.oncelik]||GI_ONCELIK.normal).lbl}</span>`)}
+      ${satir('Denetim',denSatir)}
+      ${satir('Denetim Notu',esc((t.denetim&&t.denetim.not)||''))}
+      ${satir('Aciklama',esc(t.aciklama||'').replace(/\n/g,'<br>'))}
+      ${satir('Olusturan',esc(t.olusturan||'')+(t.olusturmaTs?' · '+fmtDate(t.olusturmaTs):''))}
+      ${t.guncellemeTs&&t.guncellemeTs!==t.olusturmaTs?satir('Son Guncelleme',esc(t.guncelleyen||'')+' · '+fmtDate(t.guncellemeTs)):''}
+      <div class="gid-sec"><div class="gid-sec-h">Durum</div><div class="gid-btns">${durumBtn}</div></div>
+      <div class="gid-sec"><div class="gid-sec-h">Denetleme</div>${denetimIc}</div>
+    </div>
+    <div class="modal-foot">
+      ${giCanDelete()?`<button class="btn btn-ghost" style="color:var(--red);border-color:var(--red)55;margin-right:auto" onclick="giSil('${t.id}')">Sil</button>`:''}
+      <button class="btn btn-ghost" onclick="closeModal()">Kapat</button>
+      ${giCanUpdate()?`<button class="btn btn-add" onclick="closeModal();openGunlukIsModal('${t.id}')">Duzenle</button>`:''}
+    </div>
+  </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
+/* Ortak yazma yolu: kaydin bir kopyasi uzerinde degisiklik yapilir, sunucu kabul
+   ederse yerel kayda islenir. Basarisizlikta yerel veri ELLENMEZ - ekranda gorunen
+   sey her zaman veritabaninda duran seydir. */
+async function giKaydiYaz(t,degisiklik,fiil){
+  const kayit={...t,...degisiklik,guncelleyen:(CURRENT_USER&&CURRENT_USER.username)||'?',guncellemeTs:Date.now()};
+  try{ await sbUpdateGunlukIs(kayit.id,kayit); }
+  catch(e){ giYazHatasi(e,fiil); return null; }
+  window.__gunlukTableMissing=false;
+  const i=(DB.gunlukIsler||[]).findIndex(x=>x&&x.id===kayit.id);
+  if(i>=0) DB.gunlukIsler[i]=kayit;
+  return kayit;
+}
+
+async function giSetDurum(id,durum){
+  const t=giBul(id); if(!t) return;
+  if(!giCanUpdate()){ toast('Bu islem icin yetkiniz yok','err'); return; }
+  if(t.durum===durum) return;
+  /* "Bitti"den geri alinirsa varsa ONAY da dusurulur: onaylanmis is yeniden
+     "devam ediyor" olamaz - aksi halde denetim kaydi gercegi yansitmaz. */
+  const deg={durum};
+  if(durum!=='bitti' && ((t.denetim&&t.denetim.durum)||'yok')!=='yok') deg.denetim={durum:'yok',kisi:'',ts:0,not:''};
+  const kayit=await giKaydiYaz(t,deg,'guncellenemedi'); if(!kayit) return;
+  logAction('define','Gunluk is durumu: '+kayit.baslik+' -> '+(GI_DURUM[durum]||{lbl:durum}).lbl);
+  closeModal(); giRefresh(); openGunlukIsDetay(id);
+  toast('Durum: '+(GI_DURUM[durum]||{lbl:durum}).lbl);
+}
+
+async function giDenetle(id,sonuc){
+  const t=giBul(id); if(!t) return;
+  if(!giCanDenetle()){ toast('Denetleme yetkiniz yok','err'); return; }
+  if(sonuc!=='yok' && t.durum!=='bitti'){ toast('Once gorev "Bitti" olarak isaretlenmeli','err'); return; }
+  const notEl=document.getElementById('gi_dnot');
+  const denetim=sonuc==='yok'
+    ? {durum:'yok',kisi:'',ts:0,not:''}
+    : {durum:sonuc,kisi:(CURRENT_USER&&CURRENT_USER.username)||'?',ts:Date.now(),not:notEl?String(notEl.value||'').trim():''};
+  const kayit=await giKaydiYaz(t,{denetim},'denetlenemedi'); if(!kayit) return;
+  logAction('define','Gunluk is denetimi: '+kayit.baslik+' -> '+(GI_DENETIM[sonuc]||{lbl:sonuc}).lbl);
+  closeModal(); giRefresh(); openGunlukIsDetay(id);
+  toast(sonuc==='onay'?'Gorev onaylandi':sonuc==='revizyon'?'Revizyon istendi':'Denetim geri alindi');
+}
+
+async function giSil(id){
+  const t=giBul(id); if(!t) return;
+  if(!giCanDelete()){ toast('Silme yetkiniz yok','err'); return; }
+  if(!confirm('Bu gorev silinecek:\n\n'+(t.baslik||'(basliksiz)')+'\n'+giUzunTarih(t.tarih)+'\n\nIslem geri alinamaz. Devam edilsin mi?')) return;
+  try{ await sbDeleteGunlukIs(id); }
+  catch(e){ giYazHatasi(e,'silinemedi'); return; }
+  DB.gunlukIsler=(DB.gunlukIsler||[]).filter(x=>!x||x.id!==id);
+  logAction('delete','Gunluk is silindi: '+(t.baslik||'')+' ('+(t.tarih||'')+')');
+  closeModal(); giRefresh();
+  toast('Gorev silindi');
 }
 /* ── SOL SIDEBAR: kalici dikey navigasyon ──────────────────────────
    Masaustunde her ekranda solda sabit durur; tablet/mobilde header'daki
@@ -5799,7 +6330,7 @@ function flowPanStart(e){
   if(e.button!==0||e.target.closest('.floww-node'))return;
   const c=document.getElementById('flowCanvas'); if(c)c.classList.add('panning');
   const sx=e.clientX,sy=e.clientY,ox=FLOWW.pan.x,oy=FLOWW.pan.y; FLOWW.moved=false;
-  const mv=ev=>{ const dx=ev.clientX-sx,dy=ev.clientY-sy;
+  const mv=ev=>{ const sc=uiScale(), dx=(ev.clientX-sx)/sc,dy=(ev.clientY-sy)/sc;
     if(Math.abs(dx)+Math.abs(dy)>4)FLOWW.moved=true;
     FLOWW.pan.x=ox+dx; FLOWW.pan.y=oy+dy; flowApply(); };
   const up=()=>{ window.removeEventListener('mousemove',mv); window.removeEventListener('mouseup',up); if(c)c.classList.remove('panning'); };
@@ -5808,7 +6339,7 @@ function flowPanStart(e){
 function flowWheel(e){
   e.preventDefault();
   const c=document.getElementById('flowCanvas'); if(!c)return;
-  const r=c.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  const r=c.getBoundingClientRect(), sc=uiScale(), mx=(e.clientX-r.left)/sc, my=(e.clientY-r.top)/sc;
   const nz=Math.min(2,Math.max(.3,FLOWW.zoom*(e.deltaY<0?1.12:1/1.12)));
   FLOWW.pan.x=mx-(mx-FLOWW.pan.x)*(nz/FLOWW.zoom);
   FLOWW.pan.y=my-(my-FLOWW.pan.y)*(nz/FLOWW.zoom);
@@ -9175,6 +9706,7 @@ const WIPE_CATS=[
   {key:'gecici', label:'Gecici Elektrik Ambari',    detail:'Kutuphane, hareket ve siparisler', group:'Diger Moduller'},
   {key:'rapor',  label:'Saha Raporu',               detail:'Gunluk rapor kayitlari ve ekip listesi', group:'Diger Moduller'},
   {key:'tutanak',label:'Tutanaklar',                detail:'Malzeme teslim tutanaklari (TR/RU) tamamen silinir', group:'Diger Moduller'},
+  {key:'gunluk', label:'Gunluk Isler',              detail:'Takvimli gorev kayitlari (denetim notlari dahil) tamamen silinir', group:'Diger Moduller'},
 ];
 // bir temizlik kategorisinin SU ANKI kayit sayilari: modalda "3 bina · 5 bolum" gibi gosterilir,
 // kullanici neyi sildigini sayilarla gorur; bos kategoriler secilemez
@@ -9195,6 +9727,7 @@ function wipeCatInfo(key){
     case 'gecici': n=add((DB.gecici&&DB.gecici.lib||[]).length,'urun')+add((DB.gecici&&DB.gecici.moves||[]).length,'hareket')+add((DB.gecici&&DB.gecici.orders||[]).length,'siparis'); break;
     case 'rapor': n=add((DB.rapor&&DB.rapor.entries||[]).length,'kayit')+add((DB.rapor&&DB.rapor.ekipler||[]).length,'ekip'); break;
     case 'tutanak': n=add((DB.tutanaklar||[]).length,'tutanak'); break;
+    case 'gunluk': n=add((DB.gunlukIsler||[]).length,'gorev'); break;
   }
   return {n, txt:parts.join(' · ')};
 }
@@ -9280,6 +9813,7 @@ async function confirmWipe(){
     if(sel.includes('gecici')){ await sbWipeGeciciData(); DB.gecici={lib:[],moves:[],orders:[]}; }
     if(sel.includes('rapor')){ await sbWipeRaporData(); DB.rapor={entries:[],ekipler:[],meta:{}}; }
     if(sel.includes('tutanak')){ await sbWipeTutanakData(); DB.tutanaklar=[]; }
+    if(sel.includes('gunluk')){ await sbWipeGunlukIslerData(); DB.gunlukIsler=[]; }
     const silinenler=sel.map(k=>labels[k]).join(', ');
     logAction('wipe', silinenler+' verileri temizlendi');
     PBINA="";PCAT="";PSPEC="";PLIB=false;PDEF=false;PCOMP=false; PEKIP=false;PBINAY=false;PTUT=false;SEC="proje";TAB="spec";SEARCH="";
@@ -11649,22 +12183,24 @@ function applyTransform(){ const st=document.getElementById('siteStage'); if(!st
   st.style.transform=`translate(${SV.tx}px,${SV.ty}px) scale(${SV.scale})`;
   drawSaha();
 }
-function toImg(clientX,clientY){ const host=document.getElementById('canvasHost'); const r=host.getBoundingClientRect();
-  const x=(clientX-r.left-SV.tx)/SV.scale, y=(clientY-r.top-SV.ty)/SV.scale; return {x,y}; }
+// clientX/rect GORSEL piksel, SV.tx ve SV.scale ise YEREL piksel uzerinde calisir:
+// fark once uiScale ile yerele cevrilir, yoksa pano/priz tiklanan yerin yanina duserdi
+function toImg(clientX,clientY){ const host=document.getElementById('canvasHost'); const r=host.getBoundingClientRect(); const sc=uiScale();
+  const x=((clientX-r.left)/sc-SV.tx)/SV.scale, y=((clientY-r.top)/sc-SV.ty)/SV.scale; return {x,y}; }
 
 function bindSahaEvents(){
   const host=document.getElementById('canvasHost'); if(!host||host._bound)return; host._bound=true;
   let dragging=false,lx=0,ly=0,moved=false;
   host.addEventListener('mousedown',e=>{ if(SV.mode!=='pan')return; dragging=true;moved=false;lx=e.clientX;ly=e.clientY;host.classList.add('panning'); });
-  window.addEventListener('mousemove',e=>{ if(!dragging)return; SV.tx+=e.clientX-lx;SV.ty+=e.clientY-ly;lx=e.clientX;ly=e.clientY;moved=true;applyTransform(); });
+  window.addEventListener('mousemove',e=>{ if(!dragging)return; const sc=uiScale(); SV.tx+=(e.clientX-lx)/sc;SV.ty+=(e.clientY-ly)/sc;lx=e.clientX;ly=e.clientY;moved=true;applyTransform(); });
   window.addEventListener('mouseup',()=>{ dragging=false;host.classList.remove('panning'); });
-  host.addEventListener('wheel',e=>{ e.preventDefault(); const r=host.getBoundingClientRect();
-    zoomAt(e.clientX-r.left,e.clientY-r.top, e.deltaY<0?1.12:0.89); },{passive:false});
+  host.addEventListener('wheel',e=>{ e.preventDefault(); const r=host.getBoundingClientRect(), sc=uiScale();
+    zoomAt((e.clientX-r.left)/sc,(e.clientY-r.top)/sc, e.deltaY<0?1.12:0.89); },{passive:false});
   host.addEventListener('click',e=>{ if(SV.mode==='panel'){ const p=toImg(e.clientX,e.clientY); openPanelModal(null,p.x,p.y); } else if(SV.mode==='socket'){ const p=toImg(e.clientX,e.clientY); openSocketModal(null,p.x,p.y); } });
   // touch (pinch + pan)
   let pinch=0,ptx=0,pty=0;
   host.addEventListener('touchstart',e=>{ if(e.touches.length===1&&SV.mode==='pan'){dragging=true;lx=e.touches[0].clientX;ly=e.touches[0].clientY;} else if(e.touches.length===2){pinch=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);} },{passive:true});
-  host.addEventListener('touchmove',e=>{ if(e.touches.length===1&&dragging){SV.tx+=e.touches[0].clientX-lx;SV.ty+=e.touches[0].clientY-ly;lx=e.touches[0].clientX;ly=e.touches[0].clientY;applyTransform();} else if(e.touches.length===2){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);const r=host.getBoundingClientRect();zoomAt((e.touches[0].clientX+e.touches[1].clientX)/2-r.left,(e.touches[0].clientY+e.touches[1].clientY)/2-r.top,d/pinch);pinch=d;} e.preventDefault(); },{passive:false});
+  host.addEventListener('touchmove',e=>{ const sc=uiScale(); if(e.touches.length===1&&dragging){SV.tx+=(e.touches[0].clientX-lx)/sc;SV.ty+=(e.touches[0].clientY-ly)/sc;lx=e.touches[0].clientX;ly=e.touches[0].clientY;applyTransform();} else if(e.touches.length===2){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);const r=host.getBoundingClientRect();zoomAt(((e.touches[0].clientX+e.touches[1].clientX)/2-r.left)/sc,((e.touches[0].clientY+e.touches[1].clientY)/2-r.top)/sc,d/pinch);pinch=d;} e.preventDefault(); },{passive:false});
   host.addEventListener('touchend',()=>{dragging=false;});
 }
 
@@ -14117,14 +14653,19 @@ function acOpen(inputEl, src, onPick, allowNew){
 // listeyi girdinin altina (yer yoksa ustune) konumlandirir; ekran disina tasmaz
 function acPos(){
   if(!AC||!AC.drop||!AC.el||!AC.el.isConnected) return;
-  const r=AC.el.getBoundingClientRect(), d=AC.drop;
-  const altBos=window.innerHeight-r.bottom-10, ustBos=r.top-10;
+  /* OLCU BIRIMI: getBoundingClientRect ve innerWidth/Height GORSEL piksel verir,
+     d.style.* ise zoomlu belgede YEREL piksel sayilir. Once hepsi yerele cevrilir;
+     asagidaki tasarim sabitleri (240 / 8 / 10 / 160 / 120 / 300) zaten yereldir. */
+  const sc=uiScale(), d=AC.drop, b=AC.el.getBoundingClientRect();
+  const r={left:b.left/sc, top:b.top/sc, bottom:b.bottom/sc, width:b.width/sc};
+  const vw=window.innerWidth/sc, vh=window.innerHeight/sc;
+  const altBos=vh-r.bottom-10, ustBos=r.top-10;
   const asagi=altBos>=160||altBos>=ustBos;
   d.style.width=Math.max(240,r.width)+'px';
-  d.style.left=Math.max(8,Math.min(r.left,window.innerWidth-Math.max(240,r.width)-8))+'px';
+  d.style.left=Math.max(8,Math.min(r.left,vw-Math.max(240,r.width)-8))+'px';
   d.style.maxHeight=Math.max(120,Math.min(300,asagi?altBos:ustBos))+'px';
   if(asagi){ d.style.top=(r.bottom+3)+'px'; d.style.bottom='auto'; }
-  else { d.style.bottom=(window.innerHeight-r.top+3)+'px'; d.style.top='auto'; }
+  else { d.style.bottom=(vh-r.top+3)+'px'; d.style.top='auto'; }
 }
 function acInput(e){ AC.q=e.target.value; AC.hl=-1; acRender(); }
 function acRender(){
@@ -17622,7 +18163,8 @@ function backupCounts(db){
     {label:'El aleti',n:(a.items||[]).length},
     {label:'Saha plani ogesi',n:(s.panels||[]).length+(s.lines||[]).length+(s.sockets||[]).length},
     {label:'Gunluk rapor kaydi',n:(r.entries||[]).length},
-    {label:'Tutanak',n:(db&&db.tutanaklar||[]).length}
+    {label:'Tutanak',n:(db&&db.tutanaklar||[]).length},
+    {label:'Gunluk is (gorev)',n:(db&&db.gunlukIsler||[]).length}
   ];
 }
 function makeBackupEnvelope(){

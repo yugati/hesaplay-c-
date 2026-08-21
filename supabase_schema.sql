@@ -771,6 +771,30 @@ CREATE TRIGGER alet_lib_updated_at BEFORE UPDATE ON public.alet_lib
   FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
 
 -- ============================================================
+-- GÜNLÜK İŞLER (takvimli görev takibi) — gunluk_isler
+-- Bina seçim panosundaki takvim: güne görev eklenir, sorumlusu/binası seçilir,
+-- durumu izlenir (bekliyor / devam / bitti) ve bir denetçi onaylar veya
+-- revizyon ister. Ayrıntı ve tek başına çalıştırma: migration_gunluk_isler.sql
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.gunluk_isler (
+  id          TEXT        NOT NULL PRIMARY KEY,
+  data        JSONB       NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS gunluk_isler_created_at_idx ON public.gunluk_isler (created_at);
+CREATE INDEX IF NOT EXISTS gunluk_isler_tarih_idx      ON public.gunluk_isler ((data->>'tarih'));
+CREATE INDEX IF NOT EXISTS gunluk_isler_bina_idx       ON public.gunluk_isler ((data->>'bina'));
+
+ALTER TABLE public.gunluk_isler ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.gunluk_isler FROM anon, authenticated;
+
+DROP TRIGGER IF EXISTS gunluk_isler_updated_at ON public.gunluk_isler;
+CREATE TRIGGER gunluk_isler_updated_at BEFORE UPDATE ON public.gunluk_isler
+  FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+
+-- ============================================================
 -- AŞAMA 3 — ANON ERİŞİMİNİ KAPAT  (dosyanın EN SONU, sırası önemli)
 --
 -- Yukarıdaki bölümlerin anon'a verdiği tüm yetkiler burada geri alınır.

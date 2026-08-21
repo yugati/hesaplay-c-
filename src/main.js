@@ -152,6 +152,12 @@ import {
   sbInsertProjeLokasyon,
   sbUpdateProjeLokasyon,
   sbDeleteProjeLokasyonlar,
+  // Gunluk Isler (takvimli gorev takibi)
+  sbGetGunlukIsler,
+  sbInsertGunlukIs,
+  sbUpdateGunlukIs,
+  sbDeleteGunlukIs,
+  sbWipeGunlukIslerData,
   // Sirketler
   sbGetCompanies,
   sbInsertCompany,
@@ -382,6 +388,18 @@ window.initBinaViewer           = initBinaViewer
 window.sbInsertProjeLokasyon    = guardedSafe('tanimlar', 'create', sbInsertProjeLokasyon)
 window.sbUpdateProjeLokasyon    = guardedSafe('tanimlar', 'update', sbUpdateProjeLokasyon)
 window.sbDeleteProjeLokasyonlar = guardedSafe('tanimlar', 'delete', sbDeleteProjeLokasyonlar)
+
+// ─── Gunluk Isler ────────────────────────────────────────────────────────────
+// Proje modulunun yetkisini kullanir: proje panosunu goren gorevleri gorur,
+// proje'ye yazabilen gorev acar/durum degistirir.
+// guardedSafe DEGIL guardedThrow: guardedSafe hatayi yutup undefined donuyor, o zaman
+// cagiran "kaydedildi" sanip gorevi yerel listeye ekler - kullanici sayfayi yenileyince
+// gorevin olmadigini gorurdu. Hata yukari cikinca gorev listeye EKLENMEZ ve nedeni soylenir.
+window.sbGetGunlukIsler    = sbGetGunlukIsler
+window.sbInsertGunlukIs    = guardedThrow('proje', 'create', sbInsertGunlukIs)
+window.sbUpdateGunlukIs    = guardedThrow('proje', 'update', sbUpdateGunlukIs)
+window.sbDeleteGunlukIs    = guardedThrow('proje', 'delete', sbDeleteGunlukIs)
+window.sbWipeGunlukIslerData = sbWipeGunlukIslerData
 
 // ─── Sirketler ───────────────────────────────────────────────────────────────
 window.sbGetCompanies      = sbGetCompanies
