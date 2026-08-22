@@ -1858,6 +1858,14 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .matd-pct{font-family:var(--mono);font-size:10.5px;font-weight:700;flex-shrink:0;min-width:34px;text-align:right}
 .matd-pct.dim{color:var(--dim);font-weight:400}
 .matd-empty{font-size:12px;color:var(--mute);padding:6px 2px;margin:0}
+/* BILGI SERIDI: bos bir bolumun aciklamasi. Duz paragraf yerine ikonlu, cerceveli
+   ince bir serit - goz "burada icerik yok, ne yapacagim yaziyor" diye bir bakista
+   ayirir. Metin KISA tutulur: ornek deger gerekiyorsa duzenleme kutularinin
+   placeholder'inda zaten yaziyor, ayni ornegi iki yerde tekrar etmeye gerek yok. */
+.mdp-info{display:flex;align-items:center;gap:9px;font-size:12px;line-height:1.5;color:var(--mute);
+  background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 12px;margin:0}
+.mdp-info svg{width:15px;height:15px;flex:0 0 15px;color:var(--primary);opacity:.85}
+.mdp-info b{color:var(--ink);font-weight:700}
 @media(max-width:640px){.matd-stats{grid-template-columns:1fr 1fr}.matd-row{flex-wrap:wrap}.matd-bar{flex:1 1 60px}}
 /* ===== MALZEME DETAY SAYFASI (kunyenin altindaki "Detay Sayfasi" dugmesi acar) =====
    Is bolumu: KUNYE urunun gecmisini anlatir (hangi sartnamede, kac fatura, ne kadar
@@ -1909,6 +1917,17 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .mdp-link{color:var(--blue);text-decoration:underline;text-underline-offset:2px;word-break:break-all}
 .mdp-tek.edit .mdp-tekrow{grid-template-columns:minmax(0,38%) minmax(0,1fr) 34px;gap:8px;align-items:center;background:var(--panel)}
 .mdp-tek.edit input{width:100%;font-size:12.5px;padding:7px 9px}
+/* MARKA bolumu: teknik bilginin hemen altinda, marka kutuphanesindeki logolar.
+   Logo kutusu BEYAZ zeminlidir - marka logolari neredeyse her zaman beyaz icin
+   cizilir, koyu temada panel zemininde kaybolurlardi. */
+.mdp-markalar{display:flex;flex-wrap:wrap;gap:10px}
+.mdp-marka{border:1px solid var(--line);border-radius:12px;background:var(--panel2);padding:10px 12px;min-width:134px;max-width:230px;display:flex;flex-direction:column;gap:8px;align-items:center}
+.mdp-marka.bos{border-style:dashed;background:transparent}
+.mdp-marka-logo{width:100%;height:54px;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:8px;overflow:hidden}
+.mdp-marka.bos .mdp-marka-logo{background:transparent}
+.mdp-marka-logo img{max-width:100%;max-height:54px;object-fit:contain;display:block;cursor:zoom-in}
+.mdp-marka-yok{font-family:var(--mono);font-size:9.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--dim)}
+.mdp-marka-ad{font-size:12.5px;font-weight:700;color:var(--ink);text-align:center;line-height:1.35;overflow-wrap:anywhere}
 @media(max-width:820px){
   .mdp-top{grid-template-columns:1fr;gap:16px}
   .mdp-figure{aspect-ratio:16/10}
@@ -4042,7 +4061,7 @@ function renderSidebar(){
     +groups;
 }
 function openMaterialLib(){ PLIB=true; PUSERS=false; PAUDIT=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PNEWORD=false; PBINAY=false; SEARCH=""; render(); }
-function closeMaterialLib(){ PLIB=false; _matSel.clear(); render(); }
+function closeMaterialLib(){ PLIB=false; _matSel.clear(); _markaSel.clear(); render(); }
 
 /* ============ KULLANICI YONETIMI (admin) ============ */
 async function openUsers(){
@@ -5049,7 +5068,7 @@ let MATF={scope:'proje',cat:'',brand:'',unit:'',tag:'',img:'',renk:'',bak:''};
 function setMatF(k,v){ MATF[k]=v; render(); }
 function setMatScope(s){ if(MATF.scope===s)return;
   MATF={scope:s,cat:'',brand:'',unit:'',tag:'',img:'',renk:'',bak:''};
-  _matUsageFilter='all'; _matSel.clear(); SEARCH=''; render(); }
+  _matUsageFilter='all'; _matSel.clear(); _markaSel.clear(); SEARCH=''; render(); }
 function clearMatF(){ MATF={scope:MATF.scope,cat:'',brand:'',unit:'',tag:'',img:'',renk:'',bak:''}; _matUsageFilter='all'; SEARCH=''; render(); }
 function matAnyF(){ return !!(SEARCH||MATF.cat||MATF.brand||MATF.unit||MATF.tag||MATF.img||MATF.renk||MATF.bak||_matUsageFilter!=='all'); }
 // marka alani coklu deger tutabilir ("BEMIS / VIKO" veya satir satir) - filtre parcalara bakar
@@ -5408,6 +5427,14 @@ function renderMaterialLib(){
    alt.brand, Excel ice/disa aktarma...) tek satiri degismeden calisir. Bedeli:
    listede ad degistirmek kopyalari da guncelleyen ayri bir istir -
    markaAdiDegistir tam olarak bunu yapar. */
+/* BIRLESTIRME SECIMI: malzeme kutuphanesindeki _matSel ile birebir ayni mantik -
+   satirlardaki kutucuklarla tam 2 marka secilince "Birlestir" dugmesi acilir. */
+let _markaSel=new Set(), _markaMergeKeepId=null;
+function toggleMarkaSel(id){ if(_markaSel.has(id))_markaSel.delete(id); else _markaSel.add(id); render(); }
+function clearMarkaSel(){ if(!_markaSel.size)return; _markaSel.clear(); render(); }
+/* Excel'den gelen tirnak/bosluk artigi ('"Schneider Electric' gibi): birlestirmede
+   hangi yazimin KALACAGINA karar verirken esitlik bozucu olarak kullanilir. */
+function markaKirliMi(ad){ return /^["'\s]|["'\s]$/.test(String(ad||'')); }
 function markaListesi(){ return ((DB&&DB.meta&&DB.meta.markalar)||[]).filter(x=>x&&x.ad); }
 function markaSirali(){ return markaListesi().slice().sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'tr')); }
 function markaBul(ad){ const n=norm(ad).trim(); if(!n)return null; return markaListesi().find(x=>norm(x.ad).trim()===n)||null; }
@@ -5516,14 +5543,16 @@ function renderMaterialLibMarka(){
   const liste=SEARCH?hepsi.filter(m=>matchText(m.ad,SEARCH)):hepsi;
   const bilinmeyen=markaBilinmeyenler();
   const duzen=canEdit('kutuphane');
+  const birlestirilebilir=isAdmin();   // birlestirme malzeme kutuphanesinde de yalnizca admin'de
   const icoDuzenle='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg>';
   let rows='';
   if(!liste.length){
-    rows=`<tr><td colspan="7"><div class="empty" style="padding:30px"><p>${hepsi.length?'Eslesen marka yok':'Marka listesi bos'}</p><span style="font-size:12px">${hepsi.length?'Aramayi temizleyin':'"Marka Ekle" ile baslayin - ya da kayitlarda gecen markalari "Kayitlardan Topla" ile tek seferde listeye alin'}</span></div></td></tr>`;
+    rows=`<tr><td colspan="8"><div class="empty" style="padding:30px"><p>${hepsi.length?'Eslesen marka yok':'Marka listesi bos'}</p><span style="font-size:12px">${hepsi.length?'Aramayi temizleyin':'"Marka Ekle" ile baslayin - ya da kayitlarda gecen markalari "Kayitlardan Topla" ile tek seferde listeye alin'}</span></div></td></tr>`;
   } else {
     liste.forEach(m=>{
-      const k=markaKullanim(m.ad,harita), t=markaToplam(k);
-      rows+=`<tr>
+      const k=markaKullanim(m.ad,harita), t=markaToplam(k), secili=_markaSel.has(m.id);
+      rows+=`<tr class="${secili?'row-sel':''}">
+        <td style="width:34px;text-align:center">${birlestirilebilir?`<input type="checkbox" class="mat-check" ${secili?'checked':''} onclick="toggleMarkaSel('${m.id}')">`:''}</td>
         <td>${m.logo?`<img class="thumb" src="${esc(m.logo)}" onclick="lightbox('${esc(m.logo)}')" alt="">`:phThumb()}</td>
         <td><div class="t-name">${esc(m.ad)}</div></td>
         <td class="t-meta">${k.proje||'-'}</td>
@@ -5548,11 +5577,96 @@ function renderMaterialLibMarka(){
     <div class="matlib-filterbar">
     <div class="toolbar">${searchBox('Marka ara...')}
       ${duzen?`<button class="btn btn-ciplak" title="Listeye yeni marka ekle" aria-label="Marka ekle" onclick="openMarkaModal()">${icoMalEkle()}</button>`:''}
-      ${duzen&&bilinmeyen.length?`<button class="btn btn-ciplak" title="Kayitlardan Topla - uc kutuphanedeki kayitlarda gecen ama listede olmayan ${bilinmeyen.length} degeri listeye alir; kayitlara dokunmaz" aria-label="Kayitlardan topla" onclick="openMarkaToplaModal()">${icoPlus()}<b class="ciplak-say">${bilinmeyen.length}</b></button>`:''}</div>
+      ${duzen&&bilinmeyen.length?`<button class="btn btn-ciplak" title="Kayitlardan Topla - uc kutuphanedeki kayitlarda gecen ama listede olmayan ${bilinmeyen.length} degeri listeye alir; kayitlara dokunmaz" aria-label="Kayitlardan topla" onclick="openMarkaToplaModal()">${icoPlus()}<b class="ciplak-say">${bilinmeyen.length}</b></button>`:''}
+      ${birlestirilebilir?(()=>{ const n=_markaSel.size, ok=n===2;
+        const ipucu = n===0?'Ayni marka listede iki farkli yazimla duruyorsa (orn. Excel\'den gelen tirnakli hali): once soldaki kutucuklarla tam 2 marka secin':
+                      n===1?'1 marka daha secin (birlestirmek icin toplam 2 gerekli)':
+                      ok?'2 marka secildi - birlestirmek icin tiklayin':
+                      `Sadece 2 marka secin (su an ${n} secili)`;
+        return `<button class="btn btn-ciplak" ${ok?'':'disabled'} title="Markalari Birlestir - ${esc(ipucu)}" aria-label="Markalari birlestir" onclick="${ok?'openMarkaMergeModal()':''}">${icoKopyaBirlestir()}</button>`; })():''}
+      ${_markaSel.size?`<button class="btn btn-ciplak" title="Secimi Iptal Et - ${_markaSel.size} markanin secimini kaldirir" aria-label="Secimi iptal et" onclick="clearMarkaSel()">${icoSecimIptal()}</button>`:''}</div>
     </div>
-    <div class="tablewrap"><table><thead><tr><th style="width:52px"></th><th>Marka</th><th>Proje</th><th>Mobilizasyon</th><th>Mekanik</th><th>Toplam</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tablewrap"><table><thead><tr><th style="width:34px"></th><th style="width:52px"></th><th>Marka</th><th>Proje</th><th>Mobilizasyon</th><th>Mekanik</th><th>Toplam</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     ${eksikPanel}
   </div>`;
+}
+
+/* ── Marka birlestirme ───────────────────────────────────────────────────────
+   Malzeme birlestirmenin (openMergeModal / confirmMergeMaterials) marka karsiligi:
+   iki satir secilir, biri "kalacak ad" isaretlenir, digeri listeden duser.
+   FARK: malzemede kayitlar birbirine baglanir; markada ise kutuphane bir SOZLUK
+   oldugu icin is, silinen yazimi kayitlarda kalan yazimla DEGISTIRMEKTIR -
+   bunu zaten markaAdiDegistir yapiyor, birlestirme onu cagirir. */
+function openMarkaMergeModal(){
+  if(!isAdmin()){ toast('Bu islem icin yetkiniz yok','err'); return; }
+  const ids=[..._markaSel];
+  if(ids.length!==2){ toast('Birlestirmek icin listeden tam olarak 2 marka secin','err'); return; }
+  const liste=markaListesi();
+  const a=liste.find(x=>x.id===ids[0]), b=liste.find(x=>x.id===ids[1]);
+  if(!a||!b){ toast('Marka bulunamadi','err'); return; }
+  const harita=markaKayitlardakiler();
+  const ka=markaKullanim(a.ad,harita), kb=markaKullanim(b.ad,harita);
+  const ta=markaToplam(ka), tb=markaToplam(kb);
+  /* Varsayilan "kalacak ad": cok kullanilan yazim. Esitlikte tirnak/bosluk artigi
+     TASIMAYAN secilir - duzeltilmek istenen zaten odur. Kullanici karta tiklayip
+     degistirebilir. */
+  _markaMergeKeepId = ta!==tb ? (ta>tb?a.id:b.id)
+                    : (markaKirliMi(a.ad)&&!markaKirliMi(b.ad) ? b.id : a.id);
+  const kart=(m,k)=>{
+    const sel=_markaMergeKeepId===m.id, t=markaToplam(k);
+    return `<div class="merge-card ${sel?'sel':''}" data-id="${m.id}" onclick="pickMarkaMergeKeep('${m.id}')">
+      <div class="merge-card-head">${sel?'<span class="merge-tag">KALACAK AD</span>':'<span class="merge-tag rm">SILINECEK</span>'}</div>
+      ${m.logo?`<img class="img-prev" src="${esc(m.logo)}" alt="">`:phIco()}
+      <div class="mc-name">${esc(m.ad)}</div>
+      <div class="mc-row"><span>Proje</span><b>${k.proje||'-'}</b></div>
+      <div class="mc-row"><span>Mobilizasyon</span><b>${k.gecici||'-'}</b></div>
+      <div class="mc-row"><span>Mekanik</span><b>${k.alet||'-'}</b></div>
+      <div class="mc-row"><span>Toplam</span><b>${t?fmtNum(t)+' kayit':'-'}</b></div>
+      <div class="mc-row"><span>Logo</span><b>${m.logo?'var':'-'}</b></div>
+    </div>`;
+  };
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal wide merge-modal">
+    <div class="modal-head"><h3>Markalari Birlestir</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body">
+      <p class="t-meta" style="margin-bottom:14px;line-height:1.5">Ayni marka, Excel'den aktarilirken tirnak ya da bosluk artigi yuzunden listede iki ayri yazim olarak gorunebilir. Asagida <b>kalacak ad</b> olarak birini secin: digeri listeden silinir ve o yazimin gectigi <b>tum kayitlarda</b> (Proje, Mobilizasyon, Mekanik ve bagli sartname satirlari) kalacak ada cevrilir. Kalacak adin logosu bossa digerinden devralinir.</p>
+      <div class="merge-cards">${kart(a,ka)}${kart(b,kb)}</div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="confirmMergeMarka()">${icoMerge()} Birlestir</button></div>
+  </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function pickMarkaMergeKeep(id){
+  _markaMergeKeepId=id;
+  document.querySelectorAll('.merge-card').forEach(el=>{
+    const on=el.dataset.id===id;
+    el.classList.toggle('sel',on);
+    el.querySelector('.merge-card-head').innerHTML = on?'<span class="merge-tag">KALACAK AD</span>':'<span class="merge-tag rm">SILINECEK</span>';
+  });
+}
+async function confirmMergeMarka(){
+  if(!isAdmin()){ toast('Bu islem icin yetkiniz yok','err'); return; }
+  const ids=[..._markaSel]; if(ids.length!==2) return;
+  const keepId=_markaMergeKeepId, dropId=ids.find(x=>x!==keepId);
+  const liste=markaListesi().map(x=>({...x}));
+  const keep=liste.find(x=>x.id===keepId), drop=liste.find(x=>x.id===dropId);
+  if(!keep||!drop){ toast('Marka bulunamadi','err'); return; }
+  const t=markaToplam(markaKullanim(drop.ad));
+  if(!confirm('"'+drop.ad+'" markasi "'+keep.ad+'" ile birlestirilecek.\n\n'
+    +(t? t+' kayitta marka yazisi "'+keep.ad+'" olarak degisecek (bagli sartname satirlari dahil).'
+       : 'Bu yazimi kullanan kayit yok, yalnizca listeden dusecek.')
+    +'\n\n"'+drop.ad+'" listeden silinecek. Islem geri alinamaz. Devam edilsin mi?')) return;
+  /* Once KAYITLAR cevrilir, sonra liste yazilir. Ters sirada olsaydi liste yazilip
+     kayit guncellemesi patladiginda, artik listede olmayan bir yazim kayitlarda
+     oksuz kalirdi. */
+  let say=0;
+  try{ say=await markaAdiDegistir(drop.ad,keep.ad); }
+  catch(e){ toast('Kayitlar guncellenemedi: '+((e&&e.message)||e),'err'); return; }
+  if(!keep.logo && drop.logo) keep.logo=drop.logo;   // bos alan digerinden tamamlanir
+  try{ await markaListesiYaz(liste.filter(x=>x.id!==dropId)); }catch(e){ return; }
+  logAction('editMaterial','Marka birlestirme: "'+drop.ad+'" -> "'+keep.ad+'" ('+say+' kayit guncellendi)');
+  _markaSel.clear(); _markaMergeKeepId=null;
+  closeModal(); render();
+  toast(say?('Markalar birlestirildi - '+say+' kayit guncellendi'):'Markalar birlestirildi');
 }
 
 function markaOnizleHata(img){ const s=document.createElement('span'); s.className='t-meta'; s.style.fontSize='11px'; s.textContent='Logo linki acilamadi'; img.replaceWith(s); }
@@ -5596,7 +5710,14 @@ async function markaAdiDegistir(eski,yeni){
     if(m.is_deleted) return;
     const p=matBrandParts(m.brand);
     if(!p.some(b=>norm(b).trim()===n)) return;
-    m.brand=p.map(b=>norm(b).trim()===n?yeni:b).join('\n'); m.updatedAt=simdi; say++;
+    /* Ayni malzemede hem eski hem yeni yazim duruyor olabilir ('"Schneider Electric'
+       ve 'Schneider Electric'); cevrildikten sonra ad iki kere yazilmasin diye
+       tekillestirilir - ilk gorulen yazim korunur. */
+    const gorulen=new Set();
+    m.brand=p.map(b=>norm(b).trim()===n?yeni:b)
+      .filter(b=>{ const k=norm(b).trim(); if(gorulen.has(k))return false; gorulen.add(k); return true; })
+      .join('\n');
+    m.updatedAt=simdi; say++;
     ops.push(sbUpdateProjeMaterial(m.id,{...m}));
     materialUsage(m.id).forEach(sp=>{ sp.brand=m.brand; ops.push(sbUpdateProjeSpec(sp.id,{...sp})); });
   });
@@ -9613,6 +9734,7 @@ function _openMatDetailPage(matId){
         </div>
       </div>
       <div id="mdpTek">${mdpTekHtml()}</div>
+      ${mdpMarkaHtml(m)}
       <div class="mdp-sec">Kullanim Ozeti <i>ayrinti ve tiklanabilir kaynak listesi Kunye'de</i></div>
       <div class="matd-stats" style="margin-top:0">
         <div><b>${fmtNum(oz.totOrd)}</b><span>Siparis ${esc(oz.unit)}</span></div>
@@ -9629,6 +9751,8 @@ function _openMatDetailPage(matId){
   setModalGuard(mdpDirty,mdpClose);
 }
 function icoZoomSm(){ return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg>'; }
+// bilgi seridi ikonu (ⓘ)
+function icoInfoSm(){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11.5v4.5M12 7.7v.3"/></svg>'; }
 function icoPencilSm(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg>'; }
 // deger https:// ile basliyorsa tiklanabilir link olur (ETA raporu, teknik foy, urun sayfasi...)
 function mdpVal(v){
@@ -9656,13 +9780,42 @@ function mdpTekHtml(){
           <input value="${esc(r.v||'')}" placeholder="Deger (orn. Karbon celigi, cinko kaplama)" oninput="mdpSet(${i},'v',this.value)">
           <button class="mini-btn del" title="Satiri sil" onclick="mdpDelRow(${i})">${icoTrash()}</button>
         </div>`).join('')}</div>`
-      : `<p class="matd-empty">Henuz satir yok - <b>Satir Ekle</b> ile baslayin.</p>`;
+      : `<div class="mdp-info">${icoInfoSm()}<span><b>Satir Ekle</b> ile ilk ozelligi girin.</span></div>`;
     return head+body;
   }
   const body=rows.length
     ? `<div class="mdp-tek">${rows.map(r=>`<div class="mdp-tekrow"><span class="mdp-tk">${esc(r.k||'-')}</span><span class="mdp-tv">${mdpVal(r.v)}</span></div>`).join('')}</div>`
-    : `<p class="matd-empty">Bu urun icin teknik bilgi girilmemis.${yetki?' <b>Duzenle</b> ile ozellik satiri ekleyin (orn. "Kafa konfigurasyonu" - "Distan disli").':''}</p>`;
+    : `<div class="mdp-info">${icoInfoSm()}<span>Teknik bilgi girilmemis.${yetki?' <b>Duzenle</b> ile ozellik ekleyin.':''}</span></div>`;
   return head+body;
+}
+/* MARKA bolumu. Marka alani birden fazla ad tutabilir (bkz. matBrandParts), her
+   ad ayri kart olur. Logo, Malzeme Kutuphanesi > Marka sekmesindeki SOZLUKTEN
+   gelir - malzeme kaydinda logo tutulmaz, tek bir yerde guncellenir.
+   Logosu olmayan ya da sozlukte hic bulunmayan ad da GOSTERILIR (kesikli
+   cerceve): eksigin gorunmemesi, olmadigini sanmaktan daha kotudur. */
+function mdpMarkaHtml(m){
+  const adlar=matBrandParts(m&&m.brand);
+  if(!adlar.length) return '';
+  const kartlar=adlar.map(ad=>{
+    const kayit=markaBul(ad), logo=(kayit&&kayit.logo)||'';
+    const govde=logo
+      ? `<img src="${esc(logo)}" alt="${esc(ad)}" title="Buyutmek icin tiklayin" onclick="lightbox('${esc(logo)}')" onerror="mdpMarkaLogoHata(this)">`
+      : `<span class="mdp-marka-yok">${kayit?'logo yok':'listede yok'}</span>`;
+    return `<div class="mdp-marka${logo?'':' bos'}">
+      <div class="mdp-marka-logo">${govde}</div>
+      <div class="mdp-marka-ad">${esc(ad)}</div>
+    </div>`;
+  }).join('');
+  const eksik=adlar.filter(ad=>{ const k=markaBul(ad); return !k||!k.logo; }).length;
+  return `<div class="mdp-sec">Marka <span>${adlar.length}</span>
+    <i>${eksik?'logo Malzeme Kutuphanesi > Marka sekmesinde eklenir':'marka kutuphanesindeki logo'}</i></div>
+    <div class="mdp-markalar">${kartlar}</div>`;
+}
+// link kirilmissa kart bos gorunume duser - kirik resim ikonu birakmayiz
+function mdpMarkaLogoHata(img){
+  const kart=img.closest('.mdp-marka'); if(kart) kart.classList.add('bos');
+  const s=document.createElement('span'); s.className='mdp-marka-yok'; s.textContent='logo acilamadi';
+  img.replaceWith(s);
 }
 function mdpFootHtml(){
   if(_mdpEdit) return `<button class="btn btn-ghost" style="margin-right:auto" onclick="mdpCancelEdit()">Vazgec</button>
