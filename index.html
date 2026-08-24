@@ -2376,6 +2376,10 @@ datalist{display:none}
 .tut-pick-row .pk-name i{display:block;font-style:normal;font-size:11px;color:var(--dim);font-family:var(--mono);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tut-pick-row .pk-add{flex:none;color:var(--green);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+/* SECICIDEKI KAYNAK ROZETI: satirin hangi kutuphaneden geldigi. "Tumu" sekmesinde uc
+   kutuphane ic ice listelenir, ayni ad iki kutuphanede birden bulunabilir. */
+.tut-pick-row .pk-src{flex:none;font-size:9.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+  padding:2px 7px;border-radius:5px;border:1px solid currentColor;opacity:.85}
 /* liste tablosu rozetleri */
 .tut-no{font-family:var(--mono);font-size:12.5px;font-weight:600}
 .tut-party-tag{display:inline-flex;align-items:center;gap:5px;font-size:11.5px}
@@ -18448,9 +18452,55 @@ function tutNextNo(){
     const n=Number(s.slice(pre.length)); if(!isNaN(n)&&n>max) max=n; });
   return pre+String(max+1).padStart(4,'0');
 }
-function tutBlankLine(){ return {id:uid(),matId:'',code:'',ad:'',marka:'',birim:'',qty:'',barkod:'',renk:''}; }
-// satirin fotografi: kutuphanedeki malzemeden gelir (kayitta saklanmaz)
-function tutLineImg(l){ if(!l||!l.matId)return null; const m=getMaterial(l.matId); return (m&&m.img)||null; }
+function tutBlankLine(){ return {id:uid(),matId:'',matSrc:'',code:'',ad:'',marka:'',birim:'',qty:'',barkod:'',renk:''}; }
+/* SATIRIN FOTOGRAFI: kayitta yalnizca matId (+ yeni kayitlarda matSrc) durur, foto
+   kutuphaneden okunur - tutanak kaydi kucuk kalir, kutuphanedeki foto degisirse cikti da
+   guncellenir. matSrc'siz ESKI kayitlar proje kutuphanesinden gelmisti; orada bulunamazsa
+   diger iki kutuphaneye de bakilir (id'ler uid(); kutuphaneler arasi cakisma yok). */
+function tutLineImg(l){
+  if(!l||!l.matId) return null;
+  const k=tutKaynakBul(l.matSrc,l.matId);
+  return (k&&k.img)||null;
+}
+/* ===== TUTANAK MALZEME KAYNAKLARI ==================================================
+   Tutanak UC kutuphaneden de malzeme tasiyabilir. Kayitlarin alan adlari farkli
+   (proje: name/code/brand/unit · gecici: ad/kod/marka/unit · alet: ad/kod/marka/birim),
+   bu yuzden hepsi ORTAK bir bicime cevrilir: {src,id,ad,kod,marka,birim,renk,img,ek,ara}.
+   Kutuphanelerin kendi ekranlari degismez - burasi yalnizca OKUR. */
+function tutNormProje(m){ return {src:'proje',id:m.id,ad:m.name||'',kod:m.code||'',
+  marka:matBrandParts(m.brand)[0]||'',birim:m.unit||'',renk:'',img:m.img||'',
+  ek:[m.standart,(m.tags||[]).join(', ')].filter(Boolean).join(' · '),
+  ara:[m.name,m.code,(m.altCodes||[]).join(' '),m.brand,m.standart].filter(Boolean).join(' ')}; }
+function tutNormGecici(x){ return {src:'gecici',id:x.id,ad:x.ad||'',kod:x.kod||'',
+  marka:x.marka||'',birim:x.unit||'',renk:x.renk||'',img:x.img||'',
+  ek:[x.grup,x.renk,fmtNum(Number(x.bakiye)||0)+' bakiye'].filter(Boolean).join(' · '),
+  ara:[x.ad,x.kod,x.marka,x.grup,x.barkod].filter(Boolean).join(' ')}; }
+function tutNormAlet(x){ return {src:'alet',id:x.id,ad:x.ad||'',kod:x.kod||'',
+  marka:x.marka||'',birim:x.birim||'',renk:x.renk||'',img:x.img||'',
+  ek:[x.grup,x.olcu,x.madde].filter(Boolean).join(' · '),
+  ara:[x.ad,x.kod,x.marka,x.grup,x.barkod,x.olcu,x.madde].filter(Boolean).join(' ')}; }
+const TUT_KAYNAK_TANIM=[
+  {src:'proje',  label:'Proje',          renk:'var(--blue)',
+   gor:()=>canSee('kutuphane')||canSee('proje'), items:()=>(DB.proje.materials||[]).map(tutNormProje)},
+  {src:'gecici', label:'Mobilizasyon',   renk:'var(--amber)',
+   gor:()=>canSee('gecici'),              items:()=>((DB.gecici&&DB.gecici.lib)||[]).map(tutNormGecici)},
+  {src:'alet',   label:'Mekanik (Alet)', renk:'var(--violet)',
+   gor:()=>canSee('alet'),                items:()=>aletLib().map(tutNormAlet)}
+];
+/* Secicide gorunen kutuphaneler: kutuphane ekranindaki sekmelerle AYNI yetki olcutu
+   (bkz. matScopeBar). Yetkisi olmayan kullanici o kutuphaneyi tutanaktan da goremez. */
+function tutKaynaklar(){ return TUT_KAYNAK_TANIM.filter(k=>k.gor()); }
+function tutKaynakTanim(src){ return TUT_KAYNAK_TANIM.find(k=>k.src===src)||null; }
+/* Tek kaydi bulur. src bilinmiyorsa (eski tutanak satirlari) uc kutuphane sirayla denenir.
+   YETKIYE BAKMAZ: kaydedilmis bir satirin fotografi, kullanicinin o kutuphaneyi listeleme
+   yetkisi olmasa da gorunmeli - tutanak zaten o malzemeyi iceriyor. */
+function tutKaynakBul(src,id){
+  if(!id) return null;
+  const sirali=src?[...TUT_KAYNAK_TANIM.filter(k=>k.src===src),...TUT_KAYNAK_TANIM.filter(k=>k.src!==src)]
+                  :TUT_KAYNAK_TANIM;
+  for(const k of sirali){ const bul=k.items().find(x=>x.id===id); if(bul) return bul; }
+  return null;
+}
 // dolu satirlar: cikti ve toplamlar bos satirlari saymaz
 function tutFilledLines(t){ return ((t&&t.lines)||[]).filter(l=>String(l.ad||'').trim()||String(l.code||'').trim()||Number(l.qty)>0); }
 function tutTotals(t){ const ls=tutFilledLines(t);
@@ -18779,43 +18829,70 @@ function tutCancelForm(){
 }
 
 /* ---------- KUTUPHANEDEN MALZEME SECICI ---------- */
+/* Varsayilan sekme "Tumu": tutanagi yazan kisi malzemenin hangi kutuphanede kayitli
+   oldugunu bilmek zorunda kalmasin, tek aramada ucu birden cikar. */
+let _TUTPICK='hepsi';
 function openTutMatPick(){
+  const kaynaklar=tutKaynaklar();
+  if(!kaynaklar.length){ toast('Hicbir malzeme kutuphanesine erisim yetkiniz yok','err'); return; }
+  if(_TUTPICK!=='hepsi' && !kaynaklar.some(k=>k.src===_TUTPICK)) _TUTPICK='hepsi';
+  // tek kutuphaneye erisimi olan kullaniciya sekme gostermenin anlami yok
+  const seg=kaynaklar.length>1?`<div class="seg" style="margin-bottom:10px;display:flex;flex-wrap:wrap">
+      <button class="${_TUTPICK==='hepsi'?'on':''}" onclick="setTutPickSrc('hepsi')">Tumu</button>
+      ${kaynaklar.map(k=>`<button class="${_TUTPICK===k.src?'on':''}" onclick="setTutPickSrc('${k.src}')">${esc(k.label)}</button>`).join('')}
+    </div>`:'';
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:660px">
     <div class="modal-head"><h3>Kutuphaneden Malzeme Ekle</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">
-      <div class="frow"><input id="tutPickQ" placeholder="Malzeme adi veya urun kodu ara..." oninput="tutPickFilter()"></div>
+      ${seg}
+      <div class="frow"><input id="tutPickQ" placeholder="Malzeme adi, urun kodu, marka veya barkod ara..." oninput="tutPickFilter()"></div>
       <div class="tut-pick" id="tutPickList">${tutPickRows('')}</div>
-      <p class="t-meta" style="margin-top:9px;font-size:11.5px">Tiklanan malzeme tutanak satirlarina eklenir; <b>urun kodu, ad, marka, birim ve fotograf</b> kutuphaneden otomatik gelir. Miktar / barkod / renk alanlarini siz doldurursunuz. Pencere acik kalir - birden fazla malzeme ekleyebilirsiniz.</p>
+      <p class="t-meta" style="margin-top:9px;font-size:11.5px">Tiklanan malzeme tutanak satirlarina eklenir; <b>urun kodu, ad, marka, birim, renk ve fotograf</b> kutuphaneden otomatik gelir. Miktar ve barkod / seri no alanlarini siz doldurursunuz. Pencere acik kalir - birden fazla malzeme ekleyebilirsiniz.</p>
     </div>
     <div class="modal-foot"><button class="btn btn-add" onclick="closeModal()">Bitti</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   setTimeout(()=>{ const i=document.getElementById('tutPickQ'); if(i)i.focus(); },0);
 }
+// sekme degisince yalnizca liste yenilenir - yazilan arama ve odak korunur
+function setTutPickSrc(src){
+  _TUTPICK=src;
+  document.querySelectorAll('.modal-bg .seg button').forEach(b=>
+    b.classList.toggle('on', b.getAttribute('onclick')===`setTutPickSrc('${src}')`));
+  tutPickFilter();
+}
 function tutPickRows(q){
-  let mats=(DB.proje.materials||[]).slice();
-  if(q) mats=mats.filter(m=>matchText((m.name||'')+' '+(m.code||'')+' '+((m.altCodes||[]).join(' '))+' '+(m.brand||''),q));
-  mats.sort((a,b)=>(a.name||'').localeCompare(b.name||'','tr'));
-  if(!mats.length) return `<div style="padding:22px;text-align:center;color:var(--mute);font-size:12.5px">${q?'Eslesen malzeme yok':'Malzeme kutuphanesi bos'}</div>`;
+  const hepsiKaynak=tutKaynaklar();
+  const secili=hepsiKaynak.filter(k=>_TUTPICK==='hepsi'||k.src===_TUTPICK);
+  let mats=secili.flatMap(k=>k.items());
+  if(q) mats=mats.filter(m=>matchText(m.ara,q));
+  // once ada gore, ayni adda kaynak sirasina gore (Proje > Mobilizasyon > Mekanik)
+  const sira={proje:0,gecici:1,alet:2};
+  mats.sort((a,b)=>(a.ad||'').localeCompare(b.ad||'','tr')||(sira[a.src]-sira[b.src]));
+  if(!mats.length) return `<div style="padding:22px;text-align:center;color:var(--mute);font-size:12.5px">${q?'Eslesen malzeme yok':'Bu kutuphane bos'}</div>`;
   const shown=mats.slice(0,150);
-  return shown.map(m=>`<div class="tut-pick-row" onclick="tutPickAdd('${m.id}')">
+  // rozet yalnizca birden fazla kutuphane gorunuyorken anlamli
+  const rozet=hepsiKaynak.length>1;
+  return shown.map(m=>`<div class="tut-pick-row" onclick="tutPickAdd('${m.src}','${m.id}')">
       ${m.img?`<img class="tut-thumb" src="${esc(m.img)}">`:`<div class="tut-thumb-ph"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="9" cy="9" r="2"/></svg></div>`}
-      <div class="pk-name">${esc(m.name||'-')}<i>${esc([m.code,m.brand,m.unit].filter(Boolean).join(' · ')||'kod yok')}</i></div>
+      <div class="pk-name">${esc(m.ad||'-')}<i>${esc([m.kod,m.marka,m.birim,m.ek].filter(Boolean).join(' · ')||'kod yok')}</i></div>
+      ${rozet?`<span class="pk-src" style="color:${(tutKaynakTanim(m.src)||{}).renk||'var(--dim)'}">${esc((tutKaynakTanim(m.src)||{}).label||m.src)}</span>`:''}
       <span class="pk-add">+ Ekle</span>
     </div>`).join('')
     +(mats.length>shown.length?`<div style="padding:9px 11px;color:var(--dim);font-size:11.5px;text-align:center">+${mats.length-shown.length} malzeme daha - aramayi daraltin</div>`:'');
 }
 function tutPickFilter(){ const q=(document.getElementById('tutPickQ')||{}).value||'';
   const box=document.getElementById('tutPickList'); if(box)box.innerHTML=tutPickRows(q.trim()); }
-function tutPickAdd(matId){
+function tutPickAdd(src,matId){
   if(!_TUT)return;
-  const m=getMaterial(matId); if(!m){ toast('Malzeme bulunamadi','err'); return; }
-  const line={ id:uid(), matId:m.id, code:m.code||'', ad:m.name||'',
-    marka:(m.brand||'').split('\n')[0].trim(), birim:m.unit||'', qty:'', barkod:'', renk:'' };
+  const m=tutKaynakBul(src,matId); if(!m){ toast('Malzeme bulunamadi','err'); return; }
+  // matSrc satirda saklanir: fotograf ve sonraki her cozumleme dogru kutuphaneye gider
+  const line={ id:uid(), matId:m.id, matSrc:m.src, code:m.kod||'', ad:m.ad||'',
+    marka:m.marka||'', birim:m.birim||'', qty:'', barkod:'', renk:m.renk||'' };
   // ilk tamamen bos satir varsa onu doldur, yoksa sona ekle
   const bosIdx=_TUT.lines.findIndex(l=>!String(l.ad||'').trim()&&!String(l.code||'').trim()&&!String(l.qty||'').trim());
   if(bosIdx>=0) _TUT.lines[bosIdx]=line; else _TUT.lines.push(line);
   tutRenderLines();
-  toast(m.name+' eklendi');
+  toast(m.ad+' eklendi');
 }
 
 /* ---------- KAYDET ---------- */
