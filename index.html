@@ -688,6 +688,12 @@ tbody tr:hover{background:var(--hover)}
 .marka-bar input{flex:1;min-width:150px}
 .marka-onizle{display:flex;align-items:center;justify-content:center;min-height:70px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);padding:8px}
 .marka-onizle img{max-width:100%;max-height:78px;object-fit:contain}
+/* ESNEK MARKA rozeti: sartnamede "or similar alternative supplier" ile gecen marka -
+   urun bulunamazsa muadili kabul edilir. Kucuk ve sessiz durur, marka adinin yaninda. */
+.marka-esnek{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:5px;font-size:10px;font-weight:800;font-family:var(--mono);background:color-mix(in srgb,var(--blue) 16%,transparent);color:var(--blue);border:1px solid color-mix(in srgb,var(--blue) 40%,transparent);cursor:help;flex:0 0 auto;vertical-align:middle;margin-left:5px}
+/* .brand-cell dikey yigin (her marka alt alta) - rozet cipin YANINDA kalsin diye sarmalanir */
+.brand-chip-wrap{display:inline-flex;align-items:center;max-width:100%}
+.brand-chip-wrap .marka-esnek{margin-left:4px}
 .marka-eksik{margin-top:14px;border:1px dashed var(--line);border-radius:12px;padding:14px}
 .marka-eksik-liste{display:flex;flex-wrap:wrap;gap:5px}
 .marka-topla-liste{display:flex;flex-direction:column;gap:6px;max-height:calc(46 * var(--vh));overflow-y:auto;padding-right:3px}
@@ -1209,7 +1215,7 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
    sartname kat kapsamindaki ciplerin de bicimini duzeltir: .sr-kat-chip input zaten
    width:auto diyordu ama .frow input onu eziyordu (bkz. 5129 satirindaki inline
    width:auto yamasi - ayni sorunun tekil cozumu). */
-.frow .sr-kat-chip input{width:auto;padding:0;border:0;background:none;border-radius:0;box-shadow:none}
+.frow .sr-kat-chip input,.frow .chk input{width:auto;padding:0;border:0;background:none;border-radius:0;box-shadow:none}
 /* Bolum adi ciplerin SOLUNDA degil USTUNDE durur: sartname kodlari uzun
    ("AKU.0179.00UYB.CYE.PS.MB0002") ve bolum adlari farkli genislikte oldugu icin yan yana
    dizilimde her satir baska bir noktadan basliyor, liste tirtikli gorunuyordu. */
@@ -5529,7 +5535,7 @@ function renderMaterialLib(){
             return `<span class="cat-tag" style="background:var(--dim)22;color:var(--mute);font-family:var(--mono);font-size:9px" title="${esc(oz?'Varyant: '+oz:'Varyant kod - ayni urunun bilindigi diger kod')}">${esc(r.kod)}</span>`; }).join('')}</div>`; })()}</td>
         <td class="t-meta">${m.brand?`<div class="brand-cell">${m.brand.split(/\n|\s\/\s/).map(b=>b.trim()).filter(Boolean).map(b=>{
           const full=esc(b), short=b.length>12?esc(b.slice(0,12))+'…':full;
-          return `<span class="cat-tag" style="background:var(--dim)33;color:var(--text)" data-full="${full}" data-short="${short}" title="${full}" onclick="event.stopPropagation();brandChipToggle(this)">${short}</span>`;
+          return `<span class="brand-chip-wrap"><span class="cat-tag" style="background:var(--dim)33;color:var(--text)" data-full="${full}" data-short="${short}" title="${full}" onclick="event.stopPropagation();brandChipToggle(this)">${short}</span>${markaEsnekRozet(b)}</span>`;
         }).join('')}</div>`:'-'}</td>
         <td class="t-meta">${esc(m.standart||'-')}</td>
         <td class="t-meta">${m.weight!=null?fmtNum(m.weight)+' kg':'-'}</td>
@@ -5606,6 +5612,29 @@ function markaListesi(){ return ((DB&&DB.meta&&DB.meta.markalar)||[]).filter(x=>
 function markaSirali(){ return markaListesi().slice().sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'tr')); }
 function markaBul(ad){ const n=norm(ad).trim(); if(!n)return null; return markaListesi().find(x=>norm(x.ad).trim()===n)||null; }
 function markaLogosu(ad){ const m=markaBul(ad); return (m&&m.logo)||''; }
+/* ESNEK MARKA ("or similar alternative supplier") ------------------------------
+   Sartnamede bir markanin yaninda gecen bu ifade BAGLAYICI OLMAYAN marka demektir:
+   urun bulunamazsa esdegeri kabul edilir - saha icin satin alma karari kadar onemli
+   bir bilgi. Bugune kadar MARKA ADININ ICINDE tasiniyordu ("LLC AK ESCM Corporation
+   or similar alternative supplier"), yani adi temizleyen her birlestirme bu izni de
+   siliyordu. Artik ayri bir alanda duruyor (m.esnek) ve ad temizlense de kalir.
+   GERIYE UYUM + MIGRATION YOK: alani olmayan kayitta ADIN ICINDEKI ifadeye bakilir,
+   bugunku liste ilk gunden dogru rozetlenir (marka listesi app_settings'te serbest
+   JSON - bkz. MARKA KUTUPHANESI tasarim notu). Alan bir kez yazildiginda ad ne olursa
+   olsun ALAN GECERLIDIR: kullanicinin bilerek kaldirdigi izin geri gelmemeli. */
+const MARKA_ESNEK_IZ=['or similar','or equivalent','benzeri','esdeger','equivalent','muadil'];
+function markaAdiEsnekMi(ad){ const n=norm(ad); return MARKA_ESNEK_IZ.some(k=>n.includes(k)); }
+function markaEsnekMi(ad){
+  const m=markaBul(ad);
+  if(m&&m.esnek!=null) return !!m.esnek;                 // elle belirlenmisse o gecerli
+  return markaAdiEsnekMi(ad)||!!(m&&markaAdiEsnekMi(m.ad));
+}
+function markaNotu(ad){ const m=markaBul(ad); return String((m&&m.not)||'').trim(); }
+function markaEsnekRozet(ad){
+  if(!markaEsnekMi(ad)) return '';
+  const nt=markaNotu(ad);
+  return `<span class="marka-esnek" title="${esc('Esdeger kabul edilir - sartnamede "or similar alternative supplier" olarak gecer: bu urun bulunamazsa muadili kullanilabilir'+(nt?' — '+nt:''))}">≈</span>`;
+}
 async function markaListesiYaz(list){
   if(!DB.meta) DB.meta={};
   DB.meta.markalar=list;
@@ -5721,7 +5750,7 @@ function renderMaterialLibMarka(){
       rows+=`<tr class="${secili?'row-sel':''}">
         <td style="width:34px;text-align:center">${birlestirilebilir?`<input type="checkbox" class="mat-check" ${secili?'checked':''} onclick="toggleMarkaSel('${m.id}')">`:''}</td>
         <td>${m.logo?`<img class="thumb" src="${esc(m.logo)}" onclick="lightbox('${esc(m.logo)}')" alt="">`:phThumb()}</td>
-        <td><div class="t-name">${esc(m.ad)}</div></td>
+        <td><div class="t-name">${esc(m.ad)}${markaEsnekRozet(m.ad)}</div>${m.not?`<div class="t-meta" style="font-size:11px;margin-top:3px;line-height:1.4">${esc(m.not)}</div>`:''}</td>
         <td class="t-meta">${k.proje||'-'}</td>
         <td class="t-meta">${k.gecici||'-'}</td>
         <td class="t-meta">${k.alet||'-'}</td>
@@ -5821,6 +5850,9 @@ async function confirmMergeMarka(){
   if(!confirm('"'+drop.ad+'" markasi "'+keep.ad+'" ile birlestirilecek.\n\n'
     +(t? t+' kayitta marka yazisi "'+keep.ad+'" olarak degisecek (bagli sartname satirlari dahil).'
        : 'Bu yazimi kullanan kayit yok, yalnizca listeden dusecek.')
+    +(markaEsnekMi(drop.ad)&&!markaEsnekMi(keep.ad)
+      ? '\n\n"'+drop.ad+'" ESDEGER KABUL EDILEN bir marka ("or similar..."). Bu isaret "'+keep.ad+'" uzerine tasinacak - bilgi kaybolmaz.'
+      : '')
     +'\n\n"'+drop.ad+'" listeden silinecek. Islem geri alinamaz. Devam edilsin mi?')) return;
   /* Once KAYITLAR cevrilir, sonra liste yazilir. Ters sirada olsaydi liste yazilip
      kayit guncellemesi patladiginda, artik listede olmayan bir yazim kayitlarda
@@ -5829,6 +5861,11 @@ async function confirmMergeMarka(){
   try{ say=await markaAdiDegistir(drop.ad,keep.ad); }
   catch(e){ toast('Kayitlar guncellenemedi: '+((e&&e.message)||e),'err'); return; }
   if(!keep.logo && drop.logo) keep.logo=drop.logo;   // bos alan digerinden tamamlanir
+  /* ESNEKLIK BILGISI TASINIR: birlestirmenin asil isi "... or similar alternative supplier"
+     gibi kirli yazimlari temizlemek - ama o ifade sartnamedeki ESDEGER IZNIDIR. Silinen
+     yazim esnekse kalan markaya gecer, yoksa temizlik izni de silerdi. */
+  if(markaEsnekMi(drop.ad) && !keep.esnek) keep.esnek=true;
+  if(drop.not && !keep.not) keep.not=drop.not;
   try{ await markaListesiYaz(liste.filter(x=>x.id!==dropId)); }catch(e){ return; }
   logAction('editMaterial','Marka birlestirme: "'+drop.ad+'" -> "'+keep.ad+'" ('+say+' kayit guncellendi)');
   _markaSel.clear(); _markaMergeKeepId=null;
@@ -5846,20 +5883,29 @@ function openMarkaModal(id){
   if(!canEdit('kutuphane')){ toast('Bu islem icin yetkiniz yok','err'); return; }
   const m=id?markaListesi().find(x=>x.id===id):null;
   const kullanim=m?markaToplam(markaKullanim(m.ad)):0;
+  // alan hic yazilmamis eski kayitta kutu ADA bakarak isaretli gelir - kullanici
+  // kaydettiginde bilgi alana gecer ve ad temizlense de kaybolmaz
+  const esnekVar=m?(m.esnek!=null?!!m.esnek:markaAdiEsnekMi(m.ad)):false;
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:480px">
     <div class="modal-head"><h3>${m?'Markayi Duzenle':'Yeni Marka'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">
       <div class="frow"><label>Marka Adi *</label><input id="mk_ad" value="${m?esc(m.ad):''}" placeholder="orn. Hilti" onkeydown="if(event.key==='Enter')saveMarka(${m?`'${m.id}'`:'null'})"></div>
       <div class="frow"><label>Logo Linki <span class="t-meta">(opsiyonel - internetteki resmin adresi)</span></label>
         <input id="mk_logo" value="${m&&m.logo?esc(m.logo):''}" placeholder="https://..." oninput="markaLogoOnizle()"></div>
-      <div class="frow" style="margin-bottom:0"><label>Onizleme</label>
+      <div class="frow"><label>Onizleme</label>
         <div class="marka-onizle" id="mk_onizle">${m&&m.logo?`<img src="${esc(m.logo)}" alt="" onerror="markaOnizleHata(this)">`:'<span class="t-meta" style="font-size:11px">Logo linki girilmedi</span>'}</div></div>
+      <div class="frow"><label>Sartname Karsiligi</label>
+        <label class="chk" style="align-items:flex-start;gap:9px"><input type="checkbox" id="mk_esnek" style="width:auto;margin:2px 0 0" ${esnekVar?'checked':''}>
+          <span>Esdeger kabul edilir <i style="font-style:normal;color:var(--mute);font-family:var(--mono);font-size:11px">(or similar alternative supplier)</i>
+            <span class="t-meta" style="display:block;font-size:11px;margin-top:3px">Sartname bu markayi baglayici saymiyor - urun bulunamazsa muadili alinabilir. Marka adini temizleseniz de bu isaret kalir.</span></span></label></div>
+      <div class="frow" style="margin-bottom:0"><label>Not <span class="t-meta">(opsiyonel)</span></label>
+        <textarea id="mk_not" rows="2" placeholder="orn. yalnizca kablo tavalarinda esdeger kabul ediliyor">${m&&m.not?esc(m.not):''}</textarea></div>
       ${m&&kullanim?`<p class="t-meta" style="font-size:11px;margin-top:12px;line-height:1.5">Bu marka su an <b>${fmtNum(kullanim)}</b> kayitta yaziyor. Adini degistirirseniz o kayitlarda ve bagli sartname satirlarinda da guncellenir.</p>`:''}
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveMarka(${m?`'${m.id}'`:'null'})">Kaydet</button></div>
   </div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
-  setModalGuard(()=>formDoluMu(['mk_ad','mk_logo']));
+  setModalGuard(()=>formDoluMu(['mk_ad','mk_logo','mk_not']));
   const i=document.getElementById('mk_ad'); if(i) setTimeout(()=>i.focus(),0);
 }
 
@@ -5901,6 +5947,8 @@ async function saveMarka(id){
   const ad=String((document.getElementById('mk_ad')||{}).value||'').trim();
   if(!ad){ toast('Marka adi zorunlu','err'); return; }
   const logo=String((document.getElementById('mk_logo')||{}).value||'').trim();
+  const esnek=!!(document.getElementById('mk_esnek')||{}).checked;
+  const nt=String((document.getElementById('mk_not')||{}).value||'').trim();
   const liste=markaListesi().map(x=>({...x}));
   const cakisma=liste.find(x=>x.id!==id&&norm(x.ad).trim()===norm(ad).trim());
   if(cakisma){ toast('Bu marka listede zaten var: '+cakisma.ad,'err'); return; }
@@ -5915,7 +5963,7 @@ async function saveMarka(id){
     try{ yayildi=await markaAdiDegistir(eskiAd,ad); }
     catch(e){ toast('Marka kayitlarda guncellenemedi: '+((e&&e.message)||e),'err'); return; }
   }
-  if(kayit){ kayit.ad=ad; kayit.logo=logo; } else liste.push({id:uid(),ad,logo});
+  if(kayit){ kayit.ad=ad; kayit.logo=logo; kayit.esnek=esnek; kayit.not=nt; } else liste.push({id:uid(),ad,logo,esnek,not:nt});
   try{ await markaListesiYaz(liste); }catch(e){ return; }
   logAction('editMaterial',(id?'Marka guncellendi: ':'Marka eklendi: ')+(adDegisti?eskiAd+' -> '+ad:ad));
   closeModal(); render();
@@ -5963,7 +6011,7 @@ async function markaTopla(){
   let n=0;
   secili.forEach(ad=>{ const t=String(ad||'').trim(); if(!t) return;
     if(liste.some(x=>norm(x.ad).trim()===norm(t).trim())) return;
-    liste.push({id:uid(),ad:t,logo:''}); n++; });
+    liste.push({id:uid(),ad:t,logo:'',esnek:markaAdiEsnekMi(t)}); n++; });
   if(!n){ toast('Bu markalar zaten listede'); closeModal(); return; }
   try{ await markaListesiYaz(liste); }catch(e){ return; }
   logAction('editMaterial',n+' marka kayitlardan listeye eklendi');
@@ -9993,7 +10041,7 @@ function _openMatDetailPage(matId){
   const markaHtml=matBrandParts(m.brand).map(ad=>{
     const kayit=markaBul(ad), logo=(kayit&&kayit.logo)||'';
     // logo linki kirilirsa hucre yalnizca adla kalsin - kirik resim ikonu birakmayiz
-    return `<span class="mdp-qm">${esc(ad)}${logo?`<img src="${esc(logo)}" alt="${esc(ad)}" title="${esc(ad)} - buyutmek icin tiklayin" onclick="lightbox('${esc(logo)}')" onerror="this.remove()">`:''}</span>`;
+    return `<span class="mdp-qm">${esc(ad)}${markaEsnekRozet(ad)}${logo?`<img src="${esc(logo)}" alt="${esc(ad)}" title="${esc(ad)} - buyutmek icin tiklayin" onclick="lightbox('${esc(logo)}')" onerror="this.remove()">`:''}</span>`;
   }).join('');
   const quick=[
     ['Marka', markaHtml?`<span class="mdp-qmarka">${markaHtml}</span>`:''],
@@ -10266,7 +10314,16 @@ function upsertMaterialsFromRows(rows, report){
     // mevcut kaydi bul: kod varsa koda gore, kod bos ise ada gore eslestir
     // (matKey ayni kurali kullanir; aksi halde ayni Excel tekrar yuklendiginde kodsuz satirlar cogalir)
     const existing=findMaterial(code,name);
-    if(action==='delete'){ if(existing && materialUsage(existing.id).length===0){ DB.proje.materials=DB.proje.materials.filter(m=>m.id!==existing.id); report.matDeleted++; } else if(existing){ report.errors.push(`Malzeme satir ${r+1}: "${code}" kullanimda, silinemez`);} continue; }
+    /* SILME BURADA YAPILMAZ, ISARETLENIR. Iki sebep: (1) kayit eskiden yalnizca bellekten
+       cikariliyor, sunucudan silinmiyordu - bir sonraki acilista geri geliyordu; (2) veri
+       silen bir islem, listesi gosterilip onaylatilmadan yapilmamali. Ikisini de
+       matSilmeUygula yapar (bkz. asagisi). */
+    if(action==='delete'){
+      if(existing && materialUsage(existing.id).length===0){
+        (report.silinecek=report.silinecek||[]).push({id:existing.id,ad:existing.code||existing.name||existing.id});
+      } else if(existing){ report.errors.push(`Malzeme satir ${r+1}: "${code}" kullanimda, silinemez`); }
+      continue;
+    }
     const brand=iBrand>=0?String(row[iBrand]??'').trim():'';
     const cat=iCat>=0?String(row[iCat]??'').trim():'';
     const unit=iUnit>=0?String(row[iUnit]??'').trim():'';
@@ -10285,13 +10342,17 @@ function upsertMaterialsFromRows(rows, report){
          hem bosuna yazilir hem de bir sonraki acilista tumu yeniden iner
          (bkz. _degisenKayitlar). Karsilastirma alan alan degil, kaydin tamami uzerinden. */
       const oncesi=JSON.stringify(existing);
-      existing.name=name||existing.name; existing.brand=brand; if(cat)existing.cat=cat; if(unit)existing.unit=unit; if(note!=='')existing.note=note; if(img)existing.img=img; if(img2)existing.img2=img2;
+      /* MARKA SUTUNU YOKSA DOKUNMA: eskiden kosulsuz yazilirdi (existing.brand=brand), yani
+         Marka sutunu silinmis bir Excel, dosyada gecen HER malzemenin markasini - ve bagli
+         sartname satirlarinin markasini - sessizce siliyordu. Sutun VARSA bos hucre hala
+         "temizle" emridir: oteki alanlarin aksine marka bilerek bosaltilabilmeli. */
+      existing.name=name||existing.name; if(iBrand>=0)existing.brand=brand; if(cat)existing.cat=cat; if(unit)existing.unit=unit; if(note!=='')existing.note=note; if(img)existing.img=img; if(img2)existing.img2=img2;
       if(standart!=='')existing.standart=standart; if(weight!=null)existing.weight=weight; if(tags.length)existing.tags=tags; if(altCodes.length)existing.altCodes=altCodes; if(proje!=='')existing.proje=proje;
       if(JSON.stringify(existing)!==oncesi){ existing.updatedAt=Date.now(); report.matUpdated++; }
       /* Spec senkronu malzeme degismese de calisir: kalem satiri baska bir yoldan kaymis
          olabilir. Bosuna yazma riski yok - disaridaki fark suzgeci neyin yazilacagina karar verir.
          sp.cat bilerek dokunulmaz: bolum kalemin ozelligidir, ayni malzeme farkli bolumlerde kullanilabilir */
-      materialUsage(existing.id).forEach(sp=>{ sp.name=existing.name; sp.code=existing.code; sp.brand=brand; if(existing.unit&&!sp.unit)sp.unit=existing.unit; sp.matId=existing.id;
+      materialUsage(existing.id).forEach(sp=>{ sp.name=existing.name; sp.code=existing.code; sp.brand=existing.brand||''; if(existing.unit&&!sp.unit)sp.unit=existing.unit; sp.matId=existing.id;
         sp.standart=existing.standart||''; sp.weight=existing.weight; sp.tags=(existing.tags||[]).slice(); sp.img=existing.img||null; });
     } else { // INSERT
       const now=Date.now();
@@ -10300,6 +10361,25 @@ function upsertMaterialsFromRows(rows, report){
   }
 }
 
+/* EXCEL'DEN SILME: liste + onay + GERCEK silme (bellek ve sunucu birlikte).
+   Onay verilmezse ice aktarmanin geri kalani uygulanir, yalnizca silme atlanir -
+   kullanici dosyayi bastan yuklemek zorunda kalmasin. Sunucu ONCE silinir: ters sirada
+   yazma patlarsa kayit ekrandan kaybolur ama sunucuda durur, sayfa yenilenince geri gelir. */
+async function matSilmeUygula(report){
+  const sil=(report&&report.silinecek)||[]; if(!sil.length) return;
+  const ad=sil.map(x=>x.ad);
+  const onay=confirm('Excel\'de "Action = delete" yazan '+ad.length+' malzeme kutuphaneden SILINECEK:\n\n'
+    +ad.slice(0,25).join('\n')+(ad.length>25?'\n... +'+(ad.length-25)+' tane daha':'')
+    +'\n\nBu kayitlar sunucudan da silinir, geri alinamaz.\n'
+    +'Iptal ederseniz ice aktarmanin geri kalani uygulanir, yalnizca silme atlanir.\n\nDevam edilsin mi?');
+  if(!onay){ report.errors.push(ad.length+' malzeme icin silme iptal edildi - kayitlar duruyor'); return; }
+  const ids=sil.map(x=>x.id), kume=new Set(ids);
+  try{ await sbDeleteProjeMaterials(ids); }
+  catch(e){ report.errors.push('Silme sunucuya islenemedi: '+((e&&e.message)||e)+' - kayitlar duruyor'); return; }
+  DB.proje.materials=DB.proje.materials.filter(m=>!kume.has(m.id));
+  report.matDeleted=(report.matDeleted||0)+ids.length;
+  logAction('delete',ids.length+' malzeme Excel ice aktarmasiyla silindi');
+}
 /* TEKNIK BILGI SEKMESI UPSERT (Urun Kodu | Malzeme Ismi | Ozellik | Deger)
    SIRA: malzeme sayfasindan SONRA calistirilir - ayni dosyada yeni acilan
    kalemlerin teknik bilgisi de eslessin diye (findMaterial CANLI kutuphaneye bakar).
@@ -10823,6 +10903,7 @@ function importLibraryExcel(e){ if(!guard('import')){e.target.value='';return;} 
     // kaynagi buydu). Artik gecersiz satir kalem ACMAZ, rapora hata olarak duser.
     const specRows=_sheetRows(wb,['3_Specifications','Specifications','Spesifikasyonlar','4.Spesifikasyonlar']);
     if(specRows) upsertSpecsFromRows(specRows, report, '', {strict:true});
+    await matSilmeUygula(report);        // fark suzgecinden ONCE: silinen kayit yazilmasin
     const degM=_degisenKayitlar(DB.proje.materials,imzaM), degS=_degisenKayitlar(DB.proje.specs,imzaS);
     report.yazilanMat=degM.length; report.yazilanSpec=degS.length;
     await Promise.all([sbUpsertProjeMaterials(degM),sbUpsertProjeSpecs(degS)]);
@@ -10848,6 +10929,7 @@ function importSpecsUpsertExcel(e){ if(!guard('import')){e.target.value='';retur
     // Sutun bos birakilirsa mevcut ekran baglami (PCAT/PSPEC) varsayilan olarak kullanilir.
     // replaceScope: bu Excel o sartnamenin TEK kaynagidir - dosyada olmayan eski urunler silinir.
     upsertSpecsFromRows(specRows, report, PBINA||'', {strict:true, defaultCat:PCAT||'', defaultGrup:(PSPEC&&PSPEC!=='__all')?PSPEC:'', replaceScope:true});
+    await matSilmeUygula(report);        // fark suzgecinden ONCE: silinen kayit yazilmasin
     const degM=_degisenKayitlar(DB.proje.materials,imzaM), degS=_degisenKayitlar(DB.proje.specs,imzaS);
     report.yazilanMat=degM.length; report.yazilanSpec=degS.length;
     await Promise.all([sbUpsertProjeMaterials(degM),sbUpsertProjeSpecs(degS)]);
