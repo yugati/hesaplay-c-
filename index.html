@@ -1874,10 +1874,10 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
    ince bir serit - goz "burada icerik yok, ne yapacagim yaziyor" diye bir bakista
    ayirir. Metin KISA tutulur: ornek deger gerekiyorsa duzenleme kutularinin
    placeholder'inda zaten yaziyor, ayni ornegi iki yerde tekrar etmeye gerek yok. */
-.mdp-info{display:flex;align-items:center;gap:9px;font-size:12px;line-height:1.5;color:var(--mute);
+.mdp-bosbilgi{display:flex;align-items:center;gap:9px;font-size:12px;line-height:1.5;color:var(--mute);
   background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 12px;margin:0}
-.mdp-info svg{width:15px;height:15px;flex:0 0 15px;color:var(--primary);opacity:.85}
-.mdp-info b{color:var(--ink);font-weight:700}
+.mdp-bosbilgi svg{width:15px;height:15px;flex:0 0 15px;color:var(--primary);opacity:.85}
+.mdp-bosbilgi b{color:var(--ink);font-weight:700}
 @media(max-width:640px){.matd-stats{grid-template-columns:1fr 1fr}.matd-row{flex-wrap:wrap}.matd-bar{flex:1 1 60px}}
 /* ===== MALZEME DETAY SAYFASI (kunyenin altindaki "Detay Sayfasi" dugmesi acar) =====
    Is bolumu: KUNYE urunun gecmisini anlatir (hangi sartnamede, kac fatura, ne kadar
@@ -1932,14 +1932,12 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 /* MARKA bolumu: teknik bilginin hemen altinda, marka kutuphanesindeki logolar.
    Logo kutusu BEYAZ zeminlidir - marka logolari neredeyse her zaman beyaz icin
    cizilir, koyu temada panel zemininde kaybolurlardi. */
-.mdp-markalar{display:flex;flex-wrap:wrap;gap:10px}
-.mdp-marka{border:1px solid var(--line);border-radius:12px;background:var(--panel2);padding:10px 12px;min-width:134px;max-width:230px;display:flex;flex-direction:column;gap:8px;align-items:center}
-.mdp-marka.bos{border-style:dashed;background:transparent}
-.mdp-marka-logo{width:100%;height:54px;display:flex;align-items:center;justify-content:center;background:#fff;border-radius:8px;overflow:hidden}
-.mdp-marka.bos .mdp-marka-logo{background:transparent}
-.mdp-marka-logo img{max-width:100%;max-height:54px;object-fit:contain;display:block;cursor:zoom-in}
-.mdp-marka-yok{font-family:var(--mono);font-size:9.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--dim)}
-.mdp-marka-ad{font-size:12.5px;font-weight:700;color:var(--ink);text-align:center;line-height:1.35;overflow-wrap:anywhere}
+/* Kunye izgarasindaki MARKA hucresi: ad + logo yan yana. Logo zemini BEYAZ -
+   marka logolari neredeyse her zaman beyaz icin cizilir, koyu temada panel
+   zemininde kaybolurlardi. */
+.mdp-qmarka{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.mdp-qm{display:inline-flex;align-items:center;gap:7px;min-width:0}
+.mdp-qm img{height:21px;max-width:92px;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:4px;padding:2px 4px;cursor:zoom-in;display:block}
 /* VARYANT TABLOSU: ayni urunun olcu / renk / beden halleri. Malzeme formunda
    duzenlenir, detay sayfasinda salt-okunur gosterilir - ikisi de ayni izgarayi
    (vrGrid) kullanir. Sutun sayisi urune gore degistigi icin izgara satir ici
@@ -9873,14 +9871,24 @@ function _openMatDetailPage(matId){
     ...((m.tags||[]).map(t=>{const c=tagColor(t);return `<span class="matd-chip" style="color:${c};border-color:${c}55">${esc(t)}</span>`;}))
   ].filter(Boolean).join('');
   const oz=matKullanimOzet(matId);
+  /* MARKA hucresi: ad + marka kutuphanesindeki logo YAN YANA. Logo ayri bir
+     bolum degil kunye hucresinin icinde durur - marka bir "bolum" degil, urunun
+     kunye alanidir; ayri blok sayfayi uzatip goz akisini bolmustu.
+     Kunye degerleri artik HAZIR HTML: yalnizca marka hucresi isaretleme tasiyor,
+     otekiler asagida esc() ile veriliyor. */
+  const markaHtml=matBrandParts(m.brand).map(ad=>{
+    const kayit=markaBul(ad), logo=(kayit&&kayit.logo)||'';
+    // logo linki kirilirsa hucre yalnizca adla kalsin - kirik resim ikonu birakmayiz
+    return `<span class="mdp-qm">${esc(ad)}${logo?`<img src="${esc(logo)}" alt="${esc(ad)}" title="${esc(ad)} - buyutmek icin tiklayin" onclick="lightbox('${esc(logo)}')" onerror="this.remove()">`:''}</span>`;
+  }).join('');
   const quick=[
-    ['Marka', m.brand?String(m.brand).split(/\n|\s\/\s/).map(b=>b.trim()).filter(Boolean).join(' / '):''],
-    ['Standart No', m.standart||''],
-    ['Birim', m.unit||''],
-    ['Birim Agirlik', m.weight!=null?fmtNum(m.weight)+' kg':''],
-    ['Kategori', [...new Set([m.cat,...oz.usage.map(s=>s.cat)].filter(Boolean))].join(', ')],
-    ['Proje', m.proje||'']
-  ].filter(a=>a[1]).map(a=>`<div><span>${esc(a[0])}</span><b>${esc(a[1])}</b></div>`).join('');
+    ['Marka', markaHtml?`<span class="mdp-qmarka">${markaHtml}</span>`:''],
+    ['Standart No', esc(m.standart||'')],
+    ['Birim', esc(m.unit||'')],
+    ['Birim Agirlik', m.weight!=null?esc(fmtNum(m.weight)+' kg'):''],
+    ['Kategori', esc([...new Set([m.cat,...oz.usage.map(s=>s.cat)].filter(Boolean))].join(', '))],
+    ['Proje', esc(m.proje||'')]
+  ].filter(a=>a[1]).map(a=>`<div><span>${esc(a[0])}</span><b>${a[1]}</b></div>`).join('');
   const not=String(m.note||'').trim();
   const kalan=oz.totOrd-oz.totRap;
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal matdet">
@@ -9899,7 +9907,6 @@ function _openMatDetailPage(matId){
         </div>
       </div>
       <div id="mdpTek">${mdpTekHtml()}</div>
-      ${mdpMarkaHtml(m)}
       ${mdpVaryantHtml(m)}
       <div class="mdp-sec">Kullanim Ozeti <i>ayrinti ve tiklanabilir kaynak listesi Kunye'de</i></div>
       <div class="matd-stats" style="margin-top:0">
@@ -9946,42 +9953,13 @@ function mdpTekHtml(){
           <input value="${esc(r.v||'')}" placeholder="Deger (orn. Karbon celigi, cinko kaplama)" oninput="mdpSet(${i},'v',this.value)">
           <button class="mini-btn del" title="Satiri sil" onclick="mdpDelRow(${i})">${icoTrash()}</button>
         </div>`).join('')}</div>`
-      : `<div class="mdp-info">${icoInfoSm()}<span><b>Satir Ekle</b> ile ilk ozelligi girin.</span></div>`;
+      : `<div class="mdp-bosbilgi">${icoInfoSm()}<span><b>Satir Ekle</b> ile ilk ozelligi girin.</span></div>`;
     return head+body;
   }
   const body=rows.length
     ? `<div class="mdp-tek">${rows.map(r=>`<div class="mdp-tekrow"><span class="mdp-tk">${esc(r.k||'-')}</span><span class="mdp-tv">${mdpVal(r.v)}</span></div>`).join('')}</div>`
-    : `<div class="mdp-info">${icoInfoSm()}<span>Teknik bilgi girilmemis.${yetki?' <b>Duzenle</b> ile ozellik ekleyin.':''}</span></div>`;
+    : `<div class="mdp-bosbilgi">${icoInfoSm()}<span>Teknik bilgi girilmemis.${yetki?' <b>Duzenle</b> ile ozellik ekleyin.':''}</span></div>`;
   return head+body;
-}
-/* MARKA bolumu. Marka alani birden fazla ad tutabilir (bkz. matBrandParts), her
-   ad ayri kart olur. Logo, Malzeme Kutuphanesi > Marka sekmesindeki SOZLUKTEN
-   gelir - malzeme kaydinda logo tutulmaz, tek bir yerde guncellenir.
-   Logosu olmayan ya da sozlukte hic bulunmayan ad da GOSTERILIR (kesikli
-   cerceve): eksigin gorunmemesi, olmadigini sanmaktan daha kotudur. */
-function mdpMarkaHtml(m){
-  const adlar=matBrandParts(m&&m.brand);
-  if(!adlar.length) return '';
-  const kartlar=adlar.map(ad=>{
-    const kayit=markaBul(ad), logo=(kayit&&kayit.logo)||'';
-    const govde=logo
-      ? `<img src="${esc(logo)}" alt="${esc(ad)}" title="Buyutmek icin tiklayin" onclick="lightbox('${esc(logo)}')" onerror="mdpMarkaLogoHata(this)">`
-      : `<span class="mdp-marka-yok">${kayit?'logo yok':'listede yok'}</span>`;
-    return `<div class="mdp-marka${logo?'':' bos'}">
-      <div class="mdp-marka-logo">${govde}</div>
-      <div class="mdp-marka-ad">${esc(ad)}</div>
-    </div>`;
-  }).join('');
-  const eksik=adlar.filter(ad=>{ const k=markaBul(ad); return !k||!k.logo; }).length;
-  return `<div class="mdp-sec">Marka <span>${adlar.length}</span>
-    <i>${eksik?'logo Malzeme Kutuphanesi > Marka sekmesinde eklenir':'marka kutuphanesindeki logo'}</i></div>
-    <div class="mdp-markalar">${kartlar}</div>`;
-}
-// link kirilmissa kart bos gorunume duser - kirik resim ikonu birakmayiz
-function mdpMarkaLogoHata(img){
-  const kart=img.closest('.mdp-marka'); if(kart) kart.classList.add('bos');
-  const s=document.createElement('span'); s.className='mdp-marka-yok'; s.textContent='logo acilamadi';
-  img.replaceWith(s);
 }
 /* VARYANTLAR bolumu (salt-okunur). Duzenleme malzeme formundadir - burada
    yalnizca gosterilir, ki detay sayfasi "urunun tek sayfada toplanmis hali"
