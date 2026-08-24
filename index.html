@@ -2162,6 +2162,20 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .nok-no{width:26px;flex-shrink:0;text-align:right;font-size:11px;color:var(--mute);font-family:var(--mono)}
 .nok-row input.nok-kod{flex:1;min-width:0;margin:0;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--amber)}
 .nok-row input.nok-qty{width:96px;flex-shrink:0;margin:0;text-align:right}
+/* YAPISTIRMA KUTULARI: kod sutunu + miktar sutunu yan yana. Excel'de iki kolon ayri ayri
+   kopyalanip AYNI SIRAYLA yapistirilir (bkz. nordOzelYapistir); miktar kutusu dardir
+   cunku icine sadece sayi gelir, kod kutusu genis kalmalidir. */
+/* BILGI KUTUSU: uzun anlatim ekranin ustunu kaplamasin - basliktaki (i) dugmesi acar/kapar.
+   Durumu _nokBilgi'de tutulur cunku her yapistirmada modal bastan cizilir (nordOzelRender);
+   yerel bir DOM sinifi olsaydi kullanicinin actigi kutu ilk eklemede kaybolurdu. */
+.nok-bilgi{margin:12px 0 0}
+.nok-info svg{width:15px;height:15px}   /* icoInfoSm olcusuz gelir - dugmenin icinde buyurdu */
+.nok-bilgi[hidden]{display:none}
+.mini-btn.nok-info.on{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 55%,transparent);background:color-mix(in srgb,var(--amber) 12%,transparent)}
+.nok-paste{display:grid;grid-template-columns:1fr 128px;gap:10px;align-items:start}
+.nok-paste textarea{font-family:var(--mono);font-size:12px}
+.nok-paste label span{text-transform:none;letter-spacing:0;font-weight:500;opacity:.72}
+@media(max-width:640px){ .nok-paste{grid-template-columns:1fr} }
 /* kod defterinden cozulen kat rozeti: yesil = kat bulundu, kehribar = defterde yok */
 .nok-kat{flex-shrink:0;min-width:74px;font-size:10px;font-family:var(--mono);padding:2px 7px;border-radius:6px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
 .nok-kat.ok{background:color-mix(in srgb,var(--green) 14%,transparent);color:var(--green);border:1px solid color-mix(in srgb,var(--green) 38%,transparent)}
@@ -17428,9 +17442,62 @@ function nordDagitBekleyenLine(hits,qty,raw){
 /* ─── OZEL KOD KIRILIMI EKRANI ──────────────────────────────────────────────
    Kodlar YAPISTIRILARAK girilir: faturadaki kod sutunu oldugu gibi yapistirilir ve
    _ozelKodBol bosluk/satir yuzunden ikiye kopmus kodlari ("00UYB16 EM0258") birlestirir,
-   zaten tam olanlara dokunmaz. Her koda varsayilan 1 birim yazilir - bir kod bir yerlesim
-   demektir; ayni koda birden fazla adet gidiyorsa miktar elle degistirilir. */
+   zaten tam olanlara dokunmaz. MIKTARLAR DA YAPISTIRILABILIR - iki yol da calisir:
+   kodlarla ayni sirada ayri bir sutun olarak (yandaki miktar kutusu), ya da kod satirinin
+   sonundaki sayi olarak ("00UYB16 EM0258<TAB>5", bkz. _ozelKodMiktarBol). Miktari
+   verilmeyen kod 1 alir - bir kod bir yerlesim demektir. */
+/* KOD + MIKTAR COZUMLEYICI (yalnizca bu ekran): kod kutusuna iki sutun birden
+   yapistirilmis olabilir ("00UYB16 EM0258<TAB>5"). Satirin sonundaki sayi MIKTARDIR:
+   onunde en az bir kod parcasi varsa ayrilir - yoksa sayi kod sanilip listeye "5" diye
+   sahte bir kod duserdi. Birlestirme _ozelKodBol ile birebir ayni (bosluk yuzunden ikiye
+   kopmus kodlar birlesir, SATIR SONUNDAN kopmus olanlar da); fark, her kodun hangi
+   satirda bittiginin tutulmasi - satir sonundaki miktar o koda yazilabilsin diye. */
+function _ozelKodMiktarBol(metin){
+  const tok=[], satQty=[];
+  String(metin||'').replace(/\r/g,'').split('\n').forEach((sat,si)=>{
+    let s=String(sat), q='';
+    /* SATIR SONUNDAKI SAYI = O SATIRIN MIKTARI. Uc sart birden aranir: sayi bosluk/sekme ile
+       ayrilmis olacak, onunde HARF gecen bir kod parcasi bulunacak. Boylece (a) yalnizca sayi
+       yazilmis satir kod olarak kalir, (b) "00UYB16 EM0258" gibi ikiye kopmus kodun ikinci
+       parcasi miktar sanilmaz (harfle basliyor), (c) "1,5" gibi virgullu ondalik bolunmez -
+       kod ayirmasi virgulu ayirac saydigi icin miktar ONCE kesilir. */
+    const m=s.match(/[\t ;]+(\d[\d.,]*)[\t ;]*$/);
+    if(m && !isNaN(nordParseQty(m[1])) && /[A-Za-z]/.test(s.slice(0,m.index))){ q=m[1]; s=s.slice(0,m.index); }
+    satQty[si]=q;
+    s.split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean).forEach(v=>tok.push({v,sat:si}));
+  });
+  const out=[];
+  for(let i=0;i<tok.length;i++){
+    if(_ozelTam(tok[i].v)){ out.push({kod:tok[i].v,sat:tok[i].sat,qty:''}); continue; }
+    let b=tok[i].v, sat=tok[i].sat;               // eksik parca: tam olana kadar sonrakilerle birlestir
+    while(i+1<tok.length && !_ozelTam(b)){ i++; b+=tok[i].v; sat=tok[i].sat; }
+    out.push({kod:b,sat,qty:''});
+  }
+  satQty.forEach((q,si)=>{ if(!q) return;         // miktar, o satirda BITEN son koda yazilir
+    for(let j=out.length-1;j>=0;j--){ if(out[j].sat===si){ out[j].qty=q; break; } } });
+  return out;
+}
+/* MIKTAR SUTUNU: kodlarla AYNI SIRADA okunur, hiza kaymamalidir. Excel'den kolon
+   kopyalandiginda bos hucre BOS SATIR olarak gelir - bu yuzden cok satirliysa satirlar
+   korunur (bos satir "miktar yazilmadi" demektir, o kod 1 alir); tek satira yapistirilmissa
+   bosluk/sekme ayirir. Virgul AYIRAC DEGILDIR - "1,5" bir sayidir (bkz. nordParseQty). */
+function _ozelMiktarBol(metin){
+  const t=String(metin||'').replace(/\r/g,'');
+  if(!t.trim()) return [];
+  let p=/\n/.test(t.replace(/\s+$/,'')) ? t.split('\n') : t.trim().split(/[\s;]+/);
+  p=p.map(x=>String(x).trim());
+  while(p.length && !p[p.length-1]) p.pop();      // sondaki bos satirlar sayiyi sisirmesin
+  return p;
+}
 let _NOK=null;
+/* Bilgi kutusu ac/kapa: modal BASTAN CIZILMEZ (yazilan kodda odak kaybolurdu), yalnizca
+   kutu ve dugme guncellenir. Durum _nokBilgi'de kalir - sonraki cizimde ayni sekilde acilir. */
+let _nokBilgi=false;
+function nordOzelBilgi(){
+  _nokBilgi=!_nokBilgi;
+  const el=document.getElementById('nokBilgi'); if(el) el.hidden=!_nokBilgi;
+  const b=document.getElementById('nokBilgiBtn'); if(b) b.classList.toggle('on',_nokBilgi);
+}
 function nordOzelOpen(i){
   const l=NORD.lines[i]; if(!l) return;
   // IKI BOLME BIRDEN OLMAZ - bkz. nordDagitOpen'daki ayni kural
@@ -17450,8 +17517,8 @@ function nordOzelClose(){ _NOK=null; closeModal(); }
    sayilmaz; asil girdi KODDUR (bkz. nordOzelApply, kodsuz satirlar zaten eleniyor). */
 function nordOzelDisTikla(){
   const f=_NOK; if(!f){ nordOzelClose(); return; }
-  const kutu=document.getElementById('nokPaste');
-  const doluMu=(f.pay||[]).some(p=>String(p.kod||'').trim()) || !!(kutu&&kutu.value.trim());
+  const kutu=document.getElementById('nokPaste'), mkutu=document.getElementById('nokPasteQty');
+  const doluMu=(f.pay||[]).some(p=>String(p.kod||'').trim()) || !!(kutu&&kutu.value.trim()) || !!(mkutu&&mkutu.value.trim());
   if(!doluMu){ nordOzelClose(); return; }
   toast('Girdikleriniz duruyor - kapatmak icin "Vazgec", kaydetmek icin "Satira Uygula" deyin');
 }
@@ -17528,19 +17595,54 @@ function nordOzelSet(k,alan,v){
 function nordOzelAdd(){ const f=_NOK; if(!f) return; f.pay.push({kod:'',qty:'1'}); nordOzelRender(); }
 function nordOzelDel(k){ const f=_NOK; if(!f) return; f.pay.splice(k,1); nordOzelRender(); }
 function nordOzelTemizle(){ const f=_NOK; if(!f) return; f.pay=[]; nordOzelRender(); }
-/* YAPISTIR: faturadaki kod sutunu oldugu gibi yapistirilir. Ayni kod iki kez gecerse
-   miktari toplanir - listede iki ayri yerlesim gibi gorunmesin. */
-function nordOzelYapistir(v){
+/* YAPISTIR: faturadaki kod sutunu oldugu gibi yapistirilir, MIKTAR SUTUNU da ayni sirayla
+   yanindaki kutuya. Uc kullanim da calisir:
+     - yalnizca kod  : her kod 1 birim alir (eski davranis)
+     - kod + miktar  : sirali eslesir; sayilar esit degilse HICBIRI islenmez, cunku kayan
+                       bir hiza yanlis kodu yanlis miktarla kaydeder ve fark edilmez
+     - yalnizca miktar: listede duran kodlara sirayla yazilir (kodlar zaten yapistirilmis)
+   Ayni kod iki kez gecerse miktari toplanir - listede iki ayri yerlesim gibi gorunmesin. */
+function nordOzelYapistir(){
   const f=_NOK; if(!f) return;
-  const kodlar=_ozelKodBol(String(v||''));
-  if(!kodlar.length){ toast('Kod bulunamadi','err'); return; }
-  kodlar.forEach(k=>{
-    const v2=f.pay.find(p=>norm(p.kod)===norm(k));
-    if(v2){ const n=nordParseQty(v2.qty); v2.qty=String((n>0?n:0)+1); }
-    else f.pay.push({kod:k,qty:'1'});
+  const kEl=document.getElementById('nokPaste'), mEl=document.getElementById('nokPasteQty');
+  const kMetin=kEl?kEl.value:'', mMetin=mEl?mEl.value:'';
+  const mik=_ozelMiktarBol(mMetin);
+  const mikHata=()=>{ const i=mik.findIndex(x=>x&&isNaN(nordParseQty(x)));
+    if(i<0) return false; toast(`${i+1}. miktar sayi degil: "${mik[i]}"`,'err'); return true; };
+  // YALNIZCA MIKTAR: kodlar listede duruyor, miktarlari sirayla yazilir
+  if(!String(kMetin).trim()){
+    if(!mik.length){ toast('Kod bulunamadi','err'); return; }
+    const kodlu=(f.pay||[]).filter(p=>String(p.kod||'').trim());
+    if(!kodlu.length){ toast('Miktar yazilacak kod yok - once kodlari yapistirin','err'); return; }
+    if(mik.length!==kodlu.length){
+      toast(`Listede ${kodlu.length} kod var, ${mik.length} miktar okundu - ayni sirada ve esit sayida olmali`,'err'); return; }
+    if(mikHata()) return;
+    kodlu.forEach((p,ix)=>{ if(String(mik[ix]||'').trim()) p.qty=String(nordParseQty(mik[ix])); });
+    nordOzelRender();
+    toast(`${mik.length} miktar yazildi · toplam ${fmtNum(nordOzelDurum().girilen)}`);
+    return;
+  }
+  const items=_ozelKodMiktarBol(kMetin);
+  if(!items.length){ toast('Kod bulunamadi','err'); return; }
+  // miktar sutunu yanlislikla kod kutusuna yapistirilmis olabilir - sayilari kod diye almayalim
+  if(items.every(it=>!isNaN(nordParseQty(it.kod)))){
+    toast('Kod kutusuna yalnizca sayi yapistirilmis - miktarlari yandaki kutuya yapistirin','err'); return; }
+  if(mik.length){
+    if(mik.length!==items.length){
+      toast(`${items.length} kod, ${mik.length} miktar okundu - miktarlar kodlarla ayni sirada ve esit sayida olmali`,'err'); return; }
+    if(mikHata()) return;
+    items.forEach((it,ix)=>{ it.qty=mik[ix]; });   // ayri sutun, satir sonundaki sayinin yerine gecer
+  }
+  let mikVar=false;
+  items.forEach(it=>{
+    const n=nordParseQty(it.qty), adet=(!isNaN(n)&&n>=0)?n:1;
+    if(!isNaN(n)) mikVar=true;
+    const v2=f.pay.find(p=>norm(p.kod)===norm(it.kod));
+    if(v2){ const o=nordParseQty(v2.qty); v2.qty=String(Math.round(((o>0?o:0)+adet)*1e6)/1e6); }
+    else f.pay.push({kod:it.kod,qty:String(adet)});
   });
   nordOzelRender();
-  toast(`${kodlar.length} kod okundu`);
+  toast(`${items.length} kod okundu${mikVar?` · toplam ${fmtNum(nordOzelDurum().girilen)}`:''}`);
 }
 // KALANI YAZ: satir miktarindan geriye kalani ilk bos miktarli koda yazar
 function nordOzelKalan(){
@@ -17570,23 +17672,31 @@ function nordOzelRender(){
     </div>`;
   }).join('');
   const html=`<div class="modal-bg" onclick="if(event.target===this)nordOzelDisTikla()"><div class="modal wide"><div class="modal-head">
-    <h3>Ozel Kod Kirilimi</h3><button class="mini-btn" onclick="nordOzelClose()" title="Kapat - girilenler atilir">x</button></div><div class="modal-body">
+    <div style="display:flex;align-items:center;gap:9px;min-width:0">
+      <h3>Ozel Kod Kirilimi</h3>
+      <button class="mini-btn nok-info${_nokBilgi?' on':''}" id="nokBilgiBtn" onclick="nordOzelBilgi()" title="Bu ekran nasil calisir?">${icoInfoSm()}</button>
+    </div><button class="mini-btn" onclick="nordOzelClose()" title="Kapat - girilenler atilir">x</button></div><div class="modal-body">
     <div class="nxb-src">
       <div class="nxb-src-h">FATURA SATIRI</div>
       <div class="nxb-name">${esc(l.ad||'?')}</div>
       <div class="nxb-sub">${esc([l.code||'',l.grup||NORD.sart||'',NORD.bina||''].filter(Boolean).join(' · '))} — ${fmtNum(Number(l.qty)||0)} ${esc(l.unit||'')}</div>
     </div>
-    <p class="t-meta" style="margin:12px 0 10px;line-height:1.65">Alinan miktarin hangi <b>yerlesim (ozel) koduna</b> gittigi burada yazilir - katlari farkli olabilir.
+    <div class="kata-intro nok-bilgi" id="nokBilgi"${_nokBilgi?'':' hidden'}>Alinan miktarin hangi <b>yerlesim (ozel) koduna</b> gittigi burada yazilir - katlari farkli olabilir.
       Kodlar <b>yalnizca kunyedir</b>: satir tek kalir, tek hareket kaydi uretir; hicbir kalemin hedef, alim ve montaj sayisi degismez.
-      Faturadaki kod sutununu oldugu gibi asagiya yapistirabilirsiniz; <b>bosluk yuzunden ikiye kopmus kodlar</b> ("00UYB16 EM0258") otomatik birlestirilir.</p>
-    <div class="frow" style="margin-bottom:10px"><label>Kodlari yapistir</label>
-      <textarea id="nokPaste" rows="3" placeholder="00UYB16 EM0258&#10;00UYB16 EM0260&#10;00UYB16 EM0262" style="font-family:var(--mono);font-size:12px"></textarea>
-      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-        <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordOzelYapistir(document.getElementById('nokPaste').value)">Listeye Ekle</button>
-        <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordOzelAdd()">Kod Ekle</button>
-        <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordOzelKalan()" title="Satir miktarindan geriye kalani, miktari bos ilk koda yazar">Kalani Yaz</button>
-        <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordOzelTemizle()">Temizle</button>
-      </div></div>
+      Faturadaki kod sutununu oldugu gibi asagiya yapistirabilirsiniz; <b>bosluk yuzunden ikiye kopmus kodlar</b> ("00UYB16 EM0258") otomatik birlestirilir.
+      <b>Miktar sutununu da</b> ayni sirayla yandaki kutuya yapistirabilirsiniz (kod satirinin sonundaki sayi da miktar sayilir); miktari yazilmayan kod 1 alir.</div>
+    <div class="frow nok-paste" style="margin:14px 0 10px">
+      <div><label>Kodlari yapistir</label>
+        <textarea id="nokPaste" rows="4" placeholder="00UYB16 EM0258&#10;00UYB16 EM0260&#10;00UYB16 EM0262"></textarea></div>
+      <div><label>Miktar <span>ayni sirayla</span></label>
+        <textarea id="nokPasteQty" rows="4" placeholder="1&#10;2&#10;1" title="Kodlarla ayni sirada, her satirda bir miktar. Bos birakilan satir 1 sayilir. Yalnizca bu kutuyu doldurursaniz miktarlar listedeki kodlara sirayla yazilir."></textarea></div>
+    </div>
+    <div style="display:flex;gap:8px;margin:0 0 12px;flex-wrap:wrap">
+      <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordOzelYapistir()">Listeye Ekle</button>
+      <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordOzelAdd()">Kod Ekle</button>
+      <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordOzelKalan()" title="Satir miktarindan geriye kalani, miktari bos ilk koda yazar">Kalani Yaz</button>
+      <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordOzelTemizle()">Temizle</button>
+    </div>
     <div class="ndg-sayac" id="nokSayac">${nordOzelSayacHtml(d)}</div>
     <div class="nxb-list nat-list">${rows}</div>
   </div><div class="modal-foot">
