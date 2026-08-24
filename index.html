@@ -1201,6 +1201,28 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .sr-kat-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;font-size:12px;cursor:pointer;-webkit-user-select:none;user-select:none;background:var(--bg)}
 .sr-kat-chip input{width:auto;margin:0;accent-color:var(--blue)}
 .sr-kat-chip:has(input:checked){border-color:var(--blue);color:var(--blue);background:color-mix(in srgb,var(--blue) 10%,transparent)}
+/* GOREV FORMU - kat / sartname secim cipleri: sartname kat kapsamiyla (.sr-kat-chip)
+   ayni gorsel dil, cunku is de ayni: binanin katlarindan coklu secim. */
+.gi-chips{display:flex;flex-wrap:wrap;gap:6px}
+/* .frow input (asagida, AYNI ozgullukte ama daha sonra tanimli) tam genislikte metin
+   kutusu bicimini dayatiyor - cip icindeki kutucuk bundan muaf tutulur. Ayni kural
+   sartname kat kapsamindaki ciplerin de bicimini duzeltir: .sr-kat-chip input zaten
+   width:auto diyordu ama .frow input onu eziyordu (bkz. 5129 satirindaki inline
+   width:auto yamasi - ayni sorunun tekil cozumu). */
+.frow .sr-kat-chip input{width:auto;padding:0;border:0;background:none;border-radius:0;box-shadow:none}
+/* Bolum adi ciplerin SOLUNDA degil USTUNDE durur: sartname kodlari uzun
+   ("AKU.0179.00UYB.CYE.PS.MB0002") ve bolum adlari farkli genislikte oldugu icin yan yana
+   dizilimde her satir baska bir noktadan basliyor, liste tirtikli gorunuyordu. */
+.gi-secbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 7px}
+.gi-secbar-ops{display:flex;gap:6px;flex-shrink:0}
+.gi-sart-kutu{max-height:250px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px 11px;background:var(--bg)}
+.gi-sart-grup+.gi-sart-grup{margin-top:11px;padding-top:10px;border-top:1px solid var(--line)}
+.gi-sart-grup-h{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--mute);font-family:var(--mono);margin-bottom:6px}
+.gi-sart-grup-h i{font-style:normal;opacity:.6;margin-left:4px}
+/* uzun kodlar sutunlara oturur - serbest sarma her satirda farkli sayida cip birakiyordu */
+.gi-sart-cips{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:6px}
+.gi-sart-cips .sr-kat-chip{font-family:var(--mono);font-size:11px;min-width:0}
+.gi-sart-cips .sr-kat-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .floww-side{width:300px;flex:0 0 auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px;overflow-y:auto}
 .floww-side h3{font-size:14px;font-weight:800;margin:0 0 4px;word-break:break-word}
 .fw-path{font-size:10.5px;color:var(--mute);font-family:var(--mono);margin-bottom:12px;line-height:1.5;word-break:break-word}
@@ -3655,7 +3677,7 @@ function giItemHtml(t){
   else if(giGecikmisMi(t)) bayrak+=rozet('GECIKTI','var(--danger)');
   if(t.foto&&t.foto.path) bayrak+=rozet('FOTO','var(--primary)');
   // 'Gun' modunda tarih zaten baslikta yaziyor - satirda tekrar edilmez
-  const meta=[_GI.mod!=='gun'?giKisaTarih(t.tarih):'', t.bina||'', t.konum||'', t.sorumlu||''].filter(Boolean).join(' · ');
+  const meta=[_GI.mod!=='gun'?giKisaTarih(t.tarih):'', t.bina||'', giKonumMetni(t), t.sorumlu||''].filter(Boolean).join(' · ');
   return `<div class="gi-item" title="${esc(t.baslik||'')}" onclick="openGunlukIsDetay('${t.id}')">
     <span class="gi-st" style="background:${d.renk}"></span>
     <span class="gi-txt"><span class="gi-name${t.durum==='bitti'?' done':''}">${esc(t.baslik||'(basliksiz)')}</span>${meta?`<span class="gi-meta">${esc(meta)}</span>`:''}</span>
@@ -3816,6 +3838,79 @@ function giFotoCiz(){
     ya da dosyayi surukleyin / tiklayip secin</div>`;
 }
 
+/* ── KONUM (KAT) VE SARTNAME SECIMI (gorev formu) ─────────────────────────────
+   Kaynak BINALAR ekranindaki lokasyon agaci (binaKatlar) ve BOLUM & SARTNAME
+   ekranindaki sartname listesidir - gorev formu kendi listesini tutmaz, tanimlar
+   tek yerde kalir. Secim COKLUDUR: "tum tavalar" gibi bir is birden cok kati ve
+   birden cok sartnameyi birden ilgilendiriyor.
+
+   NE SAKLANIR: kat ADLARI (t.katlar) ve sartname KODLARI (t.sartlar) - lokId/sartId
+   DEGIL. Sebep: gorev, lokasyon agacina bagli bir kayit degil; bir kat dugumu silinse
+   ya da sartname kaldirilsa gecmis gorevin ne icin acildigi okunabilir kalmali.
+   Siparis satirindaki lokId'den farki budur (bkz. lokSelectOptions kullanicilari).
+
+   SERBEST METIN DURUYOR (t.konum): oda/aks detayi, "cati", "saha" gibi agacta
+   karsiligi olmayan yerler ve kat kirilimi tanimlanmamis binalar icin. Eski
+   kayitlarda yalnizca bu alan vardi - katlar bos kaldigindan gorunum degismez. */
+// isaretli kutucuklarin degerleri (kat ve sartname cip gruplari icin ortak)
+function giSecilenler(kapsayici){
+  const el=document.getElementById(kapsayici); if(!el) return [];
+  return [...el.querySelectorAll('input[type=checkbox]:checked')].map(x=>x.value);
+}
+function giChipSet(kapsayici,deger){
+  const el=document.getElementById(kapsayici); if(!el) return;
+  el.querySelectorAll('input[type=checkbox]').forEach(x=>{ x.checked=!!deger; });
+}
+function giKatChipsHtml(bina,secili){
+  const kats=bina?binaKatlar(bina):[];
+  const sec=new Set(secili||[]);
+  if(!kats.length) return `<div class="t-meta" style="font-size:11.5px">${bina
+    ?'Bu binada kat kirilimi tanimli degil - Binalar ekranindaki Akis Gorunumu\'nden kat ekleyince burada listelenir'
+    :'Bina secilince o binanin katlari burada listelenir'}</div>`;
+  const n=kats.filter(k=>sec.has(k.name)).length;
+  return `<div class="gi-secbar">
+      <span class="t-meta">${kats.length} kat${n?` · <b style="color:var(--blue)">${n} secili</b>`:''}</span>
+      <span class="gi-secbar-ops">
+        <button type="button" class="btn btn-ghost" style="padding:4px 10px;font-size:11px" onclick="giChipSet('gi_katlar',true)">Tumu</button>
+        <button type="button" class="btn btn-ghost" style="padding:4px 10px;font-size:11px" onclick="giChipSet('gi_katlar',false)">Temizle</button>
+      </span></div>
+    <div class="gi-chips">${kats.map(k=>`<label class="sr-kat-chip"><input type="checkbox" value="${esc(k.name)}"${sec.has(k.name)?' checked':''}>${esc(k.name)}</label>`).join('')}</div>`;
+}
+// sartnameler BOLUME gore gruplanir: ayni binada onlarca sartname olabiliyor,
+// duz bir cip yigini okunmuyordu
+function giSartChipsHtml(bina,secili){
+  const list=bina?(DB.proje.sartnames||[]).filter(x=>x&&x.bina===bina):[];
+  const sec=new Set(secili||[]);
+  if(!list.length) return `<div class="t-meta" style="font-size:11.5px">${bina
+    ?'Bu binada tanimli sartname yok - Bolum & Sartname ekranindan eklenir'
+    :'Bina secilince o binanin sartnameleri burada listelenir'}</div>`;
+  const bol={};
+  list.forEach(x=>{ const b=x.section||'(bolumsuz)'; (bol[b]=bol[b]||[]).push(x); });
+  const bolumler=Object.keys(bol).sort((a,b)=>a.localeCompare(b,'tr'));
+  const n=list.filter(x=>sec.has(x.code)).length;
+  const gruplar=bolumler.map(b=>{
+    const cips=bol[b].slice().sort((x,y)=>String(x.code||'').localeCompare(String(y.code||''),'tr',{numeric:true}))
+      .map(x=>`<label class="sr-kat-chip" title="${esc(x.code||'')}${(x.name&&x.name!==x.code)?' - '+esc(x.name):''}"><input type="checkbox" value="${esc(x.code||'')}"${sec.has(x.code)?' checked':''}><span>${esc(x.code||'')}</span></label>`).join('');
+    return `<div class="gi-sart-grup"><div class="gi-sart-grup-h">${esc(b)}<i>${bol[b].length}</i></div><div class="gi-sart-cips">${cips}</div></div>`;
+  }).join('');
+  return `<div class="gi-secbar">
+      <span class="t-meta">${list.length} sartname · ${bolumler.length} bolum${n?` · <b style="color:var(--blue)">${n} secili</b>`:''}</span>
+      <span class="gi-secbar-ops"><button type="button" class="btn btn-ghost" style="padding:4px 10px;font-size:11px" onclick="giChipSet('gi_sartlar',false)">Temizle</button></span></div>
+    <div class="gi-sart-kutu">${gruplar}</div>`;
+}
+/* Bina degisince iki liste de yenilenir. Secimler KORUNUR ama yalnizca yeni binada da
+   bulunanlar: kat adi ve sartname kodu binaya ozeldir, oteki binanin secimini tasimak
+   olmayan bir yeri isaret eden gorev uretirdi. Serbest metin konum aynen kalir. */
+function giBinaDegisti(){
+  const bina=(document.getElementById('gi_bina')||{}).value||'';
+  const katSec=giSecilenler('gi_katlar'), sartSec=giSecilenler('gi_sartlar');
+  const kk=document.getElementById('gi_katlar'); if(kk) kk.innerHTML=giKatChipsHtml(bina,katSec);
+  const ss=document.getElementById('gi_sartlar'); if(ss) ss.innerHTML=giSartChipsHtml(bina,sartSec);
+}
+// listede ve detayda gosterilen konum metni: secilen katlar + serbest metin
+function giKonumMetni(t){
+  return [(((t&&t.katlar)||[]).join(', ')),((t&&t.konum)||'')].filter(Boolean).join(' · ');
+}
 // ── gorev ekleme / duzenleme ────────────────────────────────────────────────
 function openGunlukIsModal(id){
   const t=id?giBul(id):null;
@@ -3829,7 +3924,7 @@ function openGunlukIsModal(id){
   // girilen adlar datalist ile onerilir (yazim birligi bozulmasin)
   const kisiler=[...new Set([...(DB.gunlukIsler||[]).map(x=>x&&x.sorumlu).filter(Boolean),
     ...(CURRENT_USER?[CURRENT_USER.username]:[])])].sort((a,b)=>String(a).localeCompare(String(b),'tr'));
-  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:560px">
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:720px">
     <div class="modal-head"><h3>${t?'Gorevi Duzenle':'Yeni Gorev'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">
       <div class="frow"><label>Gorev Basligi *</label><input id="gi_baslik" value="${t?esc(t.baslik||''):''}" placeholder="orn. 3. kat kablo tavasi montaji" onkeydown="if(event.key==='Enter')saveGunlukIs(${t?`'${t.id}'`:'null'})"></div>
@@ -3838,10 +3933,12 @@ function openGunlukIsModal(id){
         <div><label>Sorumlu</label><input id="gi_sorumlu" list="giKisiListesi" value="${t?esc(t.sorumlu||''):(CURRENT_USER?esc(CURRENT_USER.username):'')}" placeholder="kime ait">
           <datalist id="giKisiListesi">${kisiler.map(k=>`<option value="${esc(k)}"></option>`).join('')}</datalist></div>
       </div>
-      <div class="frow two">
-        <div><label>Bina</label><select id="gi_bina">${opt('','— Genel (bina bagimsiz) —',secBina)}${binalar.map(b=>opt(b,b,secBina)).join('')}</select></div>
-        <div><label>Konum <span class="t-meta">(kat / oda)</span></label><input id="gi_konum" value="${t?esc(t.konum||''):''}" placeholder="orn. 3. kat"></div>
-      </div>
+      <div class="frow"><label>Bina</label><select id="gi_bina" onchange="giBinaDegisti()">${opt('','— Genel (bina bagimsiz) —',secBina)}${binalar.map(b=>opt(b,b,secBina)).join('')}</select></div>
+      <div class="frow"><label>Konum <span class="t-meta">(kat - birden fazla secilebilir)</span></label>
+        <div id="gi_katlar">${giKatChipsHtml(secBina,t?(t.katlar||[]):[])}</div>
+        <input id="gi_konum" value="${t?esc(t.konum||''):''}" placeholder="oda / aks / serbest not - orn. Pompa Odasi" style="margin-top:9px"></div>
+      <div class="frow"><label>Sartnameler <span class="t-meta">(opsiyonel)</span></label>
+        <div id="gi_sartlar">${giSartChipsHtml(secBina,t?(t.sartlar||[]):[])}</div></div>
       <div class="frow two">
         <div><label>Oncelik</label><select id="gi_oncelik">${Object.keys(GI_ONCELIK).map(k=>opt(k,GI_ONCELIK[k].lbl,t?(t.oncelik||'normal'):'normal')).join('')}</select></div>
         <div><label>Durum</label><select id="gi_durum">${Object.keys(GI_DURUM).map(k=>opt(k,GI_DURUM[k].lbl,t?(t.durum||'bekliyor'):'bekliyor')).join('')}</select></div>
@@ -3858,7 +3955,8 @@ function openGunlukIsModal(id){
   giFotoSifirla(t&&t.foto?t.foto.path:'', t&&t.foto); giFotoCiz(); giPasteBagla();
   // kaza ile kapanma korumasi: secilmis ekran goruntusu de "bilgi girildi" sayilir,
   // yoksa yapistirilan goruntu disa tiklamayla sessizce ucardi
-  setModalGuard(()=>formDoluMu(['gi_baslik','gi_konum','gi_aciklama'],!!_giFoto));
+  setModalGuard(()=>formDoluMu(['gi_baslik','gi_konum','gi_aciklama'],
+    !!_giFoto || giSecilenler('gi_katlar').length>0 || giSecilenler('gi_sartlar').length>0));
   const inp=document.getElementById('gi_baslik'); if(inp) setTimeout(()=>inp.focus(),0);
 }
 
@@ -3908,7 +4006,8 @@ async function saveGunlukIs(id){
     ...(eski||{}),
     id:gorevId,
     baslik, tarih, bina, foto,
-    konum:al('gi_konum'), sorumlu:al('gi_sorumlu'), aciklama:al('gi_aciklama'),
+    konum:al('gi_konum'), katlar:giSecilenler('gi_katlar'), sartlar:giSecilenler('gi_sartlar'),
+    sorumlu:al('gi_sorumlu'), aciklama:al('gi_aciklama'),
     oncelik:al('gi_oncelik')||'normal',
     durum:al('gi_durum')||'bekliyor',
     denetim:(eski&&eski.denetim)||{durum:'yok',kisi:'',ts:0,not:''},
@@ -3963,13 +4062,14 @@ function openGunlukIsDetay(id){
       </div>`;
   }
   const denSatir=den==='yok'?'':`${esc(denBilgi.lbl)}${(t.denetim&&t.denetim.kisi)?' · '+esc(t.denetim.kisi):''}${(t.denetim&&t.denetim.ts)?' · '+fmtDate(t.denetim.ts):''}`;
-  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:560px">
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:720px">
     <div class="modal-head"><h3 style="display:flex;align-items:center;gap:8px"><span class="gi-st" style="background:${d.renk};margin:0"></span>Gorev Detayi</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">
       <div style="font-size:16px;font-weight:800;margin-bottom:4px;overflow-wrap:anywhere">${esc(t.baslik||'(basliksiz)')}</div>
       <div style="font-family:var(--mono);font-size:11.5px;color:var(--dim);margin-bottom:14px">${esc(giUzunTarih(t.tarih))}${giGecikmisMi(t)?` <span style="color:var(--danger);font-weight:700">· GECIKTI</span>`:''}</div>
       ${satir('Bina',esc(t.bina||'Genel'))}
-      ${satir('Konum',esc(t.konum||''))}
+      ${satir('Konum',esc(giKonumMetni(t)))}
+      ${satir('Sartnameler',esc(((t.sartlar)||[]).join(', ')))}
       ${satir('Sorumlu',esc(t.sorumlu||''))}
       ${satir('Oncelik',`<span style="color:${(GI_ONCELIK[t.oncelik]||GI_ONCELIK.normal).renk}">${(GI_ONCELIK[t.oncelik]||GI_ONCELIK.normal).lbl}</span>`)}
       ${satir('Denetim',denSatir)}
@@ -10118,6 +10218,25 @@ function _firstDataRow(rows){ // baslik satiri: hucrelerden biri TAM olarak bir 
 // olsa bile essiz eslestirme yapilamayacagi icin reddedilmez).
 // Kod varsa: ayni kod (dosya icinde tekrar etse de, kutuphanede zaten kayitli
 // olsa da) tek bir kayitta birlestirilir - ikinci kopya olusturulmaz.
+/* YALNIZCA DEGISENI YAZ =======================================================
+   Ice aktarmalar eskiden bitiste TUM malzeme ve spesifikasyon listesini Supabase'e
+   yaziyordu. Bedeli iki katliydi: (1) degismemis yuzlerce satir bosuna yazilir,
+   (2) Postgres trigger'i her UPDATE'te updated_at'i tazeledigi icin
+   (supabase_schema.sql: proje_materials_updated_at) artimli yukleme bir sonraki
+   acilista tabloyu BASTAN indirirdi - uc yeni urun eklemek butun kutuphaneyi
+   yeniden indirtiyordu (bkz. src/supabase.js artimli okuma).
+   Cozum: ice aktarmadan ONCE imza alinir, bitiste yalnizca imzasi degisen kayitlar
+   yazilir. Imza JSON'un tamamidir - alan listesi tutmaya gerek yok, yeni bir alan
+   eklendiginde kendiliginden kapsanir. */
+function _kayitImza(list){
+  const m=new Map();
+  (list||[]).forEach(x=>{ if(x&&x.id) m.set(x.id,JSON.stringify(x)); });
+  return m;
+}
+// imzada olmayan id = YENI kayit (her zaman yazilir)
+function _degisenKayitlar(list,imza){
+  return (list||[]).filter(x=>x&&x.id&&imza.get(x.id)!==JSON.stringify(x));
+}
 function upsertMaterialsFromRows(rows, report){
   if(!rows||rows.length<2) return;
   const h=_firstDataRow(rows); const pick=_hdrMap(rows[h]);
@@ -10161,14 +10280,19 @@ function upsertMaterialsFromRows(rows, report){
     const img=iImg>=0?String(row[iImg]??'').trim():'';
     const img2=iImg2>=0?String(row[iImg2]??'').trim():'';
     if(existing){ // UPDATE
+      /* DEGISMEDIYSE DOKUNMA: updatedAt her eslesen satirda tazelenirse, hicbir seyi
+         degistirmeden ayni Excel'i yuklemek butun kutuphaneyi "degismis" gosterir -
+         hem bosuna yazilir hem de bir sonraki acilista tumu yeniden iner
+         (bkz. _degisenKayitlar). Karsilastirma alan alan degil, kaydin tamami uzerinden. */
+      const oncesi=JSON.stringify(existing);
       existing.name=name||existing.name; existing.brand=brand; if(cat)existing.cat=cat; if(unit)existing.unit=unit; if(note!=='')existing.note=note; if(img)existing.img=img; if(img2)existing.img2=img2;
       if(standart!=='')existing.standart=standart; if(weight!=null)existing.weight=weight; if(tags.length)existing.tags=tags; if(altCodes.length)existing.altCodes=altCodes; if(proje!=='')existing.proje=proje;
-      existing.updatedAt=Date.now();
-      // bagli spec'leri senkronla
-      // sp.cat bilerek dokunulmaz: bolum kalemin ozelligidir, ayni malzeme farkli bolumlerde kullanilabilir
+      if(JSON.stringify(existing)!==oncesi){ existing.updatedAt=Date.now(); report.matUpdated++; }
+      /* Spec senkronu malzeme degismese de calisir: kalem satiri baska bir yoldan kaymis
+         olabilir. Bosuna yazma riski yok - disaridaki fark suzgeci neyin yazilacagina karar verir.
+         sp.cat bilerek dokunulmaz: bolum kalemin ozelligidir, ayni malzeme farkli bolumlerde kullanilabilir */
       materialUsage(existing.id).forEach(sp=>{ sp.name=existing.name; sp.code=existing.code; sp.brand=brand; if(existing.unit&&!sp.unit)sp.unit=existing.unit; sp.matId=existing.id;
         sp.standart=existing.standart||''; sp.weight=existing.weight; sp.tags=(existing.tags||[]).slice(); sp.img=existing.img||null; });
-      report.matUpdated++;
     } else { // INSERT
       const now=Date.now();
       DB.proje.materials.push({id:uid(),code,name:name||code,brand,unit,cat,note,img:img||null,img2:img2||null,standart,weight,tags,altCodes,proje,createdAt:now,updatedAt:now}); report.matCreated++;
@@ -10688,6 +10812,7 @@ function importLibraryExcel(e){ if(!guard('import')){e.target.value='';return;} 
   r.onload=async ev=>{ try{
     const wb=XLSX.read(ev.target.result,{type:'binary'});
     const report={matCreated:0,matUpdated:0,matDeleted:0,specCreated:0,specUpdated:0,specDeleted:0,errors:[]};
+    const imzaM=_kayitImza(DB.proje.materials), imzaS=_kayitImza(DB.proje.specs);   // yalnizca degiseni yaz
     const matRows=_sheetRows(wb,['2_Materials','Materials','Malzeme_Kutuphanesi','3.Malzeme_Kutuphanesi','Malzeme']) || _sheetRows(wb,[wb.SheetNames[0]]);
     upsertMaterialsFromRows(matRows, report);
     // teknik bilgi sekmesi (varsa): malzemelerden SONRA - yeni acilan kalemler de eslessin
@@ -10698,8 +10823,10 @@ function importLibraryExcel(e){ if(!guard('import')){e.target.value='';return;} 
     // kaynagi buydu). Artik gecersiz satir kalem ACMAZ, rapora hata olarak duser.
     const specRows=_sheetRows(wb,['3_Specifications','Specifications','Spesifikasyonlar','4.Spesifikasyonlar']);
     if(specRows) upsertSpecsFromRows(specRows, report, '', {strict:true});
-    await Promise.all([sbUpsertProjeMaterials(DB.proje.materials),sbUpsertProjeSpecs(DB.proje.specs)]);
-    render(); logAction('import','Malzeme kutuphanesi: +'+report.matCreated+' yeni, '+report.matUpdated+' guncel'); showImportReport(report,'Malzeme Kutuphanesi');
+    const degM=_degisenKayitlar(DB.proje.materials,imzaM), degS=_degisenKayitlar(DB.proje.specs,imzaS);
+    report.yazilanMat=degM.length; report.yazilanSpec=degS.length;
+    await Promise.all([sbUpsertProjeMaterials(degM),sbUpsertProjeSpecs(degS)]);
+    render(); logAction('import','Malzeme kutuphanesi: +'+report.matCreated+' yeni, '+report.matUpdated+' guncel, '+(degM.length+degS.length)+' kayit yazildi'); showImportReport(report,'Malzeme Kutuphanesi');
   }catch(err){ toast('Excel okunamadi: '+err.message,'err'); } e.target.value=''; };
   r.readAsBinaryString(f);
 }
@@ -10711,6 +10838,7 @@ function importSpecsUpsertExcel(e){ if(!guard('import')){e.target.value='';retur
   r.onload=async ev=>{ try{
     const wb=XLSX.read(ev.target.result,{type:'binary'});
     const report={matCreated:0,matUpdated:0,matDeleted:0,specCreated:0,specUpdated:0,specDeleted:0,errors:[]};
+    const imzaM=_kayitImza(DB.proje.materials), imzaS=_kayitImza(DB.proje.specs);   // yalnizca degiseni yaz
     // once malzeme sayfasi (FK cozumu icin)
     const matRows=_sheetRows(wb,['2_Materials','Materials','Malzeme_Kutuphanesi','3.Malzeme_Kutuphanesi']);
     if(matRows) upsertMaterialsFromRows(matRows, report);
@@ -10720,7 +10848,9 @@ function importSpecsUpsertExcel(e){ if(!guard('import')){e.target.value='';retur
     // Sutun bos birakilirsa mevcut ekran baglami (PCAT/PSPEC) varsayilan olarak kullanilir.
     // replaceScope: bu Excel o sartnamenin TEK kaynagidir - dosyada olmayan eski urunler silinir.
     upsertSpecsFromRows(specRows, report, PBINA||'', {strict:true, defaultCat:PCAT||'', defaultGrup:(PSPEC&&PSPEC!=='__all')?PSPEC:'', replaceScope:true});
-    await Promise.all([sbUpsertProjeMaterials(DB.proje.materials),sbUpsertProjeSpecs(DB.proje.specs)]);
+    const degM=_degisenKayitlar(DB.proje.materials,imzaM), degS=_degisenKayitlar(DB.proje.specs,imzaS);
+    report.yazilanMat=degM.length; report.yazilanSpec=degS.length;
+    await Promise.all([sbUpsertProjeMaterials(degM),sbUpsertProjeSpecs(degS)]);
     if(report.deletedSpecIds&&report.deletedSpecIds.length) await sbDeleteProjeSpecs(report.deletedSpecIds);
     render(); logAction('import','Spesifikasyon: +'+report.specCreated+' yeni, '+report.specUpdated+' guncel, -'+report.specDeleted+' silinen'); showImportReport(report,'Spesifikasyon');
   }catch(err){ toast('Excel okunamadi: '+err.message,'err'); } e.target.value=''; };
@@ -10838,6 +10968,7 @@ const openEvet=['evet','e','var','acik','yes','y','true','x','1'].includes(norm(
 async function applySyncPlan(){
   const plan=_syncPlan; if(!plan)return;
   const rep={matCreated:0,matUpdated:0,matDeleted:0,specCreated:0,specUpdated:0,specDeleted:0,errors:[]};
+  const imzaM=_kayitImza(DB.proje.materials), imzaS=_kayitImza(DB.proje.specs);   // yalnizca degiseni yaz
   // MALZEME
   plan.mat.insert.forEach(x=>{ DB.proje.materials.push({id:uid(),code:x.code,name:x.name,brand:x.brand,unit:x.unit,cat:x.cat,note:x.note,img:null,is_deleted:false}); rep.matCreated++; });
   plan.mat.update.forEach(({existing,data})=>{ existing.name=data.name; existing.brand=data.brand; if(data.cat)existing.cat=data.cat; if(data.unit)existing.unit=data.unit; existing.note=data.note; existing.is_deleted=false;
@@ -10870,7 +11001,9 @@ async function applySyncPlan(){
   plan.spec.delete.forEach(s=>{ s.is_deleted=true; rep.specDeleted++; });
   _syncPlan=null;
   logAction('sync','Full sync: malzeme +'+rep.matCreated+'/~'+rep.matUpdated+'/-'+rep.matDeleted+', spec +'+rep.specCreated+'/~'+rep.specUpdated+'/-'+rep.specDeleted);
-  await Promise.all([sbUpsertProjeMaterials(DB.proje.materials),sbUpsertProjeSpecs(DB.proje.specs)]);
+  const degM=_degisenKayitlar(DB.proje.materials,imzaM), degS=_degisenKayitlar(DB.proje.specs,imzaS);
+  rep.yazilanMat=degM.length; rep.yazilanSpec=degS.length;
+  await Promise.all([sbUpsertProjeMaterials(degM),sbUpsertProjeSpecs(degS)]);
   PBINA="";PCAT="";PSPEC="";PLIB=false;PDEF=false;PCOMP=false; PEKIP=false;PBINAY=false;
   closeModal();
   render();
@@ -11126,6 +11259,7 @@ function showImportReport(rep,baslik){
       ${rep.ozelMerged?stat('Ayni ozel no ile birlesen satir (miktarlari toplandi)',rep.ozelMerged,'var(--amber)'):''}
       ${rep.tekUrun?stat('Teknik bilgi guncellenen malzeme ('+rep.tekSatir+' satir)',rep.tekUrun,'var(--blue)'):''}
       ${kept.length?stat('Korunan kalem (bagli kaydi var, silinmedi)',kept.length,'var(--green)'):''}
+      ${rep.yazilanMat!=null?`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--line)"><span>Sunucuya yazilan kayit <i style="font-style:normal;color:var(--mute);font-size:11px">(degismeyen kayit yazilmaz)</i></span><b style="color:var(--mute);font-family:var(--mono)">${rep.yazilanMat+(rep.yazilanSpec||0)}</b></div>`:''}
     </div>
     ${total===0&&!rep.errors.length&&!kept.length?'<p style="color:var(--mute);text-align:center;font-size:13px">Islenecek yeni veri bulunamadi.</p>':''}
     ${keptHtml}
