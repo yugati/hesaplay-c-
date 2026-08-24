@@ -6276,6 +6276,18 @@ function exportMaterialLib(){
   const wsSum=XLSX.utils.aoa_to_sheet(summaryRows); wsSum['!cols']=[{wch:24},{wch:14}];
   wsSum['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:summaryRows.length-1,c:1}})};
   XLSX.utils.book_append_sheet(wb,wsSum,"Kategori Ozeti");
+  /* TEKNIK BILGI sekmesi: detay sayfasinin serbest ozellik satirlari (m.tek).
+     Malzeme basina N satir oldugu icin kunye sayfasina SUTUN olarak sigmaz (bir
+     urunun onlarca ozelligi olabilir) - ayri sekme olarak yazilir. Kod + ad
+     birlikte: kutuphanede kodsuz kalem olabilir, o satirlar ada gore eslesir.
+     Hic teknik bilgi yoksa bile sekme EKLENIR: bos hali, Excel'de toplu doldurmak
+     icin sablondur. Sekme adi bilerek "malzeme/material/spec/2_/3_" kelimelerinin
+     hicbirini icermez - _sheetRows / _findSheet bulanik eslesmesine takilmasin. */
+  const tekRows=[["Urun Kodu","Malzeme Ismi","Ozellik","Deger"]];
+  sorted.forEach(m=>matTek(m).forEach(t=>tekRows.push([m.code||'',m.name||'',t.k,t.v])));
+  const wsTek=XLSX.utils.aoa_to_sheet(tekRows); wsTek['!cols']=[{wch:18},{wch:42},{wch:26},{wch:46}];
+  wsTek['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:tekRows.length-1,c:3}})};
+  XLSX.utils.book_append_sheet(wb,wsTek,"Teknik Bilgi");
   XLSX.writeFile(wb,`Malzeme_Kutuphanesi_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel indirildi");
 }
 function renderSpekSecim(){
@@ -10172,6 +10184,54 @@ function upsertMaterialsFromRows(rows, report){
   }
 }
 
+/* TEKNIK BILGI SEKMESI UPSERT (Urun Kodu | Malzeme Ismi | Ozellik | Deger)
+   SIRA: malzeme sayfasindan SONRA calistirilir - ayni dosyada yeni acilan
+   kalemlerin teknik bilgisi de eslessin diye (findMaterial CANLI kutuphaneye bakar).
+   ESLESME: kod + ad birlikte okunur; yalniz koda bakmak kutuphanedeki kodsuz
+   kalemleri (bkz. upsertMaterialsFromRows) disarda birakirdi.
+   "DOKUNMA" KURALI: yalnizca sekmede GECEN urunun tek'i dosyadakiyle degistirilir;
+   sekmede hic gecmeyen urun oldugu gibi kalir - kismi bir Excel yuklemek teknik
+   bilgi SILMEZ. Ayni sebeple ozellik/deger'i bos satir "temizle" emri sayilmaz:
+   bir urunun teknik bilgisini tamamen bosaltmak detay sayfasindan yapilir. */
+function upsertTekFromRows(rows, report){
+  if(!rows||rows.length<2) return;
+  const h=_firstDataRow(rows); const pick=_hdrMap(rows[h]);
+  const iCode=pick('urun kodu','material_code','materialcode','kod','kodu','code');
+  const iName=pick('malzeme ismi','malzeme adi','material_name','materialname','malzeme','ad','name');
+  const iKey=pick('ozellik','ozellik adi','property','feature');
+  const iVal=pick('deger','value');
+  // uyumsuz sayfa (orn. bulanik eslesme baska sekmeyi getirdi): sessizce gec, veriye dokunma
+  if(iKey<0||iVal<0||(iCode<0&&iName<0)) return;
+  const bulunan=new Map();   // material.id -> [{k,v}]
+  const eksik=new Set();     // kutuphanede karsiligi olmayan kod/ad
+  for(let r=h+1;r<rows.length;r++){
+    const row=rows[r]; if(!row||row.every(c=>String(c).trim()==='')) continue;
+    const code=iCode>=0?String(row[iCode]??'').trim():'';
+    const name=iName>=0?String(row[iName]??'').trim():'';
+    if(/^(REQUIRED|optional|REQ|blank|ZORUNLU|ops)/i.test(code)) continue;
+    if(!code&&!name) continue;
+    const k=String(row[iKey]??'').trim(), v=String(row[iVal]??'').trim();
+    if(!k&&!v) continue;   // bos satir urunu listeye SOKMAZ (yukaridaki kural)
+    const m=findMaterial(code,name);
+    if(!m){ eksik.add(code||name); continue; }
+    if(!bulunan.has(m.id)) bulunan.set(m.id,[]);
+    bulunan.get(m.id).push({k,v});
+  }
+  const imza=a=>JSON.stringify(a.map(r=>[r.k,r.v]));
+  let urun=0, satir=0;
+  bulunan.forEach((liste,id)=>{
+    const m=getMaterial(id); if(!m) return;
+    if(imza(matTek(m))===imza(liste)) return;   // degismedi: updatedAt bosuna oynamasin
+    m.tek=liste; m.updatedAt=Date.now(); urun++; satir+=liste.length;
+  });
+  report.tekUrun=(report.tekUrun||0)+urun;
+  report.tekSatir=(report.tekSatir||0)+satir;
+  // bulunamayanlar sessizce yutulmaz - rapora duser (uzun listede ilk 20 + kalan sayi)
+  [...eksik].slice(0,20).forEach(x=>report.errors.push('Teknik Bilgi: "'+x+'" kutuphanede yok - satirlari atlandi'));
+  if(eksik.size>20) report.errors.push('Teknik Bilgi: +'+(eksik.size-20)+' kalem daha kutuphanede bulunamadi');
+}
+// Teknik Bilgi sekmesini dosyadan cek. Sekme yoksa null doner ve cagiran hicbir sey yapmaz.
+function _tekRows(wb){ return _sheetRows(wb,['Teknik Bilgi','Teknik_Bilgi','TeknikBilgi']); }
 // SPESIFIKASYON UPSERT (key: spec_external_id, FK: material_code)
 // opts.strict: bina/bolum/sartname "Bolum & Sartname" ekranindan kayitli olmali (dogrulanir, otomatik olusturulmaz)
 // opts.defaultCat / opts.defaultGrup: satirda bolum/sartname sutunu bos ise kullanilacak varsayilan (mevcut ekran baglami)
@@ -10638,6 +10698,8 @@ function importLibraryExcel(e){ if(!guard('import')){e.target.value='';return;} 
     const report={matCreated:0,matUpdated:0,matDeleted:0,specCreated:0,specUpdated:0,specDeleted:0,errors:[]};
     const matRows=_sheetRows(wb,['2_Materials','Materials','Malzeme_Kutuphanesi','3.Malzeme_Kutuphanesi','Malzeme']) || _sheetRows(wb,[wb.SheetNames[0]]);
     upsertMaterialsFromRows(matRows, report);
+    // teknik bilgi sekmesi (varsa): malzemelerden SONRA - yeni acilan kalemler de eslessin
+    const tekRows=_tekRows(wb); if(tekRows) upsertTekFromRows(tekRows, report);
     // varsa spesifikasyon sayfasini da isle. STRICT: bina/bolum/sartname dogrulanir.
     // Eskiden bu yol dogrulamasiz calisiyordu ve bina sutunu olmayan dosyalar binasiz
     // "Tava Spek-1" kalemleri uretiyordu (malzeme kunyesinde sikisan sahipsiz kayitlarin
@@ -11019,6 +11081,8 @@ function factoryImportExcel(e){ if(!guard('import')){e.target.value='';return;} 
     const report={matCreated:0,matUpdated:0,matDeleted:0,specCreated:0,specUpdated:0,specDeleted:0,errors:[]};
     const matRows=matRowsChk;
     if(matRows) upsertMaterialsFromRows(matRows, report);
+    // teknik bilgi sekmesi (varsa): malzemelerden SONRA - yeni acilan kalemler de eslessin
+    const tekRows=_tekRows(wb); if(tekRows) upsertTekFromRows(tekRows, report);
     const specRows=specRowsChk || firstChk;
     if(specRows) upsertSpecsFromRows(specRows, report);
     // 4) bina listesini Excel'deki binalarla genislet
@@ -11057,7 +11121,7 @@ function showImportReport(rep,baslik){
   const keptHtml=kept.length?`<div style="margin-top:14px"><b style="color:var(--green);font-size:13px">${kept.length} kalem korundu (Excel'de yoktu, silinmedi)</b>
     <div style="font-size:11px;color:var(--mute);margin:4px 0 6px">Bu kalemlere bagli fatura/rapor kaydi var - silinselerdi o kayitlar sahipsiz kalirdi. Listeden gercekten cikarmak icin once bagli kayitlari tasiyin.</div>
     <div style="max-height:180px;overflow:auto;font-size:12px;font-family:var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px">${kept.slice(0,50).map(k=>`<div style="color:var(--green);padding:2px 0">• ${esc(k)}</div>`).join('')}${kept.length>50?`<div style="color:var(--mute)">... +${kept.length-50} daha</div>`:''}</div></div>`:'';
-  const total=rep.matCreated+rep.matUpdated+rep.matDeleted+rep.specCreated+rep.specUpdated+rep.specDeleted;
+  const total=rep.matCreated+rep.matUpdated+rep.matDeleted+rep.specCreated+rep.specUpdated+rep.specDeleted+(rep.tekUrun||0);
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>${esc(baslik)} - Ice Aktarma Sonucu</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div style="text-align:center;padding:10px 0 16px"><div style="font-size:34px">${ok?'✓':'⚠'}</div><div style="color:${ok?'var(--green)':'var(--amber)'};font-weight:700;margin-top:4px">${total} kayit islendi${ok?'':' ('+rep.errors.length+' uyari)'}</div></div>
     <div style="font-size:13px">
@@ -11068,6 +11132,7 @@ function showImportReport(rep,baslik){
       ${stat('Guncellenen spesifikasyon',rep.specUpdated,'var(--blue)')}
       ${stat('Silinen spesifikasyon',rep.specDeleted,'var(--red)')}
       ${rep.ozelMerged?stat('Ayni ozel no ile birlesen satir (miktarlari toplandi)',rep.ozelMerged,'var(--amber)'):''}
+      ${rep.tekUrun?stat('Teknik bilgi guncellenen malzeme ('+rep.tekSatir+' satir)',rep.tekUrun,'var(--blue)'):''}
       ${kept.length?stat('Korunan kalem (bagli kaydi var, silinmedi)',kept.length,'var(--green)'):''}
     </div>
     ${total===0&&!rep.errors.length&&!kept.length?'<p style="color:var(--mute);text-align:center;font-size:13px">Islenecek yeni veri bulunamadi.</p>':''}
