@@ -21342,7 +21342,7 @@ function ihtPdfMarka(adlar){
   return adlar.map(ad=>{
     const kayit=(typeof markaBul==='function')?markaBul(ad):null;
     const logo=(kayit&&kayit.logo)||'';
-    return `<span class="mk">${logo?`<img src="${esc(logo)}" alt="" onerror="this.remove()">`:''}${esc(ad)}</span>`;
+    return `<span class="mk">${logo?`<img src="${esc(logo)}" alt="" onerror="this.remove()">`:''}<span>${esc(ad)}</span></span>`;
   }).join('');
 }
 
@@ -21401,14 +21401,24 @@ body{margin:0;background:#e9ecf1;font-family:Arial,Helvetica,"Segoe UI",sans-ser
 .r .mid{flex:1;min-width:0;overflow:hidden}
 .r .nm{font-size:8.6pt;font-weight:bold;line-height:1.22;color:#111827;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.r .sub{margin-top:.7mm;font-size:6.6pt;color:#4b5563;line-height:1.35;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* KUNYE SATIRI SABIT SUTUNLU IZGARADIR, akan metin DEGIL.
+   Neden: urun kodu satirdan satira cok farkli uzunlukta (7 karakterlik "423909"
+   ile 20 karakterlik "001 046 071010 00 17" ayni listede). Akan metinde kod ne
+   kadar uzunsa marka o kadar saga kayiyor ve logolar sayfada zikzak ciziyordu.
+   Izgarada kod/marka/geri kalan kendi sutununda durur; bir hucre BOS OLSA BILE
+   yerini korur, boylece markalar butun satirlarda ayni dikey cizgide hizalanir. */
+.r .sub{margin-top:.7mm;display:grid;grid-template-columns:32mm 26mm 1fr;gap:0 2mm;
+  align-items:center;font-size:6.6pt;color:#4b5563;line-height:1.35}
+.r .sub>*{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .r .sub b{color:#1f2937}
-.r .sub .kod{font-family:"Courier New",monospace;font-weight:bold;color:#1f2937}
+/* kod biraz daha kucuk punto: en uzun gercek kod (20 karakter) 32mm'ye sigsin */
+.r .sub .kod{font-family:"Courier New",monospace;font-size:6.2pt;font-weight:bold;color:#1f2937}
 .r .sub .sep{color:#c3cad6;margin:0 1.2mm}
-/* marka: logo varsa ad ile yan yana, kagitta da taninsin */
-.mk{display:inline-flex;align-items:center;gap:1mm;vertical-align:-1mm}
-.mk img{height:3.6mm;width:auto;max-width:16mm;object-fit:contain}
+/* marka: logo varsa ad ile yan yana, kagitta da taninsin. Logo genisligi sinirli -
+   genis bir logo (WAGO) kendi sutununu tasirip hizayi bozmasin. */
+.mk{display:inline-flex;align-items:center;gap:1mm;min-width:0;max-width:100%}
+.mk img{height:3.4mm;width:auto;max-width:12mm;object-fit:contain;flex:none}
+.mk span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .mk+.mk{margin-left:1.6mm}
 /* HEDEF: bu urun hangi binanin hangi katina gidecek */
 .r .hd{display:inline-block;margin-top:.7mm;font-size:6.4pt;color:#1f5f8b;
@@ -21437,13 +21447,18 @@ body{margin:0;background:#e9ecf1;font-family:Arial,Helvetica,"Segoe UI",sans-ser
 /* Bir urun satiri. Kunye kutuphaneden, adet/hedef ihtiyac satirindan gelir. */
 function ihtPdfRow(l,sira){
   const k=ihtPdfKunye(l);
-  const kunye=[
-    k.kod?`<span class="kod">${esc(k.kod)}</span>`:'',
-    ihtPdfMarka(k.marka),
+  /* Kunye UC HUCREYE bolunur: kod | marka | geri kalan. Hucreler bos olsa da
+     yazilir - izgarada yer tutmalari markalarin hizasini ayakta tutan sey.
+     Standart/agirlik/kategori en SONDAKI hucrede akar; arkasinda hizalanmasi
+     gereken bir sey olmadigi icin degisken genisligi sorun degil. */
+  const geriKalan=[
     k.standart?`<b>${esc(k.standart)}</b>`:'',
     k.agirlik?esc(k.agirlik):'',
     k.kategori?esc(k.kategori):''
   ].filter(Boolean).join('<span class="sep">•</span>');
+  const kunye=`<span class="kod">${esc(k.kod||'')}</span>`
+    +`<span class="brand">${ihtPdfMarka(k.marka)}</span>`
+    +`<span class="rest">${geriKalan}</span>`;
   const teknik=k.tek.slice(0,6).map(r=>`<u>${esc(r.k)}:</u> ${esc(r.v)}`).join(' &nbsp;·&nbsp; ');
   const hedef=[l.bina,l.kat,l.konum].filter(Boolean).join(' · ');
   const adet=fmtNum(ihtSayi(l.qty));
@@ -21452,7 +21467,7 @@ function ihtPdfRow(l,sira){
     <div class="ft${k.img?'':' no-img'}">${k.img?`<img src="${esc(k.img)}" alt="">`:'foto yok'}</div>
     <div class="mid">
       <div class="nm">${esc(k.ad||'-')}</div>
-      ${kunye?`<div class="sub">${kunye}</div>`:''}
+      <div class="sub">${kunye}</div>
       <div><span class="hd${hedef?'':' yok'}">${hedef?esc(hedef):'hedef belirtilmedi'}</span></div>
       ${teknik?`<div class="tk">${teknik}</div>`:''}
     </div>
