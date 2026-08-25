@@ -1022,6 +1022,12 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .specf-saved-row .m{color:var(--mute);font-family:var(--mono);font-size:11px;white-space:nowrap}
 .specf-note{font-size:11.5px;color:var(--dim);font-family:var(--mono);line-height:1.6;margin:12px 2px 0}
 @media(max-width:860px){ .specfg-head{grid-template-columns:1fr} }
+/* ardisik girisde "bu pencerede N kayit eklendi" seridi */
+.isg-sayac{display:flex;align-items:center;gap:7px;margin-bottom:12px;padding:8px 11px;border-radius:9px;
+  font-size:11.5px;line-height:1.45;color:var(--green);
+  background:color-mix(in srgb,var(--green) 10%,transparent);
+  border:1px solid color-mix(in srgb,var(--green) 32%,transparent)}
+.isg-sayac svg{width:13px;height:13px;flex:0 0 auto}
 /* ISGUCU (ADAM/GUN) bolumu - gun modali */
 .rap-group-isg{border:1px dashed color-mix(in srgb,var(--violet,#a855f7) 45%,transparent)}
 .rap-group-isg .rap-group-h{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:12.5px}
@@ -15047,6 +15053,7 @@ function openIsgModal(idOrNull,presetDate){
   // gun modalindan degil de takvimden/arac cubugundan acildiysa eski gun hatirasini birak -
   // kayittan sonra yanlis gunun modali acilmasin (openRaporModal ile ayni desen)
   if(!document.querySelector('.rapday-modal')) _rDayOpen=null;
+  _isgEklendi=false; _isgGun=''; _isgSayi=0;   // yeni pencere: ardisik giris sayaci sifirdan
   const kisit=myEkipKisiti();
   const ekipler=(DB.rapor.ekipler||[]).slice().sort((a,b)=>a.localeCompare(b,'tr'));
   const curEkip=e?(e.ekip||''):(kisit||'');
@@ -15054,8 +15061,9 @@ function openIsgModal(idOrNull,presetDate){
   const curBina=e?(e.bina||''):(binalar[0]||'');
   const gorevler=[...new Set([...ISG_GOREVLER, ...rEntries().filter(x=>x.isgucu).map(x=>x.malzeme)])].filter(Boolean);
   const curGorev=e?(e.malzeme||''):'';
-  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="modal-head"><h3>${e?'Isgucu Kaydi Duzenle':'Isgucu Kaydi (Adam/Gun)'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal"><div class="modal-head"><h3>${e?'Isgucu Kaydi Duzenle':'Isgucu Kaydi (Adam/Gun)'}</h3><button class="mini-btn" onclick="isgKapat()">x</button></div><div class="modal-body">
     <p class="t-meta" style="margin-bottom:12px">Malzemeye bagli olmayan gunluk isgucu: ambar, genel saha elektrigi... Proje ilerlemesine ve stoklara karismaz.</p>
+    <div id="isg_sayac" class="isg-sayac" style="display:none"></div>
     <div class="frow two"><div><label>Tarih *</label><input id="isg_tarih" type="date" value="${esc(e?e.tarih:(presetDate||rISO(Date.now())))}" ${presetDate&&!e?'readonly class="ro-auto"':''}></div>
       <div><label>Vardiya</label><select id="isg_vardiya">${VARDIYALAR.map(v=>`<option ${((e&&e.vardiya)||'GUNDUZ')===v?'selected':''}>${v}</option>`).join('')}</select></div></div>
     <div class="frow"><label>Gorev *  <span class="t-meta">(listeden secin veya yenisini yazin)</span></label>
@@ -15068,10 +15076,34 @@ function openIsgModal(idOrNull,presetDate){
     <div class="frow two"><div><label>Adam Sayisi *</label><input id="isg_adam" type="number" min="0" step="1" value="${e&&e.adamSayisi!=null?esc(e.adamSayisi):''}" placeholder="orn. 4"></div>
       <div><label>Adam/Gun  <span class="t-meta">(genelde 1)</span></label><input id="isg_gun" type="number" min="0" step="any" value="${e?esc(e.miktar):'1'}"></div></div>
     <div class="frow"><label>Not</label><textarea id="isg_not">${esc(e?(e.notlar||''):'')}</textarea></div>
-  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveIsgEntry(${e?`'${e.id}'`:'null'})">Kaydet</button></div></div></div>`;
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="isgKapat()">Iptal</button>${e?''
+    :`<button class="btn btn-ghost" title="Kaydeder ve pencereyi ACIK BIRAKIR - gun, vardiya, bina ve ekip korunur, yalnizca gorev/adam/not temizlenir" onclick="saveIsgEntry(null,true)">Kaydet ve Yeni</button>`}<button class="btn btn-add" onclick="saveIsgEntry(${e?`'${e.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
+  // Kaza ile kapanma: girilen bilgi dis tiklama / Esc ile ucmasin (bkz. setModalGuard).
+  // Varsayilani olan alanlar (tarih, vardiya, adam/gun, bina, ekip) olcute KONMAZ -
+  // yoksa hic dokunulmamis form da "dolu" sayilip kapanmazdi.
+  setModalGuard(()=>formDoluMu(['isg_gorev','isg_adam','isg_not']),isgKapat);
+  const ilk=document.getElementById('isg_gorev'); if(ilk&&!e) setTimeout(()=>ilk.focus(),0);
 }
-async function saveIsgEntry(id){
+/* ARDISIK GIRIS: bir gunde birden cok isgucu kalemi olur (AMBAR, GENEL SAHA...).
+   "Kaydet ve Yeni" pencereyi kapatmaz; arkadaki liste/gun modali da o an TAZELENMEZ
+   (tazeleme rDayReopen -> closeModal zinciri yuzunden acik pencereyi kapatirdi).
+   Bunun yerine eklendigi isaretlenir, tazeleme pencere KAPANIRKEN bir kez yapilir. */
+let _isgEklendi=false, _isgGun='';
+function isgKapat(){
+  const gun=_rDayOpen||_isgGun, eklendi=_isgEklendi;
+  _isgEklendi=false; _isgGun='';
+  closeModal();                       // _rDayOpen'i sifirlar, o yuzden gun yukarida alindi
+  if(eklendi){ render(); rDayReopen(gun); }
+}
+function isgSayacCiz(){
+  const el=document.getElementById('isg_sayac'); if(!el)return;
+  if(!_isgSayi){ el.style.display='none'; return; }
+  el.style.display='';
+  el.innerHTML=`${icoCheckSm()} Bu pencerede <b>${_isgSayi}</b> kayit eklendi - Iptal/x ile kapatinca hepsi listede gorunur.`;
+}
+let _isgSayi=0;
+async function saveIsgEntry(id,kalsin){
   const _day=_rDayOpen;
   const gv=x=>{ const el=document.getElementById(x); return el?el.value:''; };
   const tarih=gv('isg_tarih'); if(!tarih){ toast('Tarih gerekli','err'); return; }
@@ -15098,6 +15130,18 @@ async function saveIsgEntry(id){
   await sbInsertRaporEntries([entry]);
   DB.rapor.entries.push(entry);
   logAction('define','Isgucu kaydi: '+gorev+' / '+tarih+(ekip?' / '+shortEkip(ekip):''));
+  if(kalsin){
+    // Pencere ACIK kalir: tekrar eden alanlar (gun, vardiya, bina, ekip) korunur,
+    // yalnizca kayda ozel alanlar temizlenir ve odak Gorev'e doner.
+    _isgEklendi=true; _isgGun=tarih; _isgSayi++;
+    ['isg_gorev','isg_adam','isg_not'].forEach(x=>{ const el=document.getElementById(x); if(el) el.value=''; });
+    const g=document.getElementById('isg_gun'); if(g) g.value='1';
+    isgSayacCiz();
+    const f=document.getElementById('isg_gorev'); if(f) f.focus();
+    toast('Eklendi: '+gorev+' - sirakini girebilirsiniz');
+    return;
+  }
+  _isgEklendi=false; _isgGun='';
   closeModal(); render(); rDayReopen(_day||tarih); toast('Isgucu kaydi eklendi');
 }
 // Bir bina|proje grubunun satirlarini ".rap-group" blogu olarak uretir (gun modalinde kullanilir).
