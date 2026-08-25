@@ -20876,6 +20876,7 @@ function renderIhtiyacList(){
       <td><div class="row-actions">
         <button class="mini-btn" title="Listenin icerigini gor" onclick="openIhtiyacDetay('${x.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
         <button class="mini-btn" title="Excel'e aktar - satirlar + bina/kat ozeti" onclick="exportIhtiyacXlsx('${x.id}')">${icoXls()}</button>
+        <button class="mini-btn" title="PDF - fotografli urun listesi, sayfaya 10 urun" onclick="printIhtiyacPdf('${x.id}')">${icoIhtPdf()}</button>
         ${ihtCanEdit()?`<button class="mini-btn" title="${tamam?'Yeniden ac':'Tamamlandi olarak isaretle'}" onclick="ihtDurumToggle('${x.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg></button>`:''}
         ${ihtCanEdit()?`<button class="mini-btn" title="Duzenle" onclick="editIhtiyac('${x.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>`:''}
         ${ihtCanEdit()?`<button class="mini-btn" title="Kopyala - ayni satirlarla yeni liste" onclick="copyIhtiyac('${x.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}
@@ -20939,6 +20940,7 @@ function openIhtiyacDetay(id){
       </div>
       <div class="modal-foot">
         <button class="btn btn-ghost" onclick="exportIhtiyacXlsx('${x.id}')">${icoXls()} Excel</button>
+        <button class="btn btn-ghost" onclick="printIhtiyacPdf('${x.id}')">${icoIhtPdf()} PDF</button>
         <button class="btn btn-add" onclick="closeModal()">Kapat</button></div></div></div>`);
 }
 
@@ -21011,6 +21013,7 @@ function renderIhtiyacForm(){
     <div class="kata-page-foot">
       <button class="btn btn-ghost" style="margin-right:auto" onclick="ihtCancelForm()">${icoArr('left')} Vazgec</button>
       <button class="btn btn-ghost" onclick="exportIhtiyacXlsx(null)" title="Kaydetmeden de aktarilabilir">${icoXls()} Excel'e Aktar</button>
+      <button class="btn btn-ghost" onclick="printIhtiyacPdf(null)" title="Fotografli urun listesi - kaydetmeden de alinabilir">${icoIhtPdf()} PDF</button>
       <button class="btn btn-add" onclick="saveIhtiyac()">Kaydet</button>
     </div>
   </div>`;
@@ -21222,6 +21225,254 @@ function exportIhtiyacXlsx(id){
     .replace(/[\\/:*?"<>|]/g,'-'));
   toast('Excel indirildi');
 }
+
+
+/* ---------- PDF (KOMPAKT URUN LISTESI) ----------
+   Tedarikciye/sahaya giden gorsel cikti: her satir bir urun kunyesi + ISTENEN ADET.
+   Sayfaya SABIT 10 urun girer (kullanici karari) - bu yuzden satir yuksekligi de
+   sabittir ve icerik tasarsa satirin icinde kirpilir; tam teknik doku Excel'de ve
+   kutuphanededir. Sayfalama tutanakla ayni desen: satirlar 10'arli bloklara
+   bolunur, her blok kendi antetli/altbilgili .page kutusuna girer.
+
+   PDF KUTUPHANESI YOK (package.json: xlsx, three, supabase...): cikti tutanakta
+   oldugu gibi ayri bir pencerede uretilir, tarayicinin "PDF olarak kaydet"
+   hedefiyle dosyaya doner. Yeni bagimlilik eklenmedi. */
+const IHT_PDF_ROWS=10;   // sayfa basina urun - satir yuksekligi (21.5mm) buna gore secildi
+
+/* Satirin bagli oldugu kutuphane kaydinin TAM kunyesi.
+   tutKaynakBul() YETMEZ: o tutanak icin daraltilmis bir kayit dondurur
+   (ad/kod/marka/birim/renk/img) - standart no, birim agirlik, kategori ve teknik
+   satirlar orada YOKTUR (bkz. tutNormProje). Bu yuzden ham kayit okunur ve uc
+   kutuphanenin farkli alan adlari (proje: unit/weight · alet: birim/agirlik)
+   burada tek bicime cevrilir.
+   Kutuphaneye BAGLI OLMAYAN satir (elle yazilmis) da calisir: kunye satirin
+   kendi alanlarindan kurulur, kart bos yerine yazilani gosterir. */
+function ihtPdfKunye(l){
+  const k={ ad:l.ad||'', kod:l.code||'', kategori:'', marka:l.marka?[l.marka]:[],
+    standart:'', birim:l.birim||'', agirlik:'', tek:[], not:'', img:'' };
+  if(!l.matId) return k;
+  const src=l.matSrc||'';
+  const ekle=(ad,deger)=>{ const v=String(deger==null?'':deger).trim(); if(v) k.tek.push({k:ad,v}); };
+
+  if(!src||src==='proje'){
+    const m=getMaterial(l.matId);
+    if(m){
+      k.ad=m.name||k.ad; k.kod=m.code||k.kod;
+      k.marka=matBrandParts(m.brand);
+      k.standart=m.standart||''; k.birim=m.unit||k.birim;
+      k.agirlik=(m.weight!=null&&m.weight!=='')?fmtNum(m.weight)+' kg':'';
+      k.kategori=m.cat||''; k.not=String(m.note||'').trim();
+      k.img=m.img||m.img2||'';
+      matTek(m).forEach(r=>ekle(r.k,r.v));
+      (m.tags||[]).length&&ekle('Etiket',(m.tags||[]).join(', '));
+      return k;
+    }
+  }
+  if(!src||src==='gecici'){
+    const x=((DB.gecici&&DB.gecici.lib)||[]).find(y=>y&&y.id===l.matId);
+    if(x){
+      k.ad=x.ad||k.ad; k.kod=x.kod||k.kod; k.marka=x.marka?matBrandParts(x.marka):[];
+      k.birim=x.unit||k.birim; k.kategori=x.grup||''; k.img=x.img||'';
+      k.not=String(x.note||'').trim();
+      ekle('Renk',x.renk); ekle('Barkod',x.barkod);
+      return k;
+    }
+  }
+  if(!src||src==='alet'){
+    const x=aletLib().find(y=>y&&y.id===l.matId);
+    if(x){
+      k.ad=x.ad||k.ad; k.kod=x.kod||k.kod; k.marka=x.marka?matBrandParts(x.marka):[];
+      k.birim=x.birim||k.birim; k.kategori=x.grup||''; k.img=x.img||x.img2||'';
+      k.agirlik=(x.agirlik!=null&&x.agirlik!=='')?fmtNum(x.agirlik)+' kg':'';
+      k.not=String(x.note||'').trim();
+      ekle('Olcu',x.olcu); ekle('Madde',x.madde); ekle('Renk',x.renk); ekle('Barkod',x.barkod);
+      return k;
+    }
+  }
+  return k;
+}
+// marka adi + (varsa) kutuphanedeki logo. Logo linki kirilirsa hucre yalnizca adla
+// kalir (onerror ile silinir) - kagitta kirik resim ikonu birakmayiz.
+function ihtPdfMarka(adlar){
+  if(!adlar||!adlar.length) return '';
+  return adlar.map(ad=>{
+    const kayit=(typeof markaBul==='function')?markaBul(ad):null;
+    const logo=(kayit&&kayit.logo)||'';
+    return `<span class="mk">${logo?`<img src="${esc(logo)}" alt="" onerror="this.remove()">`:''}${esc(ad)}</span>`;
+  }).join('');
+}
+
+function ihtPdfCss(){ return `
+@page{size:A4;margin:0}
+*{box-sizing:border-box}
+body{margin:0;background:#e9ecf1;font-family:Arial,Helvetica,"Segoe UI",sans-serif;color:#1f2937;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact}
+.tbar{position:sticky;top:0;z-index:9;display:flex;gap:10px;align-items:center;justify-content:center;
+  padding:10px;background:#1f2937;color:#fff;font-size:12.5px}
+.tbar button{background:#3b82f6;color:#fff;border:none;border-radius:7px;padding:7px 16px;
+  font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.tbar span{opacity:.72}
+@media print{.tbar{display:none}body{background:#fff}}
+
+/* Sayfa kutusu kagittan KISA tutulur (290mm): tutanak ciktisindaki ayni yuvarlama
+   tuzagi - 297mm tarayicida 297.1mm'ye yuvarlanip her sayfanin arkasina bos yaprak
+   dusuruyordu. Ayrinti icin bkz. tutanakPrintCss. */
+.page{width:210mm;min-height:290mm;background:#fff;margin:14px auto;padding:9mm 12mm;
+  display:flex;flex-direction:column;box-shadow:0 2px 14px rgba(0,0,0,.18)}
+@media print{.page{margin:0;box-shadow:none;page-break-after:always;break-after:page}
+  .sheets .page:last-child{page-break-after:auto;break-after:auto}}
+
+/* antet - tutanakla AYNI kaynaktan (app_settings > tutanakAntet), ayri ayar yok */
+.ph-head{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:10mm}
+.ph-logo{height:10mm;width:auto;object-fit:contain}
+.ph-firm{text-align:right;font-size:6.4pt;line-height:1.3;color:#8a93a3}
+.ph-firm b{display:block;font-size:7.4pt;color:#374151}
+.ph-rule{height:1.5px;background:#3e5680;margin-top:2mm}
+.ph{color:#b9c0cc}
+
+.ih-title{display:flex;align-items:flex-end;justify-content:space-between;gap:8mm;margin:3mm 0 2.4mm}
+.ih-title h1{margin:0;font-size:14pt;letter-spacing:1.6px;font-weight:bold;color:#1f2937}
+.ih-title h1 small{display:block;font-size:6.2pt;letter-spacing:1.2px;color:#a3abb8;font-weight:normal;margin-top:.8mm}
+.ih-meta{text-align:right;font-size:7.2pt;color:#4b5563;line-height:1.5}
+.ih-meta b{color:#1f2937}
+
+/* SUTUN BASLIGI: satirlarin ne oldugunu bir kez soyler, her satirda tekrar etmez */
+.ih-cols{display:flex;gap:3mm;align-items:center;font-size:5.8pt;letter-spacing:.6px;
+  color:#8a93a3;border-bottom:1.2px solid #3e5680;padding-bottom:1.2mm;margin-bottom:.6mm}
+.ih-cols .c1{width:7mm;text-align:center;flex:none}
+.ih-cols .c2{width:20mm;flex:none}
+.ih-cols .c3{flex:1;min-width:0}
+.ih-cols .c4{width:26mm;text-align:center;flex:none}
+
+/* URUN SATIRI. Yukseklik SABIT (21.5mm): sayfaya tam 10 urun sigsin diye. Tasan
+   icerik satirin icinde kirpilir - kagit duzeni bozulmaz, tam dokum Excel'dedir. */
+.r{display:flex;gap:3mm;align-items:center;height:21.5mm;padding:1.4mm 0;
+  border-bottom:.5px solid #dfe4ea;overflow:hidden;break-inside:avoid;page-break-inside:avoid}
+.r:last-child{border-bottom:none}
+.r .no{width:7mm;flex:none;text-align:center;font-size:9pt;font-weight:bold;color:#9aa3af}
+.r .ft{width:20mm;height:18.5mm;flex:none;border:.5px solid #e3e7ee;border-radius:2mm;
+  background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.r .ft img{max-width:100%;max-height:100%;object-fit:contain}
+.r .ft.no-img{background:#f6f8fb;color:#c3cad6;font-size:5.4pt;text-align:center;padding:1mm;line-height:1.3}
+.r .mid{flex:1;min-width:0;overflow:hidden}
+.r .nm{font-size:8.6pt;font-weight:bold;line-height:1.22;color:#111827;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.r .sub{margin-top:.7mm;font-size:6.6pt;color:#4b5563;line-height:1.35;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r .sub b{color:#1f2937}
+.r .sub .kod{font-family:"Courier New",monospace;font-weight:bold;color:#1f2937}
+.r .sub .sep{color:#c3cad6;margin:0 1.2mm}
+/* marka: logo varsa ad ile yan yana, kagitta da taninsin */
+.mk{display:inline-flex;align-items:center;gap:1mm;vertical-align:-1mm}
+.mk img{height:3.6mm;width:auto;max-width:16mm;object-fit:contain}
+.mk+.mk{margin-left:1.6mm}
+/* HEDEF: bu urun hangi binanin hangi katina gidecek */
+.r .hd{display:inline-block;margin-top:.7mm;font-size:6.4pt;color:#1f5f8b;
+  background:#eef5fb;border:.5px solid #cfe1f0;border-radius:1.4mm;padding:.3mm 1.6mm;
+  max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r .hd.yok{color:#a3671f;background:#fdf5e8;border-color:#f0e0c2}
+/* TEKNIK BILGI: kagit alani dar oldugu icin tablo degil, tek satirda "ad: deger" dizisi */
+.r .tk{margin-top:.6mm;font-size:6pt;color:#6b7280;line-height:1.3;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r .tk u{text-decoration:none;color:#9aa3af}
+/* ISTENEN ADET: sayfadaki en vurgulu oge - PDF'in varlik sebebi */
+.r .qty{width:26mm;flex:none;text-align:center;border:1px solid #3e5680;border-radius:2mm;
+  padding:1.4mm .8mm;background:#f4f7fb}
+.r .qty b{display:block;font-size:13pt;font-weight:bold;color:#1f2937;line-height:1}
+.r .qty span{display:block;font-size:6pt;color:#5b6b7f;margin-top:.8mm;letter-spacing:.4px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.ih-spacer{flex:1}
+.ih-tot{display:flex;justify-content:flex-end;gap:8mm;border-top:1.2px solid #3e5680;
+  padding-top:1.6mm;margin-top:1.6mm;font-size:7.4pt;color:#4b5563}
+.ih-tot b{color:#1f2937;font-size:9pt;margin-left:1.4mm}
+.ph-foot{border-top:.5px solid #d8dde5;margin-top:2mm;padding-top:1.4mm;
+  font-size:5.8pt;letter-spacing:.5px;color:#a3abb8;display:flex;justify-content:space-between}
+`; }
+
+/* Bir urun satiri. Kunye kutuphaneden, adet/hedef ihtiyac satirindan gelir. */
+function ihtPdfRow(l,sira){
+  const k=ihtPdfKunye(l);
+  const kunye=[
+    k.kod?`<span class="kod">${esc(k.kod)}</span>`:'',
+    ihtPdfMarka(k.marka),
+    k.standart?`<b>${esc(k.standart)}</b>`:'',
+    k.agirlik?esc(k.agirlik):'',
+    k.kategori?esc(k.kategori):''
+  ].filter(Boolean).join('<span class="sep">•</span>');
+  const teknik=k.tek.slice(0,6).map(r=>`<u>${esc(r.k)}:</u> ${esc(r.v)}`).join(' &nbsp;·&nbsp; ');
+  const hedef=[l.bina,l.kat,l.konum].filter(Boolean).join(' · ');
+  const adet=fmtNum(ihtSayi(l.qty));
+  return `<div class="r">
+    <div class="no">${sira}</div>
+    <div class="ft${k.img?'':' no-img'}">${k.img?`<img src="${esc(k.img)}" alt="">`:'foto yok'}</div>
+    <div class="mid">
+      <div class="nm">${esc(k.ad||'-')}</div>
+      ${kunye?`<div class="sub">${kunye}</div>`:''}
+      <div><span class="hd${hedef?'':' yok'}">${hedef?esc(hedef):'hedef belirtilmedi'}</span></div>
+      ${teknik?`<div class="tk">${teknik}</div>`:''}
+    </div>
+    <div class="qty"><b>${adet}</b><span>${esc(k.birim||l.birim||'adet')}</span></div>
+  </div>`;
+}
+
+function ihtPdfHtml(x){
+  const A=tutAntet();
+  const ls=ihtFilledLines(x);
+  const tt=ihtTotals(x);
+  // satirlar 10'arli bloklara bolunur; her blok kendi antetli sayfasina girer
+  const bloklar=[];
+  for(let i=0;i<ls.length;i+=IHT_PDF_ROWS) bloklar.push(ls.slice(i,i+IHT_PDF_ROWS));
+  const toplam=bloklar.length;
+  const hedefler=new Set(ls.filter(ihtHedefTam).map(l=>l.bina+'|@|'+l.kat));
+  const sayfalar=bloklar.map((blok,bi)=>{
+    const ilk=bi*IHT_PDF_ROWS;
+    const satirlar=blok.map((l,i)=>ihtPdfRow(l,ilk+i+1)).join('');
+    // toplam serisi YALNIZ son sayfada: ara sayfalarda "toplam" yaniltici olurdu
+    const tot=(bi===toplam-1)?`<div class="ih-tot">
+        <div>Toplam Kalem<b>${fmtNum(tt.kalem)}</b></div>
+        <div>Toplam Miktar<b>${fmtNum(tt.miktar)}</b></div>
+        <div>Hedef<b>${fmtNum(hedefler.size)} kat</b></div>
+      </div>`:'';
+    return `<div class="page">
+      ${tutPrintHead(A)}
+      <div class="ih-title">
+        <h1>İHTİYAÇ LİSTESİ<small>ЗАЯВКА НА МАТЕРИАЛЫ</small></h1>
+        <div class="ih-meta"><b>${esc(x.ad||'-')}</b><br>
+          ${esc(fmtDate(x.tarih))}${x.bina?' &nbsp;·&nbsp; '+esc(x.bina):''}<br>
+          ${fmtNum(tt.kalem)} kalem${x.olusturan?' &nbsp;·&nbsp; '+esc(x.olusturan):''}</div>
+      </div>
+      <div class="ih-cols"><div class="c1">#</div><div class="c2">GÖRSEL / ФОТО</div>
+        <div class="c3">MALZEME · KÜNYE · HEDEF</div><div class="c4">İSTENEN / КОЛ-ВО</div></div>
+      ${satirlar}
+      <div class="ih-spacer"></div>
+      ${tot}
+      <div class="ph-foot"><span>İHTİYAÇ LİSTESİ &nbsp;/&nbsp; ЗАЯВКА НА МАТЕРИАЛЫ</span>
+        <span>Sayfa / Стр. ${bi+1} / ${toplam}</span></div>
+    </div>`;
+  }).join('');
+  return `<!doctype html><html lang="tr"><head><meta charset="utf-8">
+    <title>${esc(x.ad||'Ihtiyac Listesi')}</title><style>${ihtPdfCss()}</style></head>
+  <body>
+    <div class="tbar"><button onclick="window.print()">Yazdır / PDF olarak kaydet</button>
+      <span>Yazdırma penceresinde "Hedef: PDF olarak kaydet" seçerek dosya olarak alabilirsiniz.</span></div>
+    <div class="sheets">${sayfalar}</div>
+    <script>window.addEventListener('load',function(){setTimeout(function(){try{window.print()}catch(e){}},350)})<\/script>
+  </body></html>`;
+}
+
+// id verilirse kayitli liste, verilmezse duzenlenmekte olan taslak basilir
+function printIhtiyacPdf(id){
+  const x=id?(DB.ihtiyaclar||[]).find(y=>y.id===id):_IHT;
+  if(!x){ toast('Ihtiyac listesi bulunamadi','err'); return; }
+  if(!ihtFilledLines(x).length){ toast('Ciktida gosterilecek malzeme satiri yok','err'); return; }
+  const w=window.open('','_blank');
+  if(!w){ toast('Cikti penceresi engellendi - tarayicinin acilir pencere iznini verin','err'); return; }
+  w.document.write(ihtPdfHtml(x));
+  w.document.close();
+  try{ w.focus(); }catch(e){}
+}
+function icoIhtPdf(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 18h4"/></svg>'; }
 
 /* ---------- BACKUP ---------- */
 /* ==================================================================
