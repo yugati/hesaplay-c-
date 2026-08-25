@@ -795,6 +795,31 @@ CREATE TRIGGER gunluk_isler_updated_at BEFORE UPDATE ON public.gunluk_isler
   FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
 
 -- ============================================================
+-- İHTİYAÇ LİSTESİ (sepet) — ihtiyac_listeleri
+-- Sahada toplanan malzeme ihtiyacı: kütüphaneden ürün seçilir, miktarı yazılır
+-- ve her satır için o ürünün HANGİ BİNANIN HANGİ KATINA gideceği işaretlenir.
+-- Siparişin ön adımıdır; sipariş/stok kaydı üretmez.
+-- Ayrıntı ve tek başına çalıştırma: migration_ihtiyac.sql
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.ihtiyac_listeleri (
+  id          TEXT        NOT NULL PRIMARY KEY,
+  data        JSONB       NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ihtiyac_listeleri_created_at_idx ON public.ihtiyac_listeleri (created_at);
+CREATE INDEX IF NOT EXISTS ihtiyac_listeleri_bina_idx       ON public.ihtiyac_listeleri ((data->>'bina'));
+CREATE INDEX IF NOT EXISTS ihtiyac_listeleri_durum_idx      ON public.ihtiyac_listeleri ((data->>'durum'));
+
+ALTER TABLE public.ihtiyac_listeleri ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.ihtiyac_listeleri FROM anon, authenticated;
+
+DROP TRIGGER IF EXISTS ihtiyac_listeleri_updated_at ON public.ihtiyac_listeleri;
+CREATE TRIGGER ihtiyac_listeleri_updated_at BEFORE UPDATE ON public.ihtiyac_listeleri
+  FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+
+-- ============================================================
 -- AŞAMA 3 — ANON ERİŞİMİNİ KAPAT  (dosyanın EN SONU, sırası önemli)
 --
 -- Yukarıdaki bölümlerin anon'a verdiği tüm yetkiler burada geri alınır.

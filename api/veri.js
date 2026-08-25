@@ -27,7 +27,7 @@ const VARLIK_TABLOLARI = new Set([
   'rapor_entries', 'gecici_lib', 'gecici_moves', 'gecici_orders',
   'proje_sartnames', 'proje_materials', 'proje_specs', 'proje_items',
   'proje_orders', 'proje_alternatives', 'proje_bina_modelleri', 'proje_lokasyonlar',
-  'gunluk_isler',
+  'gunluk_isler', 'ihtiyac_listeleri',
   'audit_log',
 ])
 // anahtar/deger ve basit liste tablolari

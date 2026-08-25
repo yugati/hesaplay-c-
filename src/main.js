@@ -158,6 +158,11 @@ import {
   sbUpdateGunlukIs,
   sbDeleteGunlukIs,
   sbWipeGunlukIslerData,
+  sbGetIhtiyacListeleri,
+  sbInsertIhtiyacListesi,
+  sbUpdateIhtiyacListesi,
+  sbDeleteIhtiyacListesi,
+  sbWipeIhtiyacData,
   // Sirketler
   sbGetCompanies,
   sbInsertCompany,
@@ -421,6 +426,17 @@ window.sbInsertGunlukIs    = guardedThrow('proje', 'create', sbInsertGunlukIs)
 window.sbUpdateGunlukIs    = guardedThrow('proje', 'update', sbUpdateGunlukIs)
 window.sbDeleteGunlukIs    = guardedThrow('proje', 'delete', sbDeleteGunlukIs)
 window.sbWipeGunlukIslerData = sbWipeGunlukIslerData
+
+// ─── Ihtiyac Listesi (sepet) ─────────────────────────────────────────────────
+// 'siparis' modulunun yetkisini kullanir: Tum Siparisler'i goren listeleri gorur,
+// siparis olusturabilen liste acar/duzenler. Gunluk Isler'deki gerekce burada da
+// gecerli: guardedThrow, cunku guardedSafe hatayi yutup undefined donuyor ve cagiran
+// "kaydedildi" sanip listeyi yerelde tutuyordu - sayfa yenilenince kayit yoktu.
+window.sbGetIhtiyacListeleri   = sbGetIhtiyacListeleri
+window.sbInsertIhtiyacListesi  = guardedThrow('siparis', 'create', sbInsertIhtiyacListesi)
+window.sbUpdateIhtiyacListesi  = guardedThrow('siparis', 'update', sbUpdateIhtiyacListesi)
+window.sbDeleteIhtiyacListesi  = guardedThrow('siparis', 'delete', sbDeleteIhtiyacListesi)
+window.sbWipeIhtiyacData       = sbWipeIhtiyacData
 
 // ─── Sirketler ───────────────────────────────────────────────────────────────
 window.sbGetCompanies      = sbGetCompanies

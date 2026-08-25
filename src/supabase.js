@@ -661,6 +661,18 @@ export async function sbUpdateGunlukIs(id, e) { return sbUpdateEntity('gunluk_is
 export async function sbDeleteGunlukIs(id) { return sbDeleteEntity('gunluk_isler', id) }
 export async function sbWipeGunlukIslerData() { await sbDeleteAll('gunluk_isler') }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Ihtiyac Listesi (sepet) — kutuphaneden secilen urunlerin bina/kat hedefiyle listesi
+// 'siparis' modulunun yetkisiyle calisir; siparisin ON ADIMIDIR, stok/hareket uretmez.
+// Tablo migration_ihtiyac.sql ile kurulur; kurulmamissa acilis kilitlenmesin diye
+// yukleme hataya toleranslidir (gunluk_isler / tutanaklar ile ayni desen).
+// ─────────────────────────────────────────────────────────────────────────────
+export async function sbGetIhtiyacListeleri() { return sbGetAll('ihtiyac_listeleri') }
+export async function sbInsertIhtiyacListesi(e) { return sbInsertEntity('ihtiyac_listeleri', e) }
+export async function sbUpdateIhtiyacListesi(id, e) { return sbUpdateEntity('ihtiyac_listeleri', id, e) }
+export async function sbDeleteIhtiyacListesi(id) { return sbDeleteEntity('ihtiyac_listeleri', id) }
+export async function sbWipeIhtiyacData() { await sbDeleteAll('ihtiyac_listeleri') }
+
 export async function sbGetCompanies() { return sbGetAll('companies') }
 export async function sbInsertCompany(e) { return sbInsertEntity('companies', e) }
 export async function sbUpdateCompany(id, e) { return sbUpdateEntity('companies', id, e) }
@@ -851,6 +863,17 @@ export async function sbLoadAllData(scope) {
       return []
     })
   }
+  /* IHTIYAC LISTESI 'siparis' modulunun ekranidir; needProjeFull ile ayni kosul
+     ('siparis' VEYA 'proje') - canSeeOrders() siparis bagimsizlasmadan onceki
+     kullanicilari proje yetkisiyle iceri aldigi icin ikisi de yukler.
+     Tablo migration_ihtiyac.sql ile kurulur; kurulmamissa TUM yuklemeyi
+     kilitlememesi icin hataya toleransli. Eksikse ekran "once SQL'i calistirin" der. */
+  if (needProjeFull) {
+    tasks.ihtiyaclar = sbGetAll('ihtiyac_listeleri').catch(() => {
+      if (typeof window !== 'undefined') window.__ihtiyacTableMissing = true
+      return []
+    })
+  }
   if (needCompanies) tasks.companies = sbGetAll('companies').catch(() => [])
   /* DENETIM KAYDI ACILISTA YUKLENMEZ (kota).
      Eskiden burada 2000 satirin TAM verisi cekiliyordu: olculdu, ~347 KB - ve
@@ -900,6 +923,7 @@ export async function sbLoadAllData(scope) {
     companies: r.companies || [],
     tutanaklar: r.tutanaklar || [],
     gunlukIsler: r.gunlukIsler || [],
+    ihtiyaclar: r.ihtiyaclar || [],
     alet: { items: r.aletItems || [], lib: r.aletLib || [] },
     saha: {
       bg: (r.sahaSettings && r.sahaSettings.bg) || null,
@@ -980,6 +1004,8 @@ export async function sbMigrateLocalDB(localDB) {
     push('Tutanaklar', sbInsertEntities('tutanaklar', localDB.tutanaklar))
   if (localDB.gunlukIsler?.length)
     push('Gunluk Isler', sbInsertEntities('gunluk_isler', localDB.gunlukIsler))
+  if (localDB.ihtiyaclar?.length)
+    push('Ihtiyac Listeleri', sbInsertEntities('ihtiyac_listeleri', localDB.ihtiyaclar))
   if (localDB.gecici?.lib?.length)
     push('Gecici Elektrik Kutuphanesi', sbInsertEntities('gecici_lib', localDB.gecici.lib))
   if (localDB.gecici?.moves?.length)
@@ -1049,7 +1075,7 @@ export async function sbWipeAllData() {
     'proje_bina_modelleri', 'proje_lokasyonlar', 'proje_alternatives', 'companies',
     'alet_items', 'alet_lib', 'saha_panels', 'saha_lines', 'saha_sockets',
     'rapor_entries', 'tutanaklar', 'gecici_lib', 'gecici_moves', 'gecici_orders',
-    'gunluk_isler',
+    'gunluk_isler', 'ihtiyac_listeleri',
   ]
   await Promise.allSettled([
     ...textIdTables.map(t => sbDeleteAll(t)),
