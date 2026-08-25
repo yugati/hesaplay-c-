@@ -11896,7 +11896,12 @@ async function confirmWipe(){
     if(sel.includes('saha')){ await sbWipeSahaData(); DB.saha={bg:null,bgName:'',panels:[],lines:[],sockets:[]}; }
     if(sel.includes('gecici')){ await sbWipeGeciciData(); DB.gecici={lib:[],moves:[],orders:[]}; }
     if(sel.includes('rapor')){ await sbWipeRaporData(); DB.rapor={entries:[],ekipler:[],meta:{}}; }
-    if(sel.includes('tutanak')){ await sbWipeTutanakData(); DB.tutanaklar=[]; }
+    if(sel.includes('tutanak')){
+      // kayitlar gidiyorsa yuklenen nushalar da kovada yetim kalmasin
+      const yollar=(DB.tutanaklar||[]).map(t=>t.pdf&&t.pdf.path).filter(Boolean);
+      await sbWipeTutanakData(); DB.tutanaklar=[];
+      if(window.sbBelgeSil) yollar.forEach(p=>window.sbBelgeSil(p));
+    }
     if(sel.includes('gunluk')){ await sbWipeGunlukIslerData(); DB.gunlukIsler=[]; }
     const silinenler=sel.map(k=>labels[k]).join(', ');
     logAction('wipe', silinenler+' verileri temizlendi');
@@ -19525,6 +19530,69 @@ function tutFilledLines(t){ return ((t&&t.lines)||[]).filter(l=>String(l.ad||'')
 function tutTotals(t){ const ls=tutFilledLines(t);
   return { kalem:ls.length, miktar:ls.reduce((s,l)=>s+(Number(String(l.qty).replace(',','.'))||0),0) }; }
 
+/* ===== TUTANAK PDF'I (imzalanmis / taranmis nusha) ================================
+   Tutanak DOLDURULURKEN de yuklenebilir, kaydedildikten sonra da degistirilebilir.
+   Uygulamanin urettigi ciktinin yerine GECMEZ - "Yazdir" hep canli veriden basar;
+   burasi islak imzali nushanin arsivi.
+
+   Dosya kayda GOMULMEZ: private 'belgeler' kovasina gider, kayitta {name,path,size}
+   kunyesi durur (fatura PDF'iyle ayni duzen, bkz. pickPdf). Sunucu tarafi zaten
+   haziridi - api/dosya.js TURLER.tutanak 'pdf' uzantisina izin veriyor.
+
+   modalPdf DEGIL _TUT.pdf kullanilir: tutanak formu modal degil TAM SAYFA, ve
+   closeModal() modalPdf'i sifirliyor (bkz. closeModal) - araya bir modal girse
+   secim sessizce kaybolurdu. _TUT.pdf ise render()'lardan da sag cikar.
+
+   YETIM DOSYA: yukleme secim aninda olur, kayit henuz yazilmamis olabilir. Bu
+   oturumda yuklenmis ama kayda islenmemis dosya HEMEN silinir; kayitta duran eski
+   dosya ise ancak kaydetme BASARILI olunca silinir (yoksa Vazgec sonrasi kayit
+   var olmayan bir dosyayi gosterirdi). */
+function tutPdfKayitli(){                 // bu tutanagin KAYDEDILMIS pdf yolu
+  const t=(DB.tutanaklar||[]).find(x=>_TUT&&x.id===_TUT.id);
+  return (t&&t.pdf&&t.pdf.path)||'';
+}
+// kayda islenmemis (yalnizca bu oturumda yuklenmis) dosyayi kovadan al
+function tutPdfCopAt(p){
+  if(p&&p.path&&p.path!==tutPdfKayitli()&&window.sbBelgeSil) window.sbBelgeSil(p.path);
+}
+function tutPdfKutuHtml(){
+  const p=_TUT&&_TUT.pdf;
+  if(!p) return `<div class="drop" onclick="document.getElementById('tutPdfInput').click()">${icoDoc()}<div style="margin-top:6px">PDF ekleyin</div></div>`;
+  return `<div class="file-pill" style="margin:0">${icoDoc()}
+    <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name||'belge')}</span>
+    ${p.size?`<span style="opacity:.7;flex:none">· ${fmtBytes(p.size)}</span>`:''}
+    <button type="button" title="Yeni sekmede ac" style="color:var(--blue)" onclick="tutPdfAc()">Ac</button>
+    <button type="button" title="Kaldir" onclick="tutPdfSil()">&times;</button></div>`;
+}
+function tutPdfCiz(){ const el=document.getElementById('tutPdfKutu'); if(el) el.innerHTML=tutPdfKutuHtml(); }
+function tutPdfAc(){ acPdf(_TUT&&_TUT.pdf); }
+async function tutPdfSec(e){
+  const f=e.target.files[0]; e.target.value=''; if(!f||!_TUT)return;
+  if(!/\.pdf$/i.test(f.name)){ toast('Yalnizca PDF yuklenebilir','err'); return; }
+  if(f.size>20*1024*1024){ toast("PDF 20MB'tan buyuk",'err'); return; }
+  const onceki=_TUT.pdf||null;
+  const el=document.getElementById('tutPdfKutu');
+  if(el) el.innerHTML=`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(f.name)} <span style="opacity:.7">· yukleniyor…</span></div>`;
+  try{
+    _TUT.pdf=await window.sbBelgeYukle('tutanak',_TUT.id,f);
+    tutPdfCopAt(onceki);                 // degistirilen dosya kayda hic islenmediyse birakma
+    tutPdfCiz();
+    toast('Tutanak PDF yuklendi - Kaydet ile tutanaga islenir');
+  }catch(err){
+    _TUT.pdf=onceki; tutPdfCiz();
+    toast('PDF yuklenemedi: '+((err&&err.message)||'baglanti hatasi'),'err');
+  }
+}
+function tutPdfSil(){
+  if(!_TUT||!_TUT.pdf)return;
+  const p=_TUT.pdf; _TUT.pdf=null; tutPdfCiz();
+  tutPdfCopAt(p);                        // kayitta duran dosya saveTutanak'ta silinir
+  toast('PDF kaldirildi - Kaydet ile islenir');
+}
+// listeden acma (kunye kayittan okunur, openProjeOrderPdf'in esi)
+function tutPdfAcId(id){ const t=(DB.tutanaklar||[]).find(x=>x.id===id); acPdf(t&&t.pdf); }
+function icoPdfSm(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/></svg>'; }
+
 function renderTutanakPage(){ return (TUTV.mode==='form'&&_TUT) ? renderTutanakForm() : renderTutanakList(); }
 
 // tablo henuz olusturulmamissa (SQL calistirilmadi) ekranin basinda net uyari durur
@@ -19560,7 +19628,8 @@ function renderTutanakList(){
     const tt=tutTotals(t);
     rows+=`<tr>
       <td><span class="tut-no">${esc(t.no||'-')}</span>${tutIadeVar(t)
-        ?`<span class="tut-iade" title="${esc(tutTurOf(t).tr)} - ${esc(tutIadeOzet(t))}">IADE</span>`:''}</td>
+        ?`<span class="tut-iade" title="${esc(tutTurOf(t).tr)} - ${esc(tutIadeOzet(t))}">IADE</span>`:''}${t.pdf
+        ?`<span class="tut-iade" style="background:color-mix(in srgb,var(--blue) 16%,transparent);color:var(--blue)" title="Imzali/taranmis nusha yuklu: ${esc(t.pdf.name||'belge')}">PDF</span>`:''}</td>
       <td class="t-meta">${esc(fmtDate(t.tarih))}${tutIadeTarihi(t)
         ?`<div style="color:var(--amber);font-size:11px">iade: ${esc(fmtDate(tutIadeTarihi(t)))}</div>`:''}</td>
       <td><span class="tut-party-tag"><i style="background:#9e5f5f"></i>${esc(tutFirma(t,'eden')||'-')}</span></td>
@@ -19569,6 +19638,7 @@ function renderTutanakList(){
       <td class="t-qty">${fmtNum(tt.kalem)} kalem <span style="color:var(--mute)">· ${fmtNum(tt.miktar)}</span></td>
       <td><div class="row-actions">
         <button class="mini-btn" title="Yazdir / PDF olarak kaydet" onclick="printTutanak('${t.id}')">${icoTutPrint()}</button>
+        ${t.pdf?`<button class="mini-btn" title="Yuklenen tutanak PDF'ini ac: ${esc(t.pdf.name||'belge')}" onclick="tutPdfAcId('${t.id}')">${icoPdfSm()}</button>`:''}
         ${canEdit('rapor')?`<button class="mini-btn" title="Duzenle" onclick="editTutanak('${t.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>`:''}
         ${canEdit('rapor')?`<button class="mini-btn" title="Kopyala - ayni satirlarla yeni tutanak" onclick="copyTutanak('${t.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}
         ${canDelete('rapor')?`<button class="mini-btn del" title="Sil" onclick="delTutanak('${t.id}')">${icoTrash()}</button>`:''}
@@ -19681,6 +19751,7 @@ function copyTutanak(id){
   const t=(DB.tutanaklar||[]).find(x=>x.id===id); if(!t)return;
   const c=JSON.parse(JSON.stringify(t));
   c.id=uid(); c.no=tutNextNo(); c.tarih=Date.now(); c._yeni=true;
+  delete c.pdf;   // imzali nusha ASLINA aittir - kopya yeni bir tutanaktir
   c.createdBy=(CURRENT_USER&&CURRENT_USER.username)||''; c.createdAt=Date.now(); c.updatedAt=Date.now();
   (c.lines||[]).forEach(l=>l.id=uid());
   _TUT=c; TUTV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
@@ -19692,6 +19763,8 @@ async function delTutanak(id){
   const tt=tutTotals(t);
   if(!confirm(`"${t.no||'Tutanak'}" tutanagi silinecek.\n\nTarih: ${fmtDate(t.tarih)}\nTeslim eden: ${tutFirma(t,'eden')||'-'}\nTeslim alan: ${tutFirma(t,'alan')||'-'}\nIcerik: ${tt.kalem} kalem\n\nBu islem geri alinamaz. Devam edilsin mi?`))return;
   await sbDeleteTutanak(id);
+  // kayit gidiyorsa yuklenen nusha da kovada kalmasin
+  if(t.pdf&&t.pdf.path&&window.sbBelgeSil) window.sbBelgeSil(t.pdf.path);
   DB.tutanaklar=(DB.tutanaklar||[]).filter(x=>x.id!==id);
   logAction('delete','Tutanak silindi: '+(t.no||id));
   render(); toast('Tutanak silindi');
@@ -19835,6 +19908,12 @@ function renderTutanakForm(){
       <textarea rows="3" placeholder="Ciktidaki ACIKLAMALAR / ПРИМЕЧАНИЯ kutusunda gorunur" onchange="tutSet('aciklama',this.value)" style="width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:10px 12px;font-size:13px;resize:vertical">${esc(t.aciklama||'')}</textarea>
     </div>
 
+    <div class="tut-card"><h4>Tutanak PDF'i <i>Скан акта</i></h4>
+      <div id="tutPdfKutu">${tutPdfKutuHtml()}</div>
+      <input type="file" id="tutPdfInput" accept="application/pdf,.pdf" class="hidden" onchange="tutPdfSec(event)">
+      <p class="t-meta" style="margin-top:9px;font-size:11.5px">Imzalanmis/taranmis nushayi buraya yukleyin - tutanak <b>kaydedilmeden once de</b> yuklenebilir, sonradan da degistirilebilir. Dosya kayda gomulmez, guvenli belge kovasinda saklanir; tutanak listesinden tek tikla acilir. En fazla 20 MB, yalnizca PDF. <b>Yazdir</b> ciktisi bundan bagimsizdir - o her zaman guncel veriden basar.</p>
+    </div>
+
     <div class="kata-page-foot">
       <button class="btn btn-ghost" style="margin-right:auto" onclick="tutCancelForm()">${icoArr('left')} Vazgec</button>
       <button class="btn btn-ghost" onclick="printTutanak(null)" title="Kaydetmeden onizleme/cikti al">${icoTutPrint()} Yazdir</button>
@@ -19923,6 +20002,9 @@ async function saveTutanak(andPrint){
   if((DB.tutanaklar||[]).some(x=>x.id!==_TUT.id && norm(x.no||'')===norm(no))){
     toast('Bu tutanak numarasi zaten kullaniliyor','err'); return; }
   if(!tutFilledLines(_TUT).length){ toast('En az bir malzeme satiri girin','err'); return; }
+  // kayitta duran eski PDF: yalnizca yazma BASARILI olursa kovadan alinir
+  const eskiPdfYol=((DB.tutanaklar||[]).find(x=>x.id===_TUT.id)||{}).pdf;
+  const eskiYol=(eskiPdfYol&&eskiPdfYol.path)||'';
   _TUT.no=no;
   if(!_TUT.tur) _TUT.tur=TUT_TURLERI[0].id;
   _TUT.iade=!!_TUT.iade;
@@ -19954,6 +20036,8 @@ async function saveTutanak(andPrint){
     return;
   }
   window.__tutanakTableMissing=false;               // yazabildiysek uyari bandi kalksin
+  const yeniYol=(kayit.pdf&&kayit.pdf.path)||'';
+  if(eskiYol&&eskiYol!==yeniYol&&window.sbBelgeSil) window.sbBelgeSil(eskiYol);
   logAction('define',(yeni?'Tutanak olusturuldu: ':'Tutanak guncellendi: ')+kayit.no);
   const id=kayit.id;
   tutBackToList();

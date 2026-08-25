@@ -380,7 +380,28 @@ function guardedThrow(module, action, fn) {
   return async function (...args) { _permCheck(module, action); return fn.apply(this, args) }
 }
 window.sbBelgeUrl               = sbBelgeUrl                                   // okuma: oturum yeter
-window.sbBelgeYukle             = guardedThrow('proje', 'create', sbBelgeYukle) // siparis olusturmayla ayni yetki
+/* Yukleme yetkisi TUR BAZLI: bir tur digerinin iznini sessizce genisletmesin
+   (api/dosya.js'teki "uzanti listesi kova basina degil tur basina" kuralinin esi).
+   Fatura/hareket PDF'i ve gorev ekran goruntusu siparis olusturmayla; tutanak PDF'i
+   tutanagin kendisiyle ayni yetkiye tabidir - tutanak duzenleyebilen ama proje'ye
+   yazamayan kullanici imzali nushayi yukleyebilmeli. Tutanakta create VEYA update
+   yeter: ekrandaki dugme de canEdit('rapor') ile gosteriliyor. */
+const BELGE_YETKI = {
+  siparis: ['proje', ['create']],
+  hareket: ['proje', ['create']],
+  gorev:   ['proje', ['create']],
+  tutanak: ['rapor', ['create', 'update']],
+}
+function _permCheckAny(module, actions) {
+  let son = null
+  for (const a of actions) { try { _permCheck(module, a); return } catch (e) { son = e } }
+  throw son
+}
+window.sbBelgeYukle = async function (kind, id, file) {
+  const [modul, eylemler] = BELGE_YETKI[kind] || ['proje', ['create']]
+  _permCheckAny(modul, eylemler)
+  return sbBelgeYukle(kind, id, file)
+}
 window.sbBelgeSil               = sbBelgeSil                                   // govdesi hatayi zaten yutuyor
 window.initBinaViewer           = initBinaViewer
 
