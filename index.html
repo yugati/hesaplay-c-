@@ -748,6 +748,17 @@ tbody tr:hover{background:var(--hover)}
 .t-meta{font-family:var(--mono);font-size:12px;color:var(--mute)}
 .thumb{width:40px;height:40px;border-radius:8px;object-fit:contain;border:1px solid var(--line);background:#fff;cursor:pointer}
 .thumb-ph{width:40px;height:40px;border-radius:8px;border:1px dashed var(--line);display:flex;align-items:center;justify-content:center;color:var(--dim)}
+/* SIRKET LOGOSU tabloda AYRI ve SABIT olcude bir sutundur. Logo ad hucresinin
+   icindeyken genisligi resmin en-boy oranina gore degisiyordu - sirket adlari
+   her satirda baska bir noktadan basliyordu. Kutu sabit (62x30), resim icinde
+   ortalanir; logosu olmayan satir da ayni olcude kesik cizgili bir yer tutucu
+   alir, boylece ad sutunu her satirda ayni hizadan baslar.
+   Zemin BEYAZ: antet logolari beyaz kagit icin cizilir (bkz. .marka-onizle).
+   Ikisi de border-box - biri padding'li biri padding'siz olsa dis olculeri
+   ayrilir ve hiza yine kayardi. */
+.sirket-logo,.sirket-logo-ph{width:62px;height:30px;border-radius:6px;vertical-align:middle}
+.sirket-logo{object-fit:contain;background:#fff;border:1px solid var(--line);padding:3px}
+.sirket-logo-ph{border:1px dashed var(--line);display:inline-flex;align-items:center;justify-content:center;color:var(--dim)}
 .bal{font-family:var(--mono);font-weight:700;font-size:15px}
 .bal.zero{color:var(--red)}
 .bal.low{color:var(--amber)}
@@ -5302,7 +5313,14 @@ function renderSidebar(){
   // TUTANAK: Rapor'un hemen altinda - malzeme teslim tutanagi (TR/RU, yazdirilabilir)
   if(canSee('rapor')) top+=it('Tutanak Aç','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h5M8 17h8"/></svg>','openTutanak()',PTUT,'','Malzeme teslim tutanagi - iki dilli (TR/RU) cikti alinir');
   if(canSee('kutuphane')) mid+=it('Malzeme Kütüphanesi','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 006.5 22H20v-5M4 19.5V5a2.5 2.5 0 012.5-2.5H20v12"/></svg>','openMaterialLib()',PLIB);
-  if(can('define')) mid+=it('Binalar','🏢','openBinalarYonetim()',PBINAY);
+  /* Binalar ikonu: sidebar'daki tek emoji buydu - isletim sisteminin renkli
+     glifi geliyordu, otekiler currentColor'la cizilen 16px cizgi ikon. Koyu
+     temada ve .sb-item svg{opacity:.8} kuralinda da emoji tek basina ayri
+     davraniyordu. Iki bina silueti secildi: Sirketler ikonu (tek govde +
+     orta kule) ile karistirilmasin diye ayri boyda iki blok, 16px'te de
+     okunan olculerde. Pencere cizgileri YATAY - dikey 'v.01' noktalar
+     linecap yokken hic cizilmez (bkz. pano kartindaki eski bina glifi). */
+  if(can('define')) mid+=it('Binalar','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 21h20"/><path d="M4 21V5a1 1 0 011-1h5a1 1 0 011 1v16"/><path d="M15 21V10a1 1 0 011-1h4a1 1 0 011 1v11"/><path d="M6.5 8h2M6.5 12h2"/></svg>','openBinalarYonetim()',PBINAY);
   if(canSeeOrders()) mid+=it('Tüm Siparişler','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h4"/></svg>','openAllOrders()',PORD);
   if(canSee('tanimlar')) mid+=it('Bölüm & Şartname','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2M8 7h8M8 12h8M8 17h5"/></svg>','openDefinitions()',PDEF);
   mid+=secs; // bolum basliklari (Gecici Elektrik, El Aletleri, Santiye Sahasi, Hakedis) Bolum & Sartname'nin hemen altinda
@@ -5597,29 +5615,31 @@ function renderCompanies(){
   const all=(DB.companies||[]).slice().sort((a,b)=>(a.ad||'').localeCompare(b.ad||'','tr'));
   const cntOf=c=>(DB.proje.orders||[]).filter(o=>o.companyId===c.id).length;
   const list=all.filter(c=>{
-    if(COMPF.q && !matchText([c.ad,c.vergi,c.adres,c.tel,c.email].filter(Boolean).join(' '),COMPF.q)) return false;
+    if(COMPF.q && !matchText([c.ad,c.vergi,c.vergiDairesi,c.adres,c.tel,c.email].filter(Boolean).join(' '),COMPF.q)) return false;
     if(COMPF.use==='var' && cntOf(c)===0) return false;
     if(COMPF.use==='yok' && cntOf(c)>0) return false;
     return true;
   });
   const anyF=COMPF.q||COMPF.use;
   const filterbar=`<div class="ord-filterbar">
-    <div class="ord-f"><label>Ara</label><input value="${esc(COMPF.q)}" placeholder="ad, vergi no, adres, telefon veya e-posta..." onchange="setCompF('q',this.value.trim())"></div>
+    <div class="ord-f"><label>Ara</label><input value="${esc(COMPF.q)}" placeholder="ad, vergi no, vergi dairesi, adres, telefon veya e-posta..." onchange="setCompF('q',this.value.trim())"></div>
     <div class="ord-f"><label>Kullanim</label><select onchange="setCompF('use',this.value)"><option value="">Tumu</option><option value="var" ${COMPF.use==='var'?'selected':''}>Siparisi olan</option><option value="yok" ${COMPF.use==='yok'?'selected':''}>Siparisi olmayan</option></select></div>
     ${anyF?`<div class="ord-f" style="justify-content:flex-end"><label>&nbsp;</label><button class="btn btn-ghost" style="padding:8px 14px" onclick="clearCompF()">Filtreyi Temizle</button></div>`:''}
   </div>`;
   const sumline=`<div class="ord-sumline"><b>${fmtNum(list.length)}</b> sirket${anyF?` <span class="t-meta">(${fmtNum(all.length)} sirket icinden filtrelendi)</span>`:''}</div>`;
   let rows='';
-  if(list.length===0) rows=emptyRow(5,anyF?'Eslesen sirket yok':'Henuz sirket eklenmedi',anyF?'Filtreleri degistirin':'"Sirket Ekle" ile baslayin');
+  if(list.length===0) rows=emptyRow(6,anyF?'Eslesen sirket yok':'Henuz sirket eklenmedi',anyF?'Filtreleri degistirin':'"Sirket Ekle" ile baslayin');
   else list.forEach(c=>{
     const cnt=cntOf(c);
     const iletisim=[c.tel,c.email].filter(Boolean).map(v=>`<div>${esc(v)}</div>`).join('');
+    // Logo BOZUK linkte de yer tutucuya doner: silinseydi sutun o satirda
+    // buzulup ad hizasini yeniden kaydirirdi.
     rows+=`<tr>
-      <td><div style="display:flex;align-items:center;gap:9px;min-width:0">
-        ${c.logo?`<img src="${esc(c.logo)}" alt="" title="Antet logosu" style="height:22px;max-width:64px;object-fit:contain;flex:none;background:#fff;border:1px solid var(--line);border-radius:5px;padding:2px" onerror="this.remove()">`:''}
-        <div style="min-width:0"><div class="t-name">${esc(c.ad)}</div>${c.adres?`<div class="t-meta" style="margin-top:2px">${esc(c.adres)}</div>`:''}</div>
-      </div></td>
-      <td class="t-meta mono">${esc(c.vergi||'-')}</td>
+      <td style="text-align:center">${c.logo
+        ?`<img class="sirket-logo" src="${esc(c.logo)}" alt="" title="Antet logosu" onerror="this.outerHTML=phThumb('sirket-logo-ph')">`
+        :phThumb('sirket-logo-ph')}</td>
+      <td><div style="min-width:0"><div class="t-name">${esc(c.ad)}</div>${c.adres?`<div class="t-meta" style="margin-top:2px">${esc(c.adres)}</div>`:''}</div></td>
+      <td class="t-meta"><span class="mono">${esc(c.vergi||'-')}</span>${c.vergiDairesi?`<div style="margin-top:2px">${esc(c.vergiDairesi)} V.D.</div>`:''}</td>
       <td class="t-meta">${iletisim||'-'}</td>
       <td class="t-meta">${cnt} siparis</td>
       <td><div class="row-actions">
@@ -5630,20 +5650,21 @@ function renderCompanies(){
   return `<div class="sel-wrap" style="max-width:1080px">
     <div class="sel-bc"><button onclick="closeCompanies()">${icoArr('left')} Binalara Don</button></div>
     <div class="sel-head"><h2>Sirketler</h2><p>Proje siparis/fatura girisinde secilecek sirket listesi.
-      Vergi no, adres, iletisim ve <b>antet logosu</b> burada tutulur - tutanak ve ihtiyac listesi ciktilarinin
+      Vergi no/dairesi, adres, iletisim ve <b>antet logosu</b> burada tutulur - tutanak ve ihtiyac listesi ciktilarinin
       ust kosesindeki antet dogrudan bu kayittan okunur.</p></div>
     <div class="def-sec-bar"><div class="def-sec-chips"></div>
       ${can('define')?`<button class="btn btn-add" onclick="openCompanyModal()">${icoPlus()} Sirket Ekle</button>`:''}</div>
     ${antetTasimaSeridi()}
     ${filterbar}
     ${sumline}
-    <div class="tablewrap"><table><thead><tr><th>Sirket Adi</th><th>Vergi No</th><th>Iletisim</th><th>Kullanim</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tablewrap"><table><thead><tr><th style="width:86px"></th><th>Sirket Adi</th><th>Vergi No / Dairesi</th><th>Iletisim</th><th>Kullanim</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
 function openCompanyModal(id){ if(!guard('define'))return; const x=id?(DB.companies||[]).find(c=>c.id===id):null;
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:520px"><div class="modal-head"><h3>${x?'Sirket Duzenle':'Sirket Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow"><label>Sirket Adi *</label><input id="c_ad" value="${x?esc(x.ad):''}" placeholder="orn. ABC Insaat Ltd. Sti." onkeydown="if(event.key==='Enter')saveCompany(${x?`'${x.id}'`:'null'})"></div>
     <div class="frow"><label>Vergi No <span class="t-meta">(opsiyonel)</span></label><input id="c_vergi" value="${x?esc(x.vergi||''):''}" placeholder="orn. 1234567890"></div>
+    <div class="frow"><label>Vergi Dairesi <span class="t-meta">(opsiyonel)</span></label><input id="c_vd" value="${x?esc(x.vergiDairesi||''):''}" placeholder="orn. Limonlu"></div>
     <div class="frow"><label>Adres <span class="t-meta">(opsiyonel)</span></label><input id="c_adres" value="${x?esc(x.adres||''):''}" placeholder="orn. ... Mah. ... Cad. No:1 Istanbul"></div>
     <div class="frow two">
       <div><label>Telefon</label><input id="c_tel" value="${x?esc(x.tel||''):''}" placeholder="+90 ..."></div>
@@ -5680,8 +5701,8 @@ async function saveCompany(id){ if(!guard('define'))return;
   const ad=al('c_ad');
   if(!ad){toast("Sirket adi zorunlu","err");return;}
   if((DB.companies||[]).some(c=>norm(c.ad)===norm(ad) && c.id!==id)){ toast("Bu sirket zaten var","err"); return; }
-  // vergi no / adres / telefon / e-posta opsiyonel; bos birakilanlar bos string olarak yazilir
-  const bilgi={ad, vergi:al('c_vergi'), adres:al('c_adres'), tel:al('c_tel'), email:al('c_email'), logo:al('c_logo')};
+  // vergi no/dairesi, adres, telefon, e-posta opsiyonel; bos birakilanlar bos string olarak yazilir
+  const bilgi={ad, vergi:al('c_vergi'), vergiDairesi:al('c_vd'), adres:al('c_adres'), tel:al('c_tel'), email:al('c_email'), logo:al('c_logo')};
   if(id){
     const x=DB.companies.find(c=>c.id===id);
     await sbUpdateCompany(id,{...x,...bilgi});
@@ -13183,7 +13204,7 @@ function renderProjeLog(){
 function statRow(arr){ return `<div class="stats">`+arr.map(([l,v,s,c])=>`<div class="stat"><div class="strip" style="background:${c}"></div><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`).join('')+`</div>`; }
 function searchBox(ph){ return `<div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4-4"/></svg><input id="searchBox" placeholder="${ph}" value="${esc(SEARCH)}"></div>`; }
 function emptyRow(cols,t,s){ return `<tr><td colspan="${cols}"><div class="empty"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-14L4 7m8 4v10M4 7v10l8 4"/></svg><p>${t}</p><span style="font-size:12px">${s}</span></div></td></tr>`; }
-function phThumb(){ return `<div class="thumb-ph"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="9" cy="9" r="2"/></svg></div>`; }
+function phThumb(cls){ return `<div class="${cls||'thumb-ph'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="9" cy="9" r="2"/></svg></div>`; }
 function icoXls(){return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>';}
 /* EXCEL YON IKONU: icoXls ile AYNI belge simgesi, icinde yon yazisi. Ice ve disa aktarma
    dugmeleri yan yana durdugu icin ok yonu yerine yazi ("IC" / "DIS") bir bakista okunuyor;
@@ -15589,6 +15610,8 @@ function openIsgModal(idOrNull,presetDate){
   _isgEklendi=false; _isgGun=''; _isgSayi=0;   // yeni pencere: ardisik giris sayaci sifirdan
   const kisit=myEkipKisiti();
   const ekipler=(DB.rapor.ekipler||[]).slice().sort((a,b)=>a.localeCompare(b,'tr'));
+  // Ekip secenekleri value TASIMALI: saveIsgEntry degeri dogrudan gv('isg_ekip') ile okur,
+  // value olmasa ekip adina bolum eki (' (Proje)') yapisik kaydedilirdi.
   const curEkip=e?(e.ekip||''):(kisit||'');
   const binalar=[...new Set([...projBuildings(), ...rEntries().map(x=>x.bina)].filter(Boolean))];
   const curBina=e?(e.bina||''):(binalar[0]||'');
@@ -15604,8 +15627,8 @@ function openIsgModal(idOrNull,presetDate){
       <datalist id="isg_gorevList">${gorevler.map(g=>`<option value="${esc(g)}">`).join('')}</datalist></div>
     <div class="frow two"><div><label>Yer / Bina</label><input id="isg_bina" list="isg_binaList" value="${esc(curBina)}" placeholder="orn. DGR, 00UYB"><datalist id="isg_binaList">${binalar.map(b=>`<option value="${esc(b)}">`).join('')}</datalist></div>
       <div><label>Ekip${kisit?' <span class="t-meta">(size atanan)</span>':''}</label>${kisit
-        ?`<select id="isg_ekip" disabled class="ro-auto" title="Ekibiniz atanmis"><option selected>${esc(kisit)}</option></select>`
-        :`<select id="isg_ekip"><option value="">- ekip secin -</option>${ekipler.map(ek=>`<option ${curEkip===ek?'selected':''}>${esc(ek)}${ekipBolumOf(ek)?' ('+ekipBolumLabel(ekipBolumOf(ek))+')':''}</option>`).join('')}</select>`}</div></div>
+        ?`<select id="isg_ekip" disabled class="ro-auto" title="Ekibiniz atanmis"><option value="${esc(kisit)}" selected>${esc(kisit)}</option></select>`
+        :`<select id="isg_ekip"><option value="">- ekip secin -</option>${(curEkip&&!ekipler.some(x=>x===curEkip))?`<option value="${esc(curEkip)}" selected>${esc(curEkip)} (listede yok)</option>`:''}${ekipler.map(ek=>`<option value="${esc(ek)}" ${curEkip===ek?'selected':''}>${esc(ek)}${ekipBolumOf(ek)?' ('+ekipBolumLabel(ekipBolumOf(ek))+')':''}</option>`).join('')}</select>`}</div></div>
     <div class="frow two"><div><label>Adam Sayisi *</label><input id="isg_adam" type="number" min="0" step="1" value="${e&&e.adamSayisi!=null?esc(e.adamSayisi):''}" placeholder="orn. 4"></div>
       <div><label>Adam/Gun  <span class="t-meta">(genelde 1)</span></label><input id="isg_gun" type="number" min="0" step="any" value="${e?esc(e.miktar):'1'}"></div></div>
     <div class="frow"><label>Not</label><textarea id="isg_not">${esc(e?(e.notlar||''):'')}</textarea></div>
@@ -16245,9 +16268,16 @@ function rRenderBlocks(){
     if(ekipKisit) bk.ekip=ekipKisit;
     const sarts=(DB.proje.sartnames||[]).filter(s=>s.bina===bina && (!bk.cat||s.section===bk.cat));
     const secOpts='<option value="">- bolum secin -</option>'+sections.map(s=>`<option ${bk.cat===s?'selected':''}>${esc(s)}</option>`).join('');
+    // OPTION'A value ZORUNLU: value yazilmazsa select'in degeri GORUNEN METIN olur; ekibin
+    // bolum eki de (' (Proje)') degere karisir. O deger bk.ekip'e yazilinca hicbir secenekle
+    // eslesmez ve bir sonraki cizimde ('+ Is Kalemi Ekle') Ekip alani bosa duserdi.
+    const ekipDisi=!ekipKisit&&bk.ekip&&!ekipler.some(x=>x===bk.ekip); // listede olmayan (eski) ekip adi sessizce kaybolmasin
     const ekipOpts=ekipKisit
-      ?`<option selected>${esc(ekipKisit)}</option>`
-      :'<option value="">- ekip secin -</option>'+ekipler.map(ek=>`<option ${bk.ekip===ek?'selected':''}>${esc(ek)}${ekipBolumOf(ek)?' ('+ekipBolumLabel(ekipBolumOf(ek))+')':''}</option>`).join('')+'<option value="__new">+ Yeni ekip ekle</option>';
+      ?`<option value="${esc(ekipKisit)}" selected>${esc(ekipKisit)}</option>`
+      :'<option value="">- ekip secin -</option>'
+        +(ekipDisi?`<option value="${esc(bk.ekip)}" selected>${esc(bk.ekip)} (listede yok)</option>`:'')
+        +ekipler.map(ek=>`<option value="${esc(ek)}" ${bk.ekip===ek?'selected':''}>${esc(ek)}${ekipBolumOf(ek)?' ('+ekipBolumLabel(ekipBolumOf(ek))+')':''}</option>`).join('')
+        +'<option value="__new">+ Yeni ekip ekle</option>';
     const sartOpts='<option value="">- sartname (opsiyonel) -</option>'+sarts.map(s=>`<option value="${esc(s.code)}" ${bk.sart===s.code?'selected':''}>${esc(s.code)}${s.section?' ('+esc(s.section)+')':''}</option>`).join('');
     const linesHtml=bk.lines.map((l,li)=>rLineHtml(bk,bi,l,li,bina,parcali)).join('');
     return `<div class="rblock">
@@ -20216,16 +20246,16 @@ function sirketAntet(companyId){
   const c=companyId?(DB.companies||[]).find(x=>x&&x.id===companyId):null;
   if(!c) return null;
   return { unvan:c.ad||'', adres:c.adres||'', tel:c.tel||'', email:c.email||'',
-           vergi:c.vergi||'', logo:c.logo||'' };
+           vergi:c.vergi||'', vergiDairesi:c.vergiDairesi||'', logo:c.logo||'' };
 }
-const BOS_ANTET={unvan:'',adres:'',tel:'',email:'',vergi:'',logo:''};
+const BOS_ANTET={unvan:'',adres:'',tel:'',email:'',vergi:'',vergiDairesi:'',logo:''};
 /* ESKI ANTET (app_settings > tutanakAntet) yalnizca GECIS icin okunur: Sirketler
    ekranindaki tasima yapilana kadar mevcut ciktilar basliksiz kalmasin diye.
    Tasima bitince anahtar silinir ve bu yedek kendiliginden devre disi kalir. */
 function eskiAntet(){
   const a=(DB.meta&&DB.meta.tutanakAntet)||null;
   if(!a||!(a.unvan||a.logo||a.adres||a.tel||a.email||a.vergi)) return null;
-  return { unvan:a.unvan||'', adres:a.adres||'', tel:a.tel||'', email:a.email||'', vergi:a.vergi||'', logo:a.logo||'' };
+  return { unvan:a.unvan||'', adres:a.adres||'', tel:a.tel||'', email:a.email||'', vergi:a.vergi||'', vergiDairesi:'', logo:a.logo||'' };
 }
 /* TUTANAGIN ANTETI = TESLIM EDEN firmasi (kullanici karari). Tutanakta zaten
    firmaId ile Sirketler'e bagli bir "Teslim Eden" var, ayri bir secim eklenmedi.
@@ -20442,7 +20472,7 @@ function renderTutanakList(){
     <div class="ord-f" style="flex:none;margin-left:auto;justify-content:flex-end"><label>&nbsp;</label>
       <div style="display:flex;gap:9px;flex-wrap:wrap">
         ${anyF?`<button class="btn btn-ghost" style="padding:8px 14px" onclick="clearTutF()">Filtreyi Temizle</button>`:''}
-        ${isAdmin()?`<button class="btn btn-ghost" onclick="openCompanies()" title="Ciktinin ust kosesindeki antet (unvan, adres, telefon, e-posta, vergi no, logo) artik Sirketler kaydindan gelir - teslim eden firmanin kaydi kullanilir">${icoTutAntet()} Antet (Sirketler)</button>`:''}
+        ${isAdmin()?`<button class="btn btn-ghost" onclick="openCompanies()" title="Ciktinin ust kosesindeki antet (unvan, adres, telefon, e-posta, vergi no/dairesi, logo) artik Sirketler kaydindan gelir - teslim eden firmanin kaydi kullanilir">${icoTutAntet()} Antet (Sirketler)</button>`:''}
         ${canEdit('rapor')?`<button class="btn btn-add" onclick="openTutTur()">${icoPlus()} Yeni Tutanak</button>`:''}
       </div></div>
   </div>`;
@@ -21003,9 +21033,14 @@ table.mt tr.tot td{background:#f4f6fa;height:auto;padding:1.8mm 3mm;font-size:6.
 function tutPrintHead(A){
   const ph=(v,plc)=>v?esc(v):'<span class="ph">'+plc+'</span>';
   // adres de ayni satira alindi: antet blogu logodan uzun olmasin
+  /* Vergi dairesi AYRI madde olarak eklenmedi: antet satiri dort maddeyle zaten
+     dolu, besincisi logonun yanindaki dar alanda alt satira tasiyordu. Turkce
+     yazimda ikisi birlikte okunur - "Limonlu V.D. 1234567890". Daire bossa numara
+     tek basina, ikisi de bossa eskisi gibi yer tutucu basar. */
+  const vd=String(A.vergiDairesi||'').trim();
   const alt=[ph(A.adres,'[ Adres / Адрес ]'), ph(A.tel,'[ Tel / Тел. ]'),
              ph(A.email,'[ E-posta / E-mail ]'),
-             ph(A.vergi,'[ Vergi No / ИНН ]')].join(' &nbsp;•&nbsp; ');
+             (vd?esc(vd)+' V.D. ':'')+ph(A.vergi,'[ Vergi No / ИНН ]')].join(' &nbsp;•&nbsp; ');
   // Antet logosu yuklenmisse o, degilse uygulamanin logosu kullanilir
   const logo=A.logo||(location.origin+'/logo.png');
   return `<div class="ph-head">
