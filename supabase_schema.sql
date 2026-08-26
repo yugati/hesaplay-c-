@@ -15,6 +15,20 @@
 -- eklendi. Dosyayı baştan sona çalıştırırsanız kapı açılıp yeniden kapanır; sonuç
 -- KAPALI olur. Sadece ortadaki bir bölümü kopyalayıp çalıştırmayın — kapıyı açık
 -- bırakırsınız. Ayrıntı: asama3_anon_kapat.sql
+--
+-- ⚠ ÖNEMLİ — ORGANİZASYON (26 Ağu 2026):
+-- Aşağıdaki tablo tanımlarında org_id sütunu YOKTUR; bu dosya çok kiracılı
+-- yapıdan önce yazıldı. Uygulama artık her sorguyu organizasyona daraltıyor
+-- (api/veri.js), yani org_id'siz bir tablo çalışmaz.
+--
+-- SIFIRDAN KURULUM SIRASI:
+--   1) bu dosya
+--   2) migration_tutanak.sql   (tutanaklar tablosu — kendi org düzenini kurar)
+--   3) migration_org_1.sql     (kalan tablolara org_id + indeksler)
+--   4) migration_org_2.sql     (org bazlı birincil anahtarlar, varsayılan düşer)
+--
+-- Sonradan yeni bir tablo eklerseniz 3 ve 4'ü TEKRAR çalıştırın; ikisi de
+-- tekrar çalıştırılabilir.
 -- ============================================================
 
 -- pgcrypto (UUID üretimi için — Supabase'de genellikle yüklü gelir)
