@@ -13,6 +13,10 @@ import {
   sbCreateUser,
   sbUpdateUser,
   sbDeleteUser,
+  // Organizasyon
+  sbOrgListesi,
+  sbOrgGecis,
+  sbOrgYeni,
   // Core
   sbLoadAllData,
   sbMigrateLocalDB,
@@ -230,6 +234,11 @@ window.sbGetAllUsers       = sbGetAllUsers
 window.sbCreateUser        = sbCreateUser
 window.sbUpdateUser        = sbUpdateUser
 window.sbDeleteUser        = sbDeleteUser
+
+// ─── Organizasyon ────────────────────────────────────────────────────────────
+window.sbOrgListesi        = sbOrgListesi
+window.sbOrgGecis          = sbOrgGecis
+window.sbOrgYeni           = sbOrgYeni
 
 // ─── Core ────────────────────────────────────────────────────────────────────
 window.sbLoadAllData       = sbLoadAllData

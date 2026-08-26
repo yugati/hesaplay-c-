@@ -378,6 +378,29 @@ header{display:flex;align-items:center;gap:12px;padding:0 20px;height:56px;backg
 .theme-opt.on{color:var(--ink);background:var(--panel2)}
 .theme-opt.on::after{content:'\2713';margin-left:auto;color:var(--primary);font-weight:700}
 
+/* -- organizasyon degistirici (baslik yani) -- */
+.org-wrap{position:relative;display:none;align-items:center}
+.org-wrap.acik{display:flex}
+.org-btn{display:flex;align-items:center;justify-content:center;width:22px;height:26px;border-radius:7px;
+  background:var(--panel2);border:1px solid var(--line);color:var(--dim);transition:background .13s,color .13s,border-color .13s}
+.org-btn:hover{background:var(--hover);color:var(--ink);border-color:var(--dim)}
+.org-menu{position:absolute;left:0;top:calc(100% + 8px);background:var(--panel);border:1px solid var(--line);
+  border-radius:12px;box-shadow:var(--shadow-md);padding:6px;display:none;flex-direction:column;min-width:276px;z-index:120}
+.org-menu.open{display:flex;animation:menuIn .14s ease}
+.org-ara{width:100%;height:32px;padding:0 10px;border-radius:8px;background:var(--panel2);border:1px solid var(--line);
+  color:var(--ink);font-size:13px;margin-bottom:4px}
+.org-ara:focus{outline:none;border-color:var(--dim)}
+.org-liste{display:flex;flex-direction:column;gap:2px;max-height:264px;overflow-y:auto}
+.org-opt{display:flex;align-items:center;gap:9px;padding:8px 11px;border-radius:8px;background:transparent;color:var(--mute);
+  font-size:13px;font-weight:600;text-align:left;transition:background .15s,color .15s;width:100%}
+.org-opt:hover{background:var(--hover);color:var(--ink)}
+.org-opt.on{color:var(--ink);background:var(--panel2)}
+.org-opt.on::after{content:'\2713';margin-left:auto;color:var(--primary);font-weight:700}
+.org-opt .org-kod{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--dim);font-weight:500}
+.org-opt.on .org-kod{display:none}
+.org-ayrac{height:1px;background:var(--line);margin:5px 2px}
+.org-bos{padding:10px 11px;font-size:12px;color:var(--dim)}
+
 /* -- global arama tetikleyici (navbar) -- */
 .gsearch-pill{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);color:var(--dim);
   height:32px;padding:0 6px 0 11px;border-radius:8px;font-size:12px;min-width:190px;transition:border-color .15s,color .15s,background .15s;flex:0 1 auto}
@@ -2665,6 +2688,19 @@ datalist{display:none}
       <img class="brand-mark" src="/logo.png" alt="Logo">
       <div><div class="htitle">Saha Malzeme Takip</div><div class="hsub" id="dbInfo">-</div></div>
     </a>
+    <!-- ORGANIZASYON DEGISTIRICI: yalnizca super yoneticide gorunur (applyUserChrome).
+         Baslik baglantisinin DISINDA duruyor - icinde olsaydi her tikta ana sayfaya gidilirdi. -->
+    <div class="org-wrap" id="orgWrap">
+      <button class="org-btn" id="orgBtn" title="Organizasyon degistir" aria-label="Organizasyon degistir" onclick="orgMenuAc(event)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 9l4-4 4 4M16 15l-4 4-4-4"/></svg>
+      </button>
+      <div class="org-menu" id="orgMenu">
+        <input type="text" class="org-ara" id="orgAra" placeholder="Ara..." autocomplete="off" oninput="orgListeCiz()">
+        <div class="org-liste" id="orgListe"></div>
+        <div class="org-ayrac"></div>
+        <button class="org-opt" onclick="orgYeniAc()">+ Yeni Organizasyon</button>
+      </div>
+    </div>
     <div class="spacer"></div>
     <button class="gsearch-pill" onclick="openCmdk()" title="Global arama (Ctrl+K)">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
@@ -3094,7 +3130,13 @@ function applyLandingPanels(){ if(isAdmin())return;
 // kullanici basligi/rol rozeti chrome
 function applyUserChrome(){
   const info=document.getElementById('dbInfo');
-  if(info&&CURRENT_USER){ const rl=ROLES[CURRENT_USER.role]||CURRENT_USER.role; info.innerHTML=`${esc(CURRENT_USER.username)} <span style="opacity:.6">| ${esc(rl)}</span>`; }
+  /* ORGANIZASYON ADI HER ZAMAN GORUNUR - tek kiracili kurulumda bile. Yanlis
+     sirkete veri girmenin tek panzehiri, hangisinde oldugunu gormek. */
+  if(info&&CURRENT_USER){ const rl=ROLES[CURRENT_USER.role]||CURRENT_USER.role;
+    info.innerHTML=`<span style="color:var(--mute)">${esc(orgAdiGoster())}</span> <span style="opacity:.6">·</span> ${esc(CURRENT_USER.username)} <span style="opacity:.6">| ${esc(rl)}</span>`; }
+  // Organizasyon degistirici YALNIZCA super yoneticide. Normal kullanici kendi
+  // organizasyonuna kilitli oldugu icin dugmeyi hic gormez (sunucu da oyle davranir).
+  const ow=document.getElementById('orgWrap'); if(ow) ow.classList.toggle('acik', !!(CURRENT_USER&&CURRENT_USER.is_super));
   // admin-only header butonlari (kullanicilar + yedek al/yukle)
   const ub=document.getElementById('usersBtn'); if(ub)ub.style.display=isAdmin()?'':'none';
   const aub=document.getElementById('auditBtn'); if(aub)aub.style.display=isAdmin()?'':'none';
@@ -3102,6 +3144,134 @@ function applyUserChrome(){
   const rb=document.getElementById('restoreBtn'); if(rb)rb.style.display=can('restore')?'':'none';
   updateBackupBadge();
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ORGANIZASYON DEGISTIRICI (cok kiracili yapi)
+
+   Aktif organizasyon TOKENDE durur. Buradaki degiskenler yalnizca GOSTERIM ve
+   ONBELLEK ANAHTARI icindir (src/supabase.js onbellekAnahtar) - sunucu istemcinin
+   soyledigine bakmaz, gecis tokeni yeniden imzalar (api/org.js).
+
+   GECISTE SAYFA YENILENIR. DB'nin tamami bellekte ve onlarca ekran ona bagli;
+   yerinde degistirmek yerine oturum bilgisi yazilip location.reload() yapilir -
+   acilis yolu yeni organizasyonun verisini bastan yukler. Onbellek de org bazli
+   oldugu icin onceki organizasyonun satirlari sizmaz.
+   ═══════════════════════════════════════════════════════════════════════════ */
+let _ORGLAR=null;   // {orgs, aktif, super} - menu acildiginda cekilir
+
+function orgAdiGoster(){ return window.AKTIF_ORG_AD || String(window.AKTIF_ORG||'').toUpperCase() || '-'; }
+
+/* Oturum bilgisini TEK YERDEN yazar. Org'un localStorage'a da girmesi sart:
+   sayfa yenilendiginde veri YUKLENMEDEN once bilinmeli, cunku onbellek anahtari
+   ona bagli. Bilinmezse o acilista onbellek isabetsiz kalir (yanlis veri degil,
+   yalnizca bir kez fazladan indirme). */
+function orgOturumYaz(org, ad){
+  if(org) window.AKTIF_ORG=org;
+  if(ad) window.AKTIF_ORG_AD=ad;
+  try{
+    const s=JSON.parse(localStorage.getItem('authSession')||'null');
+    if(s){ s.org=window.AKTIF_ORG||''; s.orgAd=window.AKTIF_ORG_AD||''; if(window.AUTH_TOKEN) s.token=window.AUTH_TOKEN;
+           localStorage.setItem('authSession', JSON.stringify(s)); }
+  }catch(e){}
+}
+async function orgMenuAc(ev){
+  if(ev) ev.stopPropagation();
+  const m=document.getElementById('orgMenu'); if(!m) return;
+  if(m.classList.contains('open')){ m.classList.remove('open'); return; }
+  m.classList.add('open');
+  const ara=document.getElementById('orgAra'); if(ara){ ara.value=''; setTimeout(()=>ara.focus(),0); }
+  const el=document.getElementById('orgListe'); if(el) el.innerHTML='<div class="org-bos">Yukleniyor...</div>';
+  try{
+    _ORGLAR=await sbOrgListesi();
+    // Sunucunun soyledigi aktif org DOGRU olandir - istemcideki gosterim ondan tazelenir
+    if(_ORGLAR&&_ORGLAR.aktif){
+      const a=(_ORGLAR.orgs||[]).find(o=>o.id===_ORGLAR.aktif);
+      orgOturumYaz(_ORGLAR.aktif, a?a.ad:null); applyUserChrome();
+    }
+  }catch(e){
+    if(el) el.innerHTML='<div class="org-bos">Liste alinamadi</div>';
+    return;
+  }
+  orgListeCiz();
+}
+function orgListeCiz(){
+  const el=document.getElementById('orgListe'); if(!el||!_ORGLAR) return;
+  const q=((document.getElementById('orgAra')||{}).value||'').trim();
+  const liste=(_ORGLAR.orgs||[]).filter(o=>!q||matchText((o.ad||'')+' '+(o.id||''),q));
+  if(!liste.length){ el.innerHTML='<div class="org-bos">Eslesen organizasyon yok</div>'; return; }
+  el.innerHTML=liste.map(o=>`<button class="org-opt${o.id===window.AKTIF_ORG?' on':''}" onclick="orgGec('${esc(o.id)}')">${esc(o.ad||o.id)}<span class="org-kod">${esc(o.id)}</span></button>`).join('');
+}
+async function orgGec(id){
+  const m=document.getElementById('orgMenu');
+  if(id===window.AKTIF_ORG){ if(m)m.classList.remove('open'); return; }
+  const o=((_ORGLAR&&_ORGLAR.orgs)||[]).find(x=>x.id===id);
+  const ad=(o&&o.ad)||id;
+  if(!confirm('"'+ad+'" organizasyonuna gecilecek.\n\nSayfa yeniden yuklenecek; kaydedilmemis pencere varsa iceriği kaybolur.\n\nDevam edilsin mi?')) return;
+  try{
+    const r=await sbOrgGecis(id);
+    window.AUTH_TOKEN=r.token;
+    orgOturumYaz(r.org, r.ad||ad);
+    // Gezinti durumu onceki organizasyona ait (bina/sartname secimleri) - tasinmamali
+    try{ sessionStorage.removeItem('navState'); }catch(e){}
+    location.reload();
+  }catch(e){
+    toast('Organizasyon degistirilemedi: '+(e.message||'bilinmeyen hata'),'err');
+  }
+}
+/* Ad -> kimlik onerisi. Kimlik dosya yollarinda ve tokende geciyor; sunucu
+   [a-z0-9-] disini reddeder (lib/org.js), o yuzden burada da ayni daraltma. */
+function orgKimlikOner(ad){
+  const tr={'ç':'c','Ç':'c','ğ':'g','Ğ':'g','ı':'i','I':'i','İ':'i','ö':'o','Ö':'o','ş':'s','Ş':'s','ü':'u','Ü':'u'};
+  return String(ad||'').replace(/[çÇğĞıIİöÖşŞüÜ]/g,c=>tr[c]).toLowerCase()
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,31);
+}
+function orgYeniAc(){
+  const m=document.getElementById('orgMenu'); if(m) m.classList.remove('open');
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:460px">
+    <div class="modal-head"><h3>Yeni Organizasyon</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body">
+      <div class="frow"><label>Organizasyon Adi *</label>
+        <input id="org_ad" placeholder="orn. YUEM Insaat" oninput="const k=document.getElementById('org_id'); if(!k.dataset.elle) k.value=orgKimlikOner(this.value)"></div>
+      <div class="frow"><label>Kimlik * <span class="t-meta">(kucuk harf, rakam ve tire - sonradan degistirilemez)</span></label>
+        <input id="org_id" placeholder="orn. yuem" oninput="this.dataset.elle='1'"></div>
+      <p class="t-meta" style="margin:0">Organizasyon <b>bombos</b> acilir: bina, bolum, sartname, malzeme kutuphanesi ve sirket listesi sifirdan girilir. Kullanicilarini eklemek icin once bu organizasyona gecin, sonra Kullanicilar ekranini acin.</p>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="orgYeniKaydet()">Olustur</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  const inp=document.getElementById('org_ad'); if(inp) setTimeout(()=>inp.focus(),0);
+}
+async function orgYeniKaydet(){
+  const ad=(document.getElementById('org_ad').value||'').trim();
+  const id=(document.getElementById('org_id').value||'').trim();
+  if(!ad){ toast('Organizasyon adi gerekli','err'); return; }
+  if(!/^[a-z0-9][a-z0-9_-]{1,30}$/.test(id)){ toast('Kimlik kucuk harf/rakam ile baslamali, en az 2 karakter olmali','err'); return; }
+  try{
+    const r=await sbOrgYeni(id,ad);
+    closeModal();
+    toast('"'+ad+'" organizasyonu olusturuldu');
+    _ORGLAR=null;
+    if(confirm('"'+ad+'" olusturuldu.\n\nSimdi bu organizasyona gecilsin mi?\n(Gecmeden kullanicilarini ekleyemezsiniz.)')){
+      _ORGLAR={orgs:[r.org],aktif:window.AKTIF_ORG,super:true};
+      orgGecOnaysiz(r.org.id, r.org.ad);
+    }
+  }catch(e){
+    toast(e.message||'Organizasyon olusturulamadi','err');
+  }
+}
+// orgGec'in onay sormayan hali: cagiran taraf onayi zaten aldi
+async function orgGecOnaysiz(id, ad){
+  try{
+    const r=await sbOrgGecis(id);
+    window.AUTH_TOKEN=r.token;
+    orgOturumYaz(r.org, r.ad||ad);
+    try{ sessionStorage.removeItem('navState'); }catch(e){}
+    location.reload();
+  }catch(e){ toast('Organizasyon degistirilemedi: '+(e.message||'bilinmeyen hata'),'err'); }
+}
+// Disari tiklaninca menu kapanir (tema menusuyle ayni desen)
+document.addEventListener('click',ev=>{ const m=document.getElementById('orgMenu');
+  if(m&&m.classList.contains('open')&&!ev.target.closest('.org-wrap')) m.classList.remove('open'); });
+
 const PROJ_CATS=["Tava","Aydinlatma","Topraklama"];
 // ANA BASLIKLAR (yetkilendirme icin) - key + etiket
 const ALL_SECTIONS=['proje','siparis','gecici','alet','saha','hakedis','rapor','tanimlar','kutuphane'];
@@ -3219,6 +3389,10 @@ async function doLogin(){
     if(!user){ loginFail("Kullanici adi veya sifre hatali."); return; }
     const token=user.__token; delete user.__token;
     window.AUTH_TOKEN=token;
+    /* AKTIF ORGANIZASYON, VERI YUKLENMEDEN ONCE bilinmeli: onbellek anahtari ona
+       bagli (src/supabase.js onbellekAnahtar). Giriste aktif org her zaman
+       kullanicinin kendi organizasyonudur; gecis ayri bir islem. */
+    window.AKTIF_ORG=user.org_id||'bykara'; window.AKTIF_ORG_AD='';
     CURRENT_USER=user; window.CURRENT_USER=user;
     // kimlik dogrulandi, sira veri yuklemede: dugmede de o an inen tablonun adi yazilir
     btn.textContent='Veriler yükleniyor...';
@@ -3233,7 +3407,7 @@ async function doLogin(){
     // "Beni Hatirla" isaretliyse oturum 30 gun, degilse 1 saat yasar; ttl oturumla
     // birlikte saklanir ki sayfa yenilemede uzatma ayni sureyle yapilsin
     const ttl=remember?SESSION_TTL_REMEMBER:SESSION_TTL_DEFAULT;
-    localStorage.setItem('authSession', JSON.stringify({user:user, token:token, expiresAt:Date.now()+ttl, ttl:ttl}));
+    localStorage.setItem('authSession', JSON.stringify({user:user, token:token, expiresAt:Date.now()+ttl, ttl:ttl, org:window.AKTIF_ORG||'', orgAd:''}));
     baslatOturumTazeleme(ttl); // token periyodik yenilensin - veri islemleri ona bagli
     const lg=document.getElementById('login');
     lg.classList.add('fade-out');
@@ -3254,7 +3428,7 @@ async function doLogin(){
 function loginFail(msg){ document.getElementById('loginErr').textContent=msg; pwInput.value=''; (userInput.value?pwInput:userInput).focus(); }
 // Sifre sifirlama backend akisi olmadigi icin kullaniciyi dogru kanala yonlendiririz
 function forgotPw(){ toast('Şifre sıfırlama için yöneticinizle iletişime geçin'); }
-function logout(){ localStorage.removeItem('authSession'); window.AUTH_TOKEN=null; CURRENT_USER=null; window.CURRENT_USER=null; location.reload(); }
+function logout(){ localStorage.removeItem('authSession'); window.AUTH_TOKEN=null; window.AKTIF_ORG=null; window.AKTIF_ORG_AD=''; CURRENT_USER=null; window.CURRENT_USER=null; location.reload(); }
 
 /* ─── OTURUM TOKENI TAZELEME ────────────────────────────────────────────────
    Asama 1'den beri TUM veri islemleri oturum tokenine bagli (/api/veri). Token
@@ -3266,10 +3440,15 @@ function logout(){ localStorage.removeItem('authSession'); window.AUTH_TOKEN=nul
 let _tazelemeZamani=null;
 function oturumTazeleUygula(fresh, ttl){
   const yeniToken=fresh.__token; const yeniTtl=fresh.__ttl||ttl;
-  const u={...fresh}; delete u.__token; delete u.__ttl;
+  /* __org: sunucunun bildirdigi AKTIF organizasyon. Super yonetici baska bir
+     organizasyona gecmisse tazelemede korunur (api/me.js); burada yok sayilsaydi
+     20 dakikada bir sessizce kendi organizasyonuna donerdi. */
+  const yeniOrg=fresh.__org;
+  const u={...fresh}; delete u.__token; delete u.__ttl; delete u.__org;
   CURRENT_USER=u; window.CURRENT_USER=u;
   if(yeniToken) window.AUTH_TOKEN=yeniToken;
-  try{ localStorage.setItem('authSession', JSON.stringify({user:u, token:window.AUTH_TOKEN, expiresAt:Date.now()+(yeniTtl||3600000), ttl:yeniTtl})); }catch(e){}
+  if(yeniOrg&&yeniOrg!==window.AKTIF_ORG){ window.AKTIF_ORG=yeniOrg; window.AKTIF_ORG_AD=''; }
+  try{ localStorage.setItem('authSession', JSON.stringify({user:u, token:window.AUTH_TOKEN, expiresAt:Date.now()+(yeniTtl||3600000), ttl:yeniTtl, org:window.AKTIF_ORG||'', orgAd:window.AKTIF_ORG_AD||''})); }catch(e){}
   applyUserChrome();
 }
 function baslatOturumTazeleme(ttl){
@@ -3311,7 +3490,7 @@ document.addEventListener('DOMContentLoaded', async function(){
     },230);
   }
   function showLogin(){ document.documentElement.classList.remove('booting'); lg.classList.remove('hidden'); warmLoginApi(); }
-  function saveSession(u,ttl,token){ ttl=ttl||SESSION_TTL_DEFAULT; localStorage.setItem('authSession', JSON.stringify({user:u, token:token, expiresAt:Date.now()+ttl, ttl:ttl})); }
+  function saveSession(u,ttl,token){ ttl=ttl||SESSION_TTL_DEFAULT; localStorage.setItem('authSession', JSON.stringify({user:u, token:token, expiresAt:Date.now()+ttl, ttl:ttl, org:window.AKTIF_ORG||'', orgAd:window.AKTIF_ORG_AD||''})); }
   try {
     const sess=JSON.parse(raw);
     // token yoksa eski (guvenlik guncellemesinden onceki) oturumdur - artik
@@ -3320,6 +3499,11 @@ document.addEventListener('DOMContentLoaded', async function(){
       localStorage.removeItem('authSession'); hideLoading(); showLogin(); return;
     }
     window.AUTH_TOKEN=sess.token;
+    /* Aktif organizasyon oturumdan geri gelir - loadDB'den ONCE, cunku onbellek
+       anahtari ona bagli. Eski oturumlarda (org alani eklenmeden once kaydedilmis)
+       kullanicinin kendi organizasyonuna dusulur. */
+    window.AKTIF_ORG=sess.org||(sess.user&&sess.user.org_id)||'bykara';
+    window.AKTIF_ORG_AD=sess.orgAd||'';
     // Önbellekten kullanıcıyı anında yükle — Supabase çağrısı BEKLENMEZ
     CURRENT_USER=sess.user; window.CURRENT_USER=sess.user;
     saveSession(sess.user, sess.ttl, sess.token); // oturumu kendi suresiyle uzat (1 saat / Beni Hatirla: 30 gun)
@@ -21913,8 +22097,13 @@ function backupCounts(db){
 async function makeBackupEnvelope(){
   await auditYukle();
   saveDB();
+  /* ORGANIZASYON DAMGASI: yedek artik yalnizca AKTIF organizasyonun verisidir
+     (sunucu tum sorgulari ona daraltiyor). Damga olmadan bir sirketin yedegi
+     digerinin uzerine geri yuklenebilirdi - geri yukleme once mevcut veriyi
+     siliyor, yani sessiz ve geri alinamaz bir karisma olurdu. */
   return { app:BACKUP_APP_ID, format:2, createdAt:new Date().toISOString(),
     user:CURRENT_USER?CURRENT_USER.username:'',
+    org:window.AKTIF_ORG||'', orgAd:orgAdiGoster(),
     counts:Object.fromEntries(backupCounts(DB).map(c=>[c.label,c.n])), data:DB };
 }
 function downloadJSON(obj,fname){
@@ -21976,6 +22165,17 @@ function importBackup(e){
     // Yeni zarf formati (format 2) veya eski ham DB dosyasi kabul edilir
     const data=(env&&env.app===BACKUP_APP_ID&&env.data)?env.data:env;
     if(!data||typeof data!=='object'||!data.proje||!data.gecici){ toast('Gecersiz yedek dosyasi: veri yapisi taninamadi','err'); return; }
+    /* ORGANIZASYON KONTROLU. Geri yukleme once mevcut veriyi siler; yanlis
+       organizasyona yuklenen bir yedek geri alinamaz. Kural dosya yollarindaki
+       kuralla ayni: damga varsa TUTMALI, damgasiz eski yedekler tek kiraci
+       donemine ait oldugu icin yalnizca bykara'ya yuklenebilir. */
+    const yedekOrg=(env&&env.app===BACKUP_APP_ID&&env.org)?env.org:'bykara';
+    const simdiki=window.AKTIF_ORG||'bykara';
+    if(yedekOrg!==simdiki){
+      const kaynak=(env&&env.orgAd)||yedekOrg.toUpperCase();
+      toast('Bu yedek "'+kaynak+'" organizasyonuna ait, su an "'+orgAdiGoster()+'" acik. Once ilgili organizasyona gecin.','err');
+      return;
+    }
     openRestoreModal({file:f, env:(env&&env.app===BACKUP_APP_ID)?env:null, data});
   };
   r.readAsText(f);
@@ -21988,7 +22188,8 @@ function openRestoreModal(pr){
     return `<div class="bk-cmp"><span>${c.label}</span><b${diff}>${c.n.toLocaleString('tr-TR')}</b><i>${cC[i].n.toLocaleString('tr-TR')}</i></div>`;
   }).join('');
   const created=pr.env&&pr.env.createdAt?new Date(pr.env.createdAt).toLocaleString('tr-TR',{dateStyle:'medium',timeStyle:'short'}):null;
-  const metaTxt=fmtBytes(pr.file.size)+(created?' · '+created:'')+(pr.env&&pr.env.user?' · '+esc(pr.env.user):'');
+  const metaTxt=fmtBytes(pr.file.size)+(created?' · '+created:'')+(pr.env&&pr.env.user?' · '+esc(pr.env.user):'')
+    +' · '+esc((pr.env&&pr.env.orgAd)||orgAdiGoster());
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:500px">
     <div class="modal-head"><h3>Yedekten Geri Yukle</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">

@@ -5,8 +5,9 @@ import { aktifOrg, orgIdGecerli } from '../lib/org.js'
 // ─────────────────────────────────────────────────────────────────────────────
 // ORGANIZASYON UCU
 //
-// GET  /api/org                        -> { orgs, aktif, super }
-// POST /api/org  { op:'gecis', org }   -> { token, org, ttl }   (yalnizca super)
+// GET  /api/org                          -> { orgs, aktif, super }
+// POST /api/org  { op:'gecis', org }     -> { token, org, ttl }  (yalnizca super)
+// POST /api/org  { op:'yeni', id, ad }   -> { org }              (yalnizca super)
 //
 // NEDEN AYRI BIR UC: 'organizations' tablosu bilerek /api/veri beyaz listesinde
 // degil. Oradan erisilebilseydi herhangi bir kullanici kendi kiraci kaydini
@@ -17,9 +18,8 @@ import { aktifOrg, orgIdGecerli } from '../lib/org.js'
 // verisini acmak demekti. Imzali tokende duran bir iddiayi ise kullanici
 // degistiremez - sunucu her istekte ayni tek kaynaga bakar (bkz. lib/org.js).
 //
-// KALAN IS (Asama 4): yeni organizasyon olusturma (op:'yeni'). Once
-// migration_org_2.sql calistirilmali - global benzersizlik kisitlari kalkmadan
-// ikinci bir organizasyon kendi ayarlarini/bina kodlarini kaydedemez.
+// YENI ORGANIZASYON BOMBOS DOGAR: hicbir tanim, sartname ya da kutuphane
+// kopyalanmaz (alinan karar). Yeni sirket kendi verisini bastan girer.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function orgSatiri(r) {
@@ -51,8 +51,35 @@ export default async function handler(req, res) {
 
   if (req.method === 'POST') {
     const { op } = req.body || {}
-    if (op !== 'gecis') { res.status(400).json({ error: 'Bilinmeyen islem' }); return }
+    if (op !== 'gecis' && op !== 'yeni') { res.status(400).json({ error: 'Bilinmeyen islem' }); return }
     if (!claims.sup) { res.status(403).json({ error: 'Yetkiniz yok' }); return }
+
+    if (op === 'yeni') {
+      const { id, ad } = req.body || {}
+      /* Kimlik kurallari lib/org.js'te: kucuk harf/rakam/tire, 'siparis' gibi
+         DOSYA YOLU parcalariyla cakisamaz. Bu dar liste kazara degil - org kimligi
+         hem imzali tokende hem depolama yolunda geciyor. */
+      if (!orgIdGecerli(id)) {
+        res.status(400).json({ error: 'Kimlik yalnizca kucuk harf, rakam ve tire icerebilir (ornek: yuem)' }); return
+      }
+      const isim = String(ad || '').trim()
+      if (!isim || isim.length > 60) { res.status(400).json({ error: 'Organizasyon adi gerekli (en fazla 60 karakter)' }); return }
+
+      try {
+        const { error } = await supabaseAdmin.from('organizations').insert([{ id, data: { ad: isim } }])
+        if (error) {
+          if (error.code === '23505') { res.status(409).json({ error: 'Bu kimlikte bir organizasyon zaten var' }); return }
+          throw error
+        }
+        // Organizasyon BOS dogar; ilk kullanicisi Kullanicilar ekranindan, o
+        // organizasyona GECILDIKTEN sonra acilir (api/users.js aktif org'a yazar).
+        res.status(201).json({ org: { id, ad: isim, aktif: true } })
+      } catch (e) {
+        console.error('org yeni basarisiz', e)
+        res.status(500).json({ error: 'Sunucu hatasi' })
+      }
+      return
+    }
 
     const hedef = (req.body || {}).org
     if (!orgIdGecerli(hedef)) { res.status(400).json({ error: 'Gecersiz organizasyon' }); return }

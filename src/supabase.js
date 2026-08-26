@@ -66,8 +66,11 @@ export async function sbLoginUser(username, password, rememberMe) {
 // (eski cagiranlar yalnizca .user kullaniyordu, uyumlu kalir).
 export async function sbGetUserByUsername() {
   try {
-    const { user, token, ttl } = await authFetch('/api/me')
-    return user ? { ...user, __token: token, __ttl: ttl } : null
+    // __org: AKTIF organizasyon. Kullanicinin kendi org_id'sinden FARKLI olabilir -
+    // super yonetici baska bir organizasyona gecmisse dogru cevap budur ve tazeleme
+    // sonrasi da korunur (bkz. api/me.js).
+    const { user, token, ttl, org } = await authFetch('/api/me')
+    return user ? { ...user, __token: token, __ttl: ttl, __org: org } : null
   } catch (e) {
     // Token gecersiz/suresi dolmus ya da kullanici silinmis: gercekten
     // cikis yaptirilmali. Diger tum hatalar (ag, 5xx) yukari firlatilir ki
@@ -100,6 +103,38 @@ export async function sbUpdateUser(id, { password, role, sections, buildings, pe
 export async function sbDeleteUser(id) {
   await authFetch(`/api/users/${encodeURIComponent(id)}`, { method: 'DELETE' })
   return true
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Organizasyonlar (cok kiracili yapi)
+//
+// Aktif organizasyon TOKENDE durur; burasi yalnizca listeyi getirir ve gecis
+// ister. Gecis sunucudan YENI BIR TOKEN dondurur - cagiran taraf onu
+// window.AUTH_TOKEN'a yazip veriyi bastan yuklemeli, yoksa ekranda onceki
+// organizasyonun verisi kalir.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// { orgs:[{id, ad, aktif}], aktif:'<org id>', super:bool }
+export async function sbOrgListesi() {
+  return authFetch('/api/org')
+}
+
+// { token, org, ad, ttl }
+export async function sbOrgGecis(org) {
+  return authFetch('/api/org', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op: 'gecis', org }),
+  })
+}
+
+// { org:{id, ad, aktif} } - yalnizca super yonetici
+export async function sbOrgYeni(id, ad) {
+  return authFetch('/api/org', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op: 'yeni', id, ad }),
+  })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -146,8 +181,27 @@ async function veriSelect(table, opts = {}) {
 
 const ONBELLEK_DB = 'saha-onbellek'
 const ONBELLEK_DEPO = 'tablolar'
-const ONBELLEK_SURUM = 1        // bicim degisirse artir - eski onbellek yok sayilir
+// 2: anahtar artik ORGANIZASYONU da iceriyor (asagidaki onbellekAnahtar).
+// Surum artisi eski (organizasyonsuz) onbellegi tamamen gecersiz kilar.
+const ONBELLEK_SURUM = 2
 let _idb = null
+
+/* ONBELLEK ANAHTARI ORGANIZASYONU DA ICERIR.
+   Eskiden anahtar yalnizca tablo adiydi. Cok kiracili yapida bu, organizasyon
+   degistirildiginde BYKARA'nin 'proje_items' onbelleginin digerinin verisi
+   sanilmasi demekti - uygulama YANLIS VERI gosterirdi. Artimli yukleme sunucudan
+   yalnizca DEGISEN satirlari istedigi icin de hata kendiliginden duzelmezdi:
+   sunucunun kimlik listesi digerinin satirlariyla eslesmedigi surece onbellekteki
+   yabanci satirlar ekranda kalirdi.
+
+   window.AKTIF_ORG, authFetch'in window.AUTH_TOKEN'i okumasiyla ayni desen -
+   oturum bilgisi uygulamada tutulur, bu katman onu yalnizca okur. Org henuz
+   bilinmiyorsa ayri bir kova kullanilir: yanlis veri gostermektense o acilista
+   bir kez fazladan indirme yapilir. */
+function onbellekAnahtar(table) {
+  const org = (typeof window !== 'undefined' && window.AKTIF_ORG) || 'bilinmeyen'
+  return org + '|' + table
+}
 
 function idbAc() {
   if (_idb) return _idb
@@ -187,14 +241,14 @@ function idbIslem(mod, fn) {
 
 // Onbellekten oku: Map(id -> {u: updated_at, d: data})
 async function onbellekOku(table) {
-  const kayit = await idbIslem('readonly', depo => depo.get(table))
+  const kayit = await idbIslem('readonly', depo => depo.get(onbellekAnahtar(table)))
   if (!kayit || !Array.isArray(kayit.satirlar)) return null
   const m = new Map()
   for (const s of kayit.satirlar) m.set(s.id, s)
   return m
 }
 async function onbellekYaz(table, satirlar) {
-  await idbIslem('readwrite', depo => depo.put({ satirlar, ts: Date.now() }, table))
+  await idbIslem('readwrite', depo => depo.put({ satirlar, ts: Date.now() }, onbellekAnahtar(table)))
 }
 // Yedekten geri yukleme / toplu temizlik sonrasi onbellek gecersizdir.
 export async function sbOnbellekTemizle() {
