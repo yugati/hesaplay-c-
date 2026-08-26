@@ -20753,7 +20753,20 @@ function ihtYazHatasi(e,ne){
 /* bina yeni satira ONCEDEN yazilir: liste genelde tek binaya aittir, her satirda
    bastan secmek gereksiz tiklama olurdu. Kat bilincli secilir - onceden dolmaz. */
 function ihtBlankLine(bina){ return {id:uid(),matId:'',matSrc:'',code:'',ad:'',marka:'',birim:'',
-  qty:'',bina:bina||'',katId:'',kat:'',konum:'',not:''}; }
+  qty:'',bina:bina||'',katId:'',kat:'',kot:'',konum:'',not:''}; }
+/* KAT KOTU. Kat dugumunun kendi alanidir (Binalar > lokasyon agacindaki "Kot"
+   kutusu, bkz. lokwSetKot) - ihtiyac listesi kendi kotunu TANIMLAMAZ, okur.
+   CANLI OKUNUR, snapshot yalnizca yedektir: Binalar'da yanlis girilmis bir kot
+   duzeltilince acik ihtiyac listelerinin ciktisi da duzelmeli (orderCompany'nin
+   sirket adini canli okumasiyla ayni gerekce). Dugum silinmisse satira kaydedilen
+   kopya devreye girer, boylece gecmis liste yine okunabilir kalir. */
+function ihtKot(l){
+  const n=(l&&l.katId)?getLok(l.katId):null;
+  if(n&&n.kot!=null&&n.kot!=='') return n.kot;
+  return (l&&l.kot!=null&&l.kot!=='')?l.kot:'';
+}
+// ciktilarda ve ekranda ortak yazim: uygulama genelinde "Kot 3600" (bkz. fw-kot, rapor kunyesi)
+function ihtKotMetni(l){ const k=ihtKot(l); return (k===''||k==null)?'':'Kot '+k; }
 function ihtDolu(l){ return !!(String(l.ad||'').trim()||String(l.code||'').trim()||ihtSayi(l.qty)>0); }
 function ihtFilledLines(x){ return ((x&&x.lines)||[]).filter(ihtDolu); }
 function ihtSayi(v){ return Number(String(v==null?'':v).replace(',','.'))||0; }
@@ -20790,7 +20803,7 @@ function ihtSetLine(i,k,v){ if(_IHT&&_IHT.lines[i]) _IHT.lines[i][k]=v; }
 function ihtSetLineBina(i,v){
   const l=_IHT&&_IHT.lines[i]; if(!l) return;
   if((l.bina||'')===v) return;
-  l.bina=v; l.katId=''; l.kat='';
+  l.bina=v; l.katId=''; l.kat=''; l.kot='';
   ihtRenderLines();
 }
 /* Kat secimi lokasyon agacindan gelir. katId CANLI bagdir, kat ise o anki AD
@@ -20798,9 +20811,10 @@ function ihtSetLineBina(i,v){
 function ihtSetLineKat(i,v){
   const l=_IHT&&_IHT.lines[i]; if(!l) return;
   if(v==='__ser') return;                    // kayitta duran serbest/silinmis kat adi korunur
-  if(!v){ l.katId=''; l.kat=''; ihtRenderLines(); return; }
+  if(!v){ l.katId=''; l.kat=''; l.kot=''; ihtRenderLines(); return; }
   const n=getLok(v);
   l.katId=v; l.kat=(n&&n.name)||'';
+  l.kot=(n&&n.kot!=null&&n.kot!=='')?n.kot:'';   // dugum silinirse diye kopya
   ihtRenderLines();
 }
 function ihtAddBlankLine(){ if(!_IHT)return; _IHT.lines.push(ihtBlankLine(_IHT.bina)); ihtRenderLines(); }
@@ -20838,7 +20852,7 @@ function ihtKatCell(l,i){
   const eslesen=!!(l.katId&&kats.some(k=>k.id===l.katId));
   return `<select onchange="ihtSetLineKat(${i},this.value)">
     <option value="">- kat -</option>
-    ${kats.map(k=>`<option value="${k.id}" ${eslesen&&l.katId===k.id?'selected':''}>${esc(k.name)}</option>`).join('')}
+    ${kats.map(k=>`<option value="${k.id}" ${eslesen&&l.katId===k.id?'selected':''}>${esc(k.name)}${(k.kot!=null&&k.kot!=='')?' · Kot '+esc(k.kot):''}</option>`).join('')}
     ${(!eslesen&&l.kat)?`<option value="__ser" selected>${esc(l.kat)} (kayitli)</option>`:''}
   </select>`;
 }
@@ -20967,7 +20981,7 @@ function openIhtiyacDetay(id){
       <td class="tl-no">${i+1}</td>
       <td>${esc(l.ad||'-')}${l.code?`<div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(l.code)}${l.marka?' · '+esc(l.marka):''}</div>`:''}</td>
       <td class="t-qty">${fmtNum(ihtSayi(l.qty))}${l.birim?' <span style="color:var(--mute)">'+esc(l.birim)+'</span>':''}</td>
-      <td class="t-meta">${esc([l.bina,l.kat,l.konum].filter(Boolean).join(' · ')||'-')}</td>
+      <td class="t-meta">${esc([l.bina,l.kat,ihtKotMetni(l),l.konum].filter(Boolean).join(' · ')||'-')}</td>
       <td class="t-meta">${esc(l.not||'')}</td>
     </tr>`).join('')
     :`<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--mute);font-size:12.5px">Bu listede dolu satir yok</td></tr>`;
@@ -21248,22 +21262,23 @@ function exportIhtiyacXlsx(id){
   const ls=ihtFilledLines(x);
   if(!ls.length){ toast('Aktarilacak satir yok','err'); return; }
   const kaynakAd=src=>((tutKaynakTanim(src)||{}).label)||'';
-  const rows=[['sira','urun_kodu','malzeme','marka','birim','miktar','bina','kat','konum','kutuphane','not']];
+  const rows=[['sira','urun_kodu','malzeme','marka','birim','miktar','bina','kat','kot','konum','kutuphane','not']];
   ls.forEach((l,i)=>rows.push([i+1,l.code||'',l.ad||'',l.marka||'',l.birim||'',ihtSayi(l.qty),
-    l.bina||'',l.kat||'',l.konum||'',kaynakAd(l.matSrc),l.not||'']));
+    l.bina||'',l.kat||'',ihtKot(l),l.konum||'',kaynakAd(l.matSrc),l.not||'']));
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:6},{wch:16},{wch:44},{wch:16},{wch:9},{wch:10},{wch:14},{wch:16},{wch:22},{wch:14},{wch:26}];
+  ws['!cols']=[{wch:6},{wch:16},{wch:44},{wch:16},{wch:9},{wch:10},{wch:14},{wch:16},{wch:10},{wch:22},{wch:14},{wch:26}];
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Ihtiyac');
   const AYR='|@|';   // grup anahtari ayraci - bina/kat/malzeme adinda gecmeyecek bir dizi
   const grup={};
-  ls.forEach(l=>{ const k=[l.bina||'(bina yok)',l.kat||'(kat yok)',l.ad||'-',l.birim||''].join(AYR);
+  ls.forEach(l=>{ const k=[l.bina||'(bina yok)',l.kat||'(kat yok)',String(ihtKot(l)),
+    l.ad||'-',l.birim||''].join(AYR);
     grup[k]=(grup[k]||0)+ihtSayi(l.qty); });
-  const ozet=[['bina','kat','malzeme','birim','toplam_miktar']];
+  const ozet=[['bina','kat','kot','malzeme','birim','toplam_miktar']];
   Object.keys(grup).sort((a,b)=>a.localeCompare(b,'tr',{numeric:true}))
-    .forEach(k=>{ const p=k.split(AYR); ozet.push([p[0],p[1],p[2],p[3],grup[k]]); });
+    .forEach(k=>{ const p=k.split(AYR); ozet.push([p[0],p[1],p[2],p[3],p[4],grup[k]]); });
   const wsO=XLSX.utils.aoa_to_sheet(ozet);
-  wsO['!cols']=[{wch:14},{wch:16},{wch:44},{wch:9},{wch:14}];
+  wsO['!cols']=[{wch:14},{wch:16},{wch:10},{wch:44},{wch:9},{wch:14}];
   XLSX.utils.book_append_sheet(wb,wsO,'Bina-Kat Ozet');
   XLSX.writeFile(wb,('Ihtiyac_'+(x.ad||'liste')+'_'+new Date().toISOString().slice(0,10)+'.xlsx')
     .replace(/[\\/:*?"<>|]/g,'-'));
@@ -21460,7 +21475,7 @@ function ihtPdfRow(l,sira){
     +`<span class="brand">${ihtPdfMarka(k.marka)}</span>`
     +`<span class="rest">${geriKalan}</span>`;
   const teknik=k.tek.slice(0,6).map(r=>`<u>${esc(r.k)}:</u> ${esc(r.v)}`).join(' &nbsp;·&nbsp; ');
-  const hedef=[l.bina,l.kat,l.konum].filter(Boolean).join(' · ');
+  const hedef=[l.bina,l.kat,ihtKotMetni(l),l.konum].filter(Boolean).join(' · ');
   const adet=fmtNum(ihtSayi(l.qty));
   return `<div class="r">
     <div class="no">${sira}</div>
