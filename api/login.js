@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { signSession, SESSION_TTL_DEFAULT, SESSION_TTL_REMEMBER } from '../lib/auth.js'
 import { verifyPassword, hashPassword, isHashed } from '../lib/password.js'
 import { girisKilitli, hataliDeneme, basariliGiris, istekIp } from '../lib/girisKoruma.js'
+import { VARSAYILAN_ORG } from '../lib/org.js'
 
 // Kilit mesaji: kalan sureyi insan diliyle yazar
 function kalanMetin(sn) {
@@ -70,6 +71,8 @@ export default async function handler(req, res) {
   const ttlMs = rememberMe ? SESSION_TTL_REMEMBER : SESSION_TTL_DEFAULT
   const safeUser = { ...user }
   delete safeUser.password
+  // Giriste aktif organizasyon HER ZAMAN kullanicinin kendi organizasyonudur;
+  // super yonetici gecis yaparsa token api/org.js'te yeniden imzalanir.
   const token = signSession(safeUser, ttlMs)
-  res.status(200).json({ user: safeUser, token })
+  res.status(200).json({ user: safeUser, org: safeUser.org_id || VARSAYILAN_ORG, token })
 }

@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { requireAuth, signSession, SESSION_TTL_DEFAULT, SESSION_TTL_REMEMBER } from '../lib/auth.js'
+import { VARSAYILAN_ORG, orgKullanilabilir } from '../lib/org.js'
 
 // Aktif oturumun kullanicisini tazeler (ör. baska bir admin yetkisini
 // degistirdiyse sayfa yenilemede yansisin diye arka planda cagrilir).
@@ -27,7 +28,20 @@ export default async function handler(req, res) {
     // "Beni Hatirla" ile acilmistir, yeni token da uzun omurlu imzalanir
     const kalanMs = claims.exp ? (claims.exp * 1000 - Date.now()) : 0
     const ttl = kalanMs > SESSION_TTL_DEFAULT ? SESSION_TTL_REMEMBER : SESSION_TTL_DEFAULT
-    res.status(200).json({ user: safeUser, token: signSession(user, ttl), ttl })
+
+    /* AKTIF ORGANIZASYON TAZELEMEDE KORUNUR. Super yonetici baska bir
+       organizasyona gectiyse (api/org.js) aktif org tokende yasar; burada
+       korunmazsa 20 dakikada bir sessizce kendi organizasyonuna geri atilirdi -
+       ekranda veri degisir, sebebi gorunmezdi.
+       Kendi organizasyonu disindaki bir org icin varligi da dogrulanir: gecilen
+       organizasyon sonradan silinmis/askiya alinmissa kullanici bos bir uygulamada
+       kalmak yerine kendi organizasyonuna doner. */
+    const evOrg = user.org_id || VARSAYILAN_ORG
+    let aktif = evOrg
+    if (claims.sup && claims.org && claims.org !== evOrg && user.is_super) {
+      if (await orgKullanilabilir(claims.org)) aktif = claims.org
+    }
+    res.status(200).json({ user: safeUser, org: aktif, token: signSession(user, ttl, aktif), ttl })
   } catch (e) {
     console.error('me: kullanici sorgusu basarisiz', e)
     res.status(500).json({ error: 'Sunucu hatasi' })

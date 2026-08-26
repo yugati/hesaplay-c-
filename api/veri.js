@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { requireAuth } from '../lib/auth.js'
 import { yetkiKontrol } from '../lib/yetki.js'
+import { VARSAYILAN_ORG } from '../lib/org.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VERI ERISIM UCU (Asama 1)
@@ -18,6 +19,15 @@ import { yetkiKontrol } from '../lib/yetki.js'
 // Yetki (Asama 2): modul bazli okuma/ekleme/duzenleme/silme kontrolu artik BURADA
 // yapiliyor (lib/yetki.js) - tarayicidaki kontrol atlanabilir, bu atlanamaz.
 // Kurallar tarayicidakinin birebir kopyasidir, davranis degismedi.
+//
+// ORGANIZASYON: her sorgu tokendeki AKTIF ORGANIZASYONA daraltilir - okumada
+// .eq('org_id', org), yazmada satirlara org_id ZORLA yazilir. Istemci org
+// gonderemez; gonderirse ezilir (bkz. lib/org.js). Tek bir kiraci varken bu
+// filtreler gorunur bir degisiklik yapmaz, cunku tum veri zaten 'bykara'dir.
+//
+// 'organizations' tablosu BILEREK asagidaki beyaz listede YOKTUR: kiraci listesini
+// buradan duzenleyebilmek, herhangi bir kullanicinin kendini baska organizasyona
+// tasiyabilmesi demek olurdu. O tablo yalnizca /api/org uzerinden yonetilir.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // id + data (JSONB) seklindeki varlik tablolari
@@ -43,6 +53,20 @@ const SUTUNLAR = new Set(['id, data', 'id', 'id, updated_at', 'data', 'key, valu
 const SIRA_SUTUNLARI = new Set(['created_at', 'id', 'sort_order', 'name', 'code'])
 const ESLESME_SUTUNLARI = new Set(['id', 'key', 'name', 'code'])
 
+/* UPSERT CAKISMA HEDEFI ARTIK SUNUCUDA BELIRLENIR, istemciden gelmez.
+   Sebep: hedef sutunlar artik org_id iceriyor (migration_org_1.sql'deki
+   (org_id, id) / (org_id, key) benzersiz indeksleri). Istemcinin gonderdigi
+   'id' ya da 'key' hedefi kullanilsaydi bir kiracinin upsert'i BASKA kiracinin
+   ayni anahtarli satirini gunceller, yani ezerdi.
+   Listede olmayan tablolar varlik tablolaridir: (org_id, id). */
+const CAKISMA = {
+  app_settings: 'org_id,key',
+  saha_settings: 'org_id,key',
+  rapor_ekipler: 'org_id,name',
+  proje_buildings: 'org_id,code',
+  proje_sections: 'org_id,name',
+}
+
 const MAX_SATIR = 3000   // tek istekte islenebilecek satir sayisi ust siniri
 const PGRST_TAVAN = 1000 // PostgREST'in tek yanitta dondurdugu azami satir (db-max-rows)
 
@@ -64,13 +88,21 @@ export default async function handler(req, res) {
     // her seferinde users tablosuna gitmemek adina). ESKI tokenlerde (Asama 2'den once
     // imzalanmis) bu alanlar yoktur - o durumda kullanici satirindan okunur, boylece
     // yenilenmemis oturumlar da calismaya devam eder.
-    let kullanici
+    //
+    // ORGANIZASYON da ayni yerden gelir: tokende 'org' varsa O kullanilir (super
+    // yonetici bir baska organizasyona GECMIS olabilir - kullanici satirindaki
+    // org_id degil, tokendeki aktif org dogru cevaptir). Yoksa yine kullanici
+    // satirindan okunur, boylece Asama 1 oncesi tokenler de calismaya devam eder.
+    let kullanici, org = null
     if (claims.perms || claims.sections) {
       kullanici = { role: claims.role, sections: claims.sections || [], permissions: claims.perms || {} }
-    } else {
-      const { data } = await supabaseAdmin.from('users').select('role, sections, permissions').eq('id', claims.sub).maybeSingle()
+    }
+    if (typeof claims.org === 'string' && claims.org) org = claims.org
+    if (!kullanici || !org) {
+      const { data } = await supabaseAdmin.from('users').select('role, sections, permissions, org_id').eq('id', claims.sub).maybeSingle()
       if (!data) return hata(res, 401, 'Kullanici bulunamadi - yeniden giris yapin')
-      kullanici = data
+      kullanici = kullanici || { role: data.role, sections: data.sections || [], permissions: data.permissions || {} }
+      org = org || data.org_id || VARSAYILAN_ORG
     }
     const izin = yetkiKontrol(kullanici, table, op, !!g.all)
     if (!izin.ok) return hata(res, izin.kod, izin.mesaj)
@@ -81,7 +113,7 @@ export default async function handler(req, res) {
       // '*' kullanilir, 'id' DEGIL: app_settings / saha_settings anahtar-deger
       // tablolaridir ve id sutunlari yok - 'id' ile sayim orada hata veriyordu.
       // head:true oldugu icin satir tasinmaz, yalnizca sayi doner.
-      const { count, error } = await q.select('*', { count: 'exact', head: true })
+      const { count, error } = await q.select('*', { count: 'exact', head: true }).eq('org_id', org)
       if (error) throw error
       res.status(200).json({ count: count || 0 })
       return
@@ -113,7 +145,7 @@ export default async function handler(req, res) {
       // Sorgu her seferinde YENIDEN kurulur: PostgREST builder'i tek kullanimliktir,
       // sayfalama dongusunde ayni nesne tekrar kullanilamaz.
       const kur = () => {
-        let s = supabaseAdmin.from(table).select(kolon)
+        let s = supabaseAdmin.from(table).select(kolon).eq('org_id', org)
         for (const o of (g.order || [])) s = s.order(o.col, { ascending: o.asc !== false })
         if (g.eq) s = s.eq(g.eq.col, g.eq.val)
         if (g.in) s = s.in(g.in.col, g.in.vals)
@@ -156,39 +188,49 @@ export default async function handler(req, res) {
       const rows = g.rows
       if (!Array.isArray(rows) || !rows.length) return hata(res, 400, 'Satir yok')
       if (rows.length > MAX_SATIR) return hata(res, 400, 'Tek istekte en fazla ' + MAX_SATIR + ' satir')
+      // org_id her satira ZORLA yazilir: istemci gondermis olsa bile ezilir.
+      const satirlar = rows.map(r => ({ ...r, org_id: org }))
       const { error } = op === 'insert'
-        ? await q.insert(rows)
-        : await q.upsert(rows, { onConflict: g.onConflict || 'id' })
+        ? await q.insert(satirlar)
+        : await q.upsert(satirlar, { onConflict: CAKISMA[table] || 'org_id,id' })
       if (error) throw error
-      res.status(200).json({ ok: true, n: rows.length })
+      res.status(200).json({ ok: true, n: satirlar.length })
       return
     }
 
     if (op === 'update') {
       if (!g.eq || !ESLESME_SUTUNLARI.has(g.eq.col)) return hata(res, 400, 'Gecersiz eslesme')
       if (!g.patch || typeof g.patch !== 'object') return hata(res, 400, 'Gecersiz guncelleme')
-      const { error } = await q.update(g.patch).eq(g.eq.col, g.eq.val)
+      // org_id guncellenemez: bir kaydi baska organizasyona tasimak bu uctan yapilamaz.
+      const yama = { ...g.patch }
+      delete yama.org_id
+      const { error } = await q.update(yama).eq(g.eq.col, g.eq.val).eq('org_id', org)
       if (error) throw error
       res.status(200).json({ ok: true })
       return
     }
 
     if (op === 'delete') {
-      let d = q.delete()
-      if (g.all) {
-        // TUM TABLOYU bosaltir - yetki kontrolunde yalnizca admin'e aciktir
-        d = d.gte('created_at', '2000-01-01T00:00:00Z')
-      } else if (g.in) {
-        if (!ESLESME_SUTUNLARI.has(g.in.col)) return hata(res, 400, 'Izin verilmeyen eslesme sutunu')
-        if (!Array.isArray(g.in.vals) || !g.in.vals.length) return hata(res, 400, 'Deger listesi bos')
-        if (g.in.vals.length > MAX_SATIR) return hata(res, 400, 'Tek istekte en fazla ' + MAX_SATIR + ' kayit')
-        d = d.in(g.in.col, g.in.vals)
-      } else if (g.eq) {
-        if (!ESLESME_SUTUNLARI.has(g.eq.col)) return hata(res, 400, 'Izin verilmeyen eslesme sutunu')
-        d = d.eq(g.eq.col, g.eq.val)
-      } else {
-        // eslesmesiz silme = tum tabloyu silme; kazara olmasin diye acikca reddedilir
-        return hata(res, 400, 'Silme kosulu belirtilmedi')
+      // ORG FILTRESI HER DALDA: 'all' dahil hicbir silme kendi organizasyonunun
+      // disina cikamaz. Eskiden 'all' tabloyu komple bosaltiyordu - cok kiracili
+      // yapida bu, bir sirketin yoneticisinin TUM sirketlerin verisini silmesi
+      // demek olurdu. Artik en yikici islem bile kendi kiracisiyla sinirli.
+      // org_id filtresi tek basina gecerli bir silme kosuludur: 'all' bu haliyle
+      // "organizasyonun tum satirlari" demektir, tablonun tamami degil.
+      let d = q.delete().eq('org_id', org)
+      if (!g.all) {
+        if (g.in) {
+          if (!ESLESME_SUTUNLARI.has(g.in.col)) return hata(res, 400, 'Izin verilmeyen eslesme sutunu')
+          if (!Array.isArray(g.in.vals) || !g.in.vals.length) return hata(res, 400, 'Deger listesi bos')
+          if (g.in.vals.length > MAX_SATIR) return hata(res, 400, 'Tek istekte en fazla ' + MAX_SATIR + ' kayit')
+          d = d.in(g.in.col, g.in.vals)
+        } else if (g.eq) {
+          if (!ESLESME_SUTUNLARI.has(g.eq.col)) return hata(res, 400, 'Izin verilmeyen eslesme sutunu')
+          d = d.eq(g.eq.col, g.eq.val)
+        } else {
+          // eslesmesiz silme = tum organizasyonu silme; kazara olmasin diye acikca reddedilir
+          return hata(res, 400, 'Silme kosulu belirtilmedi')
+        }
       }
       const { error } = await d
       if (error) throw error
