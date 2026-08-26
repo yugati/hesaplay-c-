@@ -16,6 +16,10 @@
 --
 -- 1. AŞAMA ÇALIŞTIRILMADAN BUNU ÇALIŞTIRMAYIN — aradığı indeksleri bulamaz ve
 -- hata verip durur (bilerek: yarım bırakılmış bir kısıt düzeni en kötü sonuçtur).
+--
+-- ⚠ İLERİDE YENİ BİR TABLO KURARSANIZ (ör. migration_tutanak.sql): önce
+-- migration_org_1.sql'i, sonra bu dosyayı TEKRAR çalıştırın. İkisi de tekrar
+-- çalıştırılabilir; devri tamamlanmış tablolara dokunmaz, yenisini yakalar.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ─────────────────────────────────────────────────────────────

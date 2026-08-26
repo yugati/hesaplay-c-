@@ -19,6 +19,13 @@
 --      org_id varsayılanı düşürülür (kod artık her zaman açıkça yazdığı için)
 --
 -- Tekrar çalıştırmak güvenlidir (IF NOT EXISTS / ON CONFLICT DO NOTHING).
+--
+-- ⚠ İLERİDE YENİ BİR TABLO KURARSANIZ: bu dosya ve migration_org_2.sql'i
+-- TEKRAR çalıştırın. Aşağıdaki döngüler var olmayan tabloyu "atlandi (tablo yok)"
+-- diyerek geçer — o tablo sonradan kurulursa org_id sütunu OLMAZ ve /api/veri
+-- onu sorgularken hata verir. İkisi de tekrar çalıştırılabilir, zararı yoktur.
+-- Bugün bu durumda olan tablo: tutanaklar (migration_tutanak.sql henüz
+-- çalıştırılmamış, tablo veritabanında yok).
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ─────────────────────────────────────────────────────────────
