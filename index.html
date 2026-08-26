@@ -5292,7 +5292,10 @@ function renderCompanies(){
     const cnt=cntOf(c);
     const iletisim=[c.tel,c.email].filter(Boolean).map(v=>`<div>${esc(v)}</div>`).join('');
     rows+=`<tr>
-      <td><div class="t-name">${esc(c.ad)}</div>${c.adres?`<div class="t-meta" style="margin-top:2px">${esc(c.adres)}</div>`:''}</td>
+      <td><div style="display:flex;align-items:center;gap:9px;min-width:0">
+        ${c.logo?`<img src="${esc(c.logo)}" alt="" title="Antet logosu" style="height:22px;max-width:64px;object-fit:contain;flex:none;background:#fff;border:1px solid var(--line);border-radius:5px;padding:2px" onerror="this.remove()">`:''}
+        <div style="min-width:0"><div class="t-name">${esc(c.ad)}</div>${c.adres?`<div class="t-meta" style="margin-top:2px">${esc(c.adres)}</div>`:''}</div>
+      </div></td>
       <td class="t-meta mono">${esc(c.vergi||'-')}</td>
       <td class="t-meta">${iletisim||'-'}</td>
       <td class="t-meta">${cnt} siparis</td>
@@ -5304,9 +5307,11 @@ function renderCompanies(){
   return `<div class="sel-wrap" style="max-width:1080px">
     <div class="sel-bc"><button onclick="closeCompanies()">${icoArr('left')} Binalara Don</button></div>
     <div class="sel-head"><h2>Sirketler</h2><p>Proje siparis/fatura girisinde secilecek sirket listesi.
-      Vergi no, adres ve iletisim bilgileri de burada tutulur.</p></div>
+      Vergi no, adres, iletisim ve <b>antet logosu</b> burada tutulur - tutanak ve ihtiyac listesi ciktilarinin
+      ust kosesindeki antet dogrudan bu kayittan okunur.</p></div>
     <div class="def-sec-bar"><div class="def-sec-chips"></div>
       ${can('define')?`<button class="btn btn-add" onclick="openCompanyModal()">${icoPlus()} Sirket Ekle</button>`:''}</div>
+    ${antetTasimaSeridi()}
     ${filterbar}
     ${sumline}
     <div class="tablewrap"><table><thead><tr><th>Sirket Adi</th><th>Vergi No</th><th>Iletisim</th><th>Kullanim</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -5317,12 +5322,29 @@ function openCompanyModal(id){ if(!guard('define'))return; const x=id?(DB.compan
     <div class="frow"><label>Sirket Adi *</label><input id="c_ad" value="${x?esc(x.ad):''}" placeholder="orn. ABC Insaat Ltd. Sti." onkeydown="if(event.key==='Enter')saveCompany(${x?`'${x.id}'`:'null'})"></div>
     <div class="frow"><label>Vergi No <span class="t-meta">(opsiyonel)</span></label><input id="c_vergi" value="${x?esc(x.vergi||''):''}" placeholder="orn. 1234567890"></div>
     <div class="frow"><label>Adres <span class="t-meta">(opsiyonel)</span></label><input id="c_adres" value="${x?esc(x.adres||''):''}" placeholder="orn. ... Mah. ... Cad. No:1 Istanbul"></div>
-    <div class="frow two" style="margin-bottom:0">
+    <div class="frow two">
       <div><label>Telefon</label><input id="c_tel" value="${x?esc(x.tel||''):''}" placeholder="+90 ..."></div>
       <div><label>E-posta</label><input id="c_email" value="${x?esc(x.email||''):''}" placeholder="info@..."></div></div>
+    <div class="frow"><label>Logo Linki <span class="t-meta">(opsiyonel - internetteki resmin adresi)</span></label>
+      <input id="c_logo" value="${x&&x.logo?esc(x.logo):''}" placeholder="https://..." oninput="sirketLogoOnizle()"></div>
+    <div class="frow" style="margin-bottom:0"><label>Onizleme <span class="t-meta">(ciktilarin antetinde bu logo basilir)</span></label>
+      <div class="marka-onizle" id="c_onizle" style="background:#fff">${x&&x.logo?`<img src="${esc(x.logo)}" alt="" onerror="sirketOnizleHata(this)">`:'<span class="t-meta" style="font-size:11px">Logo linki girilmedi</span>'}</div></div>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveCompany(${x?`'${x.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   const inp=document.getElementById('c_ad'); if(inp) setTimeout(()=>inp.focus(),0);
+}
+/* Logo ONIZLEMESI beyaz zeminde gosterilir: sirket logolari da marka logolari gibi
+   neredeyse her zaman beyaz kagit icin cizilir; koyu panelde okunmuyordu
+   (bkz. .marka-onizle yanindaki ayni gerekce). */
+function sirketLogoOnizle(){
+  const v=String((document.getElementById('c_logo')||{}).value||'').trim();
+  const box=document.getElementById('c_onizle'); if(!box) return;
+  box.innerHTML=v?`<img src="${esc(v)}" alt="" onerror="sirketOnizleHata(this)">`
+    :'<span class="t-meta" style="font-size:11px">Logo linki girilmedi</span>';
+}
+function sirketOnizleHata(img){
+  const box=img&&img.parentElement; if(!box)return;
+  box.innerHTML='<span class="t-meta" style="font-size:11px;color:var(--red)">Bu adresten resim yuklenemedi - linki kontrol edin</span>';
 }
 async function saveCompany(id){ if(!guard('define'))return;
   const al=k=>{ const e=document.getElementById(k); return e?e.value.trim():''; };
@@ -5330,7 +5352,7 @@ async function saveCompany(id){ if(!guard('define'))return;
   if(!ad){toast("Sirket adi zorunlu","err");return;}
   if((DB.companies||[]).some(c=>norm(c.ad)===norm(ad) && c.id!==id)){ toast("Bu sirket zaten var","err"); return; }
   // vergi no / adres / telefon / e-posta opsiyonel; bos birakilanlar bos string olarak yazilir
-  const bilgi={ad, vergi:al('c_vergi'), adres:al('c_adres'), tel:al('c_tel'), email:al('c_email')};
+  const bilgi={ad, vergi:al('c_vergi'), adres:al('c_adres'), tel:al('c_tel'), email:al('c_email'), logo:al('c_logo')};
   if(id){
     const x=DB.companies.find(c=>c.id===id);
     await sbUpdateCompany(id,{...x,...bilgi});
@@ -5343,9 +5365,130 @@ async function saveCompany(id){ if(!guard('define'))return;
   }
   closeModal(); render(); toast(id?"Sirket guncellendi":"Sirket eklendi");
 }
+/* Sirketin FIILEN kullanildigi yerler. Siparis disinda tutanaklarin taraf kaydi ve
+   ihtiyac listelerinin anteti de bu kayda BAGLIDIR - silme kontrolu yalnizca
+   siparise baksaydi antet firmasi sessizce silinir, eski ciktilar unvani/logosu
+   olmayan bos bir ust koseyle basardi. */
+function sirketKullanimi(id){
+  const siparis=(DB.proje.orders||[]).filter(o=>o&&o.companyId===id).length;
+  const tutanak=(DB.tutanaklar||[]).filter(t=>t&&(((t.eden||{}).firmaId===id)||((t.alan||{}).firmaId===id))).length;
+  const ihtiyac=(DB.ihtiyaclar||[]).filter(x=>x&&x.firmaId===id).length;
+  const parcalar=[siparis&&siparis+' siparis',tutanak&&tutanak+' tutanak',ihtiyac&&ihtiyac+' ihtiyac listesi']
+    .filter(Boolean);
+  return {toplam:siparis+tutanak+ihtiyac, txt:parcalar.join(' · ')};
+}
+
+/* ===== ESKI ANTETI SIRKETE TASIMA (tek seferlik gecis) =====================
+   Antet eskiden ayri bir ayardi (app_settings > tutanakAntet) ve logosu kayda
+   GOMULU bir PNG'ydi. Artik antet Sirketler kaydidir. Eski veri SESSIZCE
+   silinmez, otomatik de tasinmaz: hangi sirkete ait oldugu yalnizca kullanicinin
+   bildigi bir sey (unvan yazimlari birebir tutmayabiliyor - "... A.S." ile
+   "... ANONIM SIRKETI" ayni firma ama ad esleme onlari ayirir).
+   Bu yuzden Sirketler ekraninda bir serit cikar, hedefi kullanici secer, ne
+   yazilacagi onaydan once gosterilir.
+
+   YAZMA KURALI: sirketin DOLU alanlari EZILMEZ. Kullanici Sirketler'de guncel
+   bilgiyi girmis olabilir; eski antet yalnizca BOS kalan alanlari tamamlar.
+   Logo bunun disindadir - eski gomulu logo, link alani bossa yazilir. */
+function antetTasimaSeridi(){
+  const a=eskiAntet();
+  if(!a||!isAdmin()) return '';
+  return `<div class="tut-warn" style="margin-bottom:12px"><span style="font-size:16px;line-height:1">&#9888;</span><div>
+    <b>Eski antet bilgisi tasinmayi bekliyor.</b> Cikti antetleri artik Sirketler kaydindan okunuyor.
+    ${a.unvan?`Elde tutulan kayit: <b>${esc(a.unvan)}</b>`:'Elde tutulan kayitta unvan yok'}${a.logo?' (logo dahil)':''}.
+    Tasinana kadar firma secilmemis ciktilar bu eski bilgiyi kullanmaya devam eder.
+    <div style="margin-top:9px"><button class="btn btn-add" style="padding:6px 13px;font-size:12px" onclick="openAntetTasi()">Sirkete Tasi</button></div>
+  </div></div>`;
+}
+// eski unvana en cok benzeyen sirket: tasima penceresinde on secili gelir
+function antetEnYakinSirket(unvan){
+  const n=norm(unvan||'').replace(/[^a-z0-9]/g,'');
+  if(!n) return '';
+  const list=(DB.companies||[]);
+  const tam=list.find(c=>norm(c.ad||'').replace(/[^a-z0-9]/g,'')===n);
+  if(tam) return tam.id;
+  // ilk kelime ortaklastiriyorsa (orn. "BYKARA") aday sayilir - karar yine kullanicinin
+  const ilk=norm(unvan||'').split(/\s+/)[0]||'';
+  if(ilk.length>=3){ const y=list.find(c=>norm(c.ad||'').startsWith(ilk)); if(y) return y.id; }
+  return '';
+}
+function openAntetTasi(){
+  if(!isAdmin()){ toast('Bu islem icin yonetici yetkisi gerekir','err'); return; }
+  const a=eskiAntet();
+  if(!a){ toast('Tasinacak eski antet bilgisi yok'); return; }
+  const secili=antetEnYakinSirket(a.unvan);
+  const sirketler=(DB.companies||[]).slice().sort((x,y)=>(x.ad||'').localeCompare(y.ad||'','tr'));
+  const satir=(et,dg)=>dg?`<div style="display:flex;gap:8px;font-size:12px;padding:3px 0"><span style="color:var(--mute);min-width:78px">${et}</span><b style="min-width:0;word-break:break-word">${esc(dg)}</b></div>`:'';
+  document.body.insertAdjacentHTML('beforeend',
+    `<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:560px">
+      <div class="modal-head"><h3>Anteti Sirkete Tasi</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+      <div class="modal-body">
+        <p class="t-meta" style="margin-bottom:12px;line-height:1.55">Asagidaki eski antet bilgisi secilen sirket kaydina yazilir ve ayri antet ayari kaldirilir. <b>Sirkette dolu olan alanlar korunur</b> - yalnizca bos kalanlar tamamlanir.</p>
+        <div style="border:1px solid var(--line);border-radius:10px;padding:11px 13px;background:var(--panel2);margin-bottom:14px">
+          <div style="font-size:10px;letter-spacing:.5px;color:var(--mute);font-weight:700;margin-bottom:6px">TASINACAK BILGI</div>
+          ${satir('Unvan',a.unvan)}${satir('Adres',a.adres)}${satir('Telefon',a.tel)}${satir('E-posta',a.email)}${satir('Vergi No',a.vergi)}
+          ${a.logo?`<div style="display:flex;gap:8px;align-items:center;padding:5px 0"><span style="color:var(--mute);min-width:78px;font-size:12px">Logo</span>
+            <span class="marka-onizle" style="min-height:46px;padding:5px;background:#fff;flex:1"><img src="${esc(a.logo)}" alt="" style="max-height:40px"></span></div>`
+            :'<div style="font-size:12px;color:var(--mute);padding:3px 0">Logo yok</div>'}
+        </div>
+        <div class="frow" style="margin-bottom:0"><label>Hedef Sirket</label>
+          <select id="at_hedef">
+            <option value="__yeni">+ Yeni sirket olarak ekle${a.unvan?' ("'+esc(a.unvan)+'")':''}</option>
+            ${sirketler.map(c=>`<option value="${c.id}" ${secili===c.id?'selected':''}>${esc(c.ad)}</option>`).join('')}
+          </select>
+          <div class="t-meta" style="margin-top:6px;font-size:11px">${secili
+            ? 'Unvan benzerligine gore on secildi - dogru degilse degistirin.'
+            : 'Eslesen sirket bulunamadi; yeni kayit olarak eklenebilir.'}</div></div>
+      </div>
+      <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Vazgec</button>
+        <button class="btn btn-add" onclick="antetTasiUygula()">Tasi</button></div></div></div>`);
+}
+async function antetTasiUygula(){
+  if(!isAdmin()){ toast('Bu islem icin yonetici yetkisi gerekir','err'); return; }
+  const a=eskiAntet(); if(!a){ closeModal(); return; }
+  const hedef=((document.getElementById('at_hedef')||{}).value)||'';
+  // BOS alani tamamla, DOLU alani koru - kullanicinin Sirketler'de girdigi guncel bilgi kazanir
+  const tamamla=(c)=>{
+    const y={...c};
+    if(!String(y.adres||'').trim()) y.adres=a.adres||'';
+    if(!String(y.tel||'').trim())   y.tel=a.tel||'';
+    if(!String(y.email||'').trim()) y.email=a.email||'';
+    if(!String(y.vergi||'').trim()) y.vergi=a.vergi||'';
+    if(!String(y.logo||'').trim())  y.logo=a.logo||'';
+    return y;
+  };
+  try{
+    if(hedef==='__yeni'){
+      const ad=String(a.unvan||'').trim();
+      if(!ad){ toast('Eski antette unvan yok - yeni sirket olusturulamaz, listeden bir sirket secin','err'); return; }
+      if((DB.companies||[]).some(c=>norm(c.ad)===norm(ad))){ toast('Bu adla bir sirket zaten var - listeden onu secin','err'); return; }
+      const yeni=tamamla({id:uid(),ad});
+      await sbInsertCompany(yeni);
+      if(!DB.companies)DB.companies=[];
+      DB.companies.push(yeni);
+      logAction('define','Antet yeni sirkete tasindi: '+ad);
+    } else {
+      const c=(DB.companies||[]).find(x=>x&&x.id===hedef);
+      if(!c){ toast('Sirket bulunamadi','err'); return; }
+      const y=tamamla(c);
+      await sbUpdateCompany(c.id,y);
+      Object.assign(c,y);
+      logAction('define','Antet sirkete tasindi: '+(c.ad||hedef));
+    }
+    // TASIMA BASARILI olduktan SONRA eski anahtar dusurulur; once silinseydi
+    // yazma hata verdiginde antet hem sirkete gecmemis hem de kaybolmus olurdu
+    if(DB.meta) delete DB.meta.tutanakAntet;
+    await sbSetSetting('tutanakAntet',null);
+  }catch(e){
+    toast('Antet tasinamadi: '+((e&&e.message)||e),'err'); return;
+  }
+  closeModal(); render();
+  toast('Antet Sirketler kaydina tasindi - ciktilar artik oradan okuyor');
+}
+
 async function delCompany(id){ if(!guard('delete'))return;
-  const used=(DB.proje.orders||[]).filter(o=>o.companyId===id).length;
-  if(used>0){ toast(`Bu sirket ${used} siparişte kullaniliyor, once o siparisleri guncelleyin`,"err"); return; }
+  const k=sirketKullanimi(id);
+  if(k.toplam>0){ toast(`Bu sirket ${k.txt} kaydinda kullaniliyor - once onlari guncelleyin`,"err"); return; }
   if(!confirm("Bu sirketi silmek istiyor musunuz?"))return;
   await sbDeleteCompany(id);
   DB.companies=(DB.companies||[]).filter(c=>c.id!==id);
@@ -19667,10 +19810,38 @@ function tutBackToList(){ TUTV.mode='list'; _TUT=null; render(); try{ window.scr
 // yyyy-mm-dd (date input'u icin)
 function tutISO(ts){ const d=(ts==null||ts==='')?new Date():new Date(ts); if(isNaN(d))return '';
   const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
-// ANTET: cikti sayfasinin ust kosesindeki firma bilgisi (app_settings > tutanakAntet).
-// Bos birakilan alanlar ciktida sablondaki koseli parantezli yer tutucu olarak gorunur.
-function tutAntet(){ const a=(DB.meta&&DB.meta.tutanakAntet)||{};
-  return { unvan:a.unvan||'', adres:a.adres||'', tel:a.tel||'', email:a.email||'', vergi:a.vergi||'', logo:a.logo||'' }; }
+/* ANTET: cikti sayfasinin ust kosesindeki firma bilgisi.
+   TEK KAYNAK SIRKETLER'DIR - ayri bir "antet ayari" yok. Bir sirketin unvani,
+   adresi, telefonu, vergi nosu ya da logosu degisince butun ciktilar birlikte
+   duzelir; iki yerde ayni bilgiyi guncelleme derdi kalkti.
+   Bos birakilan alanlar ciktida koseli parantezli yer tutucu olarak gorunur. */
+function sirketAntet(companyId){
+  const c=companyId?(DB.companies||[]).find(x=>x&&x.id===companyId):null;
+  if(!c) return null;
+  return { unvan:c.ad||'', adres:c.adres||'', tel:c.tel||'', email:c.email||'',
+           vergi:c.vergi||'', logo:c.logo||'' };
+}
+const BOS_ANTET={unvan:'',adres:'',tel:'',email:'',vergi:'',logo:''};
+/* ESKI ANTET (app_settings > tutanakAntet) yalnizca GECIS icin okunur: Sirketler
+   ekranindaki tasima yapilana kadar mevcut ciktilar basliksiz kalmasin diye.
+   Tasima bitince anahtar silinir ve bu yedek kendiliginden devre disi kalir. */
+function eskiAntet(){
+  const a=(DB.meta&&DB.meta.tutanakAntet)||null;
+  if(!a||!(a.unvan||a.logo||a.adres||a.tel||a.email||a.vergi)) return null;
+  return { unvan:a.unvan||'', adres:a.adres||'', tel:a.tel||'', email:a.email||'', vergi:a.vergi||'', logo:a.logo||'' };
+}
+/* TUTANAGIN ANTETI = TESLIM EDEN firmasi (kullanici karari). Tutanakta zaten
+   firmaId ile Sirketler'e bagli bir "Teslim Eden" var, ayri bir secim eklenmedi.
+   Firma serbest metinle yazilmissa (listede olmayan bir ad) en azindan unvani
+   ciktida gorunur - logo/adres icin Sirketler'e eklenmesi gerekir. */
+function tutAntet(t){
+  const bagli=sirketAntet(((t&&t.eden)||{}).firmaId);
+  if(bagli) return bagli;
+  const serbest=t?tutFirma(t,'eden'):'';
+  const eski=eskiAntet();
+  if(eski) return serbest?{...eski,unvan:serbest||eski.unvan}:eski;
+  return serbest?{...BOS_ANTET,unvan:serbest}:BOS_ANTET;
+}
 // TSL-2026-0001 seklinde sonraki numara (ayni yil icindeki en buyuk numaranin bir fazlasi)
 function tutNextNo(){
   const pre='TSL-'+new Date().getFullYear()+'-';
@@ -19858,7 +20029,7 @@ function renderTutanakList(){
         <input value="${esc(TUTV.q)}" placeholder="tutanak no, firma, bina veya malzeme..." onchange="setTutQ(this.value.trim())"></div>
       <div class="ord-f" style="justify-content:flex-end;flex:none"><label>&nbsp;</label>
         <div style="display:flex;gap:9px;flex-wrap:wrap">
-          ${isAdmin()?`<button class="btn btn-ghost" onclick="openTutAntet()" title="Ciktinin ust kosesindeki firma bilgisi (unvan, adres, telefon, e-posta, vergi no)">${icoTutAntet()} Antet Ayarlari</button>`:''}
+          ${isAdmin()?`<button class="btn btn-ghost" onclick="openCompanies()" title="Ciktinin ust kosesindeki antet (unvan, adres, telefon, e-posta, vergi no, logo) artik Sirketler kaydindan gelir - teslim eden firmanin kaydi kullanilir">${icoTutAntet()} Antet (Sirketler)</button>`:''}
           ${canEdit('rapor')?`<button class="btn btn-add" onclick="openTutTur()">${icoPlus()} Yeni Tutanak</button>`:''}
         </div></div>
     </div>
@@ -20248,77 +20419,11 @@ async function saveTutanak(andPrint){
   if(andPrint) setTimeout(()=>printTutanak(id),120);
 }
 
-/* ---------- ANTET AYARLARI (yalniz yonetici) ---------- */
-function openTutAntet(){
-  if(!isAdmin()){ toast('Antet ayarini yalniz yonetici degistirebilir','err'); return; }
-  _tutLogoDraft=null;   // onceki iptal edilmis secim sizmasin
-  const a=tutAntet();
-  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:520px">
-    <div class="modal-head"><h3>Tutanak Antet Ayarlari</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
-    <div class="modal-body">
-      <p class="t-meta" style="margin-bottom:12px">Ciktinin her sayfasinin ust kosesindeki antettir. Bos birakilan alan ciktida sablondaki koseli parantezli yer tutucu olarak gorunur.</p>
-      <div class="frow"><label>Antet Logosu <span class="t-meta">(beyaz kagida basilacak logo - PNG/seffaf onerilir)</span></label>
-        <div style="display:flex;gap:12px;align-items:center">
-          <div id="taLogoPrev" style="width:88px;height:44px;border:1px dashed var(--line);border-radius:9px;display:flex;align-items:center;justify-content:center;background:#fff;flex:none;overflow:hidden">
-            ${a.logo?`<img src="${esc(a.logo)}" style="max-width:100%;max-height:100%;object-fit:contain">`:'<span style="font-size:10px;color:#9ca3af">yok</span>'}</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-ghost" style="padding:7px 13px;font-size:12px" onclick="document.getElementById('ta_logoInput').click()">Logo Sec</button>
-            ${a.logo?`<button class="btn btn-ghost" style="padding:7px 13px;font-size:12px;border-color:var(--red)55;color:var(--red)" onclick="tutClearLogo()">Kaldir</button>`:''}
-          </div>
-          <input type="file" id="ta_logoInput" accept="image/*" class="hidden" onchange="tutPickLogo(event)">
-        </div>
-        <p class="t-meta" style="font-size:11px;margin-top:6px">Secilmezse uygulamanin kendi logosu basilir.</p>
-      </div>
-      <div class="frow"><label>Firma Unvani / Наименование компании</label><input id="ta_unvan" value="${esc(a.unvan)}" placeholder="orn. BYKARA INSAAT VE MUH. A.S."></div>
-      <div class="frow"><label>Adres / Адрес</label><input id="ta_adres" value="${esc(a.adres)}" placeholder="orn. ... Mah. ... Cad. No:1 Istanbul"></div>
-      <div class="frow two"><div><label>Telefon / Тел.</label><input id="ta_tel" value="${esc(a.tel)}" placeholder="+90 ..."></div>
-        <div><label>E-posta / E-mail</label><input id="ta_email" value="${esc(a.email)}" placeholder="info@..."></div></div>
-      <div class="frow" style="margin-bottom:0"><label>Vergi No / ИНН</label><input id="ta_vergi" value="${esc(a.vergi)}" placeholder="orn. 1234567890"></div>
-    </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button>
-      <button class="btn btn-add" onclick="saveTutAntet()">Kaydet</button></div></div></div>`;
-  document.body.insertAdjacentHTML('beforeend',html);
-}
-// antet logosu: seffafligi korumak icin PNG olarak, en fazla 480px genislikte saklanir
-// (compressImg JPEG uretiyor - beyaz kagitta seffaf logo icin uygun degil)
-let _tutLogoDraft=null;
-function tutPickLogo(e){
-  const f=e.target.files[0]; e.target.value=''; if(!f)return;
-  const r=new FileReader();
-  r.onload=()=>{ const img=new Image();
-    img.onload=()=>{
-      const max=480; let w=img.width,h=img.height;
-      if(w>max){ h=Math.round(h*(max/w)); w=max; }
-      const c=document.createElement('canvas'); c.width=w; c.height=h;
-      c.getContext('2d').drawImage(img,0,0,w,h);
-      _tutLogoDraft=c.toDataURL('image/png');
-      const p=document.getElementById('taLogoPrev');
-      if(p) p.innerHTML=`<img src="${_tutLogoDraft}" style="max-width:100%;max-height:100%;object-fit:contain">`;
-      toast('Logo secildi - Kaydet ile kalici olur');
-    };
-    img.onerror=()=>toast('Gorsel okunamadi','err');
-    img.src=r.result; };
-  r.readAsDataURL(f);
-}
-function tutClearLogo(){ _tutLogoDraft='';
-  const p=document.getElementById('taLogoPrev');
-  if(p) p.innerHTML='<span style="font-size:10px;color:#9ca3af">yok</span>';
-  toast('Logo kaldirildi - Kaydet ile kalici olur');
-}
-async function saveTutAntet(){
-  if(!isAdmin()){ toast('Yetkiniz yok','err'); return; }
-  const g=id=>(document.getElementById(id)||{}).value||'';
-  const mevcut=tutAntet();
-  const antet={ unvan:g('ta_unvan').trim(), adres:g('ta_adres').trim(), tel:g('ta_tel').trim(),
-    email:g('ta_email').trim(), vergi:g('ta_vergi').trim(),
-    logo:(_tutLogoDraft===null?mevcut.logo:_tutLogoDraft) };
-  _tutLogoDraft=null;
-  if(!DB.meta)DB.meta={};
-  DB.meta.tutanakAntet=antet;
-  await sbSetSetting('tutanakAntet',antet);
-  logAction('define','Tutanak antet bilgisi guncellendi');
-  closeModal(); render(); toast('Antet kaydedildi - yeni ciktilarda gorunur');
-}
+/* ANTET AYARLARI EKRANI KALDIRILDI: antet artik ayri bir ayar degil, TESLIM EDEN
+   firmasinin Sirketler kaydidir (bkz. tutAntet). Unvan/adres/telefon/e-posta/vergi
+   ve logo oradan okunur - logo dosya yerine LINK olarak tutulur (marka logolariyla
+   ayni desen). Eski ayarin verisi Sirketler ekranindaki tasima seridiyle bir kez
+   sirket kaydina aktarilir; o zamana kadar eskiAntet() yedegi devrededir. */
 
 /* ==================================================================
    TUTANAK CIKTISI — A4, iki dilli, sablonla birebir
@@ -20487,7 +20592,7 @@ function tutPrintTableHead(){
 }
 
 function tutanakPrintHtml(t){
-  const A=tutAntet();
+  const A=tutAntet(t);   // antet = teslim eden firmasinin Sirketler kaydi
   const lines=tutFilledLines(t);
   const tot=tutTotals(t);
   // "TSM ENERJİ A.Ş." gibi noktayla biten unvanlarda cumle sonunda cift nokta olusmasin
@@ -20795,6 +20900,24 @@ function ihtLineImg(l){
 }
 // secilebilir binalar: yetkisi olanlar, pasife alinmislar haric
 function ihtBinalar(){ return projBuildings().filter(b=>canSeeBuilding(b)&&!isBinaPasif(b)); }
+// PDF antetinde kullanilacak firma listesi (Sirketler ekranindaki kayitlar)
+function ihtFirmalar(){ return (DB.companies||[]).slice().sort((a,b)=>(a.ad||'').localeCompare(b.ad||'','tr')); }
+/* Tek sirket tanimliysa yeni liste onu secili acar: secim yapmadigi icin anteti
+   bos cikan PDF, tek secenekli bir listede kullanicinin degil arayuzun hatasidir. */
+function ihtVarsayilanFirma(){ const f=ihtFirmalar(); return f.length===1?f[0].id:''; }
+// firma secimi altindaki aciklama: antetin ne olacagini KAYDETMEDEN once soyler
+function ihtFirmaIpucu(x){
+  const a=sirketAntet(x&&x.firmaId);
+  if(a){
+    const eksik=[!a.logo&&'logo',!a.adres&&'adres',!a.tel&&'telefon',!a.email&&'e-posta',!a.vergi&&'vergi no']
+      .filter(Boolean);
+    return 'PDF anteti bu sirketin Sirketler kaydindan gelir'
+      +(eksik.length?` &mdash; <span style="color:var(--amber)">eksik: ${esc(eksik.join(', '))}</span>`:'');
+  }
+  return eskiAntet()
+    ? 'Secilmezse eski antet ayari kullanilir - Sirketler ekranindan tasimaniz onerilir'
+    : 'Secilmezse PDF ust kosesi bos (yer tutuculu) basar';
+}
 
 /* ---------- SATIR DUZENLEME ---------- */
 function ihtSetLine(i,k,v){ if(_IHT&&_IHT.lines[i]) _IHT.lines[i][k]=v; }
@@ -21044,6 +21167,12 @@ function renderIhtiyacForm(){
             <option value="acik" ${x.durum!=='tamam'?'selected':''}>Acik</option>
             <option value="tamam" ${x.durum==='tamam'?'selected':''}>Tamamlandi</option>
           </select></div>
+        <div class="frow" style="margin-bottom:0"><label>Firma <span class="t-meta">(PDF anteti)</label>
+          <select onchange="ihtSet('firmaId',this.value);render()">
+            <option value="">- secilmedi -</option>
+            ${ihtFirmalar().map(c=>`<option value="${c.id}" ${x.firmaId===c.id?'selected':''}>${esc(c.ad)}</option>`).join('')}
+          </select>
+          <div class="t-meta" style="margin-top:5px;font-size:11px">${ihtFirmaIpucu(x)}</div></div>
       </div>
       <div class="frow" style="margin:14px 0 0"><label>Aciklama</label>
         <input value="${esc(x.aciklama||'')}" placeholder="istege bagli - listeyi acan not" onchange="ihtSet('aciklama',this.value.trim())"></div>
@@ -21159,7 +21288,7 @@ function newIhtiyac(){
   if(!ihtCanEdit()){ toast('Bu islem icin yetkiniz yok','err'); return; }
   const bina=IHTV.bina||'';   // liste ekranindaki bina filtresi on deger olur
   _IHT={ id:uid(), ad:'Ihtiyac Listesi - '+fmtDate(Date.now()), tarih:Date.now(),
-    bina, durum:'acik', aciklama:'', lines:[ihtBlankLine(bina)],
+    bina, firmaId:ihtVarsayilanFirma(), durum:'acik', aciklama:'', lines:[ihtBlankLine(bina)],
     olusturan:(CURRENT_USER&&CURRENT_USER.username)||'', olusturmaTs:Date.now(),
     guncelleyen:'', guncellemeTs:Date.now(), _yeni:true };
   IHTV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
@@ -21491,7 +21620,10 @@ function ihtPdfRow(l,sira){
 }
 
 function ihtPdfHtml(x){
-  const A=tutAntet();
+  /* ANTET = listeyi acan firmanin Sirketler kaydi (tutanaktaki "teslim eden" ile
+     ayni mantik). Firma secilmemisse eski ayar yedegi, o da yoksa bos antet -
+     cikti yine alinir, ust kose koseli parantezli yer tutucularla basar. */
+  const A=sirketAntet(x&&x.firmaId)||eskiAntet()||BOS_ANTET;
   const ls=ihtFilledLines(x);
   const tt=ihtTotals(x);
   // satirlar 10'arli bloklara bolunur; her blok kendi antetli sayfasina girer
