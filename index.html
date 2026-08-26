@@ -19901,7 +19901,11 @@ async function saveAletOrder(){
      ayni duzeni icin CSS tutanakPrintCss() icindedir.
    - Yetki: Rapor modulu ('rapor'). Rapor'u goren tutanagi gorur.
    ================================================================== */
-let TUTV={ mode:'list', q:'' };   // liste / form
+/* Liste filtreleri TEK yerden uretilir: TUTV uc ayri noktada sifirlaniyor
+   (openTutanak / closeTutanak / burasi) - alan eklendiginde biri unutulursa
+   filtre "yapisan" bir deger tasirdi. */
+function tutVarsayilanV(){ return { mode:'list', q:'', from:'', to:'', eden:'', alan:'', bina:'', iade:'', pdf:'' }; }
+let TUTV=tutVarsayilanV();   // liste / form
 let _TUT=null;                    // duzenlenen tutanak taslagi (kaydedilene kadar bellekte)
 /* Sayfa basina malzeme satiri. Kapasite iki seye bagli:
    - ILK sayfa mi:  baslik + tutanak no/tarih + iki dilli giris orada duruyor,
@@ -19943,10 +19947,10 @@ function openTutanak(){
   PTUT=true;
   PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false;
   PNEWORD=false; PBINAY=false; PKATA=false; PODM=false; PSPECF=false; PRIMP=false; PINV=false; PKODD=false; PIHT=false; _KODD=null; _INV=null;
-  TUTV={ mode:'list', q:'' }; _TUT=null; SEARCH="";
+  TUTV=tutVarsayilanV(); _TUT=null; SEARCH="";
   render(); try{ window.scrollTo(0,0); }catch(e){}
 }
-function closeTutanak(){ PTUT=false; TUTV={mode:'list',q:''}; _TUT=null; render(); }
+function closeTutanak(){ PTUT=false; TUTV=tutVarsayilanV(); _TUT=null; render(); }
 function tutBackToList(){ TUTV.mode='list'; _TUT=null; render(); try{ window.scrollTo(0,0); }catch(e){} }
 
 // yyyy-mm-dd (date input'u icin)
@@ -20123,23 +20127,77 @@ function tutMissingWarn(){
 
 /* ---------- LISTE ---------- */
 function setTutQ(v){ TUTV.q=v; render(); }
+/* ===== TUTANAK LISTE FILTRESI =====================================================
+   Eskiden ustte uc istatistik karti (Tutanak / Bu Ay / Toplam Kalem) ve tek bir arama
+   kutusu vardi: kartlar yer kapliyor ama hicbir sey ARAMIYORDU. Yerine kutuphane ve
+   siparis ekranlarindaki .ord-filterbar duzeni geldi; sayilar tek satirlik ozete indi
+   ve artik FILTRELENMIS kumeyi anlatiyor. */
+function setTutF(k,v){ TUTV[k]=v; render(); }
+function clearTutF(){ const m=TUTV.mode; TUTV=tutVarsayilanV(); TUTV.mode=m; render(); }
+function tutAnyF(){ return !!(TUTV.q||TUTV.from||TUTV.to||TUTV.eden||TUTV.alan||TUTV.bina||TUTV.iade||TUTV.pdf); }
+// aramada tutanagin ICINDEKI malzeme satirlari da taranir (eski davranis korundu)
+function tutAraMetin(t){
+  return [t.no,tutFirma(t,'eden'),tutFirma(t,'alan'),t.bina,tutTurOf(t).tr,tutIadeOzet(t),
+    ...((t.lines||[]).map(l=>(l.ad||'')+' '+(l.code||'')))].join(' ');
+}
+function tutFiltrele(all){
+  const f=TUTV;
+  return all.filter(t=>{
+    if(f.q && !matchText(tutAraMetin(t),f.q)) return false;
+    if(f.from||f.to){ const iso=tutISO(t.tarih);
+      if(f.from && iso<f.from) return false;
+      if(f.to   && iso>f.to)   return false; }
+    if(f.eden && tutFirma(t,'eden')!==f.eden) return false;
+    if(f.alan && tutFirma(t,'alan')!==f.alan) return false;
+    if(f.bina && (t.bina||'')!==f.bina) return false;
+    if(f.iade==='var' && !tutIadeVar(t)) return false;
+    if(f.iade==='yok' &&  tutIadeVar(t)) return false;
+    if(f.pdf==='var'  && !t.pdf) return false;
+    if(f.pdf==='yok'  &&  t.pdf) return false;
+    return true;
+  });
+}
+// acilir listeler yalnizca GERCEKTEN kayitta gecen degerleri gosterir (bos secenek uretmez)
+function tutSecenekler(all,fn){ return [...new Set(all.map(fn).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr')); }
+function tutOpts(list,secili){ return list.map(v=>`<option value="${esc(v)}" ${secili===v?'selected':''}>${esc(v)}</option>`).join(''); }
 function renderTutanakList(){
   const all=(DB.tutanaklar||[]).slice().sort((a,b)=>(b.tarih||0)-(a.tarih||0));
-  const q=TUTV.q;
-  const list=q?all.filter(t=>matchText([t.no,tutFirma(t,'eden'),tutFirma(t,'alan'),t.bina,
-    tutTurOf(t).tr,tutIadeOzet(t),
-    ...((t.lines||[]).map(l=>l.ad+' '+(l.code||'')))].join(' '),q)):all;
+  const anyF=tutAnyF();
+  const list=tutFiltrele(all);
   const now=new Date(), ayBasi=new Date(now.getFullYear(),now.getMonth(),1).getTime();
-  const buAy=all.filter(t=>(t.tarih||0)>=ayBasi).length;
-  const toplamKalem=all.reduce((s,t)=>s+tutTotals(t).kalem,0);
-  const stats=statRow([
-    ['Tutanak',fmtNum(all.length),'toplam kayit','var(--blue)'],
-    ['Bu Ay',fmtNum(buAy),'duzenlenen','var(--green)'],
-    ['Toplam Kalem',fmtNum(toplamKalem),'teslim edilen satir','var(--amber)'],
-  ]);
+  // ozet sayilari FILTRELENMIS kumeyi anlatir - "su an ekranda ne var" sorusunun cevabi
+  const buAy=list.filter(t=>(t.tarih||0)>=ayBasi).length;
+  const toplamKalem=list.reduce((s,t)=>s+tutTotals(t).kalem,0);
+  const edenler=tutSecenekler(all,t=>tutFirma(t,'eden'));
+  const alanlar=tutSecenekler(all,t=>tutFirma(t,'alan'));
+  const binalar=tutSecenekler(all,t=>t.bina||'');
+  const filterbar=`<div class="ord-filterbar">
+    <div class="ord-f" style="flex:2 1 240px"><label>Ara</label>
+      <input value="${esc(TUTV.q)}" placeholder="tutanak no, firma, bina veya malzeme..." onchange="setTutQ(this.value.trim())"></div>
+    <div class="ord-f"><label>Tarih Araligi</label><div class="ord-f-dates">
+      <input type="date" value="${esc(TUTV.from)}" onchange="setTutF('from',this.value)"><span class="t-meta">-</span>
+      <input type="date" value="${esc(TUTV.to)}" onchange="setTutF('to',this.value)"></div></div>
+    ${edenler.length?`<div class="ord-f"><label>Teslim Eden</label><select onchange="setTutF('eden',this.value)"><option value="">Tumu</option>${tutOpts(edenler,TUTV.eden)}</select></div>`:''}
+    ${alanlar.length?`<div class="ord-f"><label>Teslim Alan</label><select onchange="setTutF('alan',this.value)"><option value="">Tumu</option>${tutOpts(alanlar,TUTV.alan)}</select></div>`:''}
+    ${binalar.length?`<div class="ord-f"><label>Bina</label><select onchange="setTutF('bina',this.value)"><option value="">Tumu</option>${tutOpts(binalar,TUTV.bina)}</select></div>`:''}
+    <div class="ord-f"><label>Iade Durumu</label><select onchange="setTutF('iade',this.value)">
+      <option value="">Tumu</option>
+      <option value="var" ${TUTV.iade==='var'?'selected':''}>Iade var</option>
+      <option value="yok" ${TUTV.iade==='yok'?'selected':''}>Iade yok</option></select></div>
+    <div class="ord-f"><label>Imzali Nusha</label><select onchange="setTutF('pdf',this.value)" title="Tutanaga yuklenmis imzali/taranmis PDF">
+      <option value="">Tumu</option>
+      <option value="var" ${TUTV.pdf==='var'?'selected':''}>PDF yuklu</option>
+      <option value="yok" ${TUTV.pdf==='yok'?'selected':''}>PDF eksik</option></select></div>
+    <div class="ord-f" style="flex:none;margin-left:auto;justify-content:flex-end"><label>&nbsp;</label>
+      <div style="display:flex;gap:9px;flex-wrap:wrap">
+        ${anyF?`<button class="btn btn-ghost" style="padding:8px 14px" onclick="clearTutF()">Filtreyi Temizle</button>`:''}
+        ${isAdmin()?`<button class="btn btn-ghost" onclick="openCompanies()" title="Ciktinin ust kosesindeki antet (unvan, adres, telefon, e-posta, vergi no, logo) artik Sirketler kaydindan gelir - teslim eden firmanin kaydi kullanilir">${icoTutAntet()} Antet (Sirketler)</button>`:''}
+        ${canEdit('rapor')?`<button class="btn btn-add" onclick="openTutTur()">${icoPlus()} Yeni Tutanak</button>`:''}
+      </div></div>
+  </div>`;
   let rows='';
-  if(!list.length) rows=emptyRow(7,q?'Eslesen tutanak yok':'Henuz tutanak duzenlenmedi',
-    q?'Aramayi degistirin':'"Yeni Tutanak" ile ilk teslim tutanagini olusturun');
+  if(!list.length) rows=emptyRow(7,anyF?'Eslesen tutanak yok':'Henuz tutanak duzenlenmedi',
+    anyF?'Filtreyi degistirin veya "Filtreyi Temizle" ile hepsini gorun':'"Yeni Tutanak" ile ilk teslim tutanagini olusturun');
   else list.forEach(t=>{
     const tt=tutTotals(t);
     rows+=`<tr>
@@ -20165,17 +20223,8 @@ function renderTutanakList(){
     <div class="page-head"><h1>Tutanak</h1>
       <p class="page-sub">Malzeme teslim tutanagi · АКТ ПРИЁМА-ПЕРЕДАЧИ МАТЕРИАЛОВ · iki dilli (TR/RU) A4 cikti</p></div>
     ${tutMissingWarn()}
-    ${stats}
-    <div class="ord-filterbar">
-      <div class="ord-f" style="flex:1 1 260px"><label>Ara</label>
-        <input value="${esc(TUTV.q)}" placeholder="tutanak no, firma, bina veya malzeme..." onchange="setTutQ(this.value.trim())"></div>
-      <div class="ord-f" style="justify-content:flex-end;flex:none"><label>&nbsp;</label>
-        <div style="display:flex;gap:9px;flex-wrap:wrap">
-          ${isAdmin()?`<button class="btn btn-ghost" onclick="openCompanies()" title="Ciktinin ust kosesindeki antet (unvan, adres, telefon, e-posta, vergi no, logo) artik Sirketler kaydindan gelir - teslim eden firmanin kaydi kullanilir">${icoTutAntet()} Antet (Sirketler)</button>`:''}
-          ${canEdit('rapor')?`<button class="btn btn-add" onclick="openTutTur()">${icoPlus()} Yeni Tutanak</button>`:''}
-        </div></div>
-    </div>
-    <div class="ord-sumline"><b>${fmtNum(list.length)}</b> tutanak${q?` <span class="t-meta">(${fmtNum(all.length)} kayit icinden filtrelendi)</span>`:''}</div>
+    ${filterbar}
+    <div class="ord-sumline"><b>${fmtNum(list.length)}</b> tutanak · <b>${fmtNum(toplamKalem)}</b> kalem · bu ay <b>${fmtNum(buAy)}</b>${anyF?` <span class="t-meta">(${fmtNum(all.length)} kayit icinden filtrelendi)</span>`:''}</div>
     <div class="tablewrap"><table><thead><tr>
       <th>Tutanak No</th><th>Tarih</th><th>Teslim Eden</th><th>Teslim Alan</th><th>Bina</th><th>Icerik</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>
