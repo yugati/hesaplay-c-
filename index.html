@@ -5331,13 +5331,12 @@ function openCompanyModal(id){ if(!guard('define'))return; const x=id?(DB.compan
       <div class="marka-onizle" id="c_onizle" style="background:#fff">${x&&x.logo?`<img src="${esc(x.logo)}" alt="" onerror="sirketOnizleHata(this)">`:'<span class="t-meta" style="font-size:11px">Logo linki girilmedi</span>'}</div></div>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveCompany(${x?`'${x.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
-  /* KAZA ILE KAPANMA KORUMASI: sirket formu doldurulurken modal disina tiklamak
-     girilen bilgiyi siliyordu (uzun unvan/adres yazarken can sikici). Alanlarin
-     herhangi biri doluysa dis tiklama ve Esc kapatmaz, nedenini soyler.
-     DUZENLEMEDE alanlar zaten dolu gelir - yani mevcut bir sirket acikken pencere
-     kazayla hic kapanmaz; kapatmak icin Iptal ya da X kullanilir (bilincli yol).
-     Kaydet/Iptal/X korumaya TAKILMAZ (bkz. setModalGuard). */
-  setModalGuard(()=>formDoluMu(['c_ad','c_vergi','c_adres','c_tel','c_email','c_logo']));
+  /* Kaza ile kapanma korumasi icin AYRI bir kayit YOK: bu pencerenin butun verisi
+     DOM alanlarinda duruyor, genel kontrol (modalDegistiMi) onu kendiliginden
+     goruyor. Bir sure "alanlardan biri doluysa kapatma" olcutuyle calisti; genel
+     koruma gelince olcut butun pencerelerde "DEGISTI"ye esitlendi - duzenlemeye
+     yalnizca BAKIP cikan kullanici artik Iptal'e basmak zorunda degil, ama tek
+     harf degistirdiginde pencere yine kapanmiyor. */
   const inp=document.getElementById('c_ad'); if(inp) setTimeout(()=>inp.focus(),0);
 }
 /* Logo ONIZLEMESI beyaz zeminde gosterilir: sirket logolari da marka logolari gibi
@@ -12994,7 +12993,12 @@ function closeModal(){ if(window._binaViewer){ window._binaViewer.dispose(); win
    Modal acilirken setModalGuard() ile "formda veri var mi" sorusu kaydedilir; dis tiklama ve Esc
    bu soruyu sorar, cevap evet ise KAPATMAZ ve nedenini soyler.
    Kaydet / Iptal / X yollari korumaya TAKILMAZ - onlar zaten bilincli kapatmadir. */
-function setModalGuard(doluFn,kapatFn){ window._modalGuard={dolu:doluFn,kapat:kapatFn||closeModal}; }
+/* Koruma HANGI PENCERE icin kaydedildigi de saklanir. Genel koruma varsayilan
+   hale gelince bu onem kazandi: bir pencere kapanmadan ustune ikincisi acilirsa
+   (orn. yonetici sifresi penceresi) alttakinin korumasi ustteki icin sorulur ve
+   yanlis cevap verirdi. bg bos ise (kayit sirasinda acik pencere yoktu) eskisi
+   gibi kosulsuz gecerlidir - boylece hicbir mevcut koruma zayiflamaz. */
+function setModalGuard(doluFn,kapatFn){ window._modalGuard={dolu:doluFn,kapat:kapatFn||closeModal,bg:_acikModal()}; }
 // alan id listesi (+ ek kosul) uzerinden "veri girildi mi": her zaman dolu olan alanlar
 // (tarih, durum gibi varsayilanli kutular) listeye KONMAZ, yoksa bos form da kapanmaz
 function formDoluMu(ids,ek){ return ids.some(id=>{ const el=document.getElementById(id); return el&&String(el.value||'').trim(); }) || !!ek; }
@@ -13043,7 +13047,7 @@ function modalDegistiMi(bg){
 }
 function modalKazaKapat(){
   const g=window._modalGuard;
-  if(g){
+  if(g && (!g.bg || g.bg===_acikModal())){
     let dolu=false; try{ dolu=!!g.dolu(); }catch(e){}
     if(dolu){ toast('Bilgi girildi - kapatmak icin Iptal veya X kullanin'); return; }
     (g.kapat||closeModal)(); return;
