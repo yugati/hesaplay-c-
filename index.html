@@ -647,6 +647,21 @@ main{flex:1;padding:clamp(16px,2vw,28px);max-width:1600px;width:100%;margin:0 au
 .nord-loc.kilit{display:inline-flex;align-items:center;gap:7px;max-width:340px;padding:7px 11px 7px 29px;background:color-mix(in srgb,var(--green) 8%,transparent);border:1px solid color-mix(in srgb,var(--green) 45%,transparent);border-radius:8px;font-size:12px;line-height:1.35;color:var(--ink);cursor:default}
 .nord-loc.kilit::after{content:none}
 .nord-loc.kilit b{font-weight:700}
+/* SATIR ALTI KONTROL SERIDI: tedarik kaynagi / ozel kod kirilimi / lokasyon.
+   Bu ucu onceden satir ici (inline) akiyordu: chip metni uzadikca ("Ozel kod: 13 ·
+   toplam 53" ile "Ozel kod: 1 - 1" arasinda ~70px fark var) sonraki kutu saga kayiyor,
+   kat secici satirdan satira zikzak ciziyordu. Sabit ucte-bir izgarada her kontrol
+   her satirda AYNI x'te baslar - kat sutunu bastan asagi tek hizada.
+   Yerine/dagit chipleri seride ALINMAZ: yalnizca bazi satirlarda cikarlar, seride
+   girselerdi o satirlarda ucluyu bir sutun kaydirirlardi - kendi satirlarinda dururlar. */
+.nord-prod-col{display:flex;flex-direction:column;gap:7px;min-width:0}
+.nord-prod-col>.nord-yerine{align-self:flex-start;margin-top:0}
+.nord-ctl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;align-items:center}
+.nord-ctl>.nord-yerine,.nord-ctl>.nord-loc{margin-top:0;width:100%;max-width:none}
+.nord-ctl>.nord-yerine{display:flex}
+.nord-ctl>.nord-yerine>button:first-child{flex:1;min-width:0}
+/* dar ekran: ucte bir sutun okunmaz olurdu - alt alta gecerler, hiza yine korunur */
+@media(max-width:640px){.nord-ctl{grid-template-columns:minmax(0,1fr)}}
 /* kaydet cubugu sayfanin sag altina sabit: satir eklerken/urun secerken yer kaplamaz */
 .nord-summary{display:flex;align-items:center;justify-content:flex-end;gap:14px;flex-wrap:wrap;padding:12px 16px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);position:fixed;bottom:18px;right:24px;box-shadow:0 14px 40px rgba(0,0,0,.35);z-index:40;max-width:calc(100vw - 48px)}
 .nord-sum-left{font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -19454,10 +19469,13 @@ function nordLinesHtml(){
     const dagitSel=(dagitAdet>1)?`<span class="nord-yerine nord-dagit${l.dagitimId?' has':''}">
       <button type="button" onclick="nordDagitOpen(${i})" title="Bu urun bu sartnamede ${dagitAdet} ayri kalem olarak tanimli (her ozel kod icin bir kalem). Faturadaki miktari o kalemlere paylastirir - kalemler ve ozel kodlar oldugu gibi kalir, hicbiri birlestirilmez.">${l.dagitimId?'Dagitildi &middot; <b>yeniden dagit</b>':`Miktari dagit <b>(${dagitAdet} kalem)</b>`}</button>
     </span>`:'';
+    // Uclu kontrol seridi tek izgarada toplanir: hepsi ayni sutunda hizalanir (bkz. .nord-ctl).
+    // Ucu de bossa kapsayici hic basilmaz - yoksa satira bos bir bosluk satiri eklerdi.
+    const ctlStrip=(tedSel||ozelSel||lokSel)?`<div class="nord-ctl">${tedSel}${ozelSel}${lokSel}</div>`:'';
     return `<div class="nord-row ${ok?(isDup?'dup':''):'open'}" ondragstart="nordDragStart(event,${i})" ondragover="nordDragOver(event,${i})" ondragleave="nordDragLeave(event)" ondrop="nordDrop(event,${i})" ondragend="nordDragEnd()">
       <span class="nord-grip" title="Surukleyerek sirayi degistir" onmousedown="nordDragArm(this)" onmouseup="nordDragDisarm(this)">${icoGrip()}</span>
       <span class="nord-idx t-meta">${i+1}</span>
-      <div class="nord-prod-col">${prodCell}${yerineSel}${dagitSel}${tedSel}${ozelSel}${lokSel}</div>
+      <div class="nord-prod-col">${prodCell}${yerineSel}${dagitSel}${ctlStrip}</div>
       <div class="nord-qty-col"><input type="number" step="any" min="0" placeholder="0" value="${esc(l.qty)}" oninput="nordUpd(${i},'qty',this.value)">${ok&&l.unit?`<span class="nord-unit">${esc(l.unit)}</span>`:''}</div>
       <button class="mini-btn del" onclick="nordRm(${i})">${icoTrash()}</button>
     </div>`;
