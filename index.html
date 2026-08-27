@@ -1284,6 +1284,12 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .fw-caret{font-size:12px;font-weight:800;line-height:1;color:var(--mute);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:1px 5px;flex-shrink:0}
 .fw-caret.on{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 45%,transparent)}
 .fw-name{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* LOKASYON DUGUMU (kat/aks/fragment/ODA) - ad ASLA kisaltilmaz. Oda adlari kod niteliginde
+   ("00UKS10R091") ve son karakterleri odayi ayirt eden hane oldugu icin "..." bilgi kaybi
+   demekti. Iki asamali cozum: (1) flowLayout kolon genisligini o kolondaki en uzun ada gore
+   olcer, (2) yine de sigmayan ad burada alt satira sarar - dugum yuksekligi layoutta satir
+   sayisina gore buyutulur. Sartname/ozel no dugumleri eski davranisi korur. */
+.floww-node.lok .fw-name{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;line-height:1.3}
 .fw-bina-name{font-size:14px;font-weight:800;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fw-sub{font-size:10px;color:var(--mute);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 .fw-row{display:flex;align-items:center;gap:6px;min-width:0}
@@ -8615,12 +8621,73 @@ function setBinaYView(v){
   render();
   if(v==='flow') setTimeout(flowFit,40);
 }
+/* METIN GENISLIGI OLCUMU (akis tuvali kolon hesabi icin) -----------------------------
+   "karakter sayisi x sabit carpan" yaklasimi yalnizca MONO yazi tipinde dogrudur; dugum
+   adlari sans (Inter) ile cizildigi icin "00UKS10R091" ile "IIIIIIIIIII" ayni karakter
+   sayisinda cok farkli genisliktedir. Bu yuzden gercek olcum tek bir canvas baglaminda
+   yapilir. Olcum ucuz degil (dugum basina birkac cagri) - metin+font anahtariyla
+   onbelleklenir. Webfont gec yuklenirse ilk olcumler fallback yazi tipiyle yapilmis olur:
+   fonts.ready gelince onbellek bosaltilir ve tuval acikca yeniden cizilir. */
+const TXT_SANS='700 12.5px Inter,system-ui,sans-serif', TXT_MONO='700 9px "JetBrains Mono",ui-monospace,monospace';
+let _txtCv=null, _txtCache={};
+function textW(txt,font){
+  const k=font+'|'+txt, c=_txtCache[k]; if(c!=null) return c;
+  if(!_txtCv) _txtCv=document.createElement('canvas').getContext('2d');
+  _txtCv.font=font;
+  return _txtCache[k]=_txtCv.measureText(String(txt)).width;
+}
+try{ document.fonts.ready.then(()=>{ _txtCache={}; if(document.getElementById('flowCanvas')) render(); }); }catch(e){}
 // duz layout hesabi: her bina bir blok; lokasyon agaci saga dogru acilir, yapraklar
 // alt alta dizilir, ara dugumler cocuklarinin ortasina oturur (klasik agac yerlesimi)
 function flowLayout(binas){
-  const NW=170,NH=46,HG=64,VG=10,BW=228,BH=84,BGAP=42,X0=24;
+  const NWMIN=170,NWMAX=360,NH=46,LNH=17,HG=64,VG=10,BW=228,BH=84,BGAP=42,X0=24;
   const nodes=[],edges=[],byId={};
   let yCur=24,maxX=X0+BW;
+  /* FIZIKSEL KOLON GENISLIKLERI: her derinlik (kat / aks / fragment / ODA kolonu) kendi
+     icindeki EN UZUN dugume gore genisler - boylece oda adlari "..." ile kesilmez, dar
+     kolonlar da bosuna genislemez. Kolon basina TEK genislik kullanilir; dugum basina
+     verseydik ayni kolondaki kutular tirtikli gorunurdu. Ust sinira (NWMAX) takilan asiri
+     uzun adlar dugumde alt satira sarar - satir sayisi asagida yukseklige eklenir. */
+  const colW=[], _lokM={};
+  // bir lokasyon dugumunun ad DISI sabit genisligi: ic bosluk + seviye cipi + rozetler
+  const lokMet=l=>{
+    let m=_lokM[l.id]; if(m) return m;
+    const srt=l.level==='kat'?katSartnameleri(l.bina,l.id).length:0;
+    const lbl=lokLevelLabel(l.level).toUpperCase();
+    let ek=20+6;                                        // .floww-node padding (10+10) + .fw-row gap
+    ek+=textW(lbl,TXT_MONO)+lbl.length*0.5+16;          // .lokw-lvl: harf araligi + padding + cerceve
+    if(lokIsShared(l)) ek+=6+34;                        // .fw-shared rozeti (ikon + sayi)
+    if(srt){ ek+=6+34; if(FLOWW.exp[l.id]) ek+=6+19; }  // .fw-sart rozeti (+ dal acikken kopyala dugmesi)
+    m={ek,nw:textW(String(l.name||''),TXT_SANS)}; _lokM[l.id]=m; return m;
+  };
+  /* Kac satira sarar: tarayicinin gercek sarma davranisi taklit edilir (once bosluktan,
+     sigmayan tek kelime overflow-wrap:anywhere ile karakterden). Kolon zaten en uzun ada
+     gore secildigi icin bu yol yalnizca NWMAX'a takilan adlarda calisir. */
+  const satirSay=(txt,avail)=>{
+    const av=Math.max(30,avail), kel=String(txt||'').split(/\s+/).filter(Boolean);
+    if(!kel.length) return 1;
+    let n=1,cur='';
+    for(const k of kel){
+      const t=cur?cur+' '+k:k;
+      if(textW(t,TXT_SANS)<=av){ cur=t; continue; }
+      if(cur){ n++; cur=''; }
+      const kw=textW(k,TXT_SANS);
+      if(kw<=av){ cur=k; continue; }
+      n+=Math.ceil(kw/av)-1; cur='';
+    }
+    return Math.min(4,n);
+  };
+  // yerlesimle AYNI gezinti (paylasimli dugum yalnizca birincil ebeveyninin altinda durur)
+  const olcKol=(b,parentId,depth)=>{
+    lokChildren(b,parentId).filter(l=>(l.parentId||null)===(parentId||null)).forEach(l=>{
+      const m=lokMet(l);
+      colW[depth]=Math.min(NWMAX,Math.max(colW[depth]||NWMIN,Math.ceil(m.ek+m.nw)+8));  // +8: asagidaki satir hesabinin -4 emniyet payindan daha genis kalsin
+      olcKol(b,l.id,depth+1);
+    });
+  };
+  binas.forEach(b=>{ if(binaParcali(b)) olcKol(b,null,0); });
+  const kolW=d=>colW[d]||NWMIN;
+  const kolX=d=>{ let x=X0+BW+HG; for(let i=0;i<d;i++) x+=kolW(i)+HG; return x; };
   /* IDARI DAL GENISLIKLERI: sartname kodu ve urun adi KISALTILMADAN sigsin diye, ACIK
      dallardaki en uzun metne gore hesaplanir. Tek bir genislik kullanilir (her dal kendi
      genisligini secseydi kolonlar tirtikli olurdu). Yazi tipleri mono oldugu icin karakter
@@ -8677,7 +8744,7 @@ function flowLayout(binas){
           const adet=gosterilen.length+(tasma>0?1:0);
           const cols=Math.max(1,Math.min(OZCOLMAX,Math.ceil(Math.sqrt(adet*(OZH+VG)/(OZW+OZGAP)))));
           const satir=Math.ceil(adet/cols);
-          ozX=X0+BW+HG+(depth+1)*(NW+HG);
+          ozX=kolX(depth+1);
           const y0=yCur;
           const koy=(k,node)=>{ const c=k%cols, r=Math.floor(k/cols);
             node.x=ozX+c*(OZW+OZGAP); node.y=y0+r*(OZH+VG); node.w=OZW; node.h=OZH;
@@ -8691,7 +8758,7 @@ function flowLayout(binas){
         let y;
         if(ozMid==null){ y=yCur; yCur+=NH+VG; }
         else y=ozMid-NH/2;
-        const x=X0+BW+HG+depth*(NW+HG);
+        const x=kolX(depth);
         const n={type:'srt',sr:g.sr,katId:l.id,all:g.all.length,here:g.here,x,y,w:SRW,h:NH};
         nodes.push(n); byId['s:'+key]=n;
         // TEK kenar: sartname -> izgara blogunun sol ortasi. Kart basina kenar cizmek
@@ -8713,14 +8780,17 @@ function flowLayout(binas){
         const srtMid=l.level==='kat'?placeSrt(l,depth+1):null;
         const childMid=place(l.id,depth+1);
         const dal=[srtMid,childMid].filter(v=>v!=null);
+        // genislik kolondan gelir; ad tek satira sigmiyorsa yukseklik satir basina buyur
+        const w=kolW(depth), m=lokMet(l);
+        const h=NH+(satirSay(l.name,w-m.ek-4)-1)*LNH;
         let y;
-        if(!dal.length){ y=yCur; yCur+=NH+VG; }        // yaprak: siradaki bos slota otur
-        else y=(Math.min(...dal)+Math.max(...dal))/2-NH/2; // ara dugum: dallarinin ortasina
-        const x=X0+BW+HG+depth*(NW+HG);
-        const n={type:'lok',lok:l,x,y,w:NW,h:NH,use:use&&use.sub[l.id]};
+        if(!dal.length){ y=yCur; yCur+=h+VG; }         // yaprak: siradaki bos slota otur
+        else y=(Math.min(...dal)+Math.max(...dal))/2-h/2; // ara dugum: dallarinin ortasina
+        const x=kolX(depth);
+        const n={type:'lok',lok:l,x,y,w,h,use:use&&use.sub[l.id]};
         nodes.push(n); byId[l.id]=n;
-        maxX=Math.max(maxX,x+NW);
-        mids.push(y+NH/2);
+        maxX=Math.max(maxX,x+w);
+        mids.push(y+h/2);
       });
       return (mids[0]+mids[mids.length-1])/2;
     };
@@ -8814,7 +8884,7 @@ function renderBinaFlow(){
     const shared=lokIsShared(l);
     const sharedNames=shared?lokParentIds(l).map(p=>{const x=p?getLok(p):null;return x?x.name:'';}).filter(Boolean):[];
     const sharedTip=shared?'Ayni oda '+sharedNames.length+' parcaya bagli: '+sharedNames.join(' + '):'';
-    return `<div class="floww-node ${sel?'sel':''}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:${lc}" onclick="event.stopPropagation();flowSel('${l.id}')" title="${esc(lokPath(l.id))}${uTxt?' · '+esc(uTxt):''}${srtTip?' · '+esc(srtTip):''}${sharedTip?' · '+esc(sharedTip):''}">
+    return `<div class="floww-node lok ${sel?'sel':''}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:${lc}" onclick="event.stopPropagation();flowSel('${l.id}')" title="${esc(lokPath(l.id))}${uTxt?' · '+esc(uTxt):''}${srtTip?' · '+esc(srtTip):''}${sharedTip?' · '+esc(sharedTip):''}">
       <div class="fw-row"><span class="lokw-lvl" style="--lc:${lc}">${lokLevelLabel(l.level).toUpperCase()}</span><span class="fw-name" style="flex:1">${esc(l.name)}</span>${shared?`<span class="fw-shared" title="${esc(sharedTip)}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M10 13a5 5 0 007.07 0l2.83-2.83a5 5 0 00-7.07-7.07L11.5 4.5"/><path d="M14 11a5 5 0 00-7.07 0L4.1 13.83a5 5 0 007.07 7.07L12.5 19.5"/></svg>${sharedNames.length}</span>`:''}${srts.length&&FLOWW.exp[l.id]?copyBtn(srts.map(s=>s.code).join('\n'),srts.length+' sartname kodu'):''}${srts.length?`<span class="fw-sart clk ${FLOWW.exp[l.id]?'on':''}" onclick="event.stopPropagation();flowToggleSrt('${l.id}')" title="Sartname dalini ac/kapat - kat altinda sartnameler, onlarin altinda ozel no'lar cikar"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>${srts.length}</span>`:''}</div>
       <div class="fw-row" style="margin-top:3px">${l.level==='kat'&&l.kot!=null&&l.kot!==''?`<span class="fw-kot">Kot ${esc(l.kot)}</span>`:''}${uTxt?`<span class="fw-use">${uTxt}</span>`:''}</div>
     </div>`;
