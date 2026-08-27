@@ -4890,35 +4890,53 @@ function gyMetinCoz(metin){
   if(kume.length) bloklar.push(kume);
 
   const bilinen=new Set((gyBasliklar()||[]).map(b=>norm(b.ad)));
-  const kayitlar=[]; const uyarilar=[];
-  let k=null;
-  const yeniKayit=(firma,tarih)=>{ k={firma:firma||'',tarih:tarih||'',bina:'',gruplar:[],top:null}; kayitlar.push(k); return k; };
-  // bir blogu gruplara cevirir; odasiz blokta ilk baslik "once bos satir" ister
+  const kayitlar=[];
+  let k=null, bl=null;    // k: firma bolumu, bl: o firmanin eldeki BINA bolumu
+  const yeniKayit=(firma,tarih)=>{ k={firma:firma||'',tarih:tarih||'',top:null,binalar:[]}; bl=null; kayitlar.push(k); return k; };
+  const yeniBina=ad=>{ if(!k) yeniKayit('',''); bl={bina:ad||'',gruplar:[]}; k.binalar.push(bl); return bl; };
+  // bir blogu gruplara cevirir; odasiz blokta ilk baslik "once bos satir" demektir
   const grupla=liste=>{
     const ilk=gyBolSayili(liste[0]);
     if(!ilk) return [{ad:liste[0],odali:true,
       satirlar:liste.slice(1).map(gyBolSayili).filter(Boolean).map(x=>({oda:x.ad,kisi:x.sayi}))}];
     return liste.map(gyBolSayili).filter(Boolean).map((x,i)=>({ad:x.ad,odali:false,kisi:x.sayi,ayri:i===0}));
   };
+  /* BINA SATIRI NASIL ANLASILIR: bir firmanin birden cok binasi olabilir ve bina
+     kodu tek basina, kendi satirinda durur (ornek: ... MARKALAMA / 4 [bos] UKU
+     [sonra] EKIPMAN MONTAJI ...). Kod ile BASLIK ayni gorunumde oldugu icin ayirt
+     etme kurali su: satirda "/ sayi" yoksa VE ortak baslik listesinde de yoksa,
+     ARDINDAN GELEN satir da bir baslik gorunumundeyse (yine "/ sayi"siz ya da
+     bilinen bir baslik) o satir BINA kodudur. Odali baslik hicbir zaman bos
+     kalmadigi icin (bos baslik metne yazilmaz) bu ikilik guvenlidir. */
+  const blokIsle=liste=>{
+    if(!liste||!liste.length) return;
+    const ilk=gyBolSayili(liste[0]);
+    if(!ilk && !bilinen.has(norm(liste[0])) && liste.length>1){
+      const ikinci=gyBolSayili(liste[1]);
+      if(!ikinci || bilinen.has(norm(ikinci.ad))){ yeniBina(liste[0]); blokIsle(liste.slice(1)); return; }
+    }
+    if(!bl) yeniBina('');
+    bl.gruplar.push(...grupla(liste));
+  };
 
   bloklar.forEach(blok=>{
-    // TOP satiri tek basina durur
+    // TOP satiri tek basina durur ve FIRMANIN toplamidir (binalarin degil)
     const top=blok.length===1&&new RegExp('^'+GY_TOP_ETIKET.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s+(\\d+)$','i').exec(blok[0]);
     if(top){ if(k) k.top=Number(top[1]); return; }
-    let i=0;
     const bas=GY_TARIH_SATIRI.exec(blok[0]);
     if(bas){
       // yakalananlar: 1=firma, 2=gun, 3=ay, 4=yil  ->  YYYY-AA-GG
       yeniKayit(bas[1], bas[4]+'-'+giZ(+bas[3])+'-'+giZ(+bas[2]));
-      i=1;
-      // firma satirindan sonraki satir ortak baslik DEGILSE bina kodudur
-      if(blok.length>1&&!gyBolSayili(blok[1])&&!bilinen.has(norm(blok[1]))){ k.bina=blok[1]; i=2; }
+      blokIsle(blok.slice(1)); return;
     }
     if(!k) yeniKayit('','');            // basliksiz metin: eldeki yaziya islenir
-    if(i<blok.length) k.gruplar.push(...grupla(blok.slice(i)));
+    blokIsle(blok);
   });
-  kayitlar.forEach(r=>{ r.gruplar=r.gruplar.filter(g=>g&&String(g.ad||'').trim()); });
-  return {kayitlar:kayitlar.filter(r=>r.gruplar.length||r.firma||r.bina), uyarilar};
+  kayitlar.forEach(r=>{
+    r.binalar.forEach(b=>{ b.gruplar=b.gruplar.filter(g=>g&&String(g.ad||'').trim()); });
+    r.binalar=r.binalar.filter(b=>b.gruplar.length);
+  });
+  return {kayitlar:kayitlar.filter(r=>r.binalar.length||r.firma)};
 }
 function gyVarsayilanBina(){
   const son=gyAll().slice().sort((a,b)=>String(b.tarih||'').localeCompare(String(a.tarih||'')))[0];
@@ -4998,6 +5016,9 @@ function gyFirmaSecenekleri(){
    kayitlar boyle baglanir). */
 const GY_BASLIK_AYARI='gunluk_yazi_basliklar';
 let _GYB=[];   // modaldaki ORTAK baslik listesi [{id,ad,odali,ayri}]
+/* Metinden okunan ama HENUZ islenmemis bina bolumleri: bir firmanin birden cok
+   binasi tek metinde gelir, her Kaydet'ten sonra sirdaki forma dokulur. */
+let _GYKUYRUK=[];
 
 function gyBasliklar(){
   const kayitli=(DB&&DB.meta&&Array.isArray(DB.meta[GY_BASLIK_AYARI]))?DB.meta[GY_BASLIK_AYARI]:null;
@@ -5118,7 +5139,7 @@ function openGunlukYazi(tarih,id){
   // kaza ile kapanma korumasi: KAYDEDILMEMIS satirlar varsa disa tiklama kapatmasin
   setModalGuard(()=>!!_GY&&!gyKayitli(_GY.id)&&gyToplam(gyEldeki())>0);
 }
-function gyKapat(){ _GY=null; closeModal(); }
+function gyKapat(){ _GY=null; _GYKUYRUK=[]; closeModal(); }
 // gruplar bolumunu ve gunun kunye seridini YENIDEN cizer (yapisal degisiklikler)
 function gyCiz(){
   const el=document.getElementById('gyGruplar'); if(el) el.innerHTML=gyGruplarHtml();
@@ -5135,11 +5156,15 @@ function gyTazele(){
   const b=document.getElementById('gyToplam'); if(b) b.textContent=firmaToplam;
   const n=document.getElementById('gyToplamOto');
   if(n) n.textContent = firmaninki.length>1 ? ' · hesaplanan (bu firmanin '+firmaninki.length+' binasi)' : ' · hesaplanan';
-  // fark: sahada yazan deger BU YAZININ satir toplamiyla karsilastirilir
-  const fark=gyFark(el), u=document.getElementById('gyFarkUyari');
+  /* Fark FIRMA duzeyinde bakilir: TOP-ИТО firmanin toplamidir, tek binanin degil.
+     Iki binali bir yazida (ornek: UKS 52 + UKU 23 = 75, kagitta 73) bina basina
+     karsilastirmak yaniltirdi. */
+  const saha=gySahaToplam(el), fark=saha==null?0:saha-firmaToplam;
+  const u=document.getElementById('gyFarkUyari');
   if(u){
     u.classList.toggle('hidden',!fark);
-    if(fark) u.textContent='Sahada yazan '+gySahaToplam(el)+', bu yazinin satir toplami '+gyToplam(el)
+    if(fark) u.textContent='Sahada yazan '+saha+', hesaplanan '+firmaToplam
+      +(firmaninki.length>1?' (bu firmanin '+firmaninki.length+' binasi)':'')
       +' — fark '+(fark>0?'+':'')+fark+'. Metne hesaplanan yazilir; satirlari kontrol edin.';
   }
   const o=document.getElementById('gyOnizle');
@@ -5295,6 +5320,19 @@ function gyOkuUygula(){
   if(!kayitlar.length){ toast('Metinden yazi cozulemedi - bicimi kontrol edin','err'); return; }
   const r=kayitlar[0], not=[];
   if(kayitlar.length>1) not.push((kayitlar.length-1)+' firma daha var, onlari ayri ayri yapistirin');
+  /* BIR FIRMANIN BIRDEN COK BINASI: her bina AYRI bir yazi kaydidir (kimlik
+     tarih+bina+firma). Ilki forma islenir, kalanlar kuyruga alinir; her Kaydet'ten
+     sonra sirdaki bina kendiliginden acilir. Boylece kayit yolu (yetki, cakisma,
+     sirket olusturma) tek yerde kalir, toplu ve sessiz yazma olmaz. */
+  const bolumler=r.binalar.length?r.binalar:[{bina:'',gruplar:[]}];
+  const ilk=bolumler[0];
+  _GYKUYRUK=bolumler.slice(1).map(b=>({firma:r.firma,tarih:r.tarih,bina:b.bina,gruplar:b.gruplar,top:null}));
+  gyOkuBolum({firma:r.firma,tarih:r.tarih,bina:ilk.bina,gruplar:ilk.gruplar,top:r.top},not);
+}
+/* Cozulen TEK BINA bolumunu eldeki forma isler. Kuyruktan gelen sonraki binalar
+   da buradan gecer - tek yol, tek davranis. */
+function gyOkuBolum(r,not){
+  not=not||[];
   // TARIH / BINA / FIRMA
   if(r.tarih&&giParcala(r.tarih)) _GY.tarih=r.tarih;
   if(r.bina){
@@ -5318,11 +5356,22 @@ function gyOkuUygula(){
   const oncekiToplam=gyToplam(gyEldeki());
   _GY.gruplar.forEach(g=>{ g.satirlar=[]; g.kisi=''; });
   if(oncekiToplam) not.push('Formdaki onceki '+oncekiToplam+' kisi metindekiyle degistirildi');
-  r.gruplar.forEach(g=>{
+  r.gruplar.forEach((g,gi)=>{
     let i=_GYB.findIndex(b=>b&&norm(b.ad)===norm(g.ad));
     if(i<0){
       const yeni={id:uid(),ad:g.ad,odali:!!g.odali,ayri:!!g.ayri};
-      i=(sonIx>=0?sonIx+1:_GYB.length);
+      if(sonIx>=0) i=sonIx+1;
+      else{
+        /* Metnin ILK basligi da yeniyse dayanacak bir onceki yok. Sona atmak
+           yapistirilan sirayi bozardi (UKU bolumu EKIPMAN MONTAJI ile basliyordu
+           ama listenin dibine dusuyordu) - metinde ONDAN SONRA gelen ilk BILINEN
+           basligin onune konur. */
+        i=_GYB.length;
+        for(let j=gi+1;j<r.gruplar.length;j++){
+          const n=_GYB.findIndex(b=>b&&norm(b.ad)===norm(r.gruplar[j].ad));
+          if(n>=0){ i=n; break; }
+        }
+      }
       _GYB.splice(i,0,yeni);
       _GY.gruplar.splice(i,0,{gid:yeni.id,satirlar:[],kisi:''});
       yeniBaslik++;
@@ -5360,9 +5409,11 @@ function gyOkuUygula(){
   at('gy_toplam',e=>e.value=(_GY.toplamElle===0||_GY.toplamElle)?_GY.toplamElle:'');
   gyCiz();
   const oto=gyToplam(gyEldeki());
-  toast('Metin okundu: '+r.gruplar.length+' baslik, '+oto+' kisi'
+  toast('Metin okundu: '+(_GY.bina||'bina yok')+' · '+r.gruplar.length+' baslik, '+oto+' kisi'
     +(yeniBaslik?' · '+yeniBaslik+' yeni baslik ortak listeye eklendi':'')
     +(atlanan?' · '+atlanan+' satir atlandi':''));
+  if(_GYKUYRUK.length) toast('Sirada '+_GYKUYRUK.length+' bina daha var ('
+    +_GYKUYRUK.map(x=>x.bina||'?').join(', ')+') - Kaydet\'e basinca sirayla acilacak');
   not.forEach(m=>toast(m,'err'));
 }
 
@@ -5445,7 +5496,15 @@ async function gyKaydet(){
   /* MODAL ACIK KALIR: bir gunun yazisi genelde tek firma degildir - kaydeden kisi
      cogu zaman hemen "+ Firma" ile ikinciyi yazar. Kaydedilmis haliyle yeniden
      cizilir ki kunye seridi ve Sil dugmesi guncel olsun. */
-  _GY=null; closeModal(); openGunlukYazi(tarih,kayit.id);
+  const sirada=_GYKUYRUK.length?_GYKUYRUK.shift():null;
+  _GY=null; closeModal();
+  if(sirada){
+    // metinden okunan sonraki BINA: ayni firma, bos yeni yazi olarak acilir
+    openGunlukYazi(tarih,'__yeni');
+    gyOkuBolum(sirada,[]);
+    toast('Sirada '+(sirada.bina||'?')+' var - kontrol edip Kaydet\'e basin'
+      +(_GYKUYRUK.length?' ('+_GYKUYRUK.length+' bina daha)':''));
+  } else openGunlukYazi(tarih,kayit.id);
 }
 
 async function gySilKayit(id){
@@ -22229,10 +22288,27 @@ function ihtPdfMarka(adlar){
 function ihtPdfCss(){ return `
 @page{size:A4;margin:0}
 *{box-sizing:border-box}
-body{margin:0;background:#e9ecf1;font-family:Arial,Helvetica,"Segoe UI",sans-serif;color:#1f2937;
-  -webkit-print-color-adjust:exact;print-color-adjust:exact}
+/* RENK SISTEMI tek yerde: ciktinin butun tonlari bu dokuz degiskenden turer.
+   Lacivert ailesi tutanak ciktisiyla ayni koktedir (#3e5680) - iki belge yan
+   yana durdugunda ayni evden ciktiklari anlasilsin. */
+:root{
+  --nv:#2f4a73;        /* ana vurgu */
+  --nv-d:#1b2b45;      /* baslik/rakam - en koyu */
+  --nv-bg:#eef2f8;     /* vurgu zemini */
+  --nv-ln:#cfdbe9;     /* vurgu kenari */
+  --ink:#111827;       /* urun adi */
+  --tx:#3f4a5a;        /* kunye metni */
+  --mu:#7d8798;        /* ikincil */
+  --fn:#aeb6c2;        /* en soluk - ayrac, yer tutucu */
+  --hr:#e3e7ee;        /* sac cizgi */
+  --zb:#f8fafc;        /* zebra */
+}
+body{margin:0;background:#e9ecf1;color:var(--tx);
+  font-family:"Segoe UI",-apple-system,"Helvetica Neue",Arial,sans-serif;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  -webkit-font-smoothing:antialiased}
 .tbar{position:sticky;top:0;z-index:9;display:flex;gap:10px;align-items:center;justify-content:center;
-  padding:10px;background:#1f2937;color:#fff;font-size:12.5px}
+  padding:11px;background:var(--nv-d);color:#fff;font-size:12.5px}
 .tbar button{background:#3b82f6;color:#fff;border:none;border-radius:7px;padding:7px 16px;
   font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
 .tbar span{opacity:.72}
@@ -22242,27 +22318,35 @@ body{margin:0;background:#e9ecf1;font-family:Arial,Helvetica,"Segoe UI",sans-ser
    tuzagi - 297mm tarayicida 297.1mm'ye yuvarlanip her sayfanin arkasina bos yaprak
    dusuruyordu. Ayrinti icin bkz. tutanakPrintCss. */
 .page{width:210mm;min-height:290mm;background:#fff;margin:14px auto;padding:9mm 12mm;
-  display:flex;flex-direction:column;box-shadow:0 2px 14px rgba(0,0,0,.18)}
+  display:flex;flex-direction:column;box-shadow:0 2px 16px rgba(27,43,69,.16)}
 @media print{.page{margin:0;box-shadow:none;page-break-after:always;break-after:page}
   .sheets .page:last-child{page-break-after:auto;break-after:auto}}
 
-/* antet - tutanakla AYNI kaynaktan (app_settings > tutanakAntet), ayri ayar yok */
+/* antet - tutanakla AYNI kaynaktan (Sirketler kaydi), ayri ayar yok */
 .ph-head{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:10mm}
 .ph-logo{height:10mm;width:auto;object-fit:contain}
-.ph-firm{text-align:right;font-size:6.4pt;line-height:1.3;color:#8a93a3}
-.ph-firm b{display:block;font-size:7.4pt;color:#374151}
-.ph-rule{height:1.5px;background:#3e5680;margin-top:2mm}
-.ph{color:#b9c0cc}
+.ph-firm{text-align:right;font-size:6.4pt;line-height:1.35;color:var(--mu)}
+.ph-firm b{display:block;font-size:7.6pt;color:var(--nv-d);letter-spacing:.2px}
+.ph-rule{height:1.6px;background:var(--nv);margin-top:2mm}
+.ph{color:var(--fn)}
 
-.ih-title{display:flex;align-items:flex-end;justify-content:space-between;gap:8mm;margin:3mm 0 2.4mm}
-.ih-title h1{margin:0;font-size:14pt;letter-spacing:1.6px;font-weight:bold;color:#1f2937}
-.ih-title h1 small{display:block;font-size:6.2pt;letter-spacing:1.2px;color:#a3abb8;font-weight:normal;margin-top:.8mm}
-.ih-meta{text-align:right;font-size:7.2pt;color:#4b5563;line-height:1.5}
-.ih-meta b{color:#1f2937}
+/* BASLIK BLOGU: solda belgenin adi, sagda o listeye ait kunye karti.
+   Kunye kart icinde durur - baslikla ayni agirlikta iki metin blogu yan yana
+   konsaydi goz hangisinin belge adi oldugunu secemezdi. */
+.ih-title{display:flex;align-items:stretch;justify-content:space-between;gap:8mm;margin:3.2mm 0 2.6mm}
+.ih-title h1{margin:0;align-self:flex-end;font-size:15pt;letter-spacing:2.2px;font-weight:bold;
+  color:var(--nv-d);line-height:1}
+.ih-title h1 small{display:block;font-size:6.4pt;letter-spacing:1.6px;color:var(--nv);
+  font-weight:600;margin-top:1.3mm}
+.ih-meta{background:var(--nv-bg);border:.5px solid var(--nv-ln);border-radius:2mm;
+  padding:2mm 3.4mm;font-size:7pt;color:var(--tx);line-height:1.65;text-align:right;min-width:52mm}
+.ih-meta b{display:block;font-size:8.4pt;color:var(--nv-d);margin-bottom:.4mm}
+.ih-meta i{font-style:normal;color:var(--mu)}
 
 /* SUTUN BASLIGI: satirlarin ne oldugunu bir kez soyler, her satirda tekrar etmez */
-.ih-cols{display:flex;gap:3mm;align-items:center;font-size:5.8pt;letter-spacing:.6px;
-  color:#8a93a3;border-bottom:1.2px solid #3e5680;padding-bottom:1.2mm;margin-bottom:.6mm}
+.ih-cols{display:flex;gap:3mm;align-items:center;font-size:5.9pt;letter-spacing:.7px;font-weight:700;
+  color:var(--nv);background:var(--nv-bg);border-radius:1.4mm 1.4mm 0 0;
+  padding:1.4mm 2mm;border-bottom:1.2px solid var(--nv)}
 .ih-cols .c1{width:7mm;text-align:center;flex:none}
 .ih-cols .c2{width:20mm;flex:none}
 .ih-cols .c3{flex:1;min-width:0}
@@ -22270,58 +22354,78 @@ body{margin:0;background:#e9ecf1;font-family:Arial,Helvetica,"Segoe UI",sans-ser
 
 /* URUN SATIRI. Yukseklik SABIT (21.5mm): sayfaya tam 10 urun sigsin diye. Tasan
    icerik satirin icinde kirpilir - kagit duzeni bozulmaz, tam dokum Excel'dedir. */
-.r{display:flex;gap:3mm;align-items:center;height:21.5mm;padding:1.4mm 0;
-  border-bottom:.5px solid #dfe4ea;overflow:hidden;break-inside:avoid;page-break-inside:avoid}
+.r{display:flex;gap:3mm;align-items:center;height:21.5mm;padding:1.4mm 2mm;
+  border-bottom:.5px solid var(--hr);overflow:hidden;break-inside:avoid;page-break-inside:avoid}
+/* zebra: 10 satirlik sayfada gozun satir atlamasini engeller */
+.r.alt{background:var(--zb)}
 .r:last-child{border-bottom:none}
-.r .no{width:7mm;flex:none;text-align:center;font-size:9pt;font-weight:bold;color:#9aa3af}
-.r .ft{width:20mm;height:18.5mm;flex:none;border:.5px solid #e3e7ee;border-radius:2mm;
-  background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden}
+/* sira numarasi daire icinde - sayfa boyunca dikey bir ritim cizgisi olusturur */
+.r .no{width:7mm;flex:none;display:flex;align-items:center;justify-content:center}
+.r .no i{font-style:normal;width:5.6mm;height:5.6mm;border-radius:50%;background:var(--nv-bg);
+  border:.5px solid var(--nv-ln);color:var(--nv);font-size:7.4pt;font-weight:bold;
+  display:flex;align-items:center;justify-content:center;line-height:1}
+.r .ft{width:20mm;height:18.5mm;flex:none;border:.5px solid var(--hr);border-radius:1.6mm;
+  background:#fff;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:.6mm}
 .r .ft img{max-width:100%;max-height:100%;object-fit:contain}
-.r .ft.no-img{background:#f6f8fb;color:#c3cad6;font-size:5.4pt;text-align:center;padding:1mm;line-height:1.3}
+.r .ft.no-img{background:#fbfcfe;color:var(--fn);font-size:5.4pt;text-align:center;padding:1mm;line-height:1.3}
 .r .mid{flex:1;min-width:0;overflow:hidden}
-.r .nm{font-size:8.6pt;font-weight:bold;line-height:1.22;color:#111827;
+.r .nm{font-size:8.8pt;font-weight:bold;line-height:1.2;color:var(--ink);letter-spacing:-.05px;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
 /* KUNYE SATIRI SABIT SUTUNLU IZGARADIR, akan metin DEGIL.
    Neden: urun kodu satirdan satira cok farkli uzunlukta (7 karakterlik "423909"
    ile 20 karakterlik "001 046 071010 00 17" ayni listede). Akan metinde kod ne
    kadar uzunsa marka o kadar saga kayiyor ve logolar sayfada zikzak ciziyordu.
    Izgarada kod/marka/geri kalan kendi sutununda durur; bir hucre BOS OLSA BILE
-   yerini korur, boylece markalar butun satirlarda ayni dikey cizgide hizalanir. */
-.r .sub{margin-top:.7mm;display:grid;grid-template-columns:32mm 26mm 1fr;gap:0 2mm;
-  align-items:center;font-size:6.6pt;color:#4b5563;line-height:1.35}
+   yerini korur, boylece markalar butun satirlarda ayni dikey cizgide hizalanir.
+   Hucre araligindaki sac cizgiler bu hizayi goze de gosterir. */
+.r .sub{margin-top:1mm;display:grid;grid-template-columns:32mm 26mm 1fr;gap:0 2mm;
+  align-items:center;font-size:6.6pt;color:var(--tx);line-height:1.35}
 .r .sub>*{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.r .sub b{color:#1f2937}
+.r .sub>.brand,.r .sub>.rest{border-left:.5px solid var(--hr);padding-left:2mm}
+.r .sub b{color:var(--nv-d);font-weight:600}
 /* kod biraz daha kucuk punto: en uzun gercek kod (20 karakter) 32mm'ye sigsin */
-.r .sub .kod{font-family:"Courier New",monospace;font-size:6.2pt;font-weight:bold;color:#1f2937}
-.r .sub .sep{color:#c3cad6;margin:0 1.2mm}
+.r .sub .kod{font-family:"Consolas","Courier New",monospace;font-size:6.2pt;font-weight:bold;
+  color:var(--nv-d);letter-spacing:-.1px}
+.r .sub .sep{color:var(--fn);margin:0 1.2mm}
 /* marka: logo varsa ad ile yan yana, kagitta da taninsin. Logo genisligi sinirli -
    genis bir logo (WAGO) kendi sutununu tasirip hizayi bozmasin. */
 .mk{display:inline-flex;align-items:center;gap:1mm;min-width:0;max-width:100%}
 .mk img{height:3.4mm;width:auto;max-width:12mm;object-fit:contain;flex:none}
-.mk span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.mk span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:600;color:var(--tx)}
 .mk+.mk{margin-left:1.6mm}
-/* HEDEF: bu urun hangi binanin hangi katina gidecek */
-.r .hd{display:inline-block;margin-top:.7mm;font-size:6.4pt;color:#1f5f8b;
-  background:#eef5fb;border:.5px solid #cfe1f0;border-radius:1.4mm;padding:.3mm 1.6mm;
-  max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.r .hd.yok{color:#a3671f;background:#fdf5e8;border-color:#f0e0c2}
+/* HEDEF: bu urun hangi binanin hangi katina gidecek. Sayfadaki tek renkli
+   isaret oldugu icin goz once ona kayar - "nereye?" en cok sorulan soru. */
+.r .hd{display:inline-block;margin-top:1mm;font-size:6.4pt;font-weight:600;letter-spacing:.1px;
+  color:var(--nv);background:var(--nv-bg);border:.5px solid var(--nv-ln);border-radius:1.2mm;
+  padding:.5mm 2mm;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r .hd.yok{color:#a3671f;background:#fdf6e9;border-color:#efdfc3;font-weight:normal}
 /* TEKNIK BILGI: kagit alani dar oldugu icin tablo degil, tek satirda "ad: deger" dizisi */
-.r .tk{margin-top:.6mm;font-size:6pt;color:#6b7280;line-height:1.3;
+.r .tk{margin-top:.9mm;font-size:6pt;color:var(--mu);line-height:1.3;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.r .tk u{text-decoration:none;color:#9aa3af}
-/* ISTENEN ADET: sayfadaki en vurgulu oge - PDF'in varlik sebebi */
-.r .qty{width:26mm;flex:none;text-align:center;border:1px solid #3e5680;border-radius:2mm;
-  padding:1.4mm .8mm;background:#f4f7fb}
-.r .qty b{display:block;font-size:13pt;font-weight:bold;color:#1f2937;line-height:1}
-.r .qty span{display:block;font-size:6pt;color:#5b6b7f;margin-top:.8mm;letter-spacing:.4px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.r .tk u{text-decoration:none;color:var(--fn)}
+/* ISTENEN ADET: sayfadaki en vurgulu oge - PDF'in varlik sebebi.
+   Ustundeki lacivert serit rakami bir "etikete" cevirir; ciplak buyuk punto
+   fotografla yarisiyordu. */
+.r .qty{width:26mm;flex:none;text-align:center;border:.5px solid var(--nv-ln);
+  border-top:1.4mm solid var(--nv);border-radius:1.6mm;padding:1.5mm .8mm 1.6mm;background:var(--nv-bg)}
+.r .qty b{display:block;font-size:14pt;font-weight:bold;color:var(--nv-d);line-height:1;
+  letter-spacing:-.3px}
+.r .qty span{display:block;font-size:5.9pt;font-weight:600;color:var(--nv);margin-top:1mm;
+  letter-spacing:.5px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 .ih-spacer{flex:1}
-.ih-tot{display:flex;justify-content:flex-end;gap:8mm;border-top:1.2px solid #3e5680;
-  padding-top:1.6mm;margin-top:1.6mm;font-size:7.4pt;color:#4b5563}
-.ih-tot b{color:#1f2937;font-size:9pt;margin-left:1.4mm}
-.ph-foot{border-top:.5px solid #d8dde5;margin-top:2mm;padding-top:1.4mm;
-  font-size:5.8pt;letter-spacing:.5px;color:#a3abb8;display:flex;justify-content:space-between}
+/* TOPLAM KARTI yalnizca son sayfada - ara sayfalarda "toplam" yaniltici olurdu */
+.ih-tot{display:flex;background:var(--nv-bg);border:.5px solid var(--nv-ln);border-radius:2mm;
+  margin-top:2.4mm;overflow:hidden}
+.ih-tot>div{flex:1;padding:2mm 3mm;border-left:.5px solid var(--nv-ln);text-align:center}
+.ih-tot>div:first-child{border-left:none}
+.ih-tot span{display:block;font-size:5.9pt;letter-spacing:.6px;font-weight:700;color:var(--nv);
+  text-transform:uppercase}
+.ih-tot b{display:block;font-size:11pt;color:var(--nv-d);margin-top:.8mm;line-height:1}
+.ph-foot{border-top:.5px solid var(--hr);margin-top:2.2mm;padding-top:1.5mm;
+  font-size:5.8pt;letter-spacing:.5px;color:var(--fn);display:flex;justify-content:space-between;gap:6mm}
+.ph-foot b{color:var(--mu);font-weight:600}
 `; }
 
 /* Bir urun satiri. Kunye kutuphaneden, adet/hedef ihtiyac satirindan gelir. */
@@ -22342,8 +22446,9 @@ function ihtPdfRow(l,sira){
   const teknik=k.tek.slice(0,6).map(r=>`<u>${esc(r.k)}:</u> ${esc(r.v)}`).join(' &nbsp;·&nbsp; ');
   const hedef=[l.bina,l.kat,ihtKotMetni(l),l.konum].filter(Boolean).join(' · ');
   const adet=fmtNum(ihtSayi(l.qty));
-  return `<div class="r">
-    <div class="no">${sira}</div>
+  // zebra GLOBAL sira numarasina gore: sayfa degisince serit bozulmasin
+  return `<div class="r${sira%2===0?' alt':''}">
+    <div class="no"><i>${sira}</i></div>
     <div class="ft${k.img?'':' no-img'}">${k.img?`<img src="${esc(k.img)}" alt="">`:'foto yok'}</div>
     <div class="mid">
       <div class="nm">${esc(k.ad||'-')}</div>
@@ -22367,22 +22472,25 @@ function ihtPdfHtml(x){
   for(let i=0;i<ls.length;i+=IHT_PDF_ROWS) bloklar.push(ls.slice(i,i+IHT_PDF_ROWS));
   const toplam=bloklar.length;
   const hedefler=new Set(ls.filter(ihtHedefTam).map(l=>l.bina+'|@|'+l.kat));
+  // ciktinin ne zaman alindigi altbilgide durur: ayni listenin iki farkli
+  // basimini karsilastiran kisi hangisinin guncel oldugunu bilsin
+  const damga=new Date().toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
   const sayfalar=bloklar.map((blok,bi)=>{
     const ilk=bi*IHT_PDF_ROWS;
     const satirlar=blok.map((l,i)=>ihtPdfRow(l,ilk+i+1)).join('');
     // toplam serisi YALNIZ son sayfada: ara sayfalarda "toplam" yaniltici olurdu
     const tot=(bi===toplam-1)?`<div class="ih-tot">
-        <div>Toplam Kalem<b>${fmtNum(tt.kalem)}</b></div>
-        <div>Toplam Miktar<b>${fmtNum(tt.miktar)}</b></div>
-        <div>Hedef<b>${fmtNum(hedefler.size)} kat</b></div>
+        <div><span>Toplam Kalem</span><b>${fmtNum(tt.kalem)}</b></div>
+        <div><span>Toplam Miktar</span><b>${fmtNum(tt.miktar)}</b></div>
+        <div><span>Hedef Kat</span><b>${fmtNum(hedefler.size)}</b></div>
       </div>`:'';
     return `<div class="page">
       ${tutPrintHead(A)}
       <div class="ih-title">
         <h1>İHTİYAÇ LİSTESİ<small>ЗАЯВКА НА МАТЕРИАЛЫ</small></h1>
-        <div class="ih-meta"><b>${esc(x.ad||'-')}</b><br>
+        <div class="ih-meta"><b>${esc(x.ad||'-')}</b>
           ${esc(fmtDate(x.tarih))}${x.bina?' &nbsp;·&nbsp; '+esc(x.bina):''}<br>
-          ${fmtNum(tt.kalem)} kalem${x.olusturan?' &nbsp;·&nbsp; '+esc(x.olusturan):''}</div>
+          <i>${fmtNum(tt.kalem)} kalem${x.olusturan?' &nbsp;·&nbsp; '+esc(x.olusturan):''}</i></div>
       </div>
       <div class="ih-cols"><div class="c1">#</div><div class="c2">GÖRSEL / ФОТО</div>
         <div class="c3">MALZEME · KÜNYE · HEDEF</div><div class="c4">İSTENEN / КОЛ-ВО</div></div>
@@ -22390,7 +22498,8 @@ function ihtPdfHtml(x){
       <div class="ih-spacer"></div>
       ${tot}
       <div class="ph-foot"><span>İHTİYAÇ LİSTESİ &nbsp;/&nbsp; ЗАЯВКА НА МАТЕРИАЛЫ</span>
-        <span>Sayfa / Стр. ${bi+1} / ${toplam}</span></div>
+        <span>${esc(damga)}</span>
+        <span>Sayfa / Стр. <b>${bi+1} / ${toplam}</b></span></div>
     </div>`;
   }).join('');
   return `<!doctype html><html lang="tr"><head><meta charset="utf-8">
