@@ -21252,14 +21252,38 @@ function setTutPickSrc(src){
     b.classList.toggle('on', b.getAttribute('onclick')===`setTutPickSrc('${src}')`));
   tutPickFilter();
 }
+/* SECICI ARAMASI - ALAKAYA GORE SIRALAR.
+   Sorun eslesmede DEGIL siralamadaydi: matchText karakter-sirasi (subsequence)
+   eslemesi de yaptigi icin 7 haneli bir urun kodu bile 1400 kayitlik bir
+   kutuphanede ~200 satir dondurebiliyor. Liste ADA GORE alfabetik siralanip
+   150. satirda kesildigi icin ARANAN urun kesmenin disinda kalabiliyordu:
+   kullanici kodu ya da adi tam yazmasina ragmen urunu goremiyordu.
+   Olculdu (1400 urun): kodla aramada urunlerin %0.1'i, yaygin bir kelimeyle
+   aramada %12'si ilk 150'ye giremiyordu.
+
+   acScore alaka kademesi verir - birebir alt dize (en iyi), bosluksuz eslesme,
+   karakter-sirasi (en zayif). Eslesme olcutu DEGISMEDI: acScore tam olarak
+   matchText'in eledigi satirlara -1 doner, yalnizca sira duzeliyor. Boylece
+   150 kesmesi artik yalnizca gercekten alakasiz satirlari atar.
+
+   Skor urun basina BIR KEZ hesaplanir: karsilastirma fonksiyonunun icinde
+   hesaplansaydi her kiyasta norm() bastan calisir, uzun kutuphanede her tusa
+   basista gozle gorulur gecikme olurdu. */
+function pickSirala(mats,q){
+  const kaynakSira={proje:0,gecici:1,alet:2};
+  const alfabetik=(a,b)=>(a.ad||'').localeCompare(b.ad||'','tr')||(kaynakSira[a.src]-kaynakSira[b.src]);
+  if(!q) return mats.sort(alfabetik);
+  const nq=norm(q).trim();
+  const skorlu=[];
+  for(const m of mats){ const sk=acScore(norm(m.ara),nq); if(sk>=0) skorlu.push([sk,m]); }
+  skorlu.sort((a,b)=>a[0]-b[0]||alfabetik(a[1],b[1]));
+  return skorlu.map(x=>x[1]);
+}
 function tutPickRows(q){
   const hepsiKaynak=tutKaynaklar();
   const secili=hepsiKaynak.filter(k=>_TUTPICK==='hepsi'||k.src===_TUTPICK);
-  let mats=secili.flatMap(k=>k.items());
-  if(q) mats=mats.filter(m=>matchText(m.ara,q));
-  // once ada gore, ayni adda kaynak sirasina gore (Proje > Mobilizasyon > Mekanik)
-  const sira={proje:0,gecici:1,alet:2};
-  mats.sort((a,b)=>(a.ad||'').localeCompare(b.ad||'','tr')||(sira[a.src]-sira[b.src]));
+  // aramada alaka sirasi, aramasizken ada gore (bkz. pickSirala)
+  const mats=pickSirala(secili.flatMap(k=>k.items()),q);
   if(!mats.length) return `<div style="padding:22px;text-align:center;color:var(--mute);font-size:12.5px">${q?'Eslesen malzeme yok':'Bu kutuphane bos'}</div>`;
   const shown=mats.slice(0,150);
   // rozet yalnizca birden fazla kutuphane gorunuyorken anlamli
@@ -22188,10 +22212,8 @@ function setIhtPickSrc(src){
 function ihtPickRows(q){
   const hepsiKaynak=tutKaynaklar();
   const secili=hepsiKaynak.filter(k=>_IHTPICK==='hepsi'||k.src===_IHTPICK);
-  let mats=secili.flatMap(k=>k.items());
-  if(q) mats=mats.filter(m=>matchText(m.ara,q));
-  const sira={proje:0,gecici:1,alet:2};
-  mats.sort((a,b)=>(a.ad||'').localeCompare(b.ad||'','tr')||(sira[a.src]-sira[b.src]));
+  // aramada alaka sirasi, aramasizken ada gore (bkz. pickSirala)
+  const mats=pickSirala(secili.flatMap(k=>k.items()),q);
   if(!mats.length) return `<div style="padding:22px;text-align:center;color:var(--mute);font-size:12.5px">${q?'Eslesen urun yok':'Bu kutuphane bos'}</div>`;
   const shown=mats.slice(0,150);
   const rozet=hepsiKaynak.length>1;
