@@ -2712,6 +2712,8 @@ datalist{display:none}
 .iht-durum.tamam{background:color-mix(in srgb,var(--green) 14%,transparent);color:var(--green)}
 .iht-ad{font-weight:600;font-size:13px}
 .iht-ad i{display:block;font-style:normal;font-size:11px;color:var(--dim);font-weight:500}
+/* belge kodu: satirda gozle taranabilsin diye esaralikli ve bir ton koyu */
+.iht-kod{font-family:Consolas,"Courier New",monospace;font-weight:600;color:var(--mute);letter-spacing:.2px}
 /* form basindaki hedef ozeti: "UYB Kat 3 · 4 kalem" seklinde kirilim */
 .iht-hedefler{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
 .iht-hedef{font-size:11.5px;background:var(--panel2);border:1px solid var(--line);
@@ -5942,7 +5944,10 @@ function renderCompanies(){
 }
 function openCompanyModal(id){ if(!guard('define'))return; const x=id?(DB.companies||[]).find(c=>c.id===id):null;
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:520px"><div class="modal-head"><h3>${x?'Sirket Duzenle':'Sirket Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
-    <div class="frow"><label>Sirket Adi *</label><input id="c_ad" value="${x?esc(x.ad):''}" placeholder="orn. ABC Insaat Ltd. Sti." onkeydown="if(event.key==='Enter')saveCompany(${x?`'${x.id}'`:'null'})"></div>
+    <div class="frow"><label>Sirket Adi *</label><input id="c_ad" value="${x?esc(x.ad):''}" placeholder="orn. ABC Insaat Ltd. Sti." oninput="sirketKodOnizle(${x?`'${x.id}'`:'null'})" onkeydown="if(event.key==='Enter')saveCompany(${x?`'${x.id}'`:'null'})"></div>
+    <div class="frow"><label>Kisaltma <span class="t-meta">(belge kodlarinin ilk parcasi)</span></label>
+      <input id="c_kisa" maxlength="5" value="${x?esc(x.kisaltma||''):''}" placeholder="bos birakilirsa addan turetilir" oninput="sirketKodOnizle(${x?`'${x.id}'`:'null'})">
+      <div class="t-meta" id="c_kodOrnek" style="margin-top:5px;font-size:11px"></div></div>
     <div class="frow"><label>Vergi No <span class="t-meta">(opsiyonel)</span></label><input id="c_vergi" value="${x?esc(x.vergi||''):''}" placeholder="orn. 1234567890"></div>
     <div class="frow"><label>Vergi Dairesi <span class="t-meta">(opsiyonel)</span></label><input id="c_vd" value="${x?esc(x.vergiDairesi||''):''}" placeholder="orn. Limonlu"></div>
     <div class="frow"><label>Adres <span class="t-meta">(opsiyonel)</span></label><input id="c_adres" value="${x?esc(x.adres||''):''}" placeholder="orn. ... Mah. ... Cad. No:1 Istanbul"></div>
@@ -5961,7 +5966,24 @@ function openCompanyModal(id){ if(!guard('define'))return; const x=id?(DB.compan
      koruma gelince olcut butun pencerelerde "DEGISTI"ye esitlendi - duzenlemeye
      yalnizca BAKIP cikan kullanici artik Iptal'e basmak zorunda degil, ama tek
      harf degistirdiginde pencere yine kapanmiyor. */
+  sirketKodOnizle(x?x.id:null);
   const inp=document.getElementById('c_ad'); if(inp) setTimeout(()=>inp.focus(),0);
+}
+/* Kisaltmanin ne ise yaradigini KAYDETMEDEN once gosterir: ornek bir belge kodu,
+   ve ayni kisaltmayi kullanan baska sirket varsa uyari. Cakisma ENGELLENMEZ -
+   kodlar yine tekil kalir (sayac TAM ONEKE gore isler, firmaya degil), yalnizca
+   iki sirket ayni gunun numara dizisini paylasir. Engellemek, telefonunu
+   duzeltmek isteyen kullaniciyi ilgisiz bir cakisma yuzunden kilitlerdi. */
+function sirketKodOnizle(id){
+  const kut=document.getElementById('c_kodOrnek'); if(!kut) return;
+  const el=document.getElementById('c_kisa');
+  if(el && el.value!==kodNorm(el.value,5)) el.value=kodNorm(el.value,5);
+  const ad=String((document.getElementById('c_ad')||{}).value||'').trim();
+  const kisa=kodNorm(el?el.value:'',5)||kisaltmaUret(ad);
+  if(!kisa){ kut.textContent='Sirket adi yazilinca kisaltma kendiliginden turetilir'; return; }
+  const ayni=(DB.companies||[]).filter(c=>c&&c.id!==id&&sirketKisaltma(c)===kisa).map(c=>c.ad||'(adsiz)');
+  kut.innerHTML='Ornek belge kodu: <b>'+esc(kisa)+'-'+IHT_KOD_TUR+'-'+ihtKodTarih(Date.now())+'-0001</b>'
+    +(ayni.length?` &mdash; <span style="color:var(--amber)">ayni kisaltma: ${esc(ayni.join(', '))} &mdash; numaralar paylasilir</span>`:'');
 }
 /* Logo ONIZLEMESI beyaz zeminde gosterilir: sirket logolari da marka logolari gibi
    neredeyse her zaman beyaz kagit icin cizilir; koyu panelde okunmuyordu
@@ -5982,7 +6004,9 @@ async function saveCompany(id){ if(!guard('define'))return;
   if(!ad){toast("Sirket adi zorunlu","err");return;}
   if((DB.companies||[]).some(c=>norm(c.ad)===norm(ad) && c.id!==id)){ toast("Bu sirket zaten var","err"); return; }
   // vergi no/dairesi, adres, telefon, e-posta opsiyonel; bos birakilanlar bos string olarak yazilir
-  const bilgi={ad, vergi:al('c_vergi'), vergiDairesi:al('c_vd'), adres:al('c_adres'), tel:al('c_tel'), email:al('c_email'), logo:al('c_logo')};
+  /* Kisaltma NORMALLESTIRILEREK yazilir: kullanici "by-" yazsa bile kayitta "BY"
+     durur, yoksa ayni sirket iki farkli kod oneki uretirdi. */
+  const bilgi={ad, kisaltma:kodNorm(al('c_kisa'),5), vergi:al('c_vergi'), vergiDairesi:al('c_vd'), adres:al('c_adres'), tel:al('c_tel'), email:al('c_email'), logo:al('c_logo')};
   if(id){
     const x=DB.companies.find(c=>c.id===id);
     await sbUpdateCompany(id,{...x,...bilgi});
@@ -20660,6 +20684,19 @@ function sirketAntet(companyId){
            vergi:c.vergi||'', vergiDairesi:c.vergiDairesi||'', logo:c.logo||'' };
 }
 const BOS_ANTET={unvan:'',adres:'',tel:'',email:'',vergi:'',vergiDairesi:'',logo:''};
+/* BELGE KODU ALFABESI: kodlar dosya adinda, aramada ve baskida gecer; Turkce
+   harf ve isaret tasimamalari gerekir. Once TURKCE kurala gore buyutulur
+   (i -> I), sonra katlanir: sirayi ters cevirirsek "i" once I'ya, sonra tr
+   buyutmesiyle yeniden "İ"ye donerdi. */
+function kodNorm(v,n){
+  return String(v||'').toLocaleUpperCase('tr')
+    .replace(/[İIŞĞÜÖÇ]/g,c=>({'İ':'I','I':'I','Ş':'S','Ğ':'G','Ü':'U','Ö':'O','Ç':'C'}[c]))
+    .replace(/[^A-Z0-9]/g,'').slice(0,n||5);
+}
+/* Kisaltma girilmemisse addan TURETILIR: "BYKARA GAYRIMENKUL" -> "BY". Turetim
+   yalnizca makul bir on deger; kesin karar Sirketler ekranindaki alanda. */
+function kisaltmaUret(ad){ return kodNorm(ad,2); }
+function sirketKisaltma(c){ return c?(kodNorm(c.kisaltma,5)||kisaltmaUret(c.ad)):''; }
 /* ESKI ANTET (app_settings > tutanakAntet) yalnizca GECIS icin okunur: Sirketler
    ekranindaki tasima yapilana kadar mevcut ciktilar basliksiz kalmasin diye.
    Tasima bitince anahtar silinir ve bu yedek kendiliginden devre disi kalir. */
@@ -21920,7 +21957,7 @@ function ihtDurumu(x){ return (x&&x.durum==='tamam')?'tamam':'acik'; }
 function ihtBinaEsler(x,bina){ return !bina || x.bina===bina || ((x.lines||[]).some(l=>l&&l.bina===bina)); }
 function ihtAramaEsler(x,q){
   if(!q) return true;
-  return matchText([x.ad,x.bina,x.aciklama,x.olusturan,
+  return matchText([x.kod,x.ad,x.bina,x.aciklama,x.olusturan,
     ...((x.lines||[]).map(l=>[l.ad,l.code,l.marka,l.bina,l.kat,l.konum].filter(Boolean).join(' ')))].join(' '),q);
 }
 function ihtFiltreVar(){ return !!(IHTV.q||IHTV.bina||IHTV.durum); }
@@ -21948,7 +21985,7 @@ function renderIhtiyacList(){
     const hedef=ihtHedefOzet(x);
     rows+=`<tr>
       <td><span class="iht-ad">${esc(x.ad||'(adsiz liste)')}<span class="iht-durum ${tamam?'tamam':'acik'}" style="margin-left:7px">${tamam?'TAMAM':'ACIK'}</span>
-        <i>${esc(x.olusturan||'-')}${x.aciklama?' · '+esc(x.aciklama):''}</i></span></td>
+        <i>${x.kod?`<b class="iht-kod">${esc(x.kod)}</b> · `:''}${esc(x.olusturan||'-')}${x.aciklama?' · '+esc(x.aciklama):''}</i></span></td>
       <td class="t-meta">${esc(fmtDate(x.tarih))}</td>
       <td class="t-meta">${esc(x.bina||'-')}</td>
       <td class="t-qty">${fmtNum(tt.kalem)} kalem <span style="color:var(--mute)">· ${fmtNum(tt.miktar)}</span>${
@@ -22054,6 +22091,9 @@ function renderIhtiyacForm(){
       <div class="tut-grid">
         <div class="frow" style="margin-bottom:0"><label>Liste Adi *</label>
           <input value="${esc(x.ad||'')}" placeholder="orn. UYB 3. kat eksikleri" onchange="ihtSet('ad',this.value.trim())"></div>
+        <div class="frow" style="margin-bottom:0"><label>Liste Kodu <span class="t-meta">(otomatik)</span></label>
+          <input value="${esc(ihtKodGoster(x)||'-')}" readonly tabindex="-1" style="font-family:Consolas,monospace;letter-spacing:.4px">
+          <div class="t-meta" style="margin-top:5px;font-size:11px">${ihtKodIpucu(x)}</div></div>
         <div class="frow" style="margin-bottom:0"><label>Tarih</label>
           <input type="date" value="${tutISO(x.tarih)}" onchange="ihtSetTarih(this.value)"></div>
         <div class="frow" style="margin-bottom:0"><label>Varsayilan Bina <span class="t-meta">(yeni satirlara on deger)</span></label>
@@ -22183,6 +22223,41 @@ function ihtPickAdd(src,matId){
   toast(m.ad+' eklendi');
 }
 
+/* ---------- BELGE KODU ----------
+   BY-LST-01012026-0001
+   BY    firmanin kisaltmasi (Sirketler kaydindan)
+   LST   belge turu - ihtiyac listesi
+   ...   LISTENIN tarihi, ggaayyyy (ciktinin alindigi gun degil)
+   0001  o onekteki sira
+
+   Sayac TAM ONEKE gore isler, firmaId'ye degil. Iki sirket ayni kisaltmaya
+   duserse numara aralarinda paylasilir ama URETILEN KOD yine tekildir; oneke
+   degil firmaya baksaydik iki ayri liste ayni kodu alabilirdi. */
+const IHT_KOD_TUR='LST';
+function ihtKodTarih(ts){
+  const d=new Date(ts||Date.now()), p=n=>String(n).padStart(2,'0');
+  return p(d.getDate())+p(d.getMonth()+1)+d.getFullYear();
+}
+function ihtKodOnek(x){
+  const kisa=sirketKisaltma((DB.companies||[]).find(c=>c&&c.id===(x&&x.firmaId)));
+  return kisa?kisa+'-'+IHT_KOD_TUR+'-'+ihtKodTarih(x&&x.tarih)+'-':'';
+}
+function ihtSonrakiKod(x){
+  const onek=ihtKodOnek(x); if(!onek) return '';
+  let max=0;
+  (DB.ihtiyaclar||[]).forEach(y=>{
+    const s=String((y&&y.kod)||''); if(s.indexOf(onek)!==0) return;
+    const n=Number(s.slice(onek.length)); if(!isNaN(n)&&n>max) max=n;
+  });
+  return onek+String(max+1).padStart(4,'0');
+}
+function ihtKodGoster(x){ return (x&&x.kod)||ihtSonrakiKod(x)||''; }
+function ihtKodIpucu(x){
+  if(x&&x.kod) return 'Kod verildi - tarih ya da firma degisse bile ayni kalir';
+  if(ihtKodOnek(x)) return 'Kaydedince bu kod verilir; o ana kadar degisebilir';
+  return '<span style="color:var(--amber)">Firma secilmedigi icin kod uretilemiyor</span>';
+}
+
 /* ---------- OLUSTUR / DUZENLE / KOPYALA / SIL ---------- */
 function newIhtiyac(){
   if(!ihtCanEdit()){ toast('Bu islem icin yetkiniz yok','err'); return; }
@@ -22207,6 +22282,7 @@ function copyIhtiyac(id){
   const x=(DB.ihtiyaclar||[]).find(y=>y.id===id); if(!x)return;
   const c=JSON.parse(JSON.stringify(x));
   c.id=uid(); c.tarih=Date.now(); c.durum='acik'; c._yeni=true;
+  delete c.kod;   // kopya YENI bir belgedir: kaydedilince kendi kodunu alir
   c.ad=(x.ad||'Ihtiyac Listesi')+' (kopya)';
   c.olusturan=(CURRENT_USER&&CURRENT_USER.username)||''; c.olusturmaTs=Date.now();
   c.guncelleyen=''; c.guncellemeTs=Date.now();
@@ -22264,6 +22340,11 @@ async function saveIhtiyac(){
   const kayit=JSON.parse(JSON.stringify(_IHT));
   delete kayit._yeni;
   kayit.lines=(kayit.lines||[]).filter(ihtDolu);
+  /* KOD BIR KEZ verilir, bir daha DEGISMEZ: belge numarasi kimliktir - sonradan
+     tarih/firma degisince kaysaydi elde basili duran cikti ile kayit ayrisirdi.
+     Uretim KAYIT aninda, form acilirken degil: iki kullanici ayni anda form
+     acsa ikisi de ayni numarayi gorur, ikincisi kaydederken carpardi. */
+  if(!kayit.kod) kayit.kod=ihtSonrakiKod(kayit)||'';
   try{
     if(yeni){ await sbInsertIhtiyacListesi(kayit); if(!DB.ihtiyaclar)DB.ihtiyaclar=[]; DB.ihtiyaclar.push(kayit); }
     else {
@@ -22309,7 +22390,8 @@ function exportIhtiyacXlsx(id){
   const wsO=XLSX.utils.aoa_to_sheet(ozet);
   wsO['!cols']=[{wch:14},{wch:16},{wch:10},{wch:44},{wch:9},{wch:14}];
   XLSX.utils.book_append_sheet(wb,wsO,'Bina-Kat Ozet');
-  XLSX.writeFile(wb,('Ihtiyac_'+(x.ad||'liste')+'_'+new Date().toISOString().slice(0,10)+'.xlsx')
+  // kod varsa dosya adi ODUR: klasorde belge numarasiyla aranabilsin
+  XLSX.writeFile(wb,((x.kod||('Ihtiyac_'+(x.ad||'liste')+'_'+new Date().toISOString().slice(0,10)))+'.xlsx')
     .replace(/[\\/:*?"<>|]/g,'-'));
   toast('Excel indirildi');
 }
@@ -22596,8 +22678,8 @@ function ihtPdfHtml(x){
       ${tutPrintHead(A)}
       <div class="ih-title">
         <h1>İHTİYAÇ LİSTESİ<small>ЗАЯВКА НА МАТЕРИАЛЫ</small></h1>
-        <div class="ih-meta"><b>${esc(x.ad||'-')}</b>
-          ${esc(fmtDate(x.tarih))}${x.bina?' &nbsp;·&nbsp; '+esc(x.bina):''}<br>
+        <div class="ih-meta"><b>${esc(x.kod||x.ad||'-')}</b>
+          ${x.kod&&x.ad?esc(x.ad)+' &nbsp;·&nbsp; ':''}${esc(fmtDate(x.tarih))}${x.bina?' &nbsp;·&nbsp; '+esc(x.bina):''}<br>
           <i>${fmtNum(tt.kalem)} kalem${x.olusturan?' &nbsp;·&nbsp; '+esc(x.olusturan):''}</i></div>
       </div>
       <div class="ih-cols">
