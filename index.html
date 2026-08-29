@@ -23071,6 +23071,54 @@ function ihtOdaSatirlari(odalar){
   if(dolu>0) satir++;
   return Math.max(1,satir);
 }
+/* KATLAR sutunu (OZET kipi): metin TEK SATIRDA durur, sigmiyorsa PUNTO kuculur.
+   Kat detayindaki gibi satiri buyutmek burada ise yaramaz - ozette bir urun
+   onlarca kata dagilabiliyor, satir yuksekligi kagidi yerdi. Karakter genisligi
+   IHT_ODA_KAR_MM'den (5.8pt'de olculmus) puntoya oranlanarak turetilir. */
+const IHT_KAT_PT=6.4;                        // .hd taban puntosu
+const IHT_KAT_MIN_PT=4.6;                    // bundan kucugu kagitta okunmuyor
+const IHT_KAT_IC_MM=IHT_ODA_MM-3;            // rozetin ic genisligi (1.5mm x 2 dolgu)
+const IHT_KAT_KAR_MM=IHT_ODA_KAR_MM/5.8;     // punto basina karakter genisligi
+function ihtKatPunto(metin){
+  const uz=String(metin||'').length; if(!uz) return IHT_KAT_PT;
+  const sigan=IHT_KAT_IC_MM/(uz*IHT_KAT_KAR_MM);
+  return Math.max(IHT_KAT_MIN_PT,Math.min(IHT_KAT_PT,Math.floor(sigan*10)/10));
+}
+/* "1,2,3,5,6" -> "1-3·5·6". Yalnizca ARDISIK TAM SAYILAR araliga dusurulur;
+   ucten kisa diziler birlestirilmez ("1-2" ile "1·2" ayni yeri tutar).
+   "Zemin", "Cati" gibi sayisal olmayan katlar oldugu gibi kalir ve sirayi
+   bozmasin diye sayilardan sonra yazilir. */
+function ihtKatAralik(katlar){
+  const sayi=[], metin=[];
+  (katlar||[]).forEach(k=>{ const t=String(k==null?'':k).trim(); if(!t) return;
+    if(/^\d{1,3}$/.test(t)) sayi.push(Number(t)); else metin.push(t); });
+  sayi.sort((a,b)=>a-b);
+  const parca=[];
+  for(let i=0;i<sayi.length;){
+    let j=i; while(j+1<sayi.length&&sayi[j+1]===sayi[j]+1) j++;
+    if(j-i>=2) parca.push(sayi[i]+'-'+sayi[j]);
+    else for(let k=i;k<=j;k++) parca.push(String(sayi[k]));
+    i=j+1;
+  }
+  return parca.concat(metin).join('·');
+}
+/* OZET satirinin KATLAR sutunu: hedefler binaya gore kumelenir, katlar araliga
+   dusurulur -> "00UYB 1-6 | 01UYB 2·4". Butun liste TEK binadaysa bina adi
+   satirlarda YAZILMAZ (binaGizle): ust bilgide ve sutun basliginda zaten duruyor,
+   her satirda tekrarlamak katlara kalan yeri yiyordu. */
+function ihtOzetKatMetni(hedefler,binaGizle){
+  const sira=[], harita={};
+  (hedefler||[]).forEach(h=>{
+    const b=String((h&&h.bina)||'');
+    if(!harita[b]){ harita[b]=[]; sira.push(b); }
+    const k=String((h&&h.kat)||'').trim();
+    if(k&&harita[b].indexOf(k)<0) harita[b].push(k);
+  });
+  return sira.map(b=>{
+    const kat=ihtKatAralik(harita[b]);
+    return binaGizle?(kat||b):[b,kat].filter(Boolean).join(' ');
+  }).filter(Boolean).join(' | ');
+}
 function ihtDetaySatirYuksekligi(l){
   const gerek=ihtOdaSatirlari(ihtOdalar(l))*IHT_ODA_SATIR_MM+IHT_ODA_PAY_MM;
   return Math.max(IHT_ROW_MM, Math.ceil(gerek*2)/2);   // yarim mm'ye yuvarla
@@ -23103,18 +23151,21 @@ function ihtPdfOzetle(ls){
   (ls||[]).forEach(l=>{
     const anahtar=l.matId?('k|@|'+(l.matSrc||'')+'|@|'+l.matId)
                          :('e|@|'+norm(l.code||'')+'|@|'+norm(l.ad||''));
-    if(!harita[anahtar]){ harita[anahtar]={ornek:l,miktar:0,hedefler:[]}; sira.push(anahtar); }
+    if(!harita[anahtar]){ harita[anahtar]={ornek:l,miktar:0,hedefler:[],gorulen:{}}; sira.push(anahtar); }
     const g=harita[anahtar];
     g.miktar+=ihtSayi(l.qty);
-    const h=[l.bina,l.kat].filter(Boolean).join(' ');
-    if(h && g.hedefler.indexOf(h)<0) g.hedefler.push(h);
+    /* Hedef BINA ve KAT olarak ayri saklanir, birlesik metin olarak degil:
+       sutunda katlar binaya gore kumelenip araliga dusurulecek (ihtOzetKatMetni),
+       bunun icin parcalarin ayri durmasi gerekiyor. */
+    const b=String(l.bina||''), k=String(l.kat||'');
+    if(b||k){
+      const anahtar2=b+'|@|'+k;
+      if(!g.gorulen[anahtar2]){ g.gorulen[anahtar2]=1; g.hedefler.push({bina:b,kat:k}); }
+    }
   });
   return sira.map(a=>{
     const g=harita[a];
-    // hedef sutunu dar (30mm): iki hedefe kadar yazilir, fazlasi sayiya doner
-    const hedef=g.hedefler.length===0?'' :
-      (g.hedefler.length<=4?g.hedefler.join(' · '):g.hedefler.length+' hedef');
-    return Object.assign({},g.ornek,{qty:g.miktar,_hedef:hedef,_hedefSayi:g.hedefler.length});
+    return Object.assign({},g.ornek,{qty:g.miktar,_hedefler:g.hedefler});
   });
 }
 
@@ -23335,7 +23386,7 @@ body{margin:0;background:var(--pg);color:var(--tx);
    tek bir dikey serit halinde tarar. Rozet en hafif gri zeminde - renk degil,
    yalnizca metni cevresinden ayiran bir doku. */
 .r .dst{width:${IHT_ODA_MM}mm;flex:none;min-width:0}
-.r .hd{display:block;font-size:6.4pt;font-weight:500;letter-spacing:.1px;text-align:center;
+.r .hd{display:block;font-size:${IHT_KAT_PT}pt;font-weight:500;letter-spacing:.1px;text-align:center;
   color:var(--tx);background:var(--bx);border-radius:1.2mm;padding:1mm 1.5mm;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .r .hd.yok{color:var(--fn);background:transparent;font-weight:normal;font-style:italic}
@@ -23408,7 +23459,10 @@ function ihtPdfRow(l,sira,hedefMetni,yukseklik){
         ? `<div class="odalar">${hedefMetni.map(o=>`<span class="oda">${esc(o)}</span>`).join('')}</div>`
         : '<span class="hd yok">oda yok</span>')
     : (()=>{ const t=String(hedefMetni==null?'':hedefMetni);
-             return `<span class="hd${t?'':' yok'}">${t?esc(t):'hedef yok'}</span>`; })();
+             if(!t) return '<span class="hd yok">hedef yok</span>';
+             // punto yalnizca TABANDAN kucukse yazilir: kisa metinler eskisi gibi kalir
+             const pt=ihtKatPunto(t);
+             return `<span class="hd"${pt<IHT_KAT_PT?` style="font-size:${pt}pt"`:''}>${esc(t)}</span>`; })();
   const adet=fmtNum(ihtSayi(l.qty));
   // yukseklik yalnizca TABANDAN buyukse yazilir: normal satirlar eskisi gibi kalir
   const stil=(yukseklik&&yukseklik>IHT_ROW_MM)?` style="height:${yukseklik}mm"`:'';
@@ -23451,14 +23505,22 @@ function ihtPdfHtml(x,kip){
   // ---- GOVDELER (sayfa basina bir parca HTML) ----
   const govdeler=[];
   let sayac=tt.kalem;
+  let ozetTekBina='';                  // sutun basliginda gosterilecek tek bina
   if(kip==='ozet'){
     /* OZET: urunler birlestikten sonra satirlar yine sabit yukseklikte, o
        yuzden sayfalama eskisi gibi 10'arli. */
     const satirlar=ihtPdfOzetle(ls);
     sayac=satirlar.length;
+    /* Butun hedefler TEK binadaysa bina adi satirlarda tekrarlanmaz - sutun
+       basligina cikar. Kagitta 28 satir boyunca ayni bina adini yazmak katlara
+       kalan yeri yiyordu; bu ciktinin sorusu "hangi KATLARDA" idi. */
+    const binalar=[];
+    satirlar.forEach(l=>(l._hedefler||[]).forEach(h=>{
+      if(h.bina&&binalar.indexOf(h.bina)<0) binalar.push(h.bina); }));
+    ozetTekBina=binalar.length===1?binalar[0]:'';
     for(let i=0;i<satirlar.length;i+=IHT_PDF_ROWS){
       govdeler.push(satirlar.slice(i,i+IHT_PDF_ROWS)
-        .map((l,j)=>ihtPdfRow(l,i+j+1,l._hedef||'')).join(''));
+        .map((l,j)=>ihtPdfRow(l,i+j+1,ihtOzetKatMetni(l._hedefler,!!ozetTekBina))).join(''));
     }
   } else {
     /* KAT DETAYI: her kume kendi basligiyla, sayfalama milimetre olcerek. */
@@ -23496,7 +23558,7 @@ function ihtPdfHtml(x,kip){
         <div class="c1">#<i>№</i></div>
         <div class="c2">GÖRSEL<i>ФОТО</i></div>
         <div class="c3">MALZEME VE KÜNYE<i>МАТЕРИАЛ И РЕКВИЗИТЫ</i></div>
-        <div class="c4">${K.c4[0]}<i>${K.c4[1]}</i></div>
+        <div class="c4">${K.c4[0]}${ozetTekBina?' · '+esc(ozetTekBina):''}<i>${K.c4[1]}</i></div>
         <div class="c5">İSTENEN<i>КОЛ-ВО</i></div></div>
       ${govde}
       <div class="ih-spacer"></div>
