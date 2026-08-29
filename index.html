@@ -2759,7 +2759,7 @@ datalist{display:none}
    tabloyu gosteriyor, tek yerden bicimlenmeli.
    ================================================================== */
 /* Bina + Kat sutunlari eklenince satir 940px'e sigmiyor - kendi tavani var */
-.iht-lines-wrap table{min-width:1240px}
+.iht-lines-wrap table{min-width:1320px}
 .iht-lines select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:7px;
   color:var(--ink);font-size:12px;padding:5px 7px;outline:none;transition:border-color var(--transition)}
 .iht-lines select:focus{border-color:var(--primary);box-shadow:var(--ring) color-mix(in srgb,var(--primary) 22%,transparent)}
@@ -2767,6 +2767,28 @@ datalist{display:none}
    kaydedilebilmeli) ama gorunur - Excel'e "nereye?" sutunu bos gider. */
 .iht-lines tr.eksik td{background:color-mix(in srgb,var(--amber) 7%,transparent)}
 .iht-lines tr.eksik .tl-no{color:var(--amber);font-weight:700}
+/* SATIR SIRASI.
+   Tutamac SIRA hucresidir, satirin TAMAMI degil: satiri suruklenebilir
+   yapsaydik kutularin icinde metin secmek surukleme baslatirdi ve alanlar
+   duzenlenemez hale gelirdi. */
+.iht-lines .tl-no{width:44px;cursor:grab;user-select:none}
+.iht-lines .tl-no:active{cursor:grabbing}
+.iht-lines .tl-grip{display:block;font-size:8px;line-height:1;letter-spacing:1.5px;
+  color:var(--line);margin-bottom:3px}
+.iht-lines tr:hover .tl-grip{color:var(--dim)}
+.iht-lines tr.suruklenen td{opacity:.35}
+/* birakma noktasi: satirin USTUNE mi ALTINA mi girecegini gosterir.
+   border yerine inset box-shadow: border satir yuksekligini degistirip
+   surukleme sirasinda tablonun zipzip oynamasina yol aciyordu. */
+.iht-lines tr.hedef-ust td{box-shadow:inset 0 2px 0 var(--primary)}
+.iht-lines tr.hedef-alt td{box-shadow:inset 0 -2px 0 var(--primary)}
+/* tasindiktan sonra kisa vurgu: liste yeniden cizildigi icin satirin nereye
+   oturdugu yoksa gozden kaciyor */
+.iht-lines tr.tasindi td{background:color-mix(in srgb,var(--primary) 12%,transparent);
+  transition:background .5s}
+.iht-lines .tl-ops{width:92px;white-space:nowrap}
+.iht-lines .tl-ops .mini-btn{padding:4px 5px}
+.iht-lines .tl-ops .mini-btn[disabled]{opacity:.3;cursor:default}
 .iht-uyari{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--amber)}
 /* liste ekranindaki durum rozeti */
 .iht-durum{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.5px;
@@ -22288,6 +22310,85 @@ function ihtUpdateTotals(){
 }
 function ihtRenderLines(){ const b=document.getElementById('ihtLinesBody'); if(b)b.innerHTML=ihtLineRows(); ihtUpdateTotals(); }
 
+/* ---------- SATIR SIRASI ----------
+   Ciktilarin (PDF, Excel) satir sirasi listedeki siradir; sahada malzeme
+   kat kat / is grubu grubu toplandigi icin sonradan duzenlenebilmesi gerekiyor.
+
+   Satirlar DIZI SIRASINDA tutulur, ayri bir "sira" alani YOK: alan olsaydi
+   dizi sirasi ile alanin degeri birbirinden ayrilabilir, hangisinin dogru
+   oldugu belirsiz kalirdi. Tasima diziyi degistirir, ekran yeniden cizilir -
+   boylece satirlardaki ${i} indeksleri de kendiliginden guncellenir. */
+let _IHTDRAG=null;
+function icoSira(yon){ return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="'
+  +(yon==='up'?'M18 15l-6-6-6 6':'M6 9l6 6 6-6')+'"/></svg>'; }
+
+function ihtSatirTasi(from,to){
+  const ls=_IHT&&_IHT.lines; if(!ls) return false;
+  if(from===to||from<0||to<0||from>=ls.length||to>=ls.length) return false;
+  const [tasinan]=ls.splice(from,1);
+  ls.splice(to,0,tasinan);
+  ihtRenderLines();
+  ihtSatirVurgula(to);
+  return true;
+}
+function ihtSatirYukari(i){ ihtSatirTasi(i,i-1); }
+function ihtSatirAsagi(i){ ihtSatirTasi(i,i+1); }
+// tasindiktan sonra satir yeniden cizildigi icin nereye oturdugu kaybolur
+function ihtSatirVurgula(i){
+  const b=document.getElementById('ihtLinesBody'); if(!b) return;
+  const tr=b.children[i]; if(!tr) return;
+  tr.classList.add('tasindi');
+  setTimeout(()=>{ try{ tr.classList.remove('tasindi'); }catch(e){} },600);
+}
+function ihtHedefTemizle(){
+  document.querySelectorAll('#ihtLinesBody tr.hedef-ust,#ihtLinesBody tr.hedef-alt')
+    .forEach(tr=>tr.classList.remove('hedef-ust','hedef-alt'));
+}
+function ihtSurukleBasla(e,i){
+  _IHTDRAG=i;
+  /* dataTransfer olmadan Firefox surukleme baslatmaz; try icinde cunku bazi
+     ortamlarda (ornegin otomasyon) erisim engellenebiliyor - surukleme o
+     zaman da calismali. */
+  try{ e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',String(i)); }catch(_){}
+  const tr=e.target&&e.target.closest?e.target.closest('tr'):null;
+  if(tr) tr.classList.add('suruklenen');
+}
+function ihtSurukleUstunde(e,i){
+  if(_IHTDRAG===null) return;
+  e.preventDefault();                       // olmazsa tarayici birakmaya izin vermez
+  try{ e.dataTransfer.dropEffect='move'; }catch(_){}
+  /* dragleave KULLANILMIYOR: hucreden hucreye gecerken de tetiklendigi icin
+     isaret surekli sonup yaniyordu. Her dragover'da butun isaretler silinip
+     yalnizca gecerli satirinki konur. */
+  ihtHedefTemizle();
+  if(i===_IHTDRAG) return;
+  const tr=e.currentTarget, r=tr.getBoundingClientRect();
+  tr.classList.add(((e.clientY-r.top)<r.height/2)?'hedef-ust':'hedef-alt');
+}
+function ihtSurukleBirak(e,i){
+  if(_IHTDRAG===null) return;
+  e.preventDefault();
+  const r=e.currentTarget.getBoundingClientRect();
+  const ust=(e.clientY-r.top)<r.height/2;
+  const from=_IHTDRAG;
+  /* Once EKLEME NOKTASI bulunur (ustune = i, altina = i+1), sonra bir duzeltme:
+     satir kendi yerinden cikinca kendisinden SONRAKI butun indeksler bir
+     kayar, bu yuzden asagi dogru tasimada hedef bir eksiltilir. */
+  let to=ust?i:i+1;
+  if(from<to) to--;
+  ihtSurukleBitir();
+  ihtSatirTasi(from,to);
+}
+function ihtSurukleBitir(){
+  _IHTDRAG=null;
+  ihtHedefTemizle();
+  /* Suruklenen satir bu noktada YENIDEN CIZILMIS olabilir (birakma
+     ihtRenderLines cagirir), yani elimizdeki dugum artik belgede olmayabilir.
+     Bu yuzden dugum saklanmaz, sinif belgeden sorgulanarak temizlenir. */
+  document.querySelectorAll('#ihtLinesBody tr.suruklenen')
+    .forEach(tr=>tr.classList.remove('suruklenen'));
+}
+
 /* BINA hucresi. Kayitta duran ama artik listede olmayan bina (pasife alinmis ya da
    yetki disi) secenege EKLENIR - yoksa satir sessizce baska bir binaya kayardi. */
 function ihtBinaCell(l,i){
@@ -22320,8 +22421,11 @@ function ihtLineRows(){
     const img=ihtLineImg(l);
     // uyari yalnizca DOLU satirda anlamli - hazir bekleyen bos satir sari boyanmasin
     const eksik=ihtDolu(l)&&!ihtHedefTam(l);
-    return `<tr class="${eksik?'eksik':''}">
-      <td class="tl-no">${i+1}</td>
+    const son=i===(_IHT.lines||[]).length-1;
+    return `<tr class="${eksik?'eksik':''}" ondragover="ihtSurukleUstunde(event,${i})" ondrop="ihtSurukleBirak(event,${i})">
+      <td class="tl-no" draggable="true" ondragstart="ihtSurukleBasla(event,${i})" ondragend="ihtSurukleBitir()"
+        title="Suruklerek satiri baska bir sirayi tasiyin">
+        <span class="tl-grip">&#8942;&#8942;</span>${i+1}</td>
       <td class="tl-img">${img?`<img class="tut-thumb" src="${esc(img)}" onclick="lightbox('${esc(img)}')" title="Kutuphanedeki fotograf">`
         :`<div class="tut-thumb-ph" title="Fotograf yok. Kutuphaneden secilen urunlerin fotografi otomatik gelir."><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="9" cy="9" r="2"/></svg></div>`}</td>
       <td style="width:108px"><input value="${esc(l.code||'')}" placeholder="urun kodu" onchange="ihtSetLine(${i},'code',this.value.trim())"></td>
@@ -22333,7 +22437,10 @@ function ihtLineRows(){
       <td style="width:132px">${ihtKatCell(l,i)}</td>
       <td style="width:150px"><input value="${esc(l.konum||'')}" placeholder="oda / aks (istege bagli)" onchange="ihtSetLine(${i},'konum',this.value.trim())"></td>
       <td style="width:150px"><input value="${esc(l.not||'')}" placeholder="not" onchange="ihtSetLine(${i},'not',this.value.trim())"></td>
-      <td style="width:34px"><button class="mini-btn del" title="Satiri sil" onclick="ihtRemoveLine(${i})">${icoTrash()}</button></td>
+      <td class="tl-ops">
+        <button class="mini-btn" title="Yukari tasi" onclick="ihtSatirYukari(${i})" ${i===0?'disabled':''}>${icoSira('up')}</button>
+        <button class="mini-btn" title="Asagi tasi" onclick="ihtSatirAsagi(${i})" ${son?'disabled':''}>${icoSira('down')}</button>
+        <button class="mini-btn del" title="Satiri sil" onclick="ihtRemoveLine(${i})">${icoTrash()}</button></td>
     </tr>`;
   }).join('');
 }
@@ -22542,7 +22649,7 @@ function renderIhtiyacForm(){
         <div><span>Toplam Kalem</span><b id="ihtTotKalem">${fmtNum(tt.kalem)}</b></div>
         <div><span>Toplam Miktar</span><b id="ihtTotMiktar">${fmtNum(tt.miktar)}</b></div>
       </div>
-      <p class="t-meta" style="margin-top:9px;font-size:11.5px">Bina/kat bos birakilan satirlar da kaydedilir - Excel'de o satirin hedef sutunlari bos gider. Kat kirilimi tanimli olmayan binalarda kat elle yazilir (Binalar ekranindaki Akis Gorunumu'nden kat eklenince liste otomatik acilir).</p>
+      <p class="t-meta" style="margin-top:9px;font-size:11.5px">Satir sirasini <b>SIRA</b> sutunundan suruklerek ya da satir sonundaki ok dugmeleriyle degistirebilirsiniz; cikti ve Excel bu siraya gore uretilir. Bina/kat bos birakilan satirlar da kaydedilir - Excel'de o satirin hedef sutunlari bos gider. Kat kirilimi tanimli olmayan binalarda kat elle yazilir (Binalar ekranindaki Akis Gorunumu'nden kat eklenince liste otomatik acilir).</p>
     </div>
 
     <div class="kata-page-foot">
