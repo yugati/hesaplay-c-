@@ -2759,7 +2759,7 @@ datalist{display:none}
    tabloyu gosteriyor, tek yerden bicimlenmeli.
    ================================================================== */
 /* Bina + Kat sutunlari eklenince satir 940px'e sigmiyor - kendi tavani var */
-.iht-lines-wrap table{min-width:1320px}
+.iht-lines-wrap table{min-width:1346px}
 .iht-lines select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:7px;
   color:var(--ink);font-size:12px;padding:5px 7px;outline:none;transition:border-color var(--transition)}
 .iht-lines select:focus{border-color:var(--primary);box-shadow:var(--ring) color-mix(in srgb,var(--primary) 22%,transparent)}
@@ -2786,7 +2786,7 @@ datalist{display:none}
    oturdugu yoksa gozden kaciyor */
 .iht-lines tr.tasindi td{background:color-mix(in srgb,var(--primary) 12%,transparent);
   transition:background .5s}
-.iht-lines .tl-ops{width:92px;white-space:nowrap}
+.iht-lines .tl-ops{width:118px;white-space:nowrap}
 .iht-lines .tl-ops .mini-btn{padding:4px 5px}
 .iht-lines .tl-ops .mini-btn[disabled]{opacity:.3;cursor:default}
 .iht-uyari{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--amber)}
@@ -22319,6 +22319,8 @@ function ihtRenderLines(){ const b=document.getElementById('ihtLinesBody'); if(b
    oldugu belirsiz kalirdi. Tasima diziyi degistirir, ekran yeniden cizilir -
    boylece satirlardaki ${i} indeksleri de kendiliginden guncellenir. */
 let _IHTDRAG=null;
+// urunu degistir: iki yonlu ok - "bunun yerine baskasini koy"
+function icoDegistir(){ return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13M14 4l3 3-3 3M20 17H7M10 20l-3-3 3-3"/></svg>'; }
 function icoSira(yon){ return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="'
   +(yon==='up'?'M18 15l-6-6-6 6':'M6 9l6 6 6-6')+'"/></svg>'; }
 
@@ -22438,6 +22440,7 @@ function ihtLineRows(){
       <td style="width:150px"><input value="${esc(l.konum||'')}" placeholder="oda / aks (istege bagli)" onchange="ihtSetLine(${i},'konum',this.value.trim())"></td>
       <td style="width:150px"><input value="${esc(l.not||'')}" placeholder="not" onchange="ihtSetLine(${i},'not',this.value.trim())"></td>
       <td class="tl-ops">
+        <button class="mini-btn" title="${l.matId?'Urunu kutuphaneden degistir':'Bu satira kutuphaneden urun sec'}" onclick="openIhtMatPick(${i})">${icoDegistir()}</button>
         <button class="mini-btn" title="Yukari tasi" onclick="ihtSatirYukari(${i})" ${i===0?'disabled':''}>${icoSira('up')}</button>
         <button class="mini-btn" title="Asagi tasi" onclick="ihtSatirAsagi(${i})" ${son?'disabled':''}>${icoSira('down')}</button>
         <button class="mini-btn del" title="Satiri sil" onclick="ihtRemoveLine(${i})">${icoTrash()}</button></td>
@@ -22669,7 +22672,15 @@ function ihtCancelForm(){
    kutuphaneler icin ikinci bir normalizasyon yazmak, kutuphane alan adlari
    degistiginde iki yeri birden guncellemek demek olurdu (bkz. TUT_KAYNAK_TANIM). */
 let _IHTPICK='hepsi';
-function openIhtMatPick(){
+/* Secici IKI KIPTE calisir:
+     hedef verilmezse  -> EKLEME  (urun listeye eklenir, pencere acik kalir)
+     hedef bir sayiysa -> DEGISTIRME (o satirin urunu degisir, pencere kapanir)
+   Ayri bir pencere yazilmadi: arama, sekmeler ve siralama ayni kalmali;
+   iki kopya olsaydi biri duzelirken digeri geride kalirdi (secici aramasinda
+   tam bu olmustu, bkz. pickSirala). */
+let _IHTPICKHEDEF=null;
+function openIhtMatPick(hedef){
+  _IHTPICKHEDEF=(typeof hedef==='number'&&_IHT&&_IHT.lines[hedef])?hedef:null;
   const kaynaklar=tutKaynaklar();
   if(!kaynaklar.length){
     toast('Malzeme kutuphanesi bu kullaniciya yuklenmiyor - satiri "Bos Satir" ile elle yazabilirsiniz','err');
@@ -22681,16 +22692,21 @@ function openIhtMatPick(){
       <button class="${_IHTPICK==='hepsi'?'on':''}" onclick="setIhtPickSrc('hepsi')">Tumu</button>
       ${kaynaklar.map(k=>`<button class="${_IHTPICK===k.src?'on':''}" onclick="setIhtPickSrc('${k.src}')">${esc(k.label)}</button>`).join('')}
     </div>`:'';
+  const hd=_IHTPICKHEDEF;
+  const hl=hd===null?null:_IHT.lines[hd];
+  const baslik=hd===null?'Kutuphaneden Urun Ekle':`${hd+1}. Satirin Urununu Degistir`;
   document.body.insertAdjacentHTML('beforeend',
     `<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:660px">
-      <div class="modal-head"><h3>Kutuphaneden Urun Ekle</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+      <div class="modal-head"><h3>${esc(baslik)}</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
       <div class="modal-body">
         ${seg}
         <div class="frow"><input id="ihtPickQ" data-guard="off" placeholder="Malzeme adi, urun kodu, marka veya barkod ara..." oninput="ihtPickFilter()"></div>
         <div class="tut-pick" id="ihtPickList">${ihtPickRows('')}</div>
-        <p class="t-meta" style="margin-top:9px;font-size:11.5px">Tiklanan urun listeye eklenir; <b>kod, ad, marka, birim ve fotograf</b> kutuphaneden gelir. <b>Miktar ile bina/kat</b> alanlarini siz doldurursunuz${(_IHT&&_IHT.bina)?` - bina "<b>${esc(_IHT.bina)}</b>" olarak on dolar`:''}. Pencere acik kalir, birden fazla urun ekleyebilirsiniz.</p>
+        <p class="t-meta" style="margin-top:9px;font-size:11.5px">${hd===null
+          ?`Tiklanan urun listeye eklenir; <b>kod, ad, marka, birim ve fotograf</b> kutuphaneden gelir. <b>Miktar ile bina/kat</b> alanlarini siz doldurursunuz${(_IHT&&_IHT.bina)?` - bina "<b>${esc(_IHT.bina)}</b>" olarak on dolar`:''}. Pencere acik kalir, birden fazla urun ekleyebilirsiniz.`
+          :`Su anki urun: <b>${esc((hl&&hl.ad)||'(secilmemis)')}</b>${(hl&&hl.code)?` <span style="font-family:var(--mono)">${esc(hl.code)}</span>`:''}. Tiklanan urun bunun YERINE gecer; <b>miktar, bina/kat, konum ve not oldugu gibi kalir</b>. Secim yapilinca pencere kapanir.`}</p>
       </div>
-      <div class="modal-foot"><button class="btn btn-add" onclick="closeModal()">Bitti</button></div></div></div>`);
+      <div class="modal-foot"><button class="btn ${hd===null?'btn-add':'btn-ghost'}" onclick="closeModal()">${hd===null?'Bitti':'Vazgec'}</button></div></div></div>`);
   setTimeout(()=>{ const i=document.getElementById('ihtPickQ'); if(i)i.focus(); },0);
 }
 // sekme degisince yalnizca liste yenilenir - yazilan arama ve odak korunur
@@ -22721,6 +22737,23 @@ function ihtPickFilter(){ const q=(document.getElementById('ihtPickQ')||{}).valu
 function ihtPickAdd(src,matId){
   if(!_IHT)return;
   const m=tutKaynakBul(src,matId); if(!m){ toast('Urun bulunamadi','err'); return; }
+  /* DEGISTIRME KIPI: yalnizca URUN KIMLIGI yazilir. Miktar, bina/kat, konum
+     ve not KULLANICININ girdigi veridir - urun degisti diye silinmemeli;
+     "bu kata su kadar lazim" bilgisi urunden bagimsizdir. Satirin id'si de
+     korunur, yoksa satir yeni bir satir gibi gorunurdu. */
+  if(_IHTPICKHEDEF!==null){
+    const i=_IHTPICKHEDEF, l=_IHT.lines[i];
+    if(!l){ _IHTPICKHEDEF=null; closeModal(); toast('Satir bulunamadi','err'); return; }
+    const eskiAd=l.ad||'';
+    l.matId=m.id; l.matSrc=m.src; l.code=m.kod||''; l.ad=m.ad||'';
+    l.marka=m.marka||''; l.birim=m.birim||'';
+    _IHTPICKHEDEF=null;
+    closeModal();
+    ihtRenderLines();
+    ihtSatirVurgula(i);
+    toast((i+1)+'. satir degistirildi'+(eskiAd?': '+eskiAd+' -> '+(m.ad||''):''));
+    return;
+  }
   const line={ id:uid(), matId:m.id, matSrc:m.src, code:m.kod||'', ad:m.ad||'',
     marka:m.marka||'', birim:m.birim||'', qty:'', bina:_IHT.bina||'', katId:'', kat:'', konum:'', not:'' };
   /* Ilk TAMAMEN BOS satir varsa onu doldur, yoksa sona ekle (tutPickAdd ile ayni davranis).
