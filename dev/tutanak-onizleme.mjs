@@ -178,13 +178,20 @@ function ornekTutanak(q) {
   });
   const iade = q.iade === '1';
   return {
-    id: 't1', no: 'TSL-2026-0007', tarih: Date.now(), tur: 'teslim',
+    // belge kodu: KISALTMA-TNK-ggaayyyy-sira (bkz. index.html tutKodOnek)
+    id: 't1', no: 'YU-TNK-' + ornekKodTarih() + '-0007', tarih: Date.now(), tur: 'teslim',
     iade, iadeTarih: (iade && q.iadetarih !== '0') ? Date.now() + 30 * 86400000 : null,
     eden: { firmaId: 'c1', ad: 'Mahmut U.', gorev: 'Saha Depo Sorumlusu' },
     alan: { firma: 'STROY MONTAJ OOO', ad: 'Иванов И.И.', gorev: 'Прораб' },
     aciklama: NOTLAR[q.not || 'uzun'] == null ? NOTLAR.uzun : NOTLAR[q.not || 'uzun'],
     lines
   };
+}
+
+// ciktidaki ornek numaranin tarih bolumu, tutanagin tarihiyle ayni gunu gostersin
+function ornekKodTarih() {
+  const d = new Date(), p = x => String(x).padStart(2, '0');
+  return p(d.getDate()) + p(d.getMonth() + 1) + d.getFullYear();
 }
 
 function ornekDB(q) {

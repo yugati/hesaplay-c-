@@ -2677,6 +2677,11 @@ datalist{display:none}
 }
 @media(max-width:1040px){.tut-grid.hizali{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:620px){.tut-grid.hizali{grid-template-columns:1fr}}
+/* Tutanak Bilgisi kartinda DORT alan var (kod / tarih / tur / bina); uclu izgarada
+   3+1 diye bolunuyordu. Kendi sutun sayisini tasir, kirilma noktalari da ayri. */
+.tut-grid.hizali.dort{grid-template-columns:repeat(4,1fr)}
+@media(max-width:1240px){.tut-grid.hizali.dort{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:620px){.tut-grid.hizali.dort{grid-template-columns:1fr}}
 /* TUR / IADE SECIMI - hem "Yeni Tutanak" penceresinde hem formda ayni gorunum */
 .tut-tur{display:grid;gap:9px;margin-bottom:14px}
 .tut-tur:last-child{margin-bottom:0}
@@ -6067,7 +6072,9 @@ function sirketKodOnizle(id){
   const kisa=kodNorm(el?el.value:'',5)||kisaltmaUret(ad);
   if(!kisa){ kut.textContent='Sirket adi yazilinca kisaltma kendiliginden turetilir'; return; }
   const ayni=(DB.companies||[]).filter(c=>c&&c.id!==id&&sirketKisaltma(c)===kisa).map(c=>c.ad||'(adsiz)');
-  kut.innerHTML='Ornek belge kodu: <b>'+esc(kisa)+'-'+IHT_KOD_TUR+'-'+ihtKodTarih(Date.now())+'-0001</b>'
+  const gun=ihtKodTarih(Date.now());   // kisaltma IKI belge ailesini birden besliyor
+  kut.innerHTML='Ornek belge kodlari: <b>'+esc(kisa)+'-'+IHT_KOD_TUR+'-'+gun+'-0001</b> (ihtiyac listesi)'
+    +' &middot; <b>'+esc(kisa)+'-'+TUT_KOD_TUR+'-'+gun+'-0001</b> (tutanak)'
     +(ayni.length?` &mdash; <span style="color:var(--amber)">ayni kisaltma: ${esc(ayni.join(', '))} &mdash; numaralar paylasilir</span>`:'');
 }
 /* Logo ONIZLEMESI beyaz zeminde gosterilir: sirket logolari da marka logolari gibi
@@ -21114,13 +21121,43 @@ function tutAntet(t){
   if(eski) return serbest?{...eski,unvan:serbest||eski.unvan}:eski;
   return serbest?{...BOS_ANTET,unvan:serbest}:BOS_ANTET;
 }
-// TSL-2026-0001 seklinde sonraki numara (ayni yil icindeki en buyuk numaranin bir fazlasi)
-function tutNextNo(){
-  const pre='TSL-'+new Date().getFullYear()+'-';
+/* ---------- BELGE KODU ----------
+   BY-TNK-01012026-0001
+   BY    TESLIM EDEN firmasinin kisaltmasi (Sirketler kaydindan)
+   TNK   belge turu - tutanak
+   ...   TUTANAGIN tarihi, ggaayyyy (ciktinin alindigi gun degil)
+   0001  o onekteki sira
+
+   Ihtiyac Listesi ile AYNI kural (bkz. ihtKodOnek): sayac TAM ONEKE gore isler,
+   firmaId'ye degil. Iki sirket ayni kisaltmaya duserse numara aralarinda
+   paylasilir ama URETILEN KOD yine tekildir; oneke degil firmaya baksaydik iki
+   ayri tutanak ayni kodu alabilirdi.
+
+   FIRMA NEDEN AYRICA SORULMUYOR: tutanakta zaten Sirketler'e bagli bir "Teslim
+   Eden" var ve ciktinin anteti de ondan geliyor (bkz. tutAntet). Kod da ayni
+   kaynaktan okunur - ikinci bir firma secimi eklenmedi.
+
+   ESKI "TSL-2026-0001" kayitlari oldugu gibi kalir: numara bir kez verilir, bir
+   daha degismez. Yeni oneki tutmadiklari icin sayaci da etkilemezler. */
+const TUT_KOD_TUR='TNK';
+function tutKodOnek(t){
+  const kisa=sirketKisaltma((DB.companies||[]).find(c=>c&&c.id===((t&&t.eden)||{}).firmaId));
+  return kisa?kisa+'-'+TUT_KOD_TUR+'-'+ihtKodTarih(t&&t.tarih)+'-':'';
+}
+function tutSonrakiKod(t){
+  const onek=tutKodOnek(t); if(!onek) return '';
   let max=0;
-  (DB.tutanaklar||[]).forEach(t=>{ const s=String(t.no||''); if(s.indexOf(pre)!==0) return;
-    const n=Number(s.slice(pre.length)); if(!isNaN(n)&&n>max) max=n; });
-  return pre+String(max+1).padStart(4,'0');
+  (DB.tutanaklar||[]).forEach(y=>{
+    const s=String((y&&y.no)||''); if(s.indexOf(onek)!==0) return;
+    const n=Number(s.slice(onek.length)); if(!isNaN(n)&&n>max) max=n;
+  });
+  return onek+String(max+1).padStart(4,'0');
+}
+function tutKodGoster(t){ return (t&&t.no)||tutSonrakiKod(t)||''; }
+function tutKodIpucu(t){
+  if(t&&t.no) return 'Kod verildi - tarih ya da firma degisse bile ayni kalir';
+  if(tutKodOnek(t)) return 'Kaydedince bu kod verilir; o ana kadar degisebilir';
+  return '<span style="color:var(--amber)">Teslim Eden firmasi Sirketler listesine bagli olmadigi icin kod uretilemiyor</span>';
 }
 function tutBlankLine(){ return {id:uid(),matId:'',matSrc:'',code:'',ad:'',marka:'',birim:'',qty:'',barkod:'',renk:''}; }
 /* SATIRIN FOTOGRAFI: kayitta yalnizca matId (+ yeni kayitlarda matSrc) durur, foto
@@ -21299,7 +21336,7 @@ function renderTutanakList(){
   const binalar=tutSecenekler(all,t=>t.bina||'');
   const filterbar=`<div class="ord-filterbar">
     <div class="ord-f" style="flex:2 1 240px"><label>Ara</label>
-      <input value="${esc(TUTV.q)}" placeholder="tutanak no, firma, bina veya malzeme..." onchange="setTutQ(this.value.trim())"></div>
+      <input value="${esc(TUTV.q)}" placeholder="tutanak kodu, firma, bina veya malzeme..." onchange="setTutQ(this.value.trim())"></div>
     <div class="ord-f"><label>Tarih Araligi</label><div class="ord-f-dates">
       <input type="date" value="${esc(TUTV.from)}" onchange="setTutF('from',this.value)"><span class="t-meta">-</span>
       <input type="date" value="${esc(TUTV.to)}" onchange="setTutF('to',this.value)"></div></div>
@@ -21352,7 +21389,7 @@ function renderTutanakList(){
     ${filterbar}
     <div class="ord-sumline"><b>${fmtNum(list.length)}</b> tutanak · <b>${fmtNum(toplamKalem)}</b> kalem · bu ay <b>${fmtNum(buAy)}</b>${anyF?` <span class="t-meta">(${fmtNum(all.length)} kayit icinden filtrelendi)</span>`:''}</div>
     <div class="tablewrap"><table><thead><tr>
-      <th>Tutanak No</th><th>Tarih</th><th>Teslim Eden</th><th>Teslim Alan</th><th>Bina</th><th>Icerik</th><th></th>
+      <th>Tutanak Kodu</th><th>Tarih</th><th>Teslim Eden</th><th>Teslim Alan</th><th>Bina</th><th>Icerik</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
@@ -21416,7 +21453,8 @@ function tutTurDevam(){
 function newTutanak(sec){
   if(!guard('define',{mod:'rapor'}))return;
   sec=sec||{};
-  _TUT={ id:uid(), no:tutNextNo(), tarih:Date.now(), bina:'',
+  // no BOS acilir: kod, form acilirken degil KAYIT aninda uretilir (bkz. saveTutanak)
+  _TUT={ id:uid(), no:'', tarih:Date.now(), bina:'',
     tur:sec.tur||TUT_TURLERI[0].id, iade:!!sec.iade, iadeTarih:sec.iadeTarih||null,
     eden:{firma:'',ad:'',gorev:''}, alan:{firma:'',ad:'',gorev:''},
     lines:[tutBlankLine()], aciklama:'',   // TEK bos satir: gerekince "Bos Satir" ile eklenir
@@ -21441,12 +21479,12 @@ function copyTutanak(id){
   if(!guard('define',{mod:'rapor'}))return;
   const t=(DB.tutanaklar||[]).find(x=>x.id===id); if(!t)return;
   const c=JSON.parse(JSON.stringify(t));
-  c.id=uid(); c.no=tutNextNo(); c.tarih=Date.now(); c._yeni=true;
+  c.id=uid(); c.no=''; c.tarih=Date.now(); c._yeni=true;   // kod kaydederken yeniden uretilir
   delete c.pdf;   // imzali nusha ASLINA aittir - kopya yeni bir tutanaktir
   c.createdBy=(CURRENT_USER&&CURRENT_USER.username)||''; c.createdAt=Date.now(); c.updatedAt=Date.now();
   (c.lines||[]).forEach(l=>l.id=uid());
   _TUT=c; TUTV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
-  toast('Tutanak kopyalandi - numara ve tarih yenilendi, kaydetmeyi unutmayin');
+  toast('Tutanak kopyalandi - tarih bugune alindi, kod kaydedince verilir');
 }
 async function delTutanak(id){
   if(!guard('delete',{mod:'rapor'}))return;
@@ -21463,7 +21501,11 @@ async function delTutanak(id){
 
 /* ---------- FORM ---------- */
 function tutSet(k,v){ if(_TUT) _TUT[k]=v; }
-function tutSetTarih(v){ if(_TUT) _TUT.tarih=v?new Date(v+'T12:00:00').getTime():Date.now(); }
+/* Tarih kodun bir parcasi: kod HENUZ verilmemisken onizleme tazelensin diye
+   sayfa yeniden cizilir. Kod verilmisse degismeyecegi icin cizim de gereksiz. */
+function tutSetTarih(v){ if(!_TUT)return;
+  _TUT.tarih=v?new Date(v+'T12:00:00').getTime():Date.now();
+  if(!_TUT.no) render(); }
 /* Iade secimleri blogun yapisini degistirdigi icin sayfa yeniden ciziliyor;
    alanlar onchange ile _TUT'a islendiginden yazilan bilgi kaybolmaz. */
 function tutSetIade(v){ if(!_TUT)return; _TUT.iade=!!v; if(!v)_TUT.iadeTarih=null; render(); }
@@ -21529,26 +21571,34 @@ function renderTutanakForm(){
   </div>`;
   return `<div class="tut-wrap">${compList}
     <div class="sel-bc"><button onclick="tutBackToList()">${icoArr('left')} Tutanak Listesi</button> ${icoChevron()}
-      <b>${esc(t.no||'Yeni Tutanak')}</b></div>
+      <b>${esc(tutKodGoster(t)||'Yeni Tutanak')}</b></div>
     <div class="page-head"><h1>${t._yeni?'Yeni Tutanak':'Tutanak Duzenle'}</h1>
       <p class="page-sub">Alanlari doldurun, "Yazdir" ile sablona birebir uyan iki dilli A4 ciktiyi alin.</p></div>
     ${tutMissingWarn()}
 
     <div class="tut-card"><h4>Tutanak Bilgisi <i>Информация об акте</i></h4>
-      <div class="tut-grid">
-        <div class="frow" style="margin-bottom:0"><label>Tutanak No / № акта *</label>
-          <input value="${esc(t.no||'')}" placeholder="TSL-2026-0001" onchange="tutSet('no',this.value.trim())"></div>
-        <div class="frow" style="margin-bottom:0"><label>Tarih / Дата *</label>
-          <input type="date" value="${tutISO(t.tarih)}" onchange="tutSetTarih(this.value)"></div>
-        <div class="frow" style="margin-bottom:0"><label>Tur / Тип акта</label>
+      <!-- Ihtiyac Listesi ile AYNI desen: kod ELLE yazilmaz, Teslim Eden firmasi
+           ile tarihten uretilir ve kayit aninda bir kez verilir. Alanlar .hizali
+           subgrid'i sayesinde etiket / kutu / ipucu cizgisinde bulusur; parantezli
+           aciklamalar etiketten IPUCUNA alindi (etiket tasinca hizayi bozuyordu). -->
+      <div class="tut-grid hizali dort">
+        <div class="frow"><label>Tutanak Kodu / № акта</label>
+          <input value="${esc(tutKodGoster(t)||'-')}" readonly tabindex="-1" style="font-family:Consolas,monospace;letter-spacing:.4px">
+          <div class="fhint">${tutKodIpucu(t)}</div></div>
+        <div class="frow"><label>Tarih / Дата *</label>
+          <input type="date" value="${tutISO(t.tarih)}" onchange="tutSetTarih(this.value)">
+          <div class="fhint">Kodun tarih bolumu buradan gelir</div></div>
+        <div class="frow"><label>Tur / Тип акта</label>
           <select onchange="tutSet('tur',this.value)">
             ${TUT_TURLERI.map(x=>`<option value="${esc(x.id)}" ${tutTurOf(t).id===x.id?'selected':''}>${esc(x.tr)}</option>`).join('')}
-          </select></div>
-        <div class="frow" style="margin-bottom:0"><label>Bina <span class="t-meta">(opsiyonel - yalniz kayit icin)</span></label>
+          </select>
+          <div class="fhint">Ciktinin iki dilli basligini belirler</div></div>
+        <div class="frow"><label>Bina</label>
           <select onchange="tutSet('bina',this.value)">
             <option value="">- secilmedi -</option>
             ${binalar.map(b=>`<option ${t.bina===b?'selected':''}>${esc(b)}</option>`).join('')}
-          </select></div>
+          </select>
+          <div class="fhint">Opsiyonel - yalniz kayit ve suzme icin, ciktida gecmez</div></div>
       </div>
       <div class="tut-tur" style="margin-top:14px"><h6>Iade Durumu <i>Возврат</i></h6>
         <div class="tut-sec">
@@ -21565,6 +21615,9 @@ function renderTutanakForm(){
     </div>
 
     <div class="tut-card"><h4>Taraflar <i>Стороны</i></h4>
+      <p class="t-meta" style="margin:-6px 0 12px;font-size:11.5px">Tutanak kodunun firma
+        harfleri ve ciktinin anteti <b>Teslim Eden</b> firmasindan gelir; bunun icin
+        firmanin <b>Sirketler</b> listesinde kayitli olmasi gerekir.</p>
       <div class="tut-parties">
         ${party('eden','Teslim Eden','СДАЛ','eden')}
         ${party('alan','Teslim Alan','ПРИНЯЛ','alan')}
@@ -21712,15 +21765,19 @@ function tutPickAdd(src,matId){
 async function saveTutanak(andPrint){
   if(!guard('define',{mod:'rapor'}))return;
   if(!_TUT)return;
-  const no=String(_TUT.no||'').trim();
-  if(!no){ toast('Tutanak no zorunlu','err'); return; }
+  /* KOD BIR KEZ verilir, bir daha DEGISMEZ: belge numarasi kimliktir - sonradan
+     tarih/firma degisince kaysaydi elde basili duran cikti ile kayit ayrisirdi.
+     Uretim KAYIT aninda, form acilirken degil: iki kullanici ayni anda form acsa
+     ikisi de ayni numarayi gorur, ikincisi kaydederken carpardi.
+     Eski TSL-... kayitlari kendi numaralarini korur (no dolu geldigi icin). */
+  const no=String(_TUT.no||'').trim()||tutSonrakiKod(_TUT);
+  if(!no){ toast('Tutanak kodu uretilemedi - "Teslim Eden" firmasini Sirketler listesindeki adiyla secin','err'); return; }
   if((DB.tutanaklar||[]).some(x=>x.id!==_TUT.id && norm(x.no||'')===norm(no))){
     toast('Bu tutanak numarasi zaten kullaniliyor','err'); return; }
   if(!tutFilledLines(_TUT).length){ toast('En az bir malzeme satiri girin','err'); return; }
   // kayitta duran eski PDF: yalnizca yazma BASARILI olursa kovadan alinir
   const eskiPdfYol=((DB.tutanaklar||[]).find(x=>x.id===_TUT.id)||{}).pdf;
   const eskiYol=(eskiPdfYol&&eskiPdfYol.path)||'';
-  _TUT.no=no;
   if(!_TUT.tur) _TUT.tur=TUT_TURLERI[0].id;
   _TUT.iade=!!_TUT.iade;
   if(!_TUT.iade) _TUT.iadeTarih=null;   // iade kapaliyken tarih kaydedilmez
@@ -21729,6 +21786,9 @@ async function saveTutanak(andPrint){
   _TUT.lines=tutFilledLines(_TUT);
   const yeni=_TUT._yeni; delete _TUT._yeni;
   const kayit=JSON.parse(JSON.stringify(_TUT));
+  /* Kod YALNIZCA kayda islenir, taslaga degil: yazma basarisiz olursa taslak
+     kodsuz kalir ve kullanici tarihi/firmayi duzeltince dogru kod uretilir. */
+  kayit.no=no;
   /* Yazma DENENIR. Eskiden window.__tutanakTableMissing bayragina bakilip pesinen
      reddediliyordu; o bayrak sayfa yuklenirken alinan anlik bir durum ve SQL bu arada
      calistirilmis olabiliyor - yani kaydedilebilecek tutanaklar geri cevriliyordu.
@@ -22133,8 +22193,12 @@ function tutanakPrintHtml(t){
 
 // id verilirse kayitli tutanak, verilmezse duzenlenmekte olan taslak yazdirilir
 function printTutanak(id){
-  const t=id?(DB.tutanaklar||[]).find(x=>x.id===id):_TUT;
+  let t=id?(DB.tutanaklar||[]).find(x=>x.id===id):_TUT;
   if(!t){ toast('Tutanak bulunamadi','err'); return; }
+  /* Taslak, kaydedilmeden de yazdirilabiliyor ve kodu henuz verilmemis olur.
+     Cikti bos numara basmasin diye URETILECEK kod gecici bir kopyaya yazilir -
+     taslaga dokunulmaz, kod ancak Kaydet'te kesinlesir. */
+  if(!t.no){ const k=tutSonrakiKod(t); if(k) t={...t,no:k}; }
   if(!tutFilledLines(t).length){ toast('Ciktida gosterilecek malzeme satiri yok','err'); return; }
   const w=window.open('','_blank');
   if(!w){ toast('Cikti penceresi engellendi - tarayicinin acilir pencere iznini verin','err'); return; }
