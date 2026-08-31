@@ -2208,6 +2208,9 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
   background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 12px;margin:0}
 .mdp-bosbilgi svg{width:15px;height:15px;flex:0 0 15px;color:var(--primary);opacity:.85}
 .mdp-bosbilgi b{color:var(--ink);font-weight:700}
+/* "Bu urunun yerine alinanlar": alim baska bir urune yazildigi icin bu kunyede 0 gorunur;
+   kesikli amber cerceve miktarin kaybolmadigini, yalnizca yer degistirdigini anlatir. */
+.matd-yerine .matd-row{border-color:color-mix(in srgb,var(--amber) 35%,transparent)}
 @media(max-width:640px){.matd-stats{grid-template-columns:1fr 1fr}.matd-row{flex-wrap:wrap}.matd-bar{flex:1 1 60px}}
 /* ===== MALZEME DETAY SAYFASI (kunyenin altindaki "Detay Sayfasi" dugmesi acar) =====
    Is bolumu: KUNYE urunun gecmisini anlatir (hangi sartnamede, kac fatura, ne kadar
@@ -11576,6 +11579,37 @@ function materialAltUsage(matId){
   });
   return out;
 }
+/* ═══ BIR ALIM/MONTAJ HANGI URUNE SAYILIR? ══════════════════════════════════════
+   Alternatif (ve "yerine" secilmis atama) satirlarinda IKI AYRI URUN vardir:
+     l.specId -> YERINE GECILEN kalem. Bu urun fiilen ALINMADI.
+     l.ad/l.code (alternatifin kendisi) -> faturada yazan, parasi odenen urun.
+   Bu ayrim ILERLEME ile MALZEME KUNYESINI birbirinden ayirir ve ikisi de dogrudur:
+     * ILERLEME (specProgress / flowDurum / sartname kartlari) alimi specId'ye sayar -
+       kalemin ihtiyaci alternatifle karsilanmistir, kalem tamamlanmis sayilir. DEGISMEZ.
+     * MALZEME KUNYESI "bu urunden ne kadar alindi/monte edildi" sorusunu yanitlar; orada
+       miktar FATURADA YAZAN urune aittir. Yerine gecilen urun hic alinmadigi icin onun
+       sayisina yazilamaz - yoksa alinmamis bir urun alinmis, alinan urun 0 gorunur.
+   Alternatif kaydi sonradan silinmis ESKI satirlarda kod/ad eslesmesine dusulur. */
+function lineAlimMaterial(l){
+  if(!l) return null;
+  if(l.altId){
+    const a=(DB.proje.alternatives||[]).find(x=>x.id===l.altId);
+    return (a?altMaterial(a):null)||findMaterial(l.code,l.ad)||null;
+  }
+  const sp=l.specId?(DB.proje.specs||[]).find(x=>x.id===l.specId):null;
+  return (sp?specMaterial(sp):null)||findMaterial(l.code,l.ad)||null;
+}
+// Saha raporu satirinin urunu - ayni kural (e.matId dogrudan baglantidir, alternatiften sonra gelir)
+function raporMontajMaterial(e){
+  if(!e) return null;
+  if(e.altId){
+    const a=(DB.proje.alternatives||[]).find(x=>x.id===e.altId);
+    const am=a?altMaterial(a):null; if(am) return am;
+  }
+  if(e.matId){ const m=getMaterial(e.matId); if(m) return m; }
+  const sp=e.specId?(DB.proje.specs||[]).find(x=>x.id===e.specId):null;
+  return sp?specMaterial(sp):null;
+}
 // Kullanim filtresi ve rozetler icin: kac kalemin alternatifi (0 = alternatif olarak kullanilmiyor)
 function materialAltCount(matId){ return materialAltUsage(matId).length; }
 // TEK KAYNAK OKUMA: bir sartname satirinin bagli oldugu kutuphane malzemesi.
@@ -11603,17 +11637,39 @@ function _openMatDetail(matId){
   // bu urunun BASKA kalemlerin alternatifi olarak kayitli oldugu yerler (bkz. materialAltUsage)
   const altUse=materialAltUsage(matId);
   const specIds=new Set(usage.map(s=>s.id));
-  // siparisler: satirlarinda bu urunun sartname kalemleri gecen faturalar
+  /* SIPARISLER: satirin hangi urunun alimi oldugu lineAlimMaterial ile cozulur - eskiden
+     yalnizca l.specId'ye bakiliyordu ve ALTERNATIFLE alinan satirlar YERINE GECILEN urune
+     yaziliyordu: alinmamis urun alinmis, faturada parasi odenen urun 0 gorunuyordu. */
   const ords=(DB.proje.orders||[]).map(o=>{
-    const qty=(o.lines||[]).filter(l=>specIds.has(l.specId)).reduce((s,l)=>s+(Number(l.qty)||0),0);
+    const qty=(o.lines||[]).filter(l=>{ const mm=lineAlimMaterial(l); return !!mm&&mm.id===matId; })
+      .reduce((s,l)=>s+(Number(l.qty)||0),0);
     return qty>0?{o,qty}:null;
   }).filter(Boolean).sort((a,b)=>String(b.o.date||'').localeCompare(String(a.o.date||'')));
   const totOrd=ords.reduce((s,x)=>s+x.qty,0);
-  // montaj: saha raporu kayitlari (sartname kalemi veya dogrudan malzeme baglantisiyla)
-  const raps=rEntries().filter(e=>(e.specId&&specIds.has(e.specId))||e.matId===matId)
+  // MONTAJ: alimla ayni kural - alternatif urunle yapilan montaj o urune sayilir
+  const raps=rEntries().filter(e=>{ const mm=raporMontajMaterial(e); return !!mm&&mm.id===matId; })
     .sort((a,b)=>String(b.tarih||'').localeCompare(String(a.tarih||'')));
   const totRap=raps.reduce((s,e)=>s+(Number(e.miktar)||0),0);
   const unit=m.unit||usage[0]?.unit||'';
+  /* BU URUNUN YERINE ALINANLAR: kalemleri bu urun olan ama faturada BASKA bir urunle
+     karsilanan alimlar. Miktar artik o urunun kunyesinde durdugu icin burada 0 gorunur;
+     aciklamasiz birakilsaydi "hic alinmamis" gibi okunurdu. Sayi degil, IZ verilir. */
+  const yerineMap=new Map();
+  (DB.proje.orders||[]).forEach(o=>(o.lines||[]).forEach(l=>{
+    if(!l.altId||!specIds.has(l.specId)) return;
+    const mm=lineAlimMaterial(l);
+    const k=mm?mm.id:('ad:'+String(l.ad||l.code||'?').toLowerCase());
+    if(!yerineMap.has(k)) yerineMap.set(k,{mat:mm,ad:(mm&&mm.name)||l.ad||l.code||'?',qty:0});
+    yerineMap.get(k).qty+=Number(l.qty)||0;
+  }));
+  const yerineList=[...yerineMap.values()].sort((a,b)=>b.qty-a.qty);
+  const yerineTop=yerineList.reduce((s,x)=>s+x.qty,0);
+  const yerineSection=yerineList.length?`<div class="matd-sec">Bu Urunun Yerine Alinanlar <span>${yerineList.length}</span><i>${fmtNum(yerineTop)} birim baska urunle karsilandi - miktar o urunun kunyesinde</i></div>
+    <div class="matd-yerine">${yerineList.map(x=>`<div class="matd-row"${x.mat?` onclick="closeModal();openMatDetail('${x.mat.id}')" title="Bu urunun kunyesini ac"`:''}>
+      <span class="cat-tag" style="background:var(--amber)22;color:var(--amber);flex-shrink:0">ALTERNATIF</span>
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${esc(x.ad)}</span>
+      <b style="margin-left:auto;white-space:nowrap;font-family:var(--mono);font-size:12px">${fmtNum(x.qty)} <span class="t-meta">${esc(unit)}</span></b>
+    </div>`).join('')}</div>`:'';
   const kalan=totOrd-totRap;
   const img=m.img
     ?`<img class="matd-img" src="${m.img}" onclick="lightbox(${lbCall([m.img,m.img2])})" title="Buyutmek icin tikla">`
@@ -11669,7 +11725,7 @@ function _openMatDetail(matId){
   }).join('');
   const ordRows=ords.length?ords.slice(0,30).map(({o,qty})=>{
     const bc=buildingColor(o.bina);
-    return `<div class="matd-row" onclick="closeModal();openOrderDetail('${o.id}')" title="Fatura detayini ac">
+    return `<div class="matd-row" onclick="closeModal();openOrderDetail('${o.id}','${m.id}')" title="Fatura detayini ac">
       <span class="t-meta" style="flex-shrink:0">${fmtDate(o.date)}</span>
       <span class="mono" style="font-size:11px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.no||'-')}</span>
       <span class="bina-tag" style="background:${bc}22;color:${bc};flex-shrink:0">${esc(o.bina)}</span>
@@ -11704,6 +11760,7 @@ function _openMatDetail(matId){
       ${ozelSection}
       <div class="matd-sec">Sartnameler <span>${usage.length}</span></div>${specRows}
       ${altUse.length?`<div class="matd-sec">Alternatif Olarak Kullanildigi Kalemler <span>${altUse.length}</span><i>bu urun asagidaki kalemlerin yerine onerildi / kullaniliyor</i></div>${altRows}`:''}
+      ${yerineSection}
       <div class="matd-sec">Siparisler <span>${ords.length}</span>${totOrd?`<i>${fmtNum(totOrd)} ${esc(unit)}</i>`:''}</div>${ordRows}
       <div class="matd-sec">Saha Raporlari - Montaj <span>${raps.length}</span>${totRap?`<i>${fmtNum(totRap)} ${esc(unit)}</i>`:''}</div>${rapRows}
     </div>
@@ -13548,10 +13605,13 @@ function renderOrderPage(){
     </div>
   </div>`;
 }
-function openOrderDetail(id){
+function openOrderDetail(id,fromMatId){
   const o=(DB.proje.orders||[]).find(x=>x.id===id); if(!o)return;
+  // fromMatId: siparis, malzeme kunyesindeki "Siparisler" listesinden acildiysa doldurulur -
+  // baslikta geri ok butonu cikar, incelendikten sonra ayni urunun kunyesine donulur.
+  const backBtn=fromMatId?`<button class="mini-btn" onclick="closeModal();openMatDetail('${fromMatId}')" title="Malzeme kunyesine don">${icoArr('left')}</button>`:'';
   const html=`<div class="modal-bg drawer-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal wide drawer inv-drawer">
-    <div class="modal-head"><h3>Fatura / Siparis Detayi</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-head"><div style="display:flex;align-items:center;gap:8px;min-width:0">${backBtn}<h3>Fatura / Siparis Detayi</h3></div><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">${orderInvoiceHtml(o,false)}</div>
     <div class="modal-foot">
       ${orderActionsHtml(o,false)}
