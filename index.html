@@ -2881,6 +2881,14 @@ datalist{display:none}
 .fat-rozet.kismi{color:var(--amber);background:color-mix(in srgb,var(--amber) 15%,transparent)}
 .fat-rozet.tam{color:var(--green);background:color-mix(in srgb,var(--green) 15%,transparent)}
 .fat-rozet.fazla{color:var(--red);background:color-mix(in srgb,var(--red) 16%,transparent)}
+/* KAYIT DURUMU rozetleri (urun durumundan ayri): taslak notrdur, kesin yesil
+   ailede degil MAVIDIR - "tam faturalanmis" ile "kesinlesmis kayit" iki ayri
+   sey, ayni renkte olsalar birbirinin yerine okunurdu. Kilitli mor: hicbir
+   urun durumunun rengiyle karismaz. */
+.fat-rozet.taslak{color:var(--mute);background:color-mix(in srgb,var(--mute) 16%,transparent);
+  border:1px dashed color-mix(in srgb,var(--mute) 45%,transparent)}
+.fat-rozet.kesin{color:var(--blue);background:color-mix(in srgb,var(--blue) 14%,transparent)}
+.fat-rozet.kilitli{color:#a855f7;background:color-mix(in srgb,#a855f7 15%,transparent)}
 /* DOLULUK SERIDI: faturalanan / net alinan. Tavani asan kisim ayri renkte -
    yuzde 100'de duran bir cubuk, fazla faturayi gizlerdi. */
 .fat-bar{height:5px;border-radius:4px;background:color-mix(in srgb,var(--dim) 18%,transparent);
@@ -23951,6 +23959,33 @@ function fatTutarFarki(beyan,hesap){
   return Math.abs(f)<0.01?0:f;
 }
 function fatKayitlar(){ return (DB.faturalar||[]).filter(Boolean); }
+/* ---------- FATURANIN DURUMU ----------
+   taslak : yarim kalmis giris. MIKTARI TUKETMEZ - tavan hesabina hic girmez.
+            Gerekce: taslak bir belge degil, not defteridir; kalani rezerve
+            etseydi hic kesilmemis bir fatura yuzunden gercek bir fatura
+            girilemez hale gelirdi.
+   kesin  : kesinlesmis fatura. Miktari tuketir, mutabakata girer.
+   kilitli: kesinlesmis VE kapatilmis. Duzenlenemez, silinemez; kilidi yalnizca
+            yonetici acar. Mutabakati biten bir donemin sonradan degistirilmesini
+            engeller - bu modulun amaci zaten "sayilar sonradan oynamasin".
+   Eski/eksik kayitlar 'kesin' sayilir: alan sonradan eklendi, yoklugu taslak
+   anlamina gelmemeli (gelseydi mevcut faturalar bir anda tavandan dusulurdu). */
+function fatDurumu(f){ const d=f&&f.durum; return (d==='taslak'||d==='kilitli')?d:'kesin'; }
+function fatTaslakMi(f){ return fatDurumu(f)==='taslak'; }
+function fatKilitliMi(f){ return fatDurumu(f)==='kilitli'; }
+// KONTROL MOTORUNUN OKUDUGU KUME: taslaklar disaridadir
+function fatKesinler(){ return fatKayitlar().filter(f=>!fatTaslakMi(f)); }
+function fatDuzenlenebilir(f){ return fatCanEdit() && !fatKilitliMi(f); }
+function fatSilinebilir(f){ return fatCanDelete() && !fatKilitliMi(f); }
+const FAT_KAYIT_DURUM={
+  taslak: {ad:'TASLAK',  aciklama:'Yarim kalmis giris - miktar tavanina SAYILMAZ, kesinlestirilene kadar hicbir hesaba girmez'},
+  kesin:  {ad:'KESIN',   aciklama:'Kesinlesmis fatura - miktari tuketir ve mutabakata girer'},
+  kilitli:{ad:'KILITLI', aciklama:'Kapatilmis fatura - duzenlenemez ve silinemez; kilidi yalnizca yonetici acar'},
+};
+function fatKayitRozeti(f){
+  const d=fatDurumu(f), k=FAT_KAYIT_DURUM[d];
+  return `<span class="fat-rozet ${d}" title="${esc(k.aciklama)}">${k.ad}</span>`;
+}
 function fatSatirlari(f){ const x=f&&f.satirlar; return Array.isArray(x)?x:[]; }
 function fatToplamMiktar(f){ return fatSatirlari(f).reduce((s,r)=>s+fatSayi(r.qty),0); }
 // Kayitli faturanin para ozeti - satirlardan HESAPLANIR, kayitta ayrica tutulmaz
@@ -24033,7 +24068,8 @@ function fatUrunHavuzu(){
 // disarida birakilir, yoksa kullanici kendi girdigi miktari tavana carpardi.
 function fatIndeks(haricId){
   const m=new Map();
-  fatKayitlar().forEach(f=>{
+  // TASLAKLAR HARIC: yarim kalmis bir giris kimsenin kalanini yiyemez
+  fatKesinler().forEach(f=>{
     if(haricId&&f.id===haricId) return;
     fatSatirlari(f).forEach(r=>{
       const k=String((r&&r.key)||''); if(!k) return;
@@ -24063,7 +24099,7 @@ function fatUrunListesi(haricId){
     if(hav.has(k)||!(q>0)) return;
     // ad/kod bilgisi yalnizca fatura satirinda kaldi - ilk bulunan satirdan okunur
     let ornek=null;
-    fatKayitlar().some(f=>fatSatirlari(f).some(r=>{ if(String(r.key||'')===k){ ornek=r; return true; } return false; }));
+    fatKesinler().some(f=>fatSatirlari(f).some(r=>{ if(String(r.key||'')===k){ ornek=r; return true; } return false; }));
     out.push({ key:k, matId:(ornek&&ornek.matId)||'', code:(ornek&&ornek.code)||'',
       ad:(ornek&&ornek.ad)||'(bilinmeyen urun)', unit:(ornek&&ornek.unit)||'',
       alinan:0, iade:0, binalar:[], firmalar:[], sonTarih:0,
@@ -24102,7 +24138,8 @@ function fatSerit(net,fat){
 function fatNoAnahtari(f){ return norm(String((f&&f.no)||'').trim())+'|@|'+((f&&f.companyId)||norm(fatCompany(f))); }
 function fatCiftNolar(){
   const m=new Map();
-  fatKayitlar().forEach(f=>{
+  // taslaklar sayilmaz: henuz kesilmemis bir belge "cift kayit" uyarisi uretmemeli
+  fatKesinler().forEach(f=>{
     if(!String(f.no||'').trim()) return;
     const k=fatNoAnahtari(f);
     if(!m.has(k)) m.set(k,[]);
@@ -24124,7 +24161,12 @@ async function openFatura(){
   await faturaYukle(); if(PFAT) render();
 }
 function closeFatura(){ PFAT=false; FATV={mode:'liste',q:'',comp:'',bina:'',durum:'',from:'',to:''}; _FAT=null; render(); }
-function fatSetMode(m){ FATV.mode=m; render(); try{ window.scrollTo(0,0); }catch(e){} }
+/* Sekme degisiminde DURUM SUZGECI SIFIRLANIR. FATV.durum iki ekranda ayri anlam
+   tasiyor: listede KAYIT durumu (taslak/kesin/kilitli), mutabakatta URUN durumu
+   (fazla/kismi/tam/yok). Tasinsaydi listede "taslak" secip mutabakata gecen
+   kullanici, hicbir urunun durumu 'taslak' olmadigi icin BOS bir tablo gorur ve
+   bunu "veri yok" sanirdi. */
+function fatSetMode(m){ FATV.mode=m; FATV.durum=''; render(); try{ window.scrollTo(0,0); }catch(e){} }
 function fatSetF(k,v){ FATV[k]=v; render(); }
 function fatFiltreVar(){ return !!(FATV.q||FATV.comp||FATV.bina||FATV.durum||FATV.from||FATV.to); }
 function fatFiltreTemizle(){ FATV.q=''; FATV.comp=''; FATV.bina=''; FATV.durum=''; FATV.from=''; FATV.to=''; render(); }
@@ -24176,9 +24218,13 @@ function fatAramaEsler(f,q){
   if(!q) return true;
   return matchText([f.no,fatCompany(f),f.not,...fatSatirlari(f).map(r=>[r.ad,r.code].filter(Boolean).join(' '))].join(' '),q);
 }
+// FATV.durum liste ekraninda KAYIT durumunu (taslak/kesin/kilitli), mutabakat
+// ekraninda URUN durumunu (fazla/kismi/...) suzer - iki ekran ayni alani kendi
+// anlamiyla kullanir, ikisi ayni anda acik olamadigi icin cakismaz.
 function fatListeFiltreli(){
   const all=fatKayitlar().slice().sort((a,b)=>(b.tarih||0)-(a.tarih||0));
   return all.filter(f=>{
+    if(FATV.durum && fatDurumu(f)!==FATV.durum) return false;
     if(FATV.comp && (f.companyId||'')!==FATV.comp) return false;
     if(FATV.from){ const t=new Date(FATV.from).getTime(); if(!(f.tarih>=t)) return false; }
     if(FATV.to){ const t=new Date(FATV.to).getTime()+86399999; if(!(f.tarih<=t)) return false; }
@@ -24217,6 +24263,7 @@ function renderFaturaListe(){
     rows+=`<tr>
       <td><b style="font-family:var(--mono);font-size:12.5px">${esc(f.no||'(no yok)')}</b>
         ${f.pdf?` <span title="Fatura nushasi ekli" style="color:var(--mute)">${icoDoc()}</span>`:''}
+        <div style="margin-top:4px">${fatKayitRozeti(f)}</div>
         ${uy.fazla?`<div class="fat-rozet fazla" style="margin-top:4px" title="Bu faturadaki ${uy.fazla} urun, alinan miktardan fazla faturalanmis">${fmtNum(uy.fazla)} URUNDE FAZLA</div>`:''}
         ${f.not?`<div class="t-meta" style="font-size:11px;margin-top:3px">${esc(f.not)}</div>`:''}</td>
       <td class="t-meta">${esc(fmtDate(f.tarih))}</td>
@@ -24229,8 +24276,10 @@ function renderFaturaListe(){
       <td><div class="row-actions">
         <button class="mini-btn" title="Faturanin icerigini gor" onclick="openFaturaDetay('${f.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
         ${f.pdf?`<button class="mini-btn" title="Fatura nushasini ac" onclick="fatPdfAc('${f.id}')">${icoDoc()}</button>`:''}
-        ${fatCanEdit()?`<button class="mini-btn" title="Duzenle" onclick="fatDuzenle('${f.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>`:''}
-        ${fatCanDelete()?`<button class="mini-btn del" title="Sil" onclick="fatSil('${f.id}')">${icoTrash()}</button>`:''}
+        ${fatDuzenlenebilir(f)?`<button class="mini-btn" title="${fatTaslakMi(f)?'Taslagi ac - kesinlestirebilirsiniz':'Duzenle'}" onclick="fatDuzenle('${f.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>`:''}
+        ${(!fatTaslakMi(f)&&!fatKilitliMi(f)&&fatCanEdit())?`<button class="mini-btn" title="Faturayi kilitle - bir daha degistirilemez" onclick="fatKilitle('${f.id}')">${icoKilit(false)}</button>`:''}
+        ${(fatKilitliMi(f)&&isAdmin())?`<button class="mini-btn" title="Kilidi ac (yonetici)" onclick="fatKilitAc('${f.id}')">${icoKilit(true)}</button>`:''}
+        ${fatSilinebilir(f)?`<button class="mini-btn del" title="Sil" onclick="fatSil('${f.id}')">${icoTrash()}</button>`:''}
       </div></td></tr>`;
   });
   const toplamMiktar=list.reduce((s,f)=>s+fatToplamMiktar(f),0);
@@ -24261,6 +24310,15 @@ function renderFaturaListe(){
         ${list.length?`<button class="btn btn-ghost" onclick="exportFaturaXlsx()">${icoXls()} Excel</button>`:''}
         ${fatCanEdit()?`<button class="btn btn-add" onclick="fatYeni()">${icoPlus()} Yeni Fatura</button>`:''}
       </div>
+    </div>
+    <div class="iht-seg" style="margin-bottom:10px">
+      ${(()=>{ const t=fatKayitlar();
+        const say=d=>t.filter(f=>fatDurumu(f)===d).length;
+        const g=(v,l,n,ip)=>`<button class="${FATV.durum===v?'on':''}" onclick="fatSetF('durum','${v}')" title="${esc(ip)}">${l}<i>${fmtNum(n)}</i></button>`;
+        return g('','Tumu',t.length,'Butun fatura kayitlari')
+          +g('taslak','Taslak',say('taslak'),FAT_KAYIT_DURUM.taslak.aciklama)
+          +g('kesin','Kesin',say('kesin'),FAT_KAYIT_DURUM.kesin.aciklama)
+          +g('kilitli','Kilitli',say('kilitli'),FAT_KAYIT_DURUM.kilitli.aciklama); })()}
     </div>
     <div class="ord-sumline"><b>${fmtNum(list.length)}</b> fatura gosteriliyor · toplam <b>${fmtNum(toplamMiktar)}</b> miktar${
       toplamPara!=null&&toplamPara>0?` · odenecek <b>${esc(fatPara(toplamPara,paralar[0]))}</b>`:''}${
@@ -24304,7 +24362,7 @@ function openFaturaDetay(id){
     `<div class="t-meta" style="font-size:11px">${esc(_auditTime(h.ts))} · ${esc(h.user||'')} · ${esc(h.ne||'')}</div>`).join('');
   document.body.insertAdjacentHTML('beforeend',
     `<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:820px">
-      <div class="modal-head"><h3>Fatura ${esc(f.no||'')}</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+      <div class="modal-head"><h3>Fatura ${esc(f.no||'(no yok)')} ${fatKayitRozeti(f)}</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
       <div class="modal-body">
         <p class="t-meta" style="margin-bottom:8px">${esc(fmtDate(f.tarih))} · ${esc(fatCompany(f)||'firma yok')} ·
           ${fmtNum(satirlar.length)} urun · toplam miktar ${fmtNum(fatToplamMiktar(f))}</p>
@@ -24329,12 +24387,25 @@ function openFaturaDetay(id){
         </tr></thead><tbody>${rows}</tbody></table></div>
         <div class="fat-toplam"><div class="fat-toplam-ic">${fatToplamBlokIc(f)}</div></div>
         ${gecmis?`<div style="margin-top:12px"><h5 style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--mute);margin-bottom:5px">Duzenleme gecmisi</h5>${gecmis}</div>`:''}
-        <p class="t-meta" style="font-size:11px;margin-top:10px">Kaydeden: ${esc(f.olusturan||'-')}${f.guncelleyen?` · Son duzenleyen: ${esc(f.guncelleyen)}`:''}</p>
+        <p class="t-meta" style="font-size:11px;margin-top:10px">Kaydeden: ${esc(f.olusturan||'-')}${f.guncelleyen?` · Son duzenleyen: ${esc(f.guncelleyen)}`:''}${
+          f.kesinTs?` · Kesinlestiren: ${esc(f.kesinBy||'-')} (${esc(fmtDate(f.kesinTs))})`:''}${
+          f.kilitTs?` · <b style="color:var(--amber)">Kilitleyen: ${esc(f.kilitBy||'-')} (${esc(fmtDate(f.kilitTs))})</b>`:''}</p>
+        ${fatTaslakMi(f)?`<div class="fat-uyari bilgi" style="margin-top:10px"><h5>Bu bir taslak</h5>
+          <p>Miktarlar tavan hesabina <b>sayilmaz</b>; urunlerin kalani bu satirlar yokmus gibi hesaplanir.
+          Kesinlestirmek icin "Taslagi Ac" deyip formdaki <b>Faturayi Kesinlestir</b> dugmesini kullanin.</p></div>`:''}
       </div>
       <div class="modal-foot">
         ${f.pdf?`<button class="btn btn-ghost" onclick="fatPdfAc('${f.id}')">${icoDoc()} Fatura Nushasi</button>`:''}
-        ${fatCanEdit()?`<button class="btn btn-ghost" onclick="closeModal();fatDuzenle('${f.id}')">Duzenle</button>`:''}
+        ${fatDuzenlenebilir(f)?`<button class="btn btn-ghost" onclick="closeModal();fatDuzenle('${f.id}')">${fatTaslakMi(f)?'Taslagi Ac':'Duzenle'}</button>`:''}
+        ${(!fatTaslakMi(f)&&!fatKilitliMi(f)&&fatCanEdit())?`<button class="btn btn-ghost" onclick="closeModal();fatKilitle('${f.id}')">${icoKilit(false)} Kilitle</button>`:''}
+        ${(fatKilitliMi(f)&&isAdmin())?`<button class="btn btn-ghost" onclick="closeModal();fatKilitAc('${f.id}')">${icoKilit(true)} Kilidi Ac</button>`:''}
         <button class="btn btn-add" onclick="closeModal()">Kapat</button></div></div></div>`);
+}
+// acik/kapali kilit - liste satirinda ve detay dugmelerinde ayni ikon kullanilir
+function icoKilit(acik){
+  return acik
+    ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 019.9-1"/></svg>'
+    : '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>';
 }
 // Nusha acma uygulamanin ortak yolundan gecer (acPdf): imzali adres, engellenen
 // acilir pencere uyarisi ve hata yedegi tek yerde duruyor - kopyalamak gereksiz.
@@ -24358,13 +24429,14 @@ function fatYeni(){
     companyId:fatFirmalar().length===1?fatFirmalar()[0].id:'',
     senaryo:'TICARIFATURA', faturaTipi:'SATIS', ozellestirmeNo:'TR1.2', ettn:'',
     irsaliyeNo:'', irsaliyeTarihi:'', paraBirimi:'TRY', kur:'', varsayilanKdv:20,
-    beyanTutar:'', not:'', pdf:null,
+    beyanTutar:'', not:'', pdf:null, durum:'taslak',
     qty:{}, sb:{}, fq:'', fbina:'', ftum:false, ftumDurum:false };
   FATV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
 }
 function fatDuzenle(id){
   if(!fatCanEdit()){ toast('Fatura duzenleme yetkiniz yok','err'); return; }
   const f=fatKayitlar().find(x=>x.id===id); if(!f){ toast('Fatura bulunamadi','err'); return; }
+  if(fatKilitliMi(f)){ toast('Bu fatura kilitli - duzenlemek icin once kilidini acin','err'); return; }
   const qty={}, sb={};
   fatSatirlari(f).forEach(r=>{ const k=String(r.key||'');
     qty[k]=fatSayi(r.qty);
@@ -24377,7 +24449,7 @@ function fatDuzenle(id){
     ozellestirmeNo:f.ozellestirmeNo||'TR1.2', ettn:f.ettn||'',
     irsaliyeNo:f.irsaliyeNo||'', irsaliyeTarihi:f.irsaliyeTarihi?new Date(f.irsaliyeTarihi).toISOString().slice(0,10):'',
     paraBirimi:f.paraBirimi||'TRY', kur:f.kur||'', varsayilanKdv:20,
-    beyanTutar:f.beyanTutar||'', not:f.not||'',
+    beyanTutar:f.beyanTutar||'', not:f.not||'', durum:fatDurumu(f),
     pdf:f.pdf||null, qty, sb, fq:'', fbina:'', ftum:true, ftumDurum:true };
   FATV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
 }
@@ -24595,9 +24667,14 @@ function renderFaturaForm(){
   const t=fatGirilenOzet();
   return `<div class="tut-wrap">
     <div class="sel-bc"><button onclick="fatFormKapat()">${icoArr('left')} Fatura listesine don</button></div>
-    <div class="sel-head"><h2>${st.editId?'Faturayi Duzenle':'Yeni Fatura'}</h2>
+    <div class="sel-head"><h2>${st.editId?(st.durum==='taslak'?'Taslak Fatura':'Faturayi Duzenle'):'Yeni Fatura'}</h2>
       <p>Faturada yazan <b>urunleri ve miktarlari</b> girin. Miktar o urunun toplam alimindan dusulur;
         <b>kalan miktardan fazlasi yazilamaz</b> - boylece ayni mal ikinci kez faturalanamaz.</p></div>
+    ${st.durum==='taslak'?`<div class="fat-uyari bilgi">
+      <h5>Taslak halinde</h5>
+      <p>Bu kayit <b>henuz hicbir hesaba girmiyor</b>: girdiginiz miktarlar urunlerin kalanindan dusulmez,
+      mutabakatta gorunmez. Yarim birakip sonra devam edebilirsiniz. Belge tamamlandiginda
+      <b>Faturayi Kesinlestir</b> deyin - zorunlu alanlar ve tavan kontrolu o an calisir.</p></div>`:''}
     ${fatMissingWarn()}
     <div class="tut-card">
       <h4>Fatura Bilgileri</h4>
@@ -24696,7 +24773,11 @@ function renderFaturaForm(){
       </div>
       <div class="sag">
         <button class="btn btn-ghost" onclick="fatFormKapat()">Vazgec</button>
-        <button class="btn btn-add" id="fatKaydetBtn" ${t.miktar>0?'':'disabled'} onclick="fatKaydet()">${st.editId?'Degisiklikleri Kaydet':'Faturayi Kaydet'}</button>
+        ${st.durum==='taslak'?`<button class="btn btn-ghost" onclick="fatKaydet(false)"
+          title="Yarim haliyle sakla - miktar tavanina sayilmaz, sonra devam edilebilir">Taslak Kaydet</button>`:''}
+        <button class="btn btn-add" id="fatKaydetBtn" ${t.miktar>0?'':'disabled'} onclick="fatKaydet(true)"
+          title="${st.durum==='taslak'?'Zorunlu alanlar ve tavan kontrol edilir; miktarlar bu andan itibaren tavandan dusulur':'Degisiklikleri kaydet'}"
+          >${st.durum==='taslak'?'Faturayi Kesinlestir':'Degisiklikleri Kaydet'}</button>
       </div>
     </div>
   </div>`;
@@ -24707,12 +24788,19 @@ function renderFaturaForm(){
    urune fatura girmis olabilir; yalnizca kutudaki kirpmaya guvenmek, iki kisinin
    ayni kalani ayri ayri faturalamasina izin verirdi. Asim bulunursa kayit
    YAPILMAZ - hangi urunde ne kadar astigi tek tek soylenir. */
-async function fatKaydet(){
+/* kesin=false -> TASLAK kaydi. Zorunlu alan yok, tavan asimi ENGELLEMEZ (yalnizca
+   uyarir), cift no/ETTN onayi sorulmaz: taslak bir belge degil, yarim kalmis bir
+   nottur ve hicbir hesaba girmez. Butun bu kontroller KESINLESTIRMEDE calisir. */
+async function fatKaydet(kesin){
   if(!fatCanEdit()){ toast('Fatura kaydi girme yetkiniz yok','err'); return; }
   const st=_FAT; if(!st) return;
+  const eskiKayit=st.editId?fatKayitlar().find(f=>f.id===st.editId):null;
+  if(eskiKayit&&fatKilitliMi(eskiKayit)){ toast('Bu fatura kilitli - once kilidini acin','err'); return; }
   const no=String(st.no||'').trim();
-  if(!no){ toast('Fatura no zorunlu - belgenin uzerindeki numarayi yazin','err'); return; }
-  if(!st.companyId){ toast('Faturayi kesen firmayi secin','err'); return; }
+  if(kesin){
+    if(!no){ toast('Fatura no zorunlu - belgenin uzerindeki numarayi yazin','err'); return; }
+    if(!st.companyId){ toast('Faturayi kesen firmayi secin','err'); return; }
+  }
   const tarih=new Date(st.tarih||Date.now()).getTime();
   if(!isFinite(tarih)){ toast('Fatura tarihi gecersiz','err'); return; }
 
@@ -24722,7 +24810,13 @@ async function fatKaydet(){
     const q=fatSayi(st.qty[k]); if(!(q>0)) return;
     const u=urunler.get(k);
     if(!u){ sorunlar.push('Urun bulunamadi (alim kaydi silinmis olabilir)'); return; }
-    if(q>u.kalan+FAT_EPS){ sorunlar.push(`${u.ad||u.code||'urun'}: ${fmtNum(q)} girildi, kalan ${fmtNum(Math.max(0,u.kalan))}`); return; }
+    /* TAVAN ASIMI: kesinlestirmede satir DUSURULUR ve kayit reddedilir; taslakta
+       satir korunur (yarim is kaybolmasin), yalnizca uyari verilir - kesinlestirme
+       aninda zaten yeniden denetlenecek. */
+    if(q>u.kalan+FAT_EPS){
+      sorunlar.push(`${u.ad||u.code||'urun'}: ${fmtNum(q)} girildi, kalan ${fmtNum(Math.max(0,u.kalan))}`);
+      if(kesin) return;
+    }
     const b=(st.sb||{})[k]||{};
     const fi=fatSayi(b.fiyat);
     satirlar.push({ id:uid(), key:k, matId:u.matId||'', code:u.code||'', ad:u.ad||'',
@@ -24730,17 +24824,19 @@ async function fatKaydet(){
       iskontoOrani:fatSayi(b.iskonto)||0, kdvOrani:b.kdv===''||b.kdv==null?0:fatSayi(b.kdv),
       digerVergi:fatSayi(b.diger)||0 });
   });
-  if(sorunlar.length){
+  if(sorunlar.length&&kesin){
     toast('Kaydedilmedi - kalandan fazla: '+sorunlar.slice(0,3).join(' ; ')+(sorunlar.length>3?` (+${sorunlar.length-3} urun daha)`:''),'err');
     render(); return;
   }
-  if(!satirlar.length){ toast('En az bir urun icin miktar girin','err'); return; }
+  if(kesin&&!satirlar.length){ toast('En az bir urun icin miktar girin','err'); return; }
+  // taslak icin en azindan bir tutamak olmali - bos bir taslak kaydetmenin anlami yok
+  if(!kesin&&!satirlar.length&&!no){ toast('Taslak icin en az fatura no ya da bir urun miktari girin','err'); return; }
 
   /* ETTN CIFT KONTROLU: ETTN e-faturanin evrensel tekil numarasidir - ayni ETTN
      iki kayitta gecemez, gecerse belge kesinlikle ikinci kez girilmistir. Fatura
      no'suna gore cok daha kesin bir kanit oldugu icin ONCE bu sorulur. */
   const ettn=String(st.ettn||'').trim();
-  if(ettn){
+  if(kesin&&ettn){
     const ayniEttn=fatKayitlar().filter(f=>f.id!==st.editId && norm(String(f.ettn||'').trim())===norm(ettn));
     if(ayniEttn.length && !confirm(`Bu ETTN ile KAYITLI BIR FATURA VAR:\n\n`
       +ayniEttn.map(f=>`· ${f.no||'(no yok)'} · ${fmtDate(f.tarih)} · ${fatCompany(f)||'-'}`).join('\n')
@@ -24750,8 +24846,8 @@ async function fatKaydet(){
   /* CIFT NO ONAYI: ayni firmadan ayni numarali baska bir kayit varsa kullaniciya
      sorulur. Engellenmez - ayni numara farkli yillarda tekrar edebilir - ama
      "sessizce iki kez girildi" durumu boylece kapanir. */
-  const ayni=fatKayitlar().filter(f=>f.id!==st.editId
-    && norm(String(f.no||'').trim())===norm(no) && (f.companyId||'')===(st.companyId||''));
+  const ayni=kesin?fatKesinler().filter(f=>f.id!==st.editId
+    && norm(String(f.no||'').trim())===norm(no) && (f.companyId||'')===(st.companyId||'')):[];
   if(ayni.length && !confirm(`"${no}" numarali fatura bu firma icin ZATEN KAYITLI:\n\n`
     +ayni.map(f=>`· ${fmtDate(f.tarih)} · ${fmtNum(fatSatirlari(f).length)} urun · toplam ${fmtNum(fatToplamMiktar(f))}`).join('\n')
     +`\n\nAyni fatura ikinci kez giriliyorsa VAZGECIN.\nYine de kaydedilsin mi?`)) return;
@@ -24772,6 +24868,13 @@ async function fatKaydet(){
     beyanTutar:(st.beyanTutar===''||st.beyanTutar==null)?null:fatSayi(st.beyanTutar),
     kur:(st.kur===''||st.kur==null)?null:fatSayi(st.kur),
     paraBirimi:st.paraBirimi||'TRY', not:String(st.not||'').trim(),
+    /* DURUM. Kilit burada ASLA kurulmaz - kilitleme ayri ve bilincli bir islemdir
+       (fatKilitle). Kesinlesmis bir fatura duzenlenip yeniden kaydedilirse kesin
+       kalir; taslak, kesinlestirilene kadar taslak kalir. */
+    durum:kesin?'kesin':'taslak',
+    kesinTs:kesin?((eski&&!fatTaslakMi(eski)&&eski.kesinTs)||Date.now()):null,
+    kesinBy:kesin?((eski&&!fatTaslakMi(eski)&&eski.kesinBy)||kim):'',
+    kilitTs:null, kilitBy:'',
     // pdf yalnizca KOVAYA yazilmissa saklanir: yarim kalmis yukleme kaydi tasimasin
     pdf:(st.pdf&&st.pdf.path)?st.pdf:null,
     satirlar,
@@ -24779,7 +24882,9 @@ async function fatKaydet(){
     guncelleyen:eski?kim:'', guncellemeTs:eski?Date.now():null,
     history:eski?[...(eski.history||[]),{ts:Date.now(),user:kim,
       ne:`${fmtNum(fatSatirlari(eski).length)} urun / ${fmtNum(fatToplamMiktar(eski))} → ${fmtNum(satirlar.length)} urun / ${fmtNum(toplam)}`
-        +(String(eski.no||'')!==no?` · no: ${eski.no||'-'} → ${no}`:'')}].slice(-20):[],
+        +(String(eski.no||'')!==no?` · no: ${eski.no||'-'} → ${no}`:'')
+        +(fatTaslakMi(eski)&&kesin?' · TASLAKTAN KESINLESTIRILDI':'')}].slice(-20)
+      :(kesin?[]:[{ts:Date.now(),user:kim,ne:'Taslak olusturuldu'}]),
   };
   try{
     if(eski) await sbUpdateFatura(kayit.id,kayit); else await sbInsertFatura(kayit);
@@ -24789,23 +24894,69 @@ async function fatKaydet(){
   const i=DB.faturalar.findIndex(f=>f&&f.id===kayit.id);
   if(i>=0) DB.faturalar[i]=kayit; else DB.faturalar.push(kayit);
   const _tp=fatToplamlar(satirlar);
-  logAction('fatura',(eski?'Fatura duzenlendi: ':'Fatura kaydedildi: ')+no
+  if(!kesin&&sorunlar.length) toast(fmtNum(sorunlar.length)+' satir kalani asiyor - taslak saklandi, kesinlestirmeden once duzeltilmeli','err');
+  logAction('fatura',(eski?'Fatura duzenlendi: ':'Fatura kaydedildi: ')+(kesin?'':'[TASLAK] ')+(no||'(no yok)')
     +' · '+((firma&&firma.ad)||'firma yok')+' · '+fmtNum(satirlar.length)+' urun · toplam miktar '+fmtNum(toplam)
     +(_tp.toplam>0?' · odenecek '+fatPara(_tp.toplam,kayit.paraBirimi):''));
-  _FAT=null; FATV.mode='liste'; render();
-  toast(eski?`Fatura guncellendi - ${fmtNum(satirlar.length)} urun`:`Fatura kaydedildi - ${fmtNum(satirlar.length)} urun · ${fmtNum(toplam)} miktar`);
+  _FAT=null; FATV.mode='liste'; FATV.durum=kesin?'':'taslak'; render();
+  toast(kesin
+    ? (eski&&!fatTaslakMi(eski)?`Fatura guncellendi - ${fmtNum(satirlar.length)} urun`
+                               :`Fatura kesinlesti - ${fmtNum(satirlar.length)} urun · ${fmtNum(toplam)} miktar`)
+    : `Taslak kaydedildi - miktar tavanina sayilmaz`);
+}
+
+/* ---------- KILITLE / KILIDI AC ----------
+   Kilit, mutabakati biten bir faturayi kapatir: kimse duzenleyemez, silemez.
+   Acmak YALNIZCA yoneticidedir - modulun amaci "sayilar sonradan oynamasin"
+   oldugu icin kilidin herkese acik olmasi onu anlamsiz kilardi. */
+async function fatKilitle(id){
+  const f=fatKayitlar().find(x=>x.id===id); if(!f){ toast('Fatura bulunamadi','err'); return; }
+  if(!fatCanEdit()){ toast('Bu islem icin yetkiniz yok','err'); return; }
+  if(fatTaslakMi(f)){ toast('Taslak kilitlenemez - once kesinlestirin','err'); return; }
+  if(fatKilitliMi(f)){ toast('Bu fatura zaten kilitli'); return; }
+  const t=fatKayitToplam(f);
+  if(!confirm(`Bu fatura KILITLENECEK:\n\n`
+    +`No: ${f.no||'(no yok)'}\nFirma: ${fatCompany(f)||'-'}\nTarih: ${fmtDate(f.tarih)}\n`
+    +`${fmtNum(fatSatirlari(f).length)} urun · toplam ${fmtNum(fatToplamMiktar(f))} miktar`
+    +(t.toplam>0?` · ${fatPara(t.toplam,f.paraBirimi||'TRY')}`:'')+`\n\n`
+    +`Kilitlendikten sonra duzenlenemez ve silinemez.\nKilidi yalnizca yonetici acabilir. Devam edilsin mi?`)) return;
+  const kim=(CURRENT_USER&&CURRENT_USER.username)||'';
+  const yeni={...f, durum:'kilitli', kilitTs:Date.now(), kilitBy:kim,
+    history:[...(f.history||[]),{ts:Date.now(),user:kim,ne:'Fatura kilitlendi'}].slice(-20)};
+  try{ await sbUpdateFatura(id,yeni); }catch(e){ fatYazHatasi(e,'kilitlenemedi'); return; }
+  const i=DB.faturalar.findIndex(x=>x&&x.id===id); if(i>=0) DB.faturalar[i]=yeni;
+  logAction('fatura','Fatura kilitlendi: '+(f.no||'(no yok)')+' · '+(fatCompany(f)||'-'));
+  render(); toast('Fatura kilitlendi');
+}
+async function fatKilitAc(id){
+  const f=fatKayitlar().find(x=>x.id===id); if(!f){ toast('Fatura bulunamadi','err'); return; }
+  if(!isAdmin()){ toast('Kilidi yalnizca yonetici acabilir','err'); return; }
+  if(!fatKilitliMi(f)){ toast('Bu fatura zaten kilitli degil'); return; }
+  if(!confirm(`"${f.no||'(no yok)'}" faturasinin KILIDI ACILACAK.\n\n`
+    +`Kilitleyen: ${f.kilitBy||'-'}${f.kilitTs?' · '+fmtDate(f.kilitTs):''}\n\n`
+    +`Acildiktan sonra fatura yeniden duzenlenebilir ve silinebilir hale gelir.\nDevam edilsin mi?`)) return;
+  const kim=(CURRENT_USER&&CURRENT_USER.username)||'';
+  const yeni={...f, durum:'kesin', kilitTs:null, kilitBy:'',
+    history:[...(f.history||[]),{ts:Date.now(),user:kim,ne:'Kilit acildi'}].slice(-20)};
+  try{ await sbUpdateFatura(id,yeni); }catch(e){ fatYazHatasi(e,'kilidi acilamadi'); return; }
+  const i=DB.faturalar.findIndex(x=>x&&x.id===id); if(i>=0) DB.faturalar[i]=yeni;
+  logAction('fatura','Fatura kilidi acildi: '+(f.no||'(no yok)')+' · '+(fatCompany(f)||'-'));
+  render(); toast('Kilit acildi');
 }
 
 async function fatSil(id){
   const f=fatKayitlar().find(x=>x.id===id); if(!f){ toast('Fatura bulunamadi','err'); return; }
   if(!fatCanDelete()){ toast('Fatura silme yetkiniz yok','err'); return; }
+  if(fatKilitliMi(f)){ toast('Bu fatura kilitli - silmek icin once kilidini acin','err'); return; }
   /* Silme, o miktari YENIDEN FATURALANABILIR hale getirir - yani kapatilmis bir
      odeme kapisini geri acar. Bu yuzden onay metni ne kadarinin serbest kalacagini
      acikca yazar. */
   if(!confirm(`Bu fatura kaydi silinecek:\n\n`
     +`No: ${f.no||'(no yok)'}\nFirma: ${fatCompany(f)||'-'}\nTarih: ${fmtDate(f.tarih)}\n`
     +`${fmtNum(fatSatirlari(f).length)} urun · toplam ${fmtNum(fatToplamMiktar(f))} miktar\n\n`
-    +`Silindiginde bu miktar TEKRAR FATURALANABILIR hale gelir.\nIslem geri alinamaz. Devam edilsin mi?`)) return;
+    +(fatTaslakMi(f)?`Bu bir TASLAKTIR - miktar tavanina zaten sayilmiyordu.\n`
+                    :`Silindiginde bu miktar TEKRAR FATURALANABILIR hale gelir.\n`)
+    +`Islem geri alinamaz. Devam edilsin mi?`)) return;
   try{ await sbDeleteFatura(id); }
   catch(e){ fatYazHatasi(e,'silinemedi'); return; }
   const yol=f.pdf&&f.pdf.path;
@@ -24967,13 +25118,13 @@ function exportFaturaXlsx(){
   const list=fatListeFiltreli();
   /* Sutunlar TC e-Faturasinin satir duzeniyle ayni sirada: kagitla yan yana
      konup satir satir karsilastirilabilsin. */
-  const aoa=[["fatura_no","fatura_tarihi","firma","senaryo","fatura_tipi","irsaliye_no","irsaliye_tarihi","ettn",
+  const aoa=[["durum","fatura_no","fatura_tarihi","firma","senaryo","fatura_tipi","irsaliye_no","irsaliye_tarihi","ettn",
     "para_birimi","kur","sira_no","urun_kodu","mal_hizmet","birim","miktar","birim_fiyat",
     "iskonto_orani","iskonto_tutari","matrah","kdv_orani","kdv_tutari","diger_vergiler","mal_hizmet_tutari",
     "belge_odenecek_tutar","hesaplanan_odenecek_tutar","not","kaydeden"]];
   list.forEach(f=>{
     const sat=fatSatirlari(f), top=fatKayitToplam(f);
-    const bas=[f.no||'', fmtDate(f.tarih), fatCompany(f)||'', f.senaryo||'', f.faturaTipi||'',
+    const bas=[FAT_KAYIT_DURUM[fatDurumu(f)].ad, f.no||'', fmtDate(f.tarih), fatCompany(f)||'', f.senaryo||'', f.faturaTipi||'',
       f.irsaliyeNo||'', f.irsaliyeTarihi?fmtDate(f.irsaliyeTarihi):'', f.ettn||'',
       f.paraBirimi||'TRY', f.kur||''];
     const kuyruk=[f.beyanTutar||'', Number(top.toplam.toFixed(2)), f.not||'', f.olusturan||''];
@@ -24986,7 +25137,7 @@ function exportFaturaXlsx(){
   });
   if(aoa.length===1) aoa.push(new Array(aoa[0].length).fill(''));
   const wb=XLSX.utils.book_new(), ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=[{wch:18},{wch:12},{wch:20},{wch:14},{wch:11},{wch:14},{wch:12},{wch:36},{wch:7},{wch:8},
+  ws['!cols']=[{wch:9},{wch:18},{wch:12},{wch:20},{wch:14},{wch:11},{wch:14},{wch:12},{wch:36},{wch:7},{wch:8},
     {wch:7},{wch:16},{wch:34},{wch:8},{wch:11},{wch:12},{wch:11},{wch:12},{wch:12},{wch:9},{wch:12},{wch:12},{wch:14},
     {wch:14},{wch:16},{wch:22},{wch:14}];
   ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:aoa[0].length-1}})};

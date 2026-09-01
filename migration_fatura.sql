@@ -16,6 +16,7 @@
 -- Kayit bicimi diger varlik tablolariyla aynidir (id + JSONB data) ve alanlar
 -- TC e-Faturasindaki basliklarla birebir eslesir:
 --   { id, no, tarih:<ms>, companyId, company,
+--     durum:'taslak|kesin|kilitli', kesinTs, kesinBy, kilitTs, kilitBy,
 --     senaryo, faturaTipi, ozellestirmeNo, ettn, irsaliyeNo, irsaliyeTarihi:<ms|null>,
 --     paraBirimi, kur, beyanTutar, not, pdf:{path,name,size}|null,
 --     satirlar:[{ id, key, matId, code, ad, unit,
@@ -33,6 +34,17 @@
 --
 -- ETTN e-faturanin evrensel tekil numarasidir: ayni ETTN iki kayitta geciyorsa
 -- belge kesinlikle ikinci kez girilmistir (fatura no'sundan cok daha kesin kanit).
+--
+-- DURUM:
+--   taslak  : yarim kalmis giris. MIKTAR TAVANINA SAYILMAZ - tavan hesabi
+--             (index.html fatKesinler) taslaklari disarida birakir. Gerekce:
+--             taslak bir belge degil, not defteridir; kalani rezerve etseydi hic
+--             kesilmemis bir fatura yuzunden gercek fatura girilemez hale gelirdi.
+--   kesin   : kesinlesmis fatura. Miktari tuketir, mutabakata girer.
+--   kilitli : kesinlesmis VE kapatilmis. Duzenlenemez/silinemez; kilidi yalnizca
+--             yonetici acar. Mutabakati biten donem sonradan oynamasin diye.
+--   Alan YOKSA 'kesin' sayilir: sonradan eklendi, yoklugu taslak anlamina
+--   gelmemeli - gelseydi mevcut faturalar bir anda tavandan dusulurdu.
 --
 -- 'key' URUN ANAHTARIDIR: once kutuphane malzemesi ('mat:<matId>'), kutuphanede
 -- karsiligi yoksa 'ad:<kod>|<ad>'. Urunu cozen kural uygulamanin kendi kuralidir
@@ -59,6 +71,7 @@ CREATE INDEX IF NOT EXISTS faturalar_created_at_idx ON public.faturalar (created
 CREATE INDEX IF NOT EXISTS faturalar_no_idx         ON public.faturalar ((data->>'no'));
 CREATE INDEX IF NOT EXISTS faturalar_company_idx    ON public.faturalar ((data->>'companyId'));
 CREATE INDEX IF NOT EXISTS faturalar_ettn_idx       ON public.faturalar ((data->>'ettn'));
+CREATE INDEX IF NOT EXISTS faturalar_durum_idx      ON public.faturalar ((data->>'durum'));
 
 -- Asama 3 durusu: RLS acik, anon/authenticated'a HICBIR yetki yok.
 -- Veriye tek yol sunucudaki service_role'dur (api/veri.js).
