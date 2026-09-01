@@ -2917,6 +2917,19 @@ datalist{display:none}
 .fat-lines select.num{text-align:left;padding-right:4px}
 .fat-lines tr.bitti{opacity:.5}
 .fat-lines .satir-tutar{font-weight:700;font-family:var(--mono);font-size:12px;white-space:nowrap}
+/* KDV ORANININ ALTINDA HESAPLANAN TUTAR: oran tek basina "ne kadar KDV odedim"
+   sorusunu yanitlamiyor; kagitta da oran ile tutar YAN YANA duruyor. */
+.fat-lines .kdv-tutar{font-family:var(--mono);font-size:11px;color:var(--mute);margin-top:3px;text-align:right}
+.fat-lines .kdv-tutar.sifir{color:var(--dim)}
+/* SATIR TUTARI IKI SATIR: KDV haric (matrah) ve KDV dahil. Tek sayi gosterilince
+   "Mal Hizmet Tutari" satirda KDV dahili, alttaki toplam blogunda KDV haricini
+   anlatiyordu - ayni ad iki farkli seye denk geliyordu. Ikisi de yazilinca
+   belgeyle karsilastirma tereddutsuz olur. */
+.fat-lines .ktutar{display:flex;justify-content:flex-end;gap:7px;align-items:baseline;white-space:nowrap}
+.fat-lines .ktutar i{font-style:normal;font-size:9.5px;color:var(--mute);text-transform:uppercase;letter-spacing:.3px}
+.fat-lines .ktutar b{font-family:var(--mono);font-size:12px}
+.fat-lines .ktutar.haric b{font-weight:500;color:var(--mute)}
+.fat-lines .ktutar.dahil b{font-weight:800}
 /* alim durumu tek hucrede: alinan · iade · faturalanan - para sutunlari one ciksin */
 .fat-alim{font-family:var(--mono);font-size:11px;color:var(--mute);white-space:nowrap}
 .fat-alim b{color:var(--ink);font-size:12px}
@@ -24280,7 +24293,10 @@ function openFaturaDetay(id){
       <td class="num">%${fmtNum(h.kdvO)}</td>
       <td class="num">${h.kdv?fatPara(h.kdv,''):'-'}</td>
       <td class="num">${h.diger?fatPara(h.diger,''):'-'}</td>
-      <td class="num" style="font-weight:700">${h.toplam?fatPara(h.toplam,''):'-'}</td>
+      <td class="satir-tutar">
+        <div class="ktutar haric"><i>KDV haric</i><b>${h.matrah?fatPara(h.matrah,''):'-'}</b></div>
+        <div class="ktutar dahil"><i>KDV dahil</i><b>${h.toplam?fatPara(h.toplam,''):'-'}</b></div>
+      </td>
     </tr>`;
   }).join('')
     :`<tr><td colspan="10" style="padding:16px;text-align:center;color:var(--mute);font-size:12.5px">Bu faturada satir yok</td></tr>`;
@@ -24308,7 +24324,8 @@ function openFaturaDetay(id){
           <th>Sira No</th><th>Mal Hizmet</th><th class="num">Miktar</th><th class="num">Birim Fiyat</th>
           <th class="num">Iskonto Orani</th><th class="num">Iskonto Tutari</th>
           <th class="num">KDV Orani</th><th class="num">KDV Tutari</th>
-          <th class="num">Diger Vergiler</th><th class="num">Mal Hizmet Tutari</th>
+          <th class="num">Diger Vergiler</th>
+          <th class="num" title="Ust satir KDV haric (matrah), alt satir KDV dahil toplam">Mal Hizmet Tutari</th>
         </tr></thead><tbody>${rows}</tbody></table></div>
         <div class="fat-toplam"><div class="fat-toplam-ic">${fatToplamBlokIc(f)}</div></div>
         ${gecmis?`<div style="margin-top:12px"><h5 style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--mute);margin-bottom:5px">Duzenleme gecmisi</h5>${gecmis}</div>`:''}
@@ -24478,6 +24495,9 @@ function fatOzetGuncelle(){
     const h=fatSatirHesap({qty:fatSayi(st.qty[sr.key]),fiyat:bb.fiyat,iskontoOrani:bb.iskonto,
       kdvOrani:bb.kdv,digerVergi:bb.diger});
     el.textContent=h.toplam>0?fatPara(h.toplam,''):'-';
+    const em=document.getElementById('fatSM'+i); if(em) em.textContent=h.matrah>0?fatPara(h.matrah,''):'-';
+    const ek=document.getElementById('fatKD'+i);
+    if(ek){ ek.textContent=h.kdv>0?fatPara(h.kdv,''):'-'; ek.classList.toggle('sifir',!(h.kdv>0)); }
   });
 }
 /* Faturanin alt kosesindeki ozet - TC faturasindaki SIRAYLA. Form ve detay
@@ -24497,6 +24517,7 @@ function fatToplamBlokIc(kayit){
         +' <span style="opacity:.7">(matrah '+fatPara(k.matrah,'')+')</span>',fatPara(k.kdv,pb),'kdv')).join('')
     +(t.kdvListe.length>1?sat('Toplam KDV',fatPara(t.kdv,pb)):'')
     +(t.diger>0?sat('Diger Vergiler',fatPara(t.diger,pb)):'')
+    +sat('Vergiler Dahil Toplam Tutar',fatPara(t.toplam,pb))
     +'<div class="ayrac"></div>'
     +sat('Odenecek Tutar',fatPara(t.toplam,pb),'odenecek')
     +(pb!=='TRY'&&kur>0?`<div class="kur">Kur ${fmtNum(kur)} &middot; TL karsiligi <b>${fatPara(t.toplam*kur,'TRY')}</b></div>`:'')
@@ -24553,11 +24574,15 @@ function renderFaturaForm(){
       <td><select class="num dar" ${bitti?'disabled':''} onchange="fatSetSatirAlan(${i},'kdv',this)"
         title="KDV orani - matrah uzerinden hesaplanir">
         ${oranlar.map(o=>`<option value="${o}" ${fatSayi(b.kdv)===o&&b.kdv!==''?'selected':''}>%${fmtNum(o)}</option>`).join('')}
-      </select></td>
+      </select>
+      <div class="kdv-tutar${h.kdv>0?'':' sifir'}" id="fatKD${i}" title="Bu satirin hesaplanan KDV tutari">${h.kdv>0?fatPara(h.kdv,''):'-'}</div></td>
       <td><input type="number" step="any" min="0" class="num dar" ${bitti?'disabled':''}
         value="${b.diger!==undefined&&b.diger!==''?esc(b.diger):''}" placeholder="-" oninput="fatSetSatirAlan(${i},'diger',this)"
         title="Diger vergiler (OTV, tevkifat vb.) - tutar olarak girilir"></td>
-      <td class="satir-tutar" id="fatST${i}">${h.toplam>0?fatPara(h.toplam,''):'-'}</td>
+      <td class="satir-tutar">
+        <div class="ktutar haric"><i>KDV haric</i><b id="fatSM${i}" title="Matrah: miktar x birim fiyat - iskonto">${h.matrah>0?fatPara(h.matrah,''):'-'}</b></div>
+        <div class="ktutar dahil"><i>KDV dahil</i><b id="fatST${i}" title="Matrah + KDV${h.diger>0?' + diger vergiler':''}">${h.toplam>0?fatPara(h.toplam,''):'-'}</b></div>
+      </td>
     </tr>`;
   }).join('');
   const t=fatGirilenOzet();
@@ -24647,9 +24672,9 @@ function renderFaturaForm(){
           <th class="num" title="Bu faturada en fazla yazilabilecek miktar">Kalan</th>
           <th class="num">Miktar</th><th class="num">Birim Fiyat</th>
           <th class="num" title="Iskonto orani (%)">Iskonto</th>
-          <th class="num" title="KDV orani">KDV</th>
+          <th class="num" title="KDV orani ve o orandan hesaplanan tutar">KDV Orani / Tutari</th>
           <th class="num" title="OTV, tevkifat vb. - tutar olarak">Diger Vergiler</th>
-          <th class="num" title="Matrah + KDV + diger vergiler">Mal Hizmet Tutari</th>
+          <th class="num" title="Ust satir KDV haric (matrah), alt satir KDV dahil toplam">Mal Hizmet Tutari</th>
         </tr></thead><tbody>${satirlar}</tbody></table></div>
         <div class="fat-toplam"><div class="fat-toplam-ic" id="fatToplamBlok">${fatToplamBlokIc()}</div></div>`
       :`<div class="empty" style="padding:22px"><p>${st.companyId?'Bu firmadan alinmis, faturalanmayi bekleyen urun yok':'Once firma secin'}</p>
