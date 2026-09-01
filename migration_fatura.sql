@@ -4,24 +4,26 @@
 -- NEDEN: Siparis kaydi "ne alindi"yi soyler; bu tablo "parasi odenen ne" sorusunu
 -- yanitlar. Tedarikci ayni malzemeyi iki kez faturalayabilir (kotu niyetle ya da
 -- hata ile) - o zaman sirket bir kez aldigi mala iki kez para oder. Buradaki kayit
--- her fatura satirini SIPARIS SATIRINA baglar, boylece "bu urunden ne kadari
--- faturalandi, ne kadari kaldi" her an olculebilir ve kalandan fazlasi yazilamaz.
+-- her fatura satirini bir URUNE baglar, boylece "bu urunden ne kadari faturalandi,
+-- ne kadari kaldi" her an olculebilir ve kalandan fazlasi yazilamaz.
 --
--- BIR FATURA BIRDEN COK SIPARISI KAPSAYABILIR: tedarikci genelde birkac irsaliyeyi
--- tek faturada toplar. Bu yuzden kayit siparisin ICINDE degil (iade fisleri gibi)
--- AYRI tabloda durur; satirlari farkli siparislere isaret edebilir.
+-- FATURA URUN BAZINDADIR, SIPARIS BAZINDA DEGIL. Sahadaki gercek boyle: tedarikci
+-- faturayi siparis/irsaliye numarasina gore kesmiyor, "su urunden su kadar" diye
+-- genel kesiyor ve miktar o urunun TOPLAM alimindan dusuluyor. Bu yuzden satirda
+-- orderId YOKTUR - olmayan bir bagi uydurmak, raporlarda dogru gorunen ama
+-- gercekle ilgisi olmayan sayilar uretirdi.
 --
 -- Kayit bicimi diger varlik tablolariyla aynidir (id + JSONB data):
---   { id, no, tarih:<ms>, companyId, company, bina, tutar, paraBirimi, not,
+--   { id, no, tarih:<ms>, companyId, company, tutar, paraBirimi, not,
 --     pdf:{path,name,size}|null,
---     satirlar:[{ id, orderId, orderNo, key, code, ad, unit, qty, fiyat,
---                 specId, altId, lokId, grup, bina }],
+--     satirlar:[{ id, key, matId, code, ad, unit, qty, fiyat }],
 --     olusturan, olusturmaTs, guncelleyen, guncellemeTs, history:[] }
 --
--- 'key' NEDEN VAR: siparis satirlarinin kendi kimligi YOKTUR ve siparis
--- duzenlendiginde satirlar sifirdan yazilir (bkz. index.html nordSave). Fatura
--- satiri indeksle baglansaydi ilk duzenlemede yanlis urune kayardi. Bu yuzden
--- iade fisleriyle AYNI olcut kullanilir: iadeUrunKey = specId|altId|lokId|kod|ad.
+-- 'key' URUN ANAHTARIDIR: once kutuphane malzemesi ('mat:<matId>'), kutuphanede
+-- karsiligi yoksa 'ad:<kod>|<ad>'. Urunu cozen kural uygulamanin kendi kuralidir
+-- (index.html lineAlimMaterial): ALTERNATIFLE alinan mal faturada yazan urune
+-- sayilir - malzeme kunyesindeki "Siparis" kutusuyla ayni hesap, boylece iki ekran
+-- daima ayni sayiyi verir.
 --
 -- TUTAR/FIYAT OPSIYONELDIR: kontrolun omurgasi MIKTARDIR ("birebir olmali").
 -- Fiyat yalnizca bilgi amaclidir, hicbir tavan hesabina girmez.
@@ -41,7 +43,6 @@ CREATE INDEX IF NOT EXISTS faturalar_created_at_idx ON public.faturalar (created
 -- en sik suzulen alanlar: "bu firmanin faturalari", "bu numarali fatura zaten var mi"
 CREATE INDEX IF NOT EXISTS faturalar_no_idx         ON public.faturalar ((data->>'no'));
 CREATE INDEX IF NOT EXISTS faturalar_company_idx    ON public.faturalar ((data->>'companyId'));
-CREATE INDEX IF NOT EXISTS faturalar_bina_idx       ON public.faturalar ((data->>'bina'));
 
 -- Asama 3 durusu: RLS acik, anon/authenticated'a HICBIR yetki yok.
 -- Veriye tek yol sunucudaki service_role'dur (api/veri.js).
