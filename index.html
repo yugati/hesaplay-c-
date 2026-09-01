@@ -2904,29 +2904,39 @@ datalist{display:none}
 .fat-uyari li b{font-family:var(--mono);font-size:11px}
 .fat-uyari .fat-link{background:none;border:none;color:var(--primary);cursor:pointer;
   font:inherit;font-size:11.5px;padding:0;text-decoration:underline;text-underline-offset:2px}
-/* FORM ICINDEKI SIPARIS KARTI: baslik tiklanarak acilir/kapanir, satirlar
-   icinde. Katlanir olmasi sart - bir firmanin 40 siparisi acikken form
-   okunamaz hale geliyordu. */
-.fat-ord{border:1px solid var(--line);border-radius:10px;margin-bottom:9px;background:var(--panel);overflow:hidden}
-.fat-ord.secili{border-color:var(--primary)}
-.fat-ord-head{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;
-  background:none;border:none;width:100%;text-align:left;font:inherit;color:var(--ink)}
-.fat-ord-head:hover{background:var(--hover)}
-.fat-ord-head .ok{flex:none;color:var(--dim);transition:transform var(--transition)}
-.fat-ord.acik .fat-ord-head .ok{transform:rotate(90deg)}
-.fat-ord-head b{font-family:var(--mono);font-size:12.5px}
-.fat-ord-head .meta{color:var(--mute);font-size:11.5px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fat-ord-head .sec{font-size:11px;font-weight:700;font-family:var(--mono);color:var(--primary)}
-.fat-ord-body{border-top:1px solid var(--line);padding:2px 0 0}
-.fat-ord-body table{width:100%}
-.fat-ord-body .num{text-align:right;font-family:var(--mono);font-size:12px}
-.fat-ord-body input.num{width:96px;background:var(--bg);border:1px solid var(--line);border-radius:7px;
-  color:var(--ink);padding:5px 7px;outline:none}
-.fat-ord-body input.num:focus{border-color:var(--primary)}
-.fat-ord-body input.num.dolu{border-color:var(--green);font-weight:700}
-.fat-ord-body tr.bitti{opacity:.5}
-/* FORM ALT SERIDI: girilen toplam ve Kaydet dugmesi ekranin altina yapisir -
-   uzun siparis listesinde basa donmeden kaydedilebilsin. */
+/* SATIR TABLOSU: TC e-Fatura duzeni - miktar, birim fiyat, iskonto, KDV, diger
+   vergiler ve satir tutari yan yana. Sutun sayisi fazla oldugu icin tablo kendi
+   icinde yatay kayar (.tablewrap overflow:auto) - sayfa govdesi kaymaz. */
+.fat-lines{min-width:1080px}
+.fat-lines .num{text-align:right;font-family:var(--mono);font-size:12px;white-space:nowrap}
+.fat-lines input.num,.fat-lines select.num{width:88px;background:var(--bg);border:1px solid var(--line);
+  border-radius:7px;color:var(--ink);padding:5px 7px;outline:none;font-family:var(--mono);font-size:12px;text-align:right}
+.fat-lines input.num:focus,.fat-lines select.num:focus{border-color:var(--primary)}
+.fat-lines input.num.dolu{border-color:var(--green);font-weight:700}
+.fat-lines input.num.dar,.fat-lines select.num.dar{width:70px}
+.fat-lines select.num{text-align:left;padding-right:4px}
+.fat-lines tr.bitti{opacity:.5}
+.fat-lines .satir-tutar{font-weight:700;font-family:var(--mono);font-size:12px;white-space:nowrap}
+/* alim durumu tek hucrede: alinan · iade · faturalanan - para sutunlari one ciksin */
+.fat-alim{font-family:var(--mono);font-size:11px;color:var(--mute);white-space:nowrap}
+.fat-alim b{color:var(--ink);font-size:12px}
+/* TOPLAM BLOGU: faturanin alt kosesindeki ozet - TC faturasindaki sirayla
+   (mal hizmet toplami, iskonto, matrah, KDV, diger vergiler, odenecek). */
+.fat-toplam{margin-top:12px;display:flex;justify-content:flex-end}
+.fat-toplam-ic{min-width:340px;max-width:100%;border:1px solid var(--line);border-radius:10px;
+  background:var(--panel2);padding:10px 14px}
+.fat-toplam-ic .sat{display:flex;justify-content:space-between;gap:18px;font-size:12.5px;padding:3px 0}
+.fat-toplam-ic .sat span{color:var(--mute)}
+.fat-toplam-ic .sat b{font-family:var(--mono)}
+.fat-toplam-ic .sat.kdv span{padding-left:10px;font-size:11.5px}
+.fat-toplam-ic .ayrac{border-top:1px solid var(--line);margin:6px 0}
+.fat-toplam-ic .sat.odenecek{font-size:14px;font-weight:700}
+.fat-toplam-ic .sat.odenecek span{color:var(--ink)}
+.fat-toplam-ic .sat.odenecek b{font-size:15px}
+.fat-toplam-ic .fark{margin-top:7px;font-size:11.5px;line-height:1.5;color:var(--amber)}
+.fat-toplam-ic .kur{margin-top:6px;font-size:11.5px;color:var(--mute);text-align:right}
+/* FORM ALT SERIDI: odenecek tutar ve Kaydet dugmesi ekranin altina yapisir -
+   uzun urun listesinde basa donmeden kaydedilebilsin. */
 .fat-foot{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
   background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px 14px;
   margin-top:12px;box-shadow:var(--shadow-sm)}
@@ -23866,9 +23876,73 @@ function fatCanEdit(){ return canEdit('fatura'); }
 function fatCanDelete(){ return canDelete('fatura'); }
 
 function fatSayi(v){ const n=Number(String(v==null?'':v).replace(',','.')); return isFinite(n)?n:0; }
+
+/* ---------- TC E-FATURA ARITMETIGI ----------
+   Satir hesabi Turkiye'de kesilen faturanin sutun sirasiyla BIREBIR ayni yurur:
+     Mal Hizmet Tutari = miktar x birim fiyat
+     Iskonto Tutari    = mal hizmet tutari x iskonto orani
+     Matrah            = mal hizmet tutari - iskonto     (KDV bunun uzerinden)
+     KDV Tutari        = matrah x KDV orani
+     Satir Toplami     = matrah + KDV + diger vergiler
+   Boylece ekrandaki tablo, gelen kagitla satir satir karsilastirilabilir.
+
+   PARA KONTROLE GIRMEZ: faturalanabilir tavan yalnizca MIKTARdir. Kur, iskonto
+   ya da KDV farki olan bir faturayi "fazla" saymak, gercek bir cift faturayi
+   gormezden gelmekle ayni sonuca - yanlis alarma ve guven kaybina - gotururdu.
+   Para tarafi AYRI bir kontrol olarak calisir: belgede yazan odenecek tutar ile
+   satirlardan hesaplanan tutar karsilastirilir (bkz. fatTutarFarki). */
+// 2023 Temmuz'dan beri gecerli oranlar 0/1/10/20; 8 ve 18 eski faturalar icin durur
+const KDV_ORANLARI=[0,1,8,10,18,20];
+const FAT_SENARYO=[['TICARIFATURA','Ticari Fatura'],['TEMELFATURA','Temel Fatura'],
+  ['IHRACAT','Ihracat'],['YOLCUBERABERFATURA','Yolcu Beraberinde']];
+const FAT_TIPI=[['SATIS','Satis'],['IADE','Iade'],['TEVKIFAT','Tevkifat'],
+  ['ISTISNA','Istisna'],['OZELMATRAH','Ozel Matrah']];
+const FAT_PARA=['TRY','USD','EUR','RUB','GBP'];
+function fatSatirHesap(r){
+  const qty=fatSayi(r&&r.qty), fiyat=fatSayi(r&&r.fiyat);
+  const brut=qty*fiyat;
+  const iskO=Math.max(0,fatSayi(r&&r.iskontoOrani));
+  const iskonto=brut*iskO/100;
+  const matrah=Math.max(0,brut-iskonto);
+  const kdvO=Math.max(0,fatSayi(r&&r.kdvOrani));
+  const kdv=matrah*kdvO/100;
+  const diger=fatSayi(r&&r.digerVergi);
+  return {qty,fiyat,brut,iskO,iskonto,matrah,kdvO,kdv,diger,toplam:matrah+kdv+diger};
+}
+/* Fatura toplamlari + KDV ORANINA GORE KIRILIM: TC faturasinin alt kosesinde
+   "%20 matrah / %20 KDV" seklinde ayri ayri yazar, tek toplam yeterli degildir. */
+function fatToplamlar(satirlar){
+  const t={brut:0,iskonto:0,matrah:0,kdv:0,diger:0,toplam:0};
+  const kir=new Map();
+  (satirlar||[]).forEach(r=>{
+    const h=fatSatirHesap(r);
+    t.brut+=h.brut; t.iskonto+=h.iskonto; t.matrah+=h.matrah;
+    t.kdv+=h.kdv; t.diger+=h.diger; t.toplam+=h.toplam;
+    if(h.matrah>0||h.kdv>0){
+      const g=kir.get(h.kdvO)||{oran:h.kdvO,matrah:0,kdv:0};
+      g.matrah+=h.matrah; g.kdv+=h.kdv; kir.set(h.kdvO,g);
+    }
+  });
+  t.kdvListe=[...kir.values()].sort((a,b)=>a.oran-b.oran);
+  return t;
+}
+// Kurus duyarli gosterim: 1.234,56 TRY
+function fatPara(n,pb){ return (Math.round((Number(n)||0)*100)/100).toLocaleString('tr-TR',{minimumFractionDigits:2,maximumFractionDigits:2})+(pb?' '+pb:''); }
+/* BELGE ile HESAP farki. Kullanici faturanin uzerindeki "Odenecek Tutar"i yazar;
+   satirlardan hesaplanan tutar ondan sapiyorsa bu ya eksik/yanlis girilmis bir
+   satir ya da belgenin kendi aritmetiginde bir hatadir - ikisi de gorulmeli.
+   1 kurus tolerans: yuvarlama farki uyari sayilmaz. */
+function fatTutarFarki(beyan,hesap){
+  const b=fatSayi(beyan); if(!(b>0)) return 0;
+  const f=b-(Number(hesap)||0);
+  return Math.abs(f)<0.01?0:f;
+}
 function fatKayitlar(){ return (DB.faturalar||[]).filter(Boolean); }
 function fatSatirlari(f){ const x=f&&f.satirlar; return Array.isArray(x)?x:[]; }
 function fatToplamMiktar(f){ return fatSatirlari(f).reduce((s,r)=>s+fatSayi(r.qty),0); }
+// Kayitli faturanin para ozeti - satirlardan HESAPLANIR, kayitta ayrica tutulmaz
+function fatKayitToplam(f){ return fatToplamlar(fatSatirlari(f)); }
+function fatOdenecek(f){ return fatKayitToplam(f).toplam; }
 /* Fatura kaydindaki sirket adi CANLI okunur (orderCompany ile ayni gerekce):
    Sirketler ekraninda duzeltilen bir ad eski faturalarda da duzelsin. */
 function fatCompany(f){
@@ -24116,13 +24190,15 @@ function renderFaturaListe(){
   const filtreVar=fatFiltreVar();
   let rows='';
   if(!yuklendi) rows=window.__faturaTableMissing
-    ? emptyRow(6,'Fatura tablosu henuz kurulmamis','Yukaridaki uyaridaki SQL dosyasini bir kez calistirin')
-    : emptyRow(6,'Fatura kayitlari yukleniyor...','Defter acilista inmez, bu ekrana girilince bir kez cekilir');
-  else if(!list.length) rows=emptyRow(6,filtreVar?'Eslesen fatura yok':'Henuz fatura kaydi girilmedi',
+    ? emptyRow(7,'Fatura tablosu henuz kurulmamis','Yukaridaki uyaridaki SQL dosyasini bir kez calistirin')
+    : emptyRow(7,'Fatura kayitlari yukleniyor...','Defter acilista inmez, bu ekrana girilince bir kez cekilir');
+  else if(!list.length) rows=emptyRow(7,filtreVar?'Eslesen fatura yok':'Henuz fatura kaydi girilmedi',
     filtreVar?'Filtreleri degistirin':'"Yeni Fatura" ile tedarikciden gelen faturadaki urunleri ve miktarlarini girin');
   else list.forEach(f=>{
     const uy=fatKayitUyarisi(f,durumMap);
     const sat=fatSatirlari(f);
+    const top=fatKayitToplam(f);
+    const tutarFarki=fatTutarFarki(f.beyanTutar,top.toplam);
     const ozet=sat.slice(0,3).map(r=>esc((r.ad||r.code||'?')+' ('+fmtNum(fatSayi(r.qty))+')')).join(', ')
       +(sat.length>3?` +${sat.length-3} urun`:'');
     rows+=`<tr>
@@ -24134,7 +24210,9 @@ function renderFaturaListe(){
       <td class="t-meta">${esc(fatCompany(f)||'-')}</td>
       <td class="t-meta" style="max-width:320px">${ozet||'-'}</td>
       <td class="t-qty">${fmtNum(fatToplamMiktar(f))}<div class="t-meta" style="font-size:11px">${fmtNum(sat.length)} urun</div></td>
-      <td class="t-qty">${f.tutar?esc(fmtNum(f.tutar)+' '+(f.paraBirimi||'TRY')):'<span style="color:var(--dim)">-</span>'}</td>
+      <td class="t-qty">${top.toplam>0?esc(fatPara(top.toplam,f.paraBirimi||'TRY')):'<span style="color:var(--dim)">-</span>'}
+        ${top.kdv>0?`<div class="t-meta" style="font-size:10.5px">KDV ${esc(fatPara(top.kdv,''))}</div>`:''}
+        ${tutarFarki?`<div class="fat-rozet kismi" style="margin-top:4px" title="Belgede yazan ${esc(fatPara(f.beyanTutar,f.paraBirimi||'TRY'))}, satirlardan hesaplanan ${esc(fatPara(top.toplam,f.paraBirimi||'TRY'))}">TUTAR FARKI</div>`:''}</td>
       <td><div class="row-actions">
         <button class="mini-btn" title="Faturanin icerigini gor" onclick="openFaturaDetay('${f.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
         ${f.pdf?`<button class="mini-btn" title="Fatura nushasini ac" onclick="fatPdfAc('${f.id}')">${icoDoc()}</button>`:''}
@@ -24143,6 +24221,11 @@ function renderFaturaListe(){
       </div></td></tr>`;
   });
   const toplamMiktar=list.reduce((s,f)=>s+fatToplamMiktar(f),0);
+  /* Para toplami YALNIZCA tek para birimi varken gosterilir: farkli kurlardaki
+     tutarlari toplamak anlamsiz bir sayi uretir (kur alani opsiyonel oldugu icin
+     TL'ye cevirmek de her zaman mumkun degil). */
+  const paralar=[...new Set(list.map(f=>f.paraBirimi||'TRY'))];
+  const toplamPara=paralar.length===1?list.reduce((s,f)=>s+fatOdenecek(f),0):null;
   return `<div class="tut-wrap">
     <div class="sel-bc"><button onclick="closeFatura()">${icoArr('left')} Geri Don</button></div>
     <div class="sel-head"><h2>Fatura Kontrol</h2><p>Tedarikciden gelen faturadaki <b>urunler ve miktarlar</b> girilir; miktar o urunun
@@ -24166,9 +24249,11 @@ function renderFaturaListe(){
         ${fatCanEdit()?`<button class="btn btn-add" onclick="fatYeni()">${icoPlus()} Yeni Fatura</button>`:''}
       </div>
     </div>
-    <div class="ord-sumline"><b>${fmtNum(list.length)}</b> fatura gosteriliyor · toplam <b>${fmtNum(toplamMiktar)}</b> miktar${filtreVar?` <span class="t-meta">· ${fmtNum(tumu.length)} kayit icinden suzuldu</span>`:''}</div>
+    <div class="ord-sumline"><b>${fmtNum(list.length)}</b> fatura gosteriliyor · toplam <b>${fmtNum(toplamMiktar)}</b> miktar${
+      toplamPara!=null&&toplamPara>0?` · odenecek <b>${esc(fatPara(toplamPara,paralar[0]))}</b>`:''}${
+      filtreVar?` <span class="t-meta">· ${fmtNum(tumu.length)} kayit icinden suzuldu</span>`:''}</div>
     <div class="tablewrap"><table><thead><tr>
-      <th>Fatura No</th><th>Tarih</th><th>Firma</th><th>Icerik</th><th>Miktar</th><th>Tutar</th><th></th>
+      <th>Fatura No</th><th>Tarih</th><th>Firma</th><th>Icerik</th><th>Miktar</th><th>Odenecek Tutar</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
@@ -24178,33 +24263,54 @@ function openFaturaDetay(id){
   const f=fatKayitlar().find(x=>x.id===id); if(!f){ toast('Fatura bulunamadi','err'); return; }
   const dm=new Map(fatUrunListesi().map(u=>[u.key,u]));
   const satirlar=fatSatirlari(f);
+  const pb=f.paraBirimi||'TRY';
   const rows=satirlar.length?satirlar.map((r,i)=>{
     const u=dm.get(String(r.key||''));
     const sorunlu=u&&u.durum==='fazla';
+    const h=fatSatirHesap(r);
     return `<tr${sorunlu?' style="background:color-mix(in srgb,var(--red) 8%,transparent)"':''}>
       <td class="tl-no">${i+1}</td>
       <td>${r.matId?`<button class="fat-link" title="Malzeme kunyesini ac" onclick="closeModal();openMatDetail('${r.matId}')">${esc(r.ad||'-')}</button>`:esc(r.ad||'-')}
-        ${r.code?`<div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(r.code)}</div>`:''}</td>
-      <td class="t-qty">${fmtNum(fatSayi(r.qty))}${r.unit?' <span style="color:var(--mute)">'+esc(r.unit)+'</span>':''}</td>
-      <td class="t-meta">${u?`alinan ${fmtNum(u.net)} · faturalanan ${fmtNum(u.fat)}${u.kalan<-FAT_EPS?` · <b style="color:var(--red)">fazla ${fmtNum(-u.kalan)}</b>`:''}`:'-'}
-        ${u?`<div style="margin-top:3px">${fatRozet(u.durum)}</div>`:''}</td>
-      <td class="t-qty">${r.fiyat?esc(fmtNum(r.fiyat)):'<span style="color:var(--dim)">-</span>'}</td>
+        ${r.code?`<div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(r.code)}</div>`:''}
+        ${u?`<div style="margin-top:3px">${fatRozet(u.durum)}${u.kalan<-FAT_EPS?` <span style="color:var(--red);font-size:11px">fazla ${fmtNum(-u.kalan)}</span>`:''}</div>`:''}</td>
+      <td class="num">${fmtNum(h.qty)}${r.unit?' <span style="color:var(--mute)">'+esc(r.unit)+'</span>':''}</td>
+      <td class="num">${h.fiyat?fatPara(h.fiyat,''):'-'}</td>
+      <td class="num">${h.iskO?'%'+fmtNum(h.iskO):'-'}</td>
+      <td class="num">${h.iskonto?fatPara(h.iskonto,''):'-'}</td>
+      <td class="num">%${fmtNum(h.kdvO)}</td>
+      <td class="num">${h.kdv?fatPara(h.kdv,''):'-'}</td>
+      <td class="num">${h.diger?fatPara(h.diger,''):'-'}</td>
+      <td class="num" style="font-weight:700">${h.toplam?fatPara(h.toplam,''):'-'}</td>
     </tr>`;
   }).join('')
-    :`<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--mute);font-size:12.5px">Bu faturada satir yok</td></tr>`;
+    :`<tr><td colspan="10" style="padding:16px;text-align:center;color:var(--mute);font-size:12.5px">Bu faturada satir yok</td></tr>`;
   const gecmis=(f.history||[]).slice().reverse().slice(0,6).map(h=>
     `<div class="t-meta" style="font-size:11px">${esc(_auditTime(h.ts))} · ${esc(h.user||'')} · ${esc(h.ne||'')}</div>`).join('');
   document.body.insertAdjacentHTML('beforeend',
     `<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:820px">
       <div class="modal-head"><h3>Fatura ${esc(f.no||'')}</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
       <div class="modal-body">
-        <p class="t-meta" style="margin-bottom:12px">${esc(fmtDate(f.tarih))} · ${esc(fatCompany(f)||'firma yok')} ·
-          ${fmtNum(satirlar.length)} urun · toplam ${fmtNum(fatToplamMiktar(f))}
-          ${f.tutar?' · '+esc(fmtNum(f.tutar)+' '+(f.paraBirimi||'TRY')):''}</p>
+        <p class="t-meta" style="margin-bottom:8px">${esc(fmtDate(f.tarih))} · ${esc(fatCompany(f)||'firma yok')} ·
+          ${fmtNum(satirlar.length)} urun · toplam miktar ${fmtNum(fatToplamMiktar(f))}</p>
+        <div class="tut-grid" style="margin-bottom:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+          ${[['Senaryo',(FAT_SENARYO.find(x=>x[0]===f.senaryo)||[])[1]||f.senaryo],
+             ['Fatura Tipi',(FAT_TIPI.find(x=>x[0]===f.faturaTipi)||[])[1]||f.faturaTipi],
+             ['Ozellestirme No',f.ozellestirmeNo],
+             ['Irsaliye No',f.irsaliyeNo],
+             ['Irsaliye Tarihi',f.irsaliyeTarihi?fmtDate(f.irsaliyeTarihi):''],
+             ['Para Birimi',(f.paraBirimi||'TRY')+(f.kur?' · kur '+fmtNum(f.kur):'')],
+             ['ETTN',f.ettn]]
+            .filter(x=>x[1]).map(([l,v])=>`<div><div class="t-meta" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.4px">${esc(l)}</div>
+              <div style="font-size:12.5px;font-family:var(--mono);word-break:break-all">${esc(v)}</div></div>`).join('')}
+        </div>
         ${f.not?`<p style="font-size:12.5px;margin-bottom:12px">${esc(f.not)}</p>`:''}
-        <div class="tablewrap" style="max-height:calc(46 * var(--vh));overflow:auto"><table class="tut-lines"><thead><tr>
-          <th>#</th><th>Urun</th><th>Bu faturada</th><th>Urunun genel durumu</th><th>Birim fiyat</th>
+        <div class="tablewrap" style="max-height:calc(42 * var(--vh));overflow:auto"><table class="tut-lines fat-lines"><thead><tr>
+          <th>Sira No</th><th>Mal Hizmet</th><th class="num">Miktar</th><th class="num">Birim Fiyat</th>
+          <th class="num">Iskonto Orani</th><th class="num">Iskonto Tutari</th>
+          <th class="num">KDV Orani</th><th class="num">KDV Tutari</th>
+          <th class="num">Diger Vergiler</th><th class="num">Mal Hizmet Tutari</th>
         </tr></thead><tbody>${rows}</tbody></table></div>
+        <div class="fat-toplam"><div class="fat-toplam-ic">${fatToplamBlokIc(f)}</div></div>
         ${gecmis?`<div style="margin-top:12px"><h5 style="font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--mute);margin-bottom:5px">Duzenleme gecmisi</h5>${gecmis}</div>`:''}
         <p class="t-meta" style="font-size:11px;margin-top:10px">Kaydeden: ${esc(f.olusturan||'-')}${f.guncelleyen?` · Son duzenleyen: ${esc(f.guncelleyen)}`:''}</p>
       </div>
@@ -24228,19 +24334,34 @@ function fatPdfAc(id){ const f=fatKayitlar().find(x=>x.id===id); acPdf(f&&f.pdf)
    gomulemez, cunku urun adlari tirnak icerebiliyor. */
 function fatYeni(){
   if(!fatCanEdit()){ toast('Fatura kaydi girme yetkiniz yok','err'); return; }
+  /* Varsayilanlar TC e-Faturasinin en sik hali: ticari fatura / satis / TR1.2.
+     varsayilanKdv: yeni doldurulan satira otomatik yazilir - bir faturadaki
+     satirlarin cogu ayni orandadir, her satirda tekrar secmek zaman kaybi. */
   _FAT={ id:uid(), editId:null, no:'', tarih:new Date().toISOString().slice(0,10),
-    companyId:fatFirmalar().length===1?fatFirmalar()[0].id:'', tutar:'', paraBirimi:'TRY', not:'',
-    pdf:null, qty:{}, fiyat:{}, fq:'', fbina:'', ftum:false, ftumDurum:false };
+    companyId:fatFirmalar().length===1?fatFirmalar()[0].id:'',
+    senaryo:'TICARIFATURA', faturaTipi:'SATIS', ozellestirmeNo:'TR1.2', ettn:'',
+    irsaliyeNo:'', irsaliyeTarihi:'', paraBirimi:'TRY', kur:'', varsayilanKdv:20,
+    beyanTutar:'', not:'', pdf:null,
+    qty:{}, sb:{}, fq:'', fbina:'', ftum:false, ftumDurum:false };
   FATV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
 }
 function fatDuzenle(id){
   if(!fatCanEdit()){ toast('Fatura duzenleme yetkiniz yok','err'); return; }
   const f=fatKayitlar().find(x=>x.id===id); if(!f){ toast('Fatura bulunamadi','err'); return; }
-  const qty={}, fiyat={};
-  fatSatirlari(f).forEach(r=>{ const k=String(r.key||''); qty[k]=fatSayi(r.qty); if(r.fiyat) fiyat[k]=r.fiyat; });
+  const qty={}, sb={};
+  fatSatirlari(f).forEach(r=>{ const k=String(r.key||'');
+    qty[k]=fatSayi(r.qty);
+    sb[k]={ fiyat:r.fiyat==null?'':r.fiyat, iskonto:r.iskontoOrani||'',
+            kdv:r.kdvOrani==null?'':r.kdvOrani, diger:r.digerVergi||'' };
+  });
   _FAT={ id:f.id, editId:f.id, no:f.no||'', tarih:new Date(f.tarih||Date.now()).toISOString().slice(0,10),
-    companyId:f.companyId||'', tutar:f.tutar||'', paraBirimi:f.paraBirimi||'TRY', not:f.not||'',
-    pdf:f.pdf||null, qty, fiyat, fq:'', fbina:'', ftum:true, ftumDurum:true };
+    companyId:f.companyId||'',
+    senaryo:f.senaryo||'TICARIFATURA', faturaTipi:f.faturaTipi||'SATIS',
+    ozellestirmeNo:f.ozellestirmeNo||'TR1.2', ettn:f.ettn||'',
+    irsaliyeNo:f.irsaliyeNo||'', irsaliyeTarihi:f.irsaliyeTarihi?new Date(f.irsaliyeTarihi).toISOString().slice(0,10):'',
+    paraBirimi:f.paraBirimi||'TRY', kur:f.kur||'', varsayilanKdv:20,
+    beyanTutar:f.beyanTutar||'', not:f.not||'',
+    pdf:f.pdf||null, qty, sb, fq:'', fbina:'', ftum:true, ftumDurum:true };
   FATV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
 }
 /* Formdan cikis. YUKLENMIS AMA KAYDEDILMEMIS nusha kovadan silinir (iadeKapat ile
@@ -24285,15 +24406,27 @@ function fatFormUrunleri(){
     return true;
   });
 }
+// Bir urunun satir bilgisi (fiyat/iskonto/KDV/diger) - yoksa olusturulur
+function fatSB(st,key){
+  if(!st.sb) st.sb={};
+  if(!st.sb[key]) st.sb[key]={fiyat:'',iskonto:'',kdv:'',diger:''};
+  return st.sb[key];
+}
+/* Formda girilmis satirlar, KAYITTAKIYLE ayni bicimde uretilir - toplam hesabi
+   (fatToplamlar) tek kaynaktan calissin: ekranda gorulen tutar ile kaydedilen
+   faturanin tutari bir daha ayrisamaz. */
+function fatTaslakSatirlari(){
+  const st=_FAT; if(!st) return [];
+  return Object.keys(st.qty).map(k=>{
+    const q=fatSayi(st.qty[k]); if(!(q>0)) return null;
+    const b=(st.sb||{})[k]||{};
+    return { key:k, qty:q, fiyat:fatSayi(b.fiyat), iskontoOrani:fatSayi(b.iskonto),
+             kdvOrani:fatSayi(b.kdv), digerVergi:fatSayi(b.diger) };
+  }).filter(Boolean);
+}
 function fatGirilenOzet(){
-  const st=_FAT; if(!st) return {satir:0,miktar:0,tutar:0};
-  let satir=0,miktar=0,tutar=0;
-  Object.keys(st.qty).forEach(k=>{
-    const q=fatSayi(st.qty[k]); if(!(q>0)) return;
-    satir++; miktar+=q;
-    const f=fatSayi(st.fiyat&&st.fiyat[k]); if(f>0) tutar+=q*f;
-  });
-  return {satir,miktar,tutar};
+  const sat=fatTaslakSatirlari();
+  return { satir:sat.length, miktar:sat.reduce((s,r)=>s+r.qty,0), t:fatToplamlar(sat) };
 }
 /* Miktar kutusu. Kutuya kalandan fazlasi yazilirsa DEGER de geri yazilir
    (iadeSetQty'nin karari): yalniz durum kirpilsaydi ekranda 50 gorunurken
@@ -24305,24 +24438,72 @@ function fatSetQty(i,el){
   if(q<0) q=0;
   if(q>s.kalan+FAT_EPS){ q=Math.max(0,s.kalan); el.value=q?String(q):''; toast('"'+(s.ad||s.code||'urun')+'" icin en fazla '+fmtNum(s.kalan)+' faturalanabilir','err'); }
   st.qty[s.key]=q||'';
+  /* Satir ilk kez dolduruldugunda VARSAYILAN KDV yazilir: bir faturadaki
+     satirlarin cogu ayni orandadir, her satirda tekrar secmek zaman kaybi.
+     Kullanici sonra tek tek degistirebilir; bos birakilan oran 0 sayilir. */
+  const b=fatSB(st,s.key);
+  const ilkDoldurma=(q>0&&b.kdv===''&&st.varsayilanKdv!=null&&st.varsayilanKdv!=='');
+  if(ilkDoldurma) b.kdv=fatSayi(st.varsayilanKdv);
   el.classList.toggle('dolu',q>0);
-  fatOzetGuncelle();
+  // KDV kutusu yalnizca ILK doldurmada degistigi icin o an tablo yenilenir;
+  // sonraki tuslarda yenilenmez - odak kutudan kacmasin
+  if(ilkDoldurma) render(); else fatOzetGuncelle();
 }
-function fatSetFiyat(i,el){
+/* Fiyat / iskonto / KDV / diger vergi kutulari. Negatif deger kabul edilmez -
+   eksi bir iskonto ya da KDV, faturanin aritmetigini sessizce bozardi. */
+function fatSetSatirAlan(i,alan,el){
   const st=_FAT; if(!st||!st._satirlar) return;
   const s=st._satirlar[i]; if(!s) return;
-  const v=fatSayi(el.value);
-  if(!st.fiyat) st.fiyat={};
-  st.fiyat[s.key]=v>0?v:'';
+  const ham=String(el.value==null?'':el.value).trim();
+  let v=fatSayi(ham);
+  if(v<0){ v=0; el.value='0'; }
+  if(alan==='iskonto'&&v>100){ v=100; el.value='100'; toast('Iskonto orani %100u gecemez','err'); }
+  fatSB(st,s.key)[alan]= ham===''?'':v;
   fatOzetGuncelle();
 }
 // Kutular her tusta DOM'u yeniden cizmez (odak kaybolurdu) - yalniz ozet guncellenir
 function fatOzetGuncelle(){
-  const t=fatGirilenOzet();
-  const a=document.getElementById('fatOzSatir'); if(a) a.textContent=fmtNum(t.satir);
-  const b=document.getElementById('fatOzMiktar'); if(b) b.textContent=fmtNum(t.miktar);
-  const c=document.getElementById('fatOzTutar'); if(c) c.textContent=t.tutar>0?fmtNum(t.tutar):'-';
-  const d=document.getElementById('fatKaydetBtn'); if(d) d.disabled=!(t.miktar>0);
+  const st=_FAT; if(!st) return;
+  const o=fatGirilenOzet(), pb=st.paraBirimi||'TRY';
+  const a=document.getElementById('fatOzSatir'); if(a) a.textContent=fmtNum(o.satir);
+  const b=document.getElementById('fatOzMiktar'); if(b) b.textContent=fmtNum(o.miktar);
+  const c=document.getElementById('fatOzTutar'); if(c) c.textContent=o.t.toplam>0?fatPara(o.t.toplam,pb):'-';
+  const d=document.getElementById('fatKaydetBtn'); if(d) d.disabled=!(o.miktar>0);
+  // toplam blogu zengin (KDV kirilimi + fark uyarisi) - metin metin degil, komple yenilenir
+  const tb=document.getElementById('fatToplamBlok'); if(tb) tb.innerHTML=fatToplamBlokIc();
+  // satir tutarlari da anlik guncellenir; odak kaybolmaz, yalnizca hucre metni degisir
+  (st._satirlar||[]).forEach((sr,i)=>{
+    const el=document.getElementById('fatST'+i); if(!el) return;
+    const bb=(st.sb||{})[sr.key]||{};
+    const h=fatSatirHesap({qty:fatSayi(st.qty[sr.key]),fiyat:bb.fiyat,iskontoOrani:bb.iskonto,
+      kdvOrani:bb.kdv,digerVergi:bb.diger});
+    el.textContent=h.toplam>0?fatPara(h.toplam,''):'-';
+  });
+}
+/* Faturanin alt kosesindeki ozet - TC faturasindaki SIRAYLA. Form ve detay
+   ekrani ayni fonksiyondan beslenir (tek kaynak): form icin _FAT'tan, detay
+   icin verilen kayittan hesaplanir, ikisi asla ayrisamaz. */
+function fatToplamBlokIc(kayit){
+  const pb=(kayit?kayit.paraBirimi:(_FAT&&_FAT.paraBirimi))||'TRY';
+  const t=kayit?fatKayitToplam(kayit):fatGirilenOzet().t;
+  const beyan=kayit?kayit.beyanTutar:(_FAT&&_FAT.beyanTutar);
+  const kur=fatSayi(kayit?kayit.kur:(_FAT&&_FAT.kur));
+  const fark=fatTutarFarki(beyan,t.toplam);
+  const sat=(l,v,cls)=>`<div class="sat${cls?' '+cls:''}"><span>${l}</span><b>${v}</b></div>`;
+  return sat('Mal Hizmet Toplam Tutari',fatPara(t.brut,pb))
+    +(t.iskonto>0?sat('Toplam Iskonto','-'+fatPara(t.iskonto,pb)):'')
+    +sat('Vergi Haric Tutar (Matrah)',fatPara(t.matrah,pb))
+    +t.kdvListe.map(k=>sat('Hesaplanan KDV %'+fmtNum(k.oran)
+        +' <span style="opacity:.7">(matrah '+fatPara(k.matrah,'')+')</span>',fatPara(k.kdv,pb),'kdv')).join('')
+    +(t.kdvListe.length>1?sat('Toplam KDV',fatPara(t.kdv,pb)):'')
+    +(t.diger>0?sat('Diger Vergiler',fatPara(t.diger,pb)):'')
+    +'<div class="ayrac"></div>'
+    +sat('Odenecek Tutar',fatPara(t.toplam,pb),'odenecek')
+    +(pb!=='TRY'&&kur>0?`<div class="kur">Kur ${fmtNum(kur)} &middot; TL karsiligi <b>${fatPara(t.toplam*kur,'TRY')}</b></div>`:'')
+    +(fark?`<div class="fark">&#9888; Belgede yazan odenecek tutar <b>${fatPara(beyan,pb)}</b>,
+        satirlardan hesaplanan <b>${fatPara(t.toplam,pb)}</b> &mdash; fark <b>${fatPara(Math.abs(fark),pb)}</b>.
+        ${fark>0?'Belge daha yuksek: eksik girilmis bir satir ya da belgede fazla hesaplanmis bir tutar olabilir.'
+                :'Hesap daha yuksek: fazla girilmis bir satir ya da belgede eksik hesaplanmis bir tutar olabilir.'}</div>`:'');
 }
 // Ekranda gorunen tum urunlerin kalanini doldurur - "fatura tum kalani kapsiyor" hali
 function fatHepsiniDoldur(){
@@ -24347,22 +24528,36 @@ function renderFaturaForm(){
   const satirlar=gosterilen.map(u=>{
     const i=st._satirlar.length;
     st._satirlar.push({key:u.key,matId:u.matId,ad:u.ad,code:u.code,unit:u.unit,kalan:u.kalan});
-    const v=st.qty[u.key], fv=(st.fiyat||{})[u.key];
+    const v=st.qty[u.key], b=(st.sb||{})[u.key]||{};
     const bitti=!(u.kalan>FAT_EPS);
+    const h=fatSatirHesap({qty:fatSayi(v),fiyat:b.fiyat,iskontoOrani:b.iskonto,kdvOrani:b.kdv,digerVergi:b.diger});
+    // KDV oranlari acilir listeden secilir; kayittaki oran listede yoksa (eski
+    // fatura, ozel oran) o deger listeye eklenir - sessizce baska bir orana kaymasin
+    const oranlar=[...new Set(KDV_ORANLARI.concat(b.kdv===''||b.kdv==null?[]:[fatSayi(b.kdv)]))].sort((x,y)=>x-y);
     return `<tr class="${bitti?'bitti':''}">
       <td class="tl-no">${i+1}</td>
       <td><div style="font-size:12.5px">${esc(u.ad||'-')}</div>
-        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(u.code||'-')}${u.binalar.length?' · '+esc(u.binalar.join(', ')):''}</div></td>
-      <td class="num">${fmtNum(u.alinan)}${u.unit?`<div class="t-meta" style="font-size:10.5px">${esc(u.unit)}</div>`:''}</td>
-      <td class="num" style="color:${u.iade>0?'var(--amber)':'var(--dim)'}">${u.iade>0?fmtNum(u.iade):'-'}</td>
-      <td class="num" style="color:${u.durum==='fazla'?'var(--red)':'var(--mute)'}">${u.fat>0?fmtNum(u.fat):'-'}</td>
+        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(u.code||'-')}${u.unit?' · '+esc(u.unit):''}${u.binalar.length?' · '+esc(u.binalar.join(', ')):''}</div></td>
+      <td class="fat-alim" title="Alinan ${fmtNum(u.alinan)} · iade ${fmtNum(u.iade)} · daha once faturalanan ${fmtNum(u.fat)}">
+        <b>${fmtNum(u.alinan)}</b>${u.iade>0?` · <span style="color:var(--amber)">-${fmtNum(u.iade)}</span>`:''}${u.fat>0?` · <span style="color:${u.durum==='fazla'?'var(--red)':'var(--mute)'}">F${fmtNum(u.fat)}</span>`:''}</td>
       <td class="num" style="font-weight:700;color:${bitti?'var(--dim)':'var(--ink)'}">${fmtNum(Math.max(0,u.kalan))}</td>
       <td><input type="number" step="any" min="0" class="num ${fatSayi(v)>0?'dolu':''}" ${bitti?'disabled':''}
         value="${v!==undefined&&v!==''?esc(v):''}" placeholder="0" oninput="fatSetQty(${i},this)"
         title="${bitti?'Bu urunun tamami faturalanmis - kalan yok':'En fazla '+fmtNum(u.kalan)}"></td>
-      <td><input type="number" step="any" min="0" class="num fiyat" ${bitti?'disabled':''}
-        value="${fv!==undefined&&fv!==''?esc(fv):''}" placeholder="-" oninput="fatSetFiyat(${i},this)"
-        title="Birim fiyat (opsiyonel) - hicbir tavan hesabina girmez"></td>
+      <td><input type="number" step="any" min="0" class="num" ${bitti?'disabled':''}
+        value="${b.fiyat!==undefined&&b.fiyat!==''?esc(b.fiyat):''}" placeholder="-" oninput="fatSetSatirAlan(${i},'fiyat',this)"
+        title="Birim fiyat - faturadaki 'Birim Fiyat' sutunu"></td>
+      <td><input type="number" step="any" min="0" max="100" class="num dar" ${bitti?'disabled':''}
+        value="${b.iskonto!==undefined&&b.iskonto!==''?esc(b.iskonto):''}" placeholder="-" oninput="fatSetSatirAlan(${i},'iskonto',this)"
+        title="Iskonto orani (%) - iskonto tutari bu orandan hesaplanir"></td>
+      <td><select class="num dar" ${bitti?'disabled':''} onchange="fatSetSatirAlan(${i},'kdv',this)"
+        title="KDV orani - matrah uzerinden hesaplanir">
+        ${oranlar.map(o=>`<option value="${o}" ${fatSayi(b.kdv)===o&&b.kdv!==''?'selected':''}>%${fmtNum(o)}</option>`).join('')}
+      </select></td>
+      <td><input type="number" step="any" min="0" class="num dar" ${bitti?'disabled':''}
+        value="${b.diger!==undefined&&b.diger!==''?esc(b.diger):''}" placeholder="-" oninput="fatSetSatirAlan(${i},'diger',this)"
+        title="Diger vergiler (OTV, tevkifat vb.) - tutar olarak girilir"></td>
+      <td class="satir-tutar" id="fatST${i}">${h.toplam>0?fatPara(h.toplam,''):'-'}</td>
     </tr>`;
   }).join('');
   const t=fatGirilenOzet();
@@ -24376,19 +24571,43 @@ function renderFaturaForm(){
       <h4>Fatura Bilgileri</h4>
       <div class="tut-grid">
         <div class="frow"><label>Fatura No <span style="color:var(--red)">*</span></label>
-          <input value="${esc(st.no)}" placeholder="orn. FTR-2026-0148" onchange="fatSetHead('no',this.value)"></div>
+          <input value="${esc(st.no)}" placeholder="orn. YGE2026000000013" onchange="fatSetHead('no',this.value)"></div>
         <div class="frow"><label>Fatura Tarihi <span style="color:var(--red)">*</span></label>
           <input type="date" value="${esc(st.tarih)}" onchange="fatSetHead('tarih',this.value)"></div>
         <div class="frow"><label>Firma <span style="color:var(--red)">*</span></label>
           <select onchange="fatSetHead('companyId',this.value)"><option value="">Secin...</option>
             ${firmalar.map(c=>`<option value="${esc(c.id)}" ${st.companyId===c.id?'selected':''}>${esc(c.ad||'-')}</option>`).join('')}</select>
           <div class="fhint">${firmalar.length?'Urun listesi bu firmadan alinmis urunlere daraltilir':'Once Sirketler ekranindan firma tanimlayin'}</div></div>
-        <div class="frow"><label>Fatura Tutari <span class="t-meta">(opsiyonel)</span></label>
+        <div class="frow"><label>Senaryo</label>
+          <select onchange="fatSetHead('senaryo',this.value)">
+            ${FAT_SENARYO.map(([k,a])=>`<option value="${k}" ${st.senaryo===k?'selected':''}>${esc(a)}</option>`).join('')}</select>
+          <div class="fhint">e-Fatura belgesinin ust kosesindeki "Senaryo"</div></div>
+        <div class="frow"><label>Fatura Tipi</label>
+          <select onchange="fatSetHead('faturaTipi',this.value)">
+            ${FAT_TIPI.map(([k,a])=>`<option value="${k}" ${st.faturaTipi===k?'selected':''}>${esc(a)}</option>`).join('')}</select></div>
+        <div class="frow"><label>Ozellestirme No</label>
+          <input value="${esc(st.ozellestirmeNo)}" placeholder="TR1.2" onchange="fatSetHead('ozellestirmeNo',this.value)"></div>
+        <div class="frow"><label>Irsaliye No</label>
+          <input value="${esc(st.irsaliyeNo)}" placeholder="belgedeki irsaliye no" onchange="fatSetHead('irsaliyeNo',this.value)"></div>
+        <div class="frow"><label>Irsaliye Tarihi</label>
+          <input type="date" value="${esc(st.irsaliyeTarihi)}" onchange="fatSetHead('irsaliyeTarihi',this.value)"></div>
+        <div class="frow"><label>ETTN</label>
+          <input value="${esc(st.ettn)}" placeholder="e-fatura evrensel tekil no" onchange="fatSetHead('ettn',this.value)">
+          <div class="fhint">Belgedeki ETTN - ayni belgenin ikinci kez girilip girilmedigini kesin ayirt eder</div></div>
+        <div class="frow"><label>Para Birimi / Kur</label>
           <div style="display:flex;gap:7px">
-            <input type="number" step="any" min="0" value="${esc(st.tutar)}" placeholder="0" onchange="fatSetHead('tutar',this.value)" style="flex:1">
             <select onchange="fatSetHead('paraBirimi',this.value)" style="flex:0 0 92px">
-              ${['TRY','USD','EUR','RUB'].map(p=>`<option ${st.paraBirimi===p?'selected':''}>${p}</option>`).join('')}</select></div>
-          <div class="fhint">Yalnizca bilgi - kontrol MIKTAR uzerinden yapilir</div></div>
+              ${FAT_PARA.map(x=>`<option ${st.paraBirimi===x?'selected':''}>${x}</option>`).join('')}</select>
+            <input type="number" step="any" min="0" value="${esc(st.kur)}" placeholder="kur" onchange="fatSetHead('kur',this.value)" style="flex:1"
+              ${st.paraBirimi==='TRY'?'disabled':''}></div>
+          <div class="fhint">${st.paraBirimi==='TRY'?'TL faturada kur gerekmez':'TL karsiligi toplam blogunda gosterilir'}</div></div>
+        <div class="frow"><label>Varsayilan KDV</label>
+          <select onchange="fatSetHead('varsayilanKdv',this.value)">
+            ${KDV_ORANLARI.map(o=>`<option value="${o}" ${fatSayi(st.varsayilanKdv)===o?'selected':''}>%${fmtNum(o)}</option>`).join('')}</select>
+          <div class="fhint">Yeni doldurulan satira otomatik yazilir - satirda degistirilebilir</div></div>
+        <div class="frow"><label>Belgedeki Odenecek Tutar <span class="t-meta">(opsiyonel)</span></label>
+          <input type="number" step="any" min="0" value="${esc(st.beyanTutar)}" placeholder="0" onchange="fatSetHead('beyanTutar',this.value)">
+          <div class="fhint">Faturanin uzerindeki tutar - satirlardan hesaplananla karsilastirilir</div></div>
         <div class="frow"><label>Not</label>
           <input value="${esc(st.not)}" placeholder="aciklama..." onchange="fatSetHead('not',this.value)"></div>
         <div class="frow"><label>Fatura Nushasi (PDF)</label>
@@ -24423,11 +24642,16 @@ function renderFaturaForm(){
         </div>
       </div>
       ${gosterilen.length?`<div class="tablewrap"><table class="tut-lines fat-lines"><thead><tr>
-          <th>#</th><th>Urun</th><th class="num">Alinan</th><th class="num">Iade</th>
-          <th class="num" title="Bu urunden BASKA faturalarda faturalanmis miktar">Faturalanan</th>
+          <th>Sira No</th><th>Mal Hizmet</th>
+          <th title="Alinan · iade · daha once faturalanan">Alim Durumu</th>
           <th class="num" title="Bu faturada en fazla yazilabilecek miktar">Kalan</th>
-          <th>Bu faturada</th><th>Birim fiyat</th>
-        </tr></thead><tbody>${satirlar}</tbody></table></div>`
+          <th class="num">Miktar</th><th class="num">Birim Fiyat</th>
+          <th class="num" title="Iskonto orani (%)">Iskonto</th>
+          <th class="num" title="KDV orani">KDV</th>
+          <th class="num" title="OTV, tevkifat vb. - tutar olarak">Diger Vergiler</th>
+          <th class="num" title="Matrah + KDV + diger vergiler">Mal Hizmet Tutari</th>
+        </tr></thead><tbody>${satirlar}</tbody></table></div>
+        <div class="fat-toplam"><div class="fat-toplam-ic" id="fatToplamBlok">${fatToplamBlokIc()}</div></div>`
       :`<div class="empty" style="padding:22px"><p>${st.companyId?'Bu firmadan alinmis, faturalanmayi bekleyen urun yok':'Once firma secin'}</p>
         <span style="font-size:12px">${st.companyId?'"Diger firmalardan alinanlar" ya da "Tamami faturalanmislar" kutusunu isaretleyerek listeyi genisletebilirsiniz':'Firma secilince o firmadan alinan urunler listelenir'}</span></div>`}
       ${liste.length>LIMIT?`<p class="t-meta" style="font-size:11.5px;margin-top:8px">+ ${fmtNum(liste.length-LIMIT)} urun daha var - listeyi daraltmak icin arama ya da bina filtresi kullanin</p>`:''}
@@ -24436,7 +24660,7 @@ function renderFaturaForm(){
       <div class="ozet">
         <span>Urun <b id="fatOzSatir">${fmtNum(t.satir)}</b></span>
         <span>Toplam miktar <b id="fatOzMiktar">${fmtNum(t.miktar)}</b></span>
-        <span title="Girilen birim fiyatlardan hesaplanir - yalnizca bilgi">Satir tutari <b id="fatOzTutar">${t.tutar>0?fmtNum(t.tutar):'-'}</b></span>
+        <span title="Satirlardan hesaplanan odenecek tutar (KDV dahil)">Odenecek <b id="fatOzTutar">${t.t.toplam>0?fatPara(t.t.toplam,st.paraBirimi||'TRY'):'-'}</b></span>
       </div>
       <div class="sag">
         <button class="btn btn-ghost" onclick="fatFormKapat()">Vazgec</button>
@@ -24467,9 +24691,12 @@ async function fatKaydet(){
     const u=urunler.get(k);
     if(!u){ sorunlar.push('Urun bulunamadi (alim kaydi silinmis olabilir)'); return; }
     if(q>u.kalan+FAT_EPS){ sorunlar.push(`${u.ad||u.code||'urun'}: ${fmtNum(q)} girildi, kalan ${fmtNum(Math.max(0,u.kalan))}`); return; }
-    const fi=fatSayi((st.fiyat||{})[k]);
+    const b=(st.sb||{})[k]||{};
+    const fi=fatSayi(b.fiyat);
     satirlar.push({ id:uid(), key:k, matId:u.matId||'', code:u.code||'', ad:u.ad||'',
-      unit:u.unit||'', qty:q, fiyat:fi>0?fi:null });
+      unit:u.unit||'', qty:q, fiyat:fi>0?fi:null,
+      iskontoOrani:fatSayi(b.iskonto)||0, kdvOrani:b.kdv===''||b.kdv==null?0:fatSayi(b.kdv),
+      digerVergi:fatSayi(b.diger)||0 });
   });
   if(sorunlar.length){
     toast('Kaydedilmedi - kalandan fazla: '+sorunlar.slice(0,3).join(' ; ')+(sorunlar.length>3?` (+${sorunlar.length-3} urun daha)`:''),'err');
@@ -24477,6 +24704,17 @@ async function fatKaydet(){
   }
   if(!satirlar.length){ toast('En az bir urun icin miktar girin','err'); return; }
 
+  /* ETTN CIFT KONTROLU: ETTN e-faturanin evrensel tekil numarasidir - ayni ETTN
+     iki kayitta gecemez, gecerse belge kesinlikle ikinci kez girilmistir. Fatura
+     no'suna gore cok daha kesin bir kanit oldugu icin ONCE bu sorulur. */
+  const ettn=String(st.ettn||'').trim();
+  if(ettn){
+    const ayniEttn=fatKayitlar().filter(f=>f.id!==st.editId && norm(String(f.ettn||'').trim())===norm(ettn));
+    if(ayniEttn.length && !confirm(`Bu ETTN ile KAYITLI BIR FATURA VAR:\n\n`
+      +ayniEttn.map(f=>`· ${f.no||'(no yok)'} · ${fmtDate(f.tarih)} · ${fatCompany(f)||'-'}`).join('\n')
+      +`\n\nETTN e-faturanin tekil numarasidir - ayni ETTN iki belgede olamaz.`
+      +`\nBu, ayni faturanin ikinci kez girildigi anlamina gelir.\n\nYine de kaydedilsin mi?`)) return;
+  }
   /* CIFT NO ONAYI: ayni firmadan ayni numarali baska bir kayit varsa kullaniciya
      sorulur. Engellenmez - ayni numara farkli yillarda tekrar edebilir - ama
      "sessizce iki kez girildi" durumu boylece kapanir. */
@@ -24492,7 +24730,15 @@ async function fatKaydet(){
   const toplam=satirlar.reduce((s,r)=>s+r.qty,0);
   const kayit={
     id:st.id, no, tarih, companyId:st.companyId, company:(firma&&firma.ad)||'',
-    tutar:(st.tutar===''||st.tutar==null)?null:fatSayi(st.tutar),
+    // TC e-Fatura belge alanlari: kagitla birebir eslesme icin oldugu gibi saklanir
+    senaryo:st.senaryo||'', faturaTipi:st.faturaTipi||'', ozellestirmeNo:String(st.ozellestirmeNo||'').trim(),
+    ettn:String(st.ettn||'').trim(),
+    irsaliyeNo:String(st.irsaliyeNo||'').trim(),
+    irsaliyeTarihi:st.irsaliyeTarihi?new Date(st.irsaliyeTarihi).getTime():null,
+    // beyanTutar = BELGEDE yazan odenecek tutar. Toplamlar satirlardan hesaplanir
+    // (fatKayitToplam), kayitta tutulmaz - iki yerde tutulup ayrisamasin.
+    beyanTutar:(st.beyanTutar===''||st.beyanTutar==null)?null:fatSayi(st.beyanTutar),
+    kur:(st.kur===''||st.kur==null)?null:fatSayi(st.kur),
     paraBirimi:st.paraBirimi||'TRY', not:String(st.not||'').trim(),
     // pdf yalnizca KOVAYA yazilmissa saklanir: yarim kalmis yukleme kaydi tasimasin
     pdf:(st.pdf&&st.pdf.path)?st.pdf:null,
@@ -24510,8 +24756,10 @@ async function fatKaydet(){
   if(!DB.faturalar) DB.faturalar=[];
   const i=DB.faturalar.findIndex(f=>f&&f.id===kayit.id);
   if(i>=0) DB.faturalar[i]=kayit; else DB.faturalar.push(kayit);
+  const _tp=fatToplamlar(satirlar);
   logAction('fatura',(eski?'Fatura duzenlendi: ':'Fatura kaydedildi: ')+no
-    +' · '+((firma&&firma.ad)||'firma yok')+' · '+fmtNum(satirlar.length)+' urun · toplam '+fmtNum(toplam));
+    +' · '+((firma&&firma.ad)||'firma yok')+' · '+fmtNum(satirlar.length)+' urun · toplam miktar '+fmtNum(toplam)
+    +(_tp.toplam>0?' · odenecek '+fatPara(_tp.toplam,kayit.paraBirimi):''));
   _FAT=null; FATV.mode='liste'; render();
   toast(eski?`Fatura guncellendi - ${fmtNum(satirlar.length)} urun`:`Fatura kaydedildi - ${fmtNum(satirlar.length)} urun · ${fmtNum(toplam)} miktar`);
 }
@@ -24685,18 +24933,31 @@ function exportMutabakatXlsx(){
 // Fatura defteri: her fatura satiri bir Excel satiri
 function exportFaturaXlsx(){
   const list=fatListeFiltreli();
-  const aoa=[["fatura_no","fatura_tarihi","firma","tutar","para_birimi",
-    "urun_kodu","urun_adi","birim","faturalanan_miktar","birim_fiyat","not","kaydeden"]];
+  /* Sutunlar TC e-Faturasinin satir duzeniyle ayni sirada: kagitla yan yana
+     konup satir satir karsilastirilabilsin. */
+  const aoa=[["fatura_no","fatura_tarihi","firma","senaryo","fatura_tipi","irsaliye_no","irsaliye_tarihi","ettn",
+    "para_birimi","kur","sira_no","urun_kodu","mal_hizmet","birim","miktar","birim_fiyat",
+    "iskonto_orani","iskonto_tutari","matrah","kdv_orani","kdv_tutari","diger_vergiler","mal_hizmet_tutari",
+    "belge_odenecek_tutar","hesaplanan_odenecek_tutar","not","kaydeden"]];
   list.forEach(f=>{
-    const sat=fatSatirlari(f);
-    if(!sat.length){ aoa.push([f.no||'',fmtDate(f.tarih),fatCompany(f)||'',f.tutar||'',f.paraBirimi||'','','','',0,'',f.not||'',f.olusturan||'']); return; }
-    sat.forEach(r=>aoa.push([f.no||'', fmtDate(f.tarih), fatCompany(f)||'', f.tutar||'', f.paraBirimi||'',
-      r.code||'', r.ad||'', r.unit||'', fatSayi(r.qty), r.fiyat||'', f.not||'', f.olusturan||'']));
+    const sat=fatSatirlari(f), top=fatKayitToplam(f);
+    const bas=[f.no||'', fmtDate(f.tarih), fatCompany(f)||'', f.senaryo||'', f.faturaTipi||'',
+      f.irsaliyeNo||'', f.irsaliyeTarihi?fmtDate(f.irsaliyeTarihi):'', f.ettn||'',
+      f.paraBirimi||'TRY', f.kur||''];
+    const kuyruk=[f.beyanTutar||'', Number(top.toplam.toFixed(2)), f.not||'', f.olusturan||''];
+    if(!sat.length){ aoa.push(bas.concat(['','','','',0,'',0,0,0,0,0,0,0],kuyruk)); return; }
+    sat.forEach((r,i)=>{ const h=fatSatirHesap(r);
+      aoa.push(bas.concat([i+1, r.code||'', r.ad||'', r.unit||'',
+        h.qty, h.fiyat||'', h.iskO||0, Number(h.iskonto.toFixed(2)), Number(h.matrah.toFixed(2)),
+        h.kdvO||0, Number(h.kdv.toFixed(2)), Number(h.diger.toFixed(2)), Number(h.toplam.toFixed(2))],kuyruk));
+    });
   });
-  if(aoa.length===1) aoa.push(['','','','','','','','',0,'','','']);
+  if(aoa.length===1) aoa.push(new Array(aoa[0].length).fill(''));
   const wb=XLSX.utils.book_new(), ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=[{wch:16},{wch:12},{wch:20},{wch:12},{wch:7},{wch:16},{wch:34},{wch:8},{wch:14},{wch:11},{wch:24},{wch:14}];
-  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:11}})};
+  ws['!cols']=[{wch:18},{wch:12},{wch:20},{wch:14},{wch:11},{wch:14},{wch:12},{wch:36},{wch:7},{wch:8},
+    {wch:7},{wch:16},{wch:34},{wch:8},{wch:11},{wch:12},{wch:11},{wch:12},{wch:12},{wch:9},{wch:12},{wch:12},{wch:14},
+    {wch:14},{wch:16},{wch:22},{wch:14}];
+  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:aoa[0].length-1}})};
   XLSX.utils.book_append_sheet(wb,ws,"Faturalar");
   XLSX.writeFile(wb,`faturalar_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast('Fatura listesi Excel indirildi');

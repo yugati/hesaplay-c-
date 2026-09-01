@@ -840,6 +840,8 @@ CREATE TRIGGER ihtiyac_listeleri_updated_at BEFORE UPDATE ON public.ihtiyac_list
 -- numarasına göre kesmiyor): her satır bir ürüne bağlanır ve miktar o ürünün TOPLAM
 -- alımından düşülür. Kalandan fazlası yazılamaz — aynı malın ikinci kez
 -- faturalanması böyle önlenir. Ürünü çözen kural index.html lineAlimMaterial'dır.
+-- Satır alanları TC e-Faturasıyla birebir: miktar, birim fiyat, iskonto oranı,
+-- KDV oranı, diğer vergiler. Toplamlar kayıtta TUTULMAZ, satırlardan hesaplanır.
 -- Ayrıntı ve tek başına çalıştırma: migration_fatura.sql
 -- ============================================================
 CREATE TABLE IF NOT EXISTS public.faturalar (
@@ -852,6 +854,7 @@ CREATE TABLE IF NOT EXISTS public.faturalar (
 CREATE INDEX IF NOT EXISTS faturalar_created_at_idx ON public.faturalar (created_at);
 CREATE INDEX IF NOT EXISTS faturalar_no_idx         ON public.faturalar ((data->>'no'));
 CREATE INDEX IF NOT EXISTS faturalar_company_idx    ON public.faturalar ((data->>'companyId'));
+CREATE INDEX IF NOT EXISTS faturalar_ettn_idx       ON public.faturalar ((data->>'ettn'));
 
 -- çok kiracılı yapı: indeks adları migration_org_1.sql'in ürettikleriyle aynı
 ALTER TABLE public.faturalar ADD COLUMN IF NOT EXISTS org_id TEXT NOT NULL DEFAULT 'bykara';

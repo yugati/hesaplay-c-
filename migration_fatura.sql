@@ -13,11 +13,26 @@
 -- orderId YOKTUR - olmayan bir bagi uydurmak, raporlarda dogru gorunen ama
 -- gercekle ilgisi olmayan sayilar uretirdi.
 --
--- Kayit bicimi diger varlik tablolariyla aynidir (id + JSONB data):
---   { id, no, tarih:<ms>, companyId, company, tutar, paraBirimi, not,
---     pdf:{path,name,size}|null,
---     satirlar:[{ id, key, matId, code, ad, unit, qty, fiyat }],
+-- Kayit bicimi diger varlik tablolariyla aynidir (id + JSONB data) ve alanlar
+-- TC e-Faturasindaki basliklarla birebir eslesir:
+--   { id, no, tarih:<ms>, companyId, company,
+--     senaryo, faturaTipi, ozellestirmeNo, ettn, irsaliyeNo, irsaliyeTarihi:<ms|null>,
+--     paraBirimi, kur, beyanTutar, not, pdf:{path,name,size}|null,
+--     satirlar:[{ id, key, matId, code, ad, unit,
+--                 qty, fiyat, iskontoOrani, kdvOrani, digerVergi }],
 --     olusturan, olusturmaTs, guncelleyen, guncellemeTs, history:[] }
+--
+-- TOPLAMLAR KAYITTA TUTULMAZ, satirlardan hesaplanir (index.html fatToplamlar):
+--   mal hizmet tutari = miktar x birim fiyat
+--   iskonto = tutar x iskonto orani ; matrah = tutar - iskonto
+--   KDV = matrah x KDV orani ; satir toplami = matrah + KDV + diger vergiler
+-- Iki yerde tutulan bir toplam er gec ayrisir; tek dogru kaynak satirlardir.
+-- 'beyanTutar' AYRI bir seydir: BELGEDE yazan odenecek tutardir ve hesaplananla
+-- karsilastirilir - tutmuyorsa ya satir eksik girilmistir ya da belgenin kendi
+-- aritmetigi hatalidir; ikisi de gorulmelidir.
+--
+-- ETTN e-faturanin evrensel tekil numarasidir: ayni ETTN iki kayitta geciyorsa
+-- belge kesinlikle ikinci kez girilmistir (fatura no'sundan cok daha kesin kanit).
 --
 -- 'key' URUN ANAHTARIDIR: once kutuphane malzemesi ('mat:<matId>'), kutuphanede
 -- karsiligi yoksa 'ad:<kod>|<ad>'. Urunu cozen kural uygulamanin kendi kuralidir
@@ -43,6 +58,7 @@ CREATE INDEX IF NOT EXISTS faturalar_created_at_idx ON public.faturalar (created
 -- en sik suzulen alanlar: "bu firmanin faturalari", "bu numarali fatura zaten var mi"
 CREATE INDEX IF NOT EXISTS faturalar_no_idx         ON public.faturalar ((data->>'no'));
 CREATE INDEX IF NOT EXISTS faturalar_company_idx    ON public.faturalar ((data->>'companyId'));
+CREATE INDEX IF NOT EXISTS faturalar_ettn_idx       ON public.faturalar ((data->>'ettn'));
 
 -- Asama 3 durusu: RLS acik, anon/authenticated'a HICBIR yetki yok.
 -- Veriye tek yol sunucudaki service_role'dur (api/veri.js).
