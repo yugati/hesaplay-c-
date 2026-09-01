@@ -24063,7 +24063,8 @@ function fatUrunHavuzu(){
     if(coz.has(ck)) return coz.get(ck);
     const mt=typeof lineAlimMaterial==='function'?lineAlimMaterial(l):null;
     const sp=(l.specId&&typeof orderLineSpec==='function')?orderLineSpec(l):null;
-    const c={mt, bolum:(sp&&sp.cat)||'', sart:l.grup||(sp&&specGroupKeyGuvenli(sp))||''};
+    const c={mt, bolum:(sp&&sp.cat)||'', sart:l.grup||(sp&&specGroupKeyGuvenli(sp))||'',
+      oz:(sp&&typeof katAtaKodlar==='function')?katAtaKodlar(sp):[]};
     coz.set(ck,c); return c;
   };
   const ekle=(l,alan,o)=>{
@@ -24075,13 +24076,20 @@ function fatUrunHavuzu(){
       g={ key:k, matId:(mt&&mt.id)||'', code:(mt&&mt.code)||l.code||'',
           ad:(mt&&mt.name)||l.ad||l.name||'', unit:(mt&&mt.unit)||l.unit||'',
           alinan:0, iade:0, binalar:new Set(), firmalar:new Set(),
-          bolumler:new Set(), sartnameler:new Set(), sonTarih:0 };
+          bolumler:new Set(), sartnameler:new Set(), ozelKodlar:new Set(), sonTarih:0 };
       m.set(k,g);
     }
     g[alan]+=q;
     if(!g.unit&&l.unit) g.unit=l.unit;
     if(c.bolum) g.bolumler.add(c.bolum);
     if(c.sart&&!String(c.sart).startsWith('Karma (')) g.sartnameler.add(c.sart);
+    /* OZEL (YERLESIM) KODLARI: tedarikci faturayi cogu zaman urun adiyla degil bu
+       kodla kesiyor - formda urunu ancak kodu aratarak bulmak gerekiyor. Iki kaynak
+       var: kalemin ozel nolari (kaleme bagli, onbellekten gelir) ve satirin kendi
+       Ozel Kod Kirilimi (ozelPay - SATIRA ozel, ayni kaleme bagli iki satirda
+       farkli olabilir, bu yuzden onbellege alinmaz, satir basina okunur). */
+    c.oz.forEach(k=>{ if(k) g.ozelKodlar.add(k); });
+    if(typeof ozelPayKodlari==='function') ozelPayKodlari(l).forEach(k=>{ if(k) g.ozelKodlar.add(k); });
     if(o){
       if(o.bina) g.binalar.add(o.bina);
       const fr=orderCompany(o); if(fr) g.firmalar.add(fr);
@@ -24124,6 +24132,7 @@ function fatUrunListesi(haricId){
     const fat=ix.get(g.key)||0;
     out.push({ ...g, binalar:[...g.binalar], firmalar:[...g.firmalar],
       bolumler:[...g.bolumler], sartnameler:[...g.sartnameler],
+      ozelKodlar:[...g.ozelKodlar].sort((a,b)=>String(a).localeCompare(String(b),'tr')),
       net, fat, kalan:net-fat, durum:fatDurumHesapla(net,fat), alimVar:true });
   });
   ix.forEach((q,k)=>{
@@ -24133,7 +24142,7 @@ function fatUrunListesi(haricId){
     fatKesinler().some(f=>fatSatirlari(f).some(r=>{ if(String(r.key||'')===k){ ornek=r; return true; } return false; }));
     out.push({ key:k, matId:(ornek&&ornek.matId)||'', code:(ornek&&ornek.code)||'',
       ad:(ornek&&ornek.ad)||'(bilinmeyen urun)', unit:(ornek&&ornek.unit)||'',
-      alinan:0, iade:0, binalar:[], firmalar:[], bolumler:[], sartnameler:[], sonTarih:0,
+      alinan:0, iade:0, binalar:[], firmalar:[], bolumler:[], sartnameler:[], ozelKodlar:[], sonTarih:0,
       net:0, fat:q, kalan:-q, durum:'fazla', alimVar:false });
   });
   return out.sort((a,b)=>{
@@ -24545,16 +24554,50 @@ function fatFormUrunleri(tum){
     if(st.fsart && !u.sartnameler.includes(st.fsart)) return false;
     if(!st.ftum && firmaAd && !u.firmalar.includes(firmaAd)) return false;
     if(!st.ftumDurum && u.kalan<=FAT_EPS) return false;
-    if(q && !matchText([u.ad,u.code,u.binalar.join(' '),u.bolumler.join(' '),
-      u.sartnameler.join(' '),u.firmalar.join(' ')].join(' '),q)) return false;
+    if(q && !fatAramaEslesir(u,q)) return false;
     return true;
   });
+}
+/* OZEL KOD ARAMASI matchText'in samanligina KARISTIRILMAZ. Iki sebep:
+   1) Bir urun yuzlerce ozel kodda gecebilir; hepsini tek metne eklemek matchText'in
+      subsequence yedegini anlamsizlastirir - uzayan samanlikta neredeyse her sorgu
+      "eslesir" ve arama kullanilamaz hale gelir.
+   2) Kod icin dogru olcut zaten TAM eslesmedir. ktopKey bosluk/tire/alt cizgi ve
+      buyuk-kucuk farkini siler; boylece tek alanda duran cift kod
+      ("00UYB18EM0426 00UYB18EM0427") tek koda aratildiginda da bulunur. */
+function fatOzelKodEslesir(u,q){
+  const k=(typeof ktopKey==='function')?ktopKey(q):String(q||'').toLowerCase();
+  if(!k) return false;
+  return (u.ozelKodlar||[]).some(c=>((typeof ktopKey==='function')?ktopKey(c):String(c||'').toLowerCase()).indexOf(k)>=0);
+}
+// Formda ve mutabakatta TEK arama kurali - ikisi ayrisamasin
+function fatAramaEslesir(u,q){
+  if(!q) return true;
+  if(matchText([u.ad,u.code,u.binalar.join(' '),u.bolumler.join(' '),
+    u.sartnameler.join(' '),u.firmalar.join(' ')].join(' '),q)) return true;
+  return fatOzelKodEslesir(u,q);
+}
+/* Satirda gosterilecek ozel kod ozeti. Liste uzun olabilir (ayni urun yuzlerce
+   yerlesimde gecer): ekranda ilk birkaci, tamami ipucunda - ipucu da tavanlanir,
+   yoksa binlerce karakterlik bir title dogar. */
+const FAT_OZEL_GOSTER=3, FAT_OZEL_IPUCU=40;
+function fatOzelKodOzet(u,goster){
+  const k=(u&&u.ozelKodlar)||[]; if(!k.length) return '';
+  const n=goster||FAT_OZEL_GOSTER;
+  const ipucu=k.slice(0,FAT_OZEL_IPUCU).join(', ')+(k.length>FAT_OZEL_IPUCU?` +${k.length-FAT_OZEL_IPUCU} kod daha`:'');
+  return `<span style="color:var(--amber)" title="Ozel (yerlesim) kodlari - ${k.length} kod: ${esc(ipucu)}">${esc(k.slice(0,n).join(', '))}${k.length>n?` +${k.length-n}`:''}</span>`;
 }
 // suzgec seceneklerini HAVUZDAN uretir: secilince bos liste veren secenek cikmasin
 function fatSecenekler(liste,alan){
   return [...new Set((liste||[]).flatMap(u=>u[alan]||[]))].filter(Boolean).sort((a,b)=>String(a).localeCompare(String(b),'tr'));
 }
 function fatFormFiltreVar(){ const st=_FAT; return !!(st&&(st.fq||st.fbina||st.fbolum||st.fsart||st.ftum||st.ftumDurum)); }
+/* Aramayi KORUYUP daraltan her seyi acar: aranan urun bulundu ama firma/bina/durum
+   suzgeci gizliyorsa kullanicinin tek tiklamasi yeter (tek render). */
+function fatSuzgeciGevset(){
+  const st=_FAT; if(!st) return;
+  st.fbina=''; st.fbolum=''; st.fsart=''; st.ftum=true; st.ftumDurum=true; render();
+}
 function fatFormFiltreTemizle(){
   const st=_FAT; if(!st) return;
   st.fq=''; st.fbina=''; st.fbolum=''; st.fsart=''; st.ftum=false; st.ftumDurum=false; render();
@@ -24686,6 +24729,12 @@ function renderFaturaForm(){
   const bolumler=fatSecenekler(tumUrunler,'bolumler');
   const sartnameler=fatSecenekler(tumUrunler,'sartnameler');
   const liste=fatFormUrunleri(tumUrunler);
+  /* SUZGEC KORLUGU: sorgu havuzda eslesiyor ama firma/bina/bolum/durum suzgeci
+     onu gizliyorsa liste sessizce eksik doner ve kullanici urunun hic alinmadigini
+     sanir - fatura girisi tam da burada tikanir. Kac urunun GIZLENDIGI yazilir. */
+  const gizliN=st.fq
+    ? tumUrunler.filter(u=>fatAramaEslesir(u,st.fq)).length-liste.filter(u=>fatAramaEslesir(u,st.fq)).length
+    : 0;
   const LIMIT=80;
   const gosterilen=liste.slice(0,LIMIT);
   st._satirlar=[];                       // ekrandaki miktar kutularinin duz listesi
@@ -24707,7 +24756,8 @@ function renderFaturaForm(){
       <td><div style="font-size:12.5px">${esc(u.ad||'-')}</div>
         <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(u.code||'-')}${u.unit?' · '+esc(u.unit):''}${u.binalar.length?' · '+esc(u.binalar.join(', ')):''}${
           u.bolumler.length?' · <span style="color:var(--blue)">'+esc(u.bolumler.join(', '))+'</span>':''}${
-          u.sartnameler.length?' · '+esc(u.sartnameler.slice(0,2).join(', '))+(u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''):''}</div></td>
+          u.sartnameler.length?' · '+esc(u.sartnameler.slice(0,2).join(', '))+(u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''):''}</div>
+        ${u.ozelKodlar&&u.ozelKodlar.length?`<div class="t-meta" style="font-size:11px;font-family:var(--mono)">${fatOzelKodOzet(u)}</div>`:''}</td>
       <td class="fat-alim" title="Alinan ${fmtNum(u.alinan)} · iade ${fmtNum(u.iade)} · daha once faturalanan ${fmtNum(u.fat)}">
         <b>${fmtNum(u.alinan)}</b>${u.iade>0?` · <span style="color:var(--amber)">-${fmtNum(u.iade)}</span>`:''}${u.fat>0?` · <span style="color:${u.durum==='fazla'?'var(--red)':'var(--mute)'}">F${fmtNum(u.fat)}</span>`:''}</td>
       <td class="num" style="font-weight:700;color:${bitti?'var(--dim)':'var(--ink)'}">${fmtNum(Math.max(0,u.kalan))}</td>
@@ -24806,7 +24856,8 @@ function renderFaturaForm(){
       <div class="iht-bar" style="margin-bottom:10px">
         <div class="iht-search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          <input value="${esc(st.fq)}" placeholder="urun adi, kod, bina, bolum, sartname..." onchange="fatSetFiltre('fq',this.value.trim())">
+          <input value="${esc(st.fq)}" placeholder="ozel kod (00UYB10GH105), urun adi, kod, bina, bolum..." onchange="fatSetFiltre('fq',this.value.trim())"
+            title="Faturada urun ozel (yerlesim) koduyla yaziliysa dogrudan o kodu aratin">
           ${st.fq?`<button class="iht-x" onclick="fatSetFiltre('fq','')">&times;</button>`:''}
         </div>
         <select onchange="fatSetFiltre('fbina',this.value)" title="Urunun alindigi bina"><option value="">Tum binalar</option>
@@ -24825,6 +24876,11 @@ function renderFaturaForm(){
           ${t.satir?`<button class="iht-reset" onclick="fatHepsiniTemizle()">Girilenleri temizle</button>`:''}
         </div>
       </div>
+      ${gizliN>0?`<div class="fat-uyari dikkat" style="margin:0 0 10px">
+        <h5>&#9888; "${esc(st.fq)}" ile eslesen ${fmtNum(gizliN)} urun daha var</h5>
+        <p>Bu urunler suzgeclerin disinda kaldi: baska bir firmadan alinmis, secili bina/bolum
+        disinda ya da tamami zaten faturalanmis olabilir.
+        <button class="fat-link" onclick="fatSuzgeciGevset()">Suzgecleri gevset, aramayi koru</button></p></div>`:''}
       ${gosterilen.length?`<div class="tablewrap"><table class="tut-lines fat-lines"><thead><tr>
           <th>Sira No</th><th>Mal Hizmet</th>
           <th title="Alinan · iade · daha once faturalanan">Alim Durumu</th>
@@ -24836,8 +24892,12 @@ function renderFaturaForm(){
           <th class="num" title="Ust satir KDV haric (matrah), alt satir KDV dahil toplam">Mal Hizmet Tutari</th>
         </tr></thead><tbody>${satirlar}</tbody></table></div>
         <div class="fat-toplam"><div class="fat-toplam-ic" id="fatToplamBlok">${fatToplamBlokIc()}</div></div>`
-      :`<div class="empty" style="padding:22px"><p>${fatFormFiltreVar()?'Suzgece uyan urun yok':(st.companyId?'Bu firmadan alinmis, faturalanmayi bekleyen urun yok':'Once firma secin')}</p>
-        <span style="font-size:12px">${st.companyId?'"Diger firmalardan alinanlar" ya da "Tamami faturalanmislar" kutusunu isaretleyerek listeyi genisletebilirsiniz':'Firma secilince o firmadan alinan urunler listelenir'}</span></div>`}
+      :`<div class="empty" style="padding:22px"><p>${fatFormFiltreVar()
+          ?(st.fq&&!gizliN?`"${esc(st.fq)}" ile eslesen alim kaydi yok`:'Suzgece uyan urun yok')
+          :(st.companyId?'Bu firmadan alinmis, faturalanmayi bekleyen urun yok':'Once firma secin')}</p>
+        <span style="font-size:12px">${st.fq&&!gizliN
+          ?'Urun ozel (yerlesim) koduyla da aranabilir. Kod dogruysa o urun icin henuz siparis/alim girilmemis demektir - once alim kaydi olusturulmali'
+          :(st.companyId?'"Diger firmalardan alinanlar" ya da "Tamami faturalanmislar" kutusunu isaretleyerek listeyi genisletebilirsiniz':'Firma secilince o firmadan alinan urunler listelenir')}</span></div>`}
       ${liste.length>LIMIT?`<p class="t-meta" style="font-size:11.5px;margin-top:8px">+ ${fmtNum(liste.length-LIMIT)} urun daha var - listeyi daraltmak icin arama ya da bina filtresi kullanin</p>`:''}
     </div>
     <div class="fat-foot">
@@ -25147,8 +25207,7 @@ function fatMutUrunFiltre(u){
     const ad=((DB.companies||[]).find(c=>c.id===FATV.comp)||{}).ad||'';
     if(ad && !u.firmalar.includes(ad)) return false;
   }
-  if(FATV.q && !matchText([u.ad,u.code,u.binalar.join(' '),u.bolumler.join(' '),
-    u.sartnameler.join(' '),u.firmalar.join(' ')].join(' '),FATV.q)) return false;
+  if(FATV.q && !fatAramaEslesir(u,FATV.q)) return false;
   return true;
 }
 function fatMutabakatVeri(){
@@ -25222,7 +25281,7 @@ function renderFaturaMutabakat(){
   else liste.slice(0,LIMIT).forEach(u=>{
     rows+=`<tr>
       <td>${u.matId?`<button class="fat-link" style="font-weight:600" onclick="openMatDetail('${u.matId}')" title="Malzeme kunyesini ac">${esc(u.ad||'-')}</button>`:esc(u.ad||'-')}
-        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(u.code||'-')}</div></td>
+        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(u.code||'-')}${u.ozelKodlar&&u.ozelKodlar.length?' · '+fatOzelKodOzet(u,2):''}</div></td>
       <td class="t-meta">${esc(u.binalar.join(', ')||'-')}</td>
       <td class="t-meta">${esc(u.bolumler.join(', ')||'-')}${u.sartnameler.length?`<div style="font-size:10.5px">${esc(u.sartnameler.slice(0,2).join(', '))}${u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''}</div>`:''}</td>
       <td class="t-meta">${esc(u.firmalar.join(', ')||'-')}</td>
@@ -25285,17 +25344,17 @@ function renderFaturaMutabakat(){
 // Mutabakat: urun bazinda tam dokum. Ekranda ilk 300 satir cizilir, Excel'de TAMAMI.
 function exportMutabakatXlsx(){
   const {liste}=fatMutabakatVeri();
-  const aoa=[["urun_kodu","urun_adi","birim","binalar","bolumler","sartnameler","firmalar",
+  const aoa=[["urun_kodu","urun_adi","birim","ozel_kodlar","binalar","bolumler","sartnameler","firmalar",
     "alinan","iade","net_alinan","faturalanan","kalan","durum"]];
   liste.forEach(u=>{
     const dur={fazla:'FAZLA',tam:'TAM',kismi:'KISMI',yok:'FATURASIZ'}[u.durum]||'';
-    aoa.push([u.code||'', u.ad||'', u.unit||'', u.binalar.join(', '),
+    aoa.push([u.code||'', u.ad||'', u.unit||'', (u.ozelKodlar||[]).join(', '), u.binalar.join(', '),
       (u.bolumler||[]).join(', '), (u.sartnameler||[]).join(', '), u.firmalar.join(', '),
       u.alinan||0, u.iade||0, u.net||0, u.fat||0, Number((u.kalan||0).toFixed(4)), dur]);
   });
   if(aoa.length===1) aoa.push(new Array(aoa[0].length).fill(''));
   const wb=XLSX.utils.book_new(), ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=[{wch:16},{wch:34},{wch:8},{wch:20},{wch:18},{wch:22},{wch:24},{wch:10},{wch:9},{wch:11},{wch:12},{wch:10},{wch:11}];
+  ws['!cols']=[{wch:16},{wch:34},{wch:8},{wch:28},{wch:20},{wch:18},{wch:22},{wch:24},{wch:10},{wch:9},{wch:11},{wch:12},{wch:10},{wch:11}];
   ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:aoa[0].length-1}})};
   XLSX.utils.book_append_sheet(wb,ws,"Mutabakat");
   XLSX.writeFile(wb,`fatura-mutabakat_${new Date().toISOString().slice(0,10)}.xlsx`);
