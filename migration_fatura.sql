@@ -17,11 +17,13 @@
 -- TC e-Faturasindaki basliklarla birebir eslesir:
 --   { id, no, tarih:<ms>, companyId, company,
 --     durum:'taslak|kesin|kilitli', kesinTs, kesinBy, kilitTs, kilitBy,
+--     sonKilitAcma:{ts,user,kilitleyen,kilitTs}|null, kilitSonrasiDegisim:bool,
 --     senaryo, faturaTipi, ozellestirmeNo, ettn, irsaliyeNo, irsaliyeTarihi:<ms|null>,
 --     paraBirimi, kur, beyanTutar, not, pdf:{path,name,size}|null,
 --     satirlar:[{ id, key, matId, code, ad, unit,
 --                 qty, fiyat, iskontoOrani, kdvOrani, digerVergi }],
---     olusturan, olusturmaTs, guncelleyen, guncellemeTs, history:[] }
+--     olusturan, olusturmaTs, guncelleyen, guncellemeTs,
+--     history:[{ ts, user, ne, degisiklikler:[...], kilitSonrasi }] }
 --
 -- TOPLAMLAR KAYITTA TUTULMAZ, satirlardan hesaplanir (index.html fatToplamlar):
 --   mal hizmet tutari = miktar x birim fiyat
@@ -45,6 +47,16 @@
 --             yonetici acar. Mutabakati biten donem sonradan oynamasin diye.
 --   Alan YOKSA 'kesin' sayilir: sonradan eklendi, yoklugu taslak anlamina
 --   gelmemeli - gelseydi mevcut faturalar bir anda tavandan dusulurdu.
+--
+-- KILIT ACILDIKTAN SONRAKI DEGISIKLIKLER: bir fatura kilitlenip yonetici
+-- tarafindan tekrar acilabiliyor. 'sonKilitAcma' o anin izidir ve KALICIDIR -
+-- yeniden kilitlense bile silinmez. Acildiktan sonra yapilan HER duzenlemede
+-- history kaydina alan alan fark yazilir (index.html fatDegisimOzeti: hangi alan
+-- neyden neye, hangi urun eklendi/cikarildi, odenecek tutar nasil degisti) ve
+-- kayit kilitSonrasi:true ile isaretlenir; kayda da kilitSonrasiDegisim bayragi
+-- konur. Ayni dokum denetim kaydina (audit_log) da yazilir: faturanin kendi
+-- gecmisi son 20 kayitla sinirli ve fatura silinirse onunla gider, denetim kaydi
+-- ayri tabloda kalir - biri kaybolsa oteki durur.
 --
 -- 'key' URUN ANAHTARIDIR: once kutuphane malzemesi ('mat:<matId>'), kutuphanede
 -- karsiligi yoksa 'ad:<kod>|<ad>'. Urunu cozen kural uygulamanin kendi kuralidir
