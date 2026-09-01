@@ -727,6 +727,21 @@ export async function sbUpdateIhtiyacListesi(id, e) { return sbUpdateEntity('iht
 export async function sbDeleteIhtiyacListesi(id) { return sbDeleteEntity('ihtiyac_listeleri', id) }
 export async function sbWipeIhtiyacData() { await sbDeleteAll('ihtiyac_listeleri') }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Fatura Kontrol — siparisi alinan malin FIILEN faturalanan (parasi odenen) kismi
+//
+// ACILISTA YUKLENMEZ (kota). Denetim kaydiyla ayni karar: veri yalnizca Fatura
+// ekraninda, Tum Siparisler rozetlerinde ve yedek alinirken gerekli - oralarda
+// bir kez cekilip oturum boyunca bellekte tutulur (bkz. index.html faturaYukle).
+// Tablo migration_fatura.sql ile kurulur; kurulmamissa ekran "once SQL'i
+// calistirin" uyarisi gosterir (gunluk_isler / ihtiyac_listeleri ile ayni desen).
+// ─────────────────────────────────────────────────────────────────────────────
+export async function sbGetFaturalar() { return sbGetAll('faturalar') }
+export async function sbInsertFatura(e) { return sbInsertEntity('faturalar', e) }
+export async function sbUpdateFatura(id, e) { return sbUpdateEntity('faturalar', id, e) }
+export async function sbDeleteFatura(id) { return sbDeleteEntity('faturalar', id) }
+export async function sbWipeFaturaData() { await sbDeleteAll('faturalar') }
+
 export async function sbGetCompanies() { return sbGetAll('companies') }
 export async function sbInsertCompany(e) { return sbInsertEntity('companies', e) }
 export async function sbUpdateCompany(id, e) { return sbUpdateEntity('companies', id, e) }
@@ -853,8 +868,13 @@ export async function sbLoadAllData(scope) {
   // 'siparis' bagimsiz bir modul haline geldi: yalnizca siparis yetkisi olan kullanici
   // (orn. ambarci) siparisleri, siparise bagli stok girislerini ve alternatif urunleri de
   // gormeli - yoksa "Tum Siparisler" ekrani bos acilir. Sirketler de siparis formunda secilir.
-  const needProjeFull = need('proje') || need('siparis')
-  const needCompanies = need('proje') || need('tanimlar') || need('siparis')
+  /* 'fatura' (Fatura Kontrol) da siparis verisine ihtiyac duyar: modul, siparis
+     satirlarindan ne kadarinin faturalandigini hesapliyor. Eklenmeseydi YALNIZCA
+     fatura yetkisi olan bir kullanici (orn. muhasebe) ekrani BOS acar, hicbir
+     siparis goremez ve "hic fatura kesilmemis" gibi bir tabloyla karsilasirdi.
+     Sunucudaki karsiligi lib/yetki.js OKUMA_MODULLERI - ikisi birlikte degisir. */
+  const needProjeFull = need('proje') || need('siparis') || need('fatura')
+  const needCompanies = need('proje') || need('tanimlar') || need('siparis') || need('fatura')
 
   const tasks = { settingsRes: anahtarDegerGetir('app_settings') }
   if (need('alet')) {
@@ -1060,6 +1080,8 @@ export async function sbMigrateLocalDB(localDB) {
     push('Gunluk Isler', sbInsertEntities('gunluk_isler', localDB.gunlukIsler))
   if (localDB.ihtiyaclar?.length)
     push('Ihtiyac Listeleri', sbInsertEntities('ihtiyac_listeleri', localDB.ihtiyaclar))
+  if (localDB.faturalar?.length)
+    push('Faturalar', sbInsertEntities('faturalar', localDB.faturalar))
   if (localDB.gecici?.lib?.length)
     push('Gecici Elektrik Kutuphanesi', sbInsertEntities('gecici_lib', localDB.gecici.lib))
   if (localDB.gecici?.moves?.length)
@@ -1129,7 +1151,7 @@ export async function sbWipeAllData() {
     'proje_bina_modelleri', 'proje_lokasyonlar', 'proje_alternatives', 'companies',
     'alet_items', 'alet_lib', 'saha_panels', 'saha_lines', 'saha_sockets',
     'rapor_entries', 'tutanaklar', 'gecici_lib', 'gecici_moves', 'gecici_orders',
-    'gunluk_isler', 'ihtiyac_listeleri',
+    'gunluk_isler', 'ihtiyac_listeleri', 'faturalar',
   ]
   await Promise.allSettled([
     ...textIdTables.map(t => sbDeleteAll(t)),

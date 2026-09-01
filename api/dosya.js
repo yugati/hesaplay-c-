@@ -20,7 +20,7 @@ const INDIRME_OMRU = 300 // sn - sekmede acilmasina yeter, link paylasilirsa kis
    istemci 'path' ile kovadaki baska bir dosyayi isteyebilir ya da istedigi turde
    dosya yukleyebilirdi. */
 const KOVALAR = {
-  belgeler: { onek: /^(siparis|hareket|tutanak|gorev)\// },
+  belgeler: { onek: /^(siparis|hareket|tutanak|gorev|fatura)\// },
   'bina-modelleri': { onek: /^model\// },
 }
 /* kind -> kova + izin verilen uzanti.
@@ -32,6 +32,11 @@ const TURLER = {
   siparis: { kova: 'belgeler', uzantilar: ['pdf'] },
   hareket: { kova: 'belgeler', uzantilar: ['pdf'] },
   tutanak: { kova: 'belgeler', uzantilar: ['pdf'] },
+  /* 'fatura' AYRI bir turdur, 'siparis'in altina konmadi: fatura nushasini
+     yukleme yetkisi Fatura Kontrol modulune bagli (bkz. src/main.js BELGE_YETKI),
+     siparis PDF'i ise proje modulune. Ayni onek altinda dursalardi, siparis
+     girebilen herkes odeme belgesi de yukleyebilirdi. */
+  fatura: { kova: 'belgeler', uzantilar: ['pdf'] },
   gorev: { kova: 'belgeler', uzantilar: ['jpg', 'jpeg', 'png', 'webp'] },
   model: { kova: 'bina-modelleri', uzantilar: ['glb', 'gltf'] },
 }

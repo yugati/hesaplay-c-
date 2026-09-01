@@ -167,6 +167,12 @@ import {
   sbUpdateIhtiyacListesi,
   sbDeleteIhtiyacListesi,
   sbWipeIhtiyacData,
+  // Fatura Kontrol (faturalanan miktar takibi)
+  sbGetFaturalar,
+  sbInsertFatura,
+  sbUpdateFatura,
+  sbDeleteFatura,
+  sbWipeFaturaData,
   // Sirketler
   sbGetCompanies,
   sbInsertCompany,
@@ -405,6 +411,11 @@ const BELGE_YETKI = {
   hareket: ['proje', ['create']],
   gorev:   ['proje', ['create']],
   tutanak: ['rapor', ['create', 'update']],
+  /* Fatura nushasi Fatura Kontrol modulune baglidir - siparis PDF'i gibi 'proje'ye
+     DEGIL. Gerekce dosya turunun kendisiyle ayni (bkz. api/dosya.js TURLER.fatura):
+     odeme belgesi yuklemek, siparis girmekten ayri bir yetkidir. create VEYA update
+     yeter - ekrandaki dugme de fatCanEdit() ile gosteriliyor. */
+  fatura: ['fatura', ['create', 'update']],
 }
 function _permCheckAny(module, actions) {
   let son = null
@@ -446,6 +457,18 @@ window.sbInsertIhtiyacListesi  = guardedThrow('siparis', 'create', sbInsertIhtiy
 window.sbUpdateIhtiyacListesi  = guardedThrow('siparis', 'update', sbUpdateIhtiyacListesi)
 window.sbDeleteIhtiyacListesi  = guardedThrow('siparis', 'delete', sbDeleteIhtiyacListesi)
 window.sbWipeIhtiyacData       = sbWipeIhtiyacData
+
+// ─── Fatura Kontrol ──────────────────────────────────────────────────────────
+// Kendi modulu ('fatura'), 'siparis' DEGIL: siparis girebilen herkesin odeme
+// kaydi da yazabilmesi modulun amacini (ayni mali iki kez faturalatmama) bozardi.
+// Sunucudaki karsiligi lib/yetki.js YAZMA_MODULU.faturalar - ikisi birlikte degisir.
+// guardedThrow: hata yutulursa cagiran "kaydedildi" sanip kaydi yerelde tutar ve
+// sayfa yenilenince fatura ortadan kaybolur (Gunluk Isler'de yasanan tuzak).
+window.sbGetFaturalar   = sbGetFaturalar
+window.sbInsertFatura   = guardedThrow('fatura', 'create', sbInsertFatura)
+window.sbUpdateFatura   = guardedThrow('fatura', 'update', sbUpdateFatura)
+window.sbDeleteFatura   = guardedThrow('fatura', 'delete', sbDeleteFatura)
+window.sbWipeFaturaData = sbWipeFaturaData
 
 // ─── Sirketler ───────────────────────────────────────────────────────────────
 window.sbGetCompanies      = sbGetCompanies

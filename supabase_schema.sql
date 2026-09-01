@@ -834,6 +834,41 @@ CREATE TRIGGER ihtiyac_listeleri_updated_at BEFORE UPDATE ON public.ihtiyac_list
   FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
 
 -- ============================================================
+-- FATURA KONTROL — faturalar
+-- Sipariş kaydı "ne alındı"yı söyler; bu tablo "parası ödenen ne" sorusunu
+-- yanıtlar. Her fatura satırı bir SİPARİŞ SATIRINA bağlanır (key = iadeUrunKey),
+-- böylece bir üründen ne kadarının faturalandığı ölçülür ve kalandan fazlası
+-- yazılamaz — aynı malın ikinci kez faturalanması önlenir.
+-- Bir fatura BİRDEN ÇOK siparişi kapsayabilir; bu yüzden sipariş kaydının içinde
+-- değil (iade fişleri gibi) ayrı tablodadır.
+-- Ayrıntı ve tek başına çalıştırma: migration_fatura.sql
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.faturalar (
+  id          TEXT        NOT NULL PRIMARY KEY,
+  data        JSONB       NOT NULL DEFAULT '{}',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS faturalar_created_at_idx ON public.faturalar (created_at);
+CREATE INDEX IF NOT EXISTS faturalar_no_idx         ON public.faturalar ((data->>'no'));
+CREATE INDEX IF NOT EXISTS faturalar_company_idx    ON public.faturalar ((data->>'companyId'));
+CREATE INDEX IF NOT EXISTS faturalar_bina_idx       ON public.faturalar ((data->>'bina'));
+
+-- çok kiracılı yapı: indeks adları migration_org_1.sql'in ürettikleriyle aynı
+ALTER TABLE public.faturalar ADD COLUMN IF NOT EXISTS org_id TEXT NOT NULL DEFAULT 'bykara';
+CREATE INDEX IF NOT EXISTS faturalar_org_idx ON public.faturalar (org_id);
+CREATE UNIQUE INDEX IF NOT EXISTS faturalar_org_id_uidx   ON public.faturalar (org_id, id);
+CREATE INDEX IF NOT EXISTS faturalar_org_created_idx ON public.faturalar (org_id, created_at, id);
+
+ALTER TABLE public.faturalar ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.faturalar FROM anon, authenticated;
+
+DROP TRIGGER IF EXISTS faturalar_updated_at ON public.faturalar;
+CREATE TRIGGER faturalar_updated_at BEFORE UPDATE ON public.faturalar
+  FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+
+-- ============================================================
 -- AŞAMA 3 — ANON ERİŞİMİNİ KAPAT  (dosyanın EN SONU, sırası önemli)
 --
 -- Yukarıdaki bölümlerin anon'a verdiği tüm yetkiler burada geri alınır.
