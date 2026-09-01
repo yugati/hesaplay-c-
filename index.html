@@ -24457,14 +24457,21 @@ function fatSetQty(i,el){
   st.qty[s.key]=q||'';
   /* Satir ilk kez dolduruldugunda VARSAYILAN KDV yazilir: bir faturadaki
      satirlarin cogu ayni orandadir, her satirda tekrar secmek zaman kaybi.
-     Kullanici sonra tek tek degistirebilir; bos birakilan oran 0 sayilir. */
+     Kullanici sonra tek tek degistirebilir; bos birakilan oran 0 sayilir.
+
+     BURADA render() CAGIRILMAZ. Cagiriliyordu ve tablo bastan cizildigi icin
+     kutu odagi kaybediyordu: "505" yazarken ilk '5'ten sonra imlec kutudan
+     cikiyor, kalan tuslar hicbir yere gitmiyordu. Yeniden cizmek yerine yalnizca
+     O SATIRIN KDV kutusunun degeri DOM'da guncellenir - girilen deger zaten
+     durumda (st.sb) yazili, bir sonraki cizimde de dogru gorunur. */
   const b=fatSB(st,s.key);
-  const ilkDoldurma=(q>0&&b.kdv===''&&st.varsayilanKdv!=null&&st.varsayilanKdv!=='');
-  if(ilkDoldurma) b.kdv=fatSayi(st.varsayilanKdv);
+  if(q>0&&b.kdv===''&&st.varsayilanKdv!=null&&st.varsayilanKdv!==''){
+    b.kdv=fatSayi(st.varsayilanKdv);
+    const sel=document.getElementById('fatKO'+i);
+    if(sel) sel.value=String(fatSayi(st.varsayilanKdv));
+  }
   el.classList.toggle('dolu',q>0);
-  // KDV kutusu yalnizca ILK doldurmada degistigi icin o an tablo yenilenir;
-  // sonraki tuslarda yenilenmez - odak kutudan kacmasin
-  if(ilkDoldurma) render(); else fatOzetGuncelle();
+  fatOzetGuncelle();
 }
 /* Fiyat / iskonto / KDV / diger vergi kutulari. Negatif deger kabul edilmez -
    eksi bir iskonto ya da KDV, faturanin aritmetigini sessizce bozardi. */
@@ -24571,7 +24578,7 @@ function renderFaturaForm(){
       <td><input type="number" step="any" min="0" max="100" class="num dar" ${bitti?'disabled':''}
         value="${b.iskonto!==undefined&&b.iskonto!==''?esc(b.iskonto):''}" placeholder="-" oninput="fatSetSatirAlan(${i},'iskonto',this)"
         title="Iskonto orani (%) - iskonto tutari bu orandan hesaplanir"></td>
-      <td><select class="num dar" ${bitti?'disabled':''} onchange="fatSetSatirAlan(${i},'kdv',this)"
+      <td><select class="num dar" id="fatKO${i}" ${bitti?'disabled':''} onchange="fatSetSatirAlan(${i},'kdv',this)"
         title="KDV orani - matrah uzerinden hesaplanir">
         ${oranlar.map(o=>`<option value="${o}" ${fatSayi(b.kdv)===o&&b.kdv!==''?'selected':''}>%${fmtNum(o)}</option>`).join('')}
       </select>
