@@ -23899,7 +23899,7 @@ function icoIhtPdf(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fi
 
    KOTA: kayitlar acilista INMEZ, ilk ihtiyacta faturaYukle() ile bir kez cekilir.
    ================================================================== */
-let FATV={ mode:'liste', q:'', comp:'', bina:'', durum:'', from:'', to:'' }; // liste | mutabakat | form
+let FATV={ mode:'liste', q:'', comp:'', bina:'', bolum:'', sart:'', durum:'', from:'', to:'' }; // liste | mutabakat | form
 let _FAT=null;                                    // duzenlenmekte olan fatura taslagi
 const FAT_EPS=1e-6;                               // kayan nokta toleransi (0.1+0.2 tuzagi)
 
@@ -24027,6 +24027,14 @@ function fatAnahtar(l,mt){
   return 'ad:'+norm(String((l&&l.code)||'').trim())+'|'+norm(String((l&&(l.ad||l.name))||'').trim());
 }
 function fatUrunKey(l){ return fatAnahtar(l, typeof lineAlimMaterial==='function'?lineAlimMaterial(l):null); }
+/* Sartname adi: siparis satirinda l.grup olarak durur. Yoksa kalemden turetilir -
+   uygulamanin kendi specGroupKey'i varsa o kullanilir (tek kaynak), yoksa kalem
+   kodu. Sarmalayici, specGroupKey ileride kaldirilirsa modulun patlamamasi icin. */
+function specGroupKeyGuvenli(sp){
+  if(!sp) return '';
+  if(typeof specGroupKey==='function'){ try{ return specGroupKey(sp)||''; }catch(_){ } }
+  return sp.code||'';
+}
 
 /* URUN HAVUZU: tum siparislerdeki alimlar ve iadeler urun bazinda toplanir.
    Iade satirlari da ayni cozumleyiciden gecer (specId/altId/code/ad tasirlar).
@@ -24046,28 +24054,37 @@ function fatUrunHavuzu(){
   // ayni urun yuzlerce satirda tekrar ediyor - cozumleme satir basina degil
   // AYIRT EDICI ALANLAR basina bir kez yapilir
   const coz=new Map();
+  /* Satir cozumlemesi TEK SEFERDE hem urunu hem BAGLAMI verir: bolum (sartname
+     kaleminin kategorisi) ve sartname adi. Ikisi de suzgec icin gerekli ve ikisi
+     de ayni aramadan cikiyor - ayri ayri aramak sartname listesini iki kez
+     taramak olurdu. */
   const urunBul=l=>{
     const ck=(l.altId||'')+'|'+(l.specId||'')+'|'+String(l.code||'')+'|'+String(l.ad||l.name||'');
     if(coz.has(ck)) return coz.get(ck);
     const mt=typeof lineAlimMaterial==='function'?lineAlimMaterial(l):null;
-    coz.set(ck,mt); return mt;
+    const sp=(l.specId&&typeof orderLineSpec==='function')?orderLineSpec(l):null;
+    const c={mt, bolum:(sp&&sp.cat)||'', sart:l.grup||(sp&&specGroupKeyGuvenli(sp))||''};
+    coz.set(ck,c); return c;
   };
   const ekle=(l,alan,o)=>{
     const q=Number(l&&l.qty)||0; if(!q) return;
-    const mt=urunBul(l);
+    const c=urunBul(l), mt=c.mt;
     const k=fatAnahtar(l,mt);
     let g=m.get(k);
     if(!g){
       g={ key:k, matId:(mt&&mt.id)||'', code:(mt&&mt.code)||l.code||'',
           ad:(mt&&mt.name)||l.ad||l.name||'', unit:(mt&&mt.unit)||l.unit||'',
-          alinan:0, iade:0, binalar:new Set(), firmalar:new Set(), sonTarih:0 };
+          alinan:0, iade:0, binalar:new Set(), firmalar:new Set(),
+          bolumler:new Set(), sartnameler:new Set(), sonTarih:0 };
       m.set(k,g);
     }
     g[alan]+=q;
     if(!g.unit&&l.unit) g.unit=l.unit;
+    if(c.bolum) g.bolumler.add(c.bolum);
+    if(c.sart&&!String(c.sart).startsWith('Karma (')) g.sartnameler.add(c.sart);
     if(o){
       if(o.bina) g.binalar.add(o.bina);
-      const c=orderCompany(o); if(c) g.firmalar.add(c);
+      const fr=orderCompany(o); if(fr) g.firmalar.add(fr);
       if(Number(o.date||0)>g.sonTarih) g.sonTarih=Number(o.date||0);
     }
   };
@@ -24106,6 +24123,7 @@ function fatUrunListesi(haricId){
     const net=Math.max(0,g.alinan-g.iade);
     const fat=ix.get(g.key)||0;
     out.push({ ...g, binalar:[...g.binalar], firmalar:[...g.firmalar],
+      bolumler:[...g.bolumler], sartnameler:[...g.sartnameler],
       net, fat, kalan:net-fat, durum:fatDurumHesapla(net,fat), alimVar:true });
   });
   ix.forEach((q,k)=>{
@@ -24115,7 +24133,7 @@ function fatUrunListesi(haricId){
     fatKesinler().some(f=>fatSatirlari(f).some(r=>{ if(String(r.key||'')===k){ ornek=r; return true; } return false; }));
     out.push({ key:k, matId:(ornek&&ornek.matId)||'', code:(ornek&&ornek.code)||'',
       ad:(ornek&&ornek.ad)||'(bilinmeyen urun)', unit:(ornek&&ornek.unit)||'',
-      alinan:0, iade:0, binalar:[], firmalar:[], sonTarih:0,
+      alinan:0, iade:0, binalar:[], firmalar:[], bolumler:[], sartnameler:[], sonTarih:0,
       net:0, fat:q, kalan:-q, durum:'fazla', alimVar:false });
   });
   return out.sort((a,b)=>{
@@ -24168,12 +24186,12 @@ async function openFatura(){
   PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false;
   PNEWORD=false; PBINAY=false; PKATA=false; PODM=false; PSPECF=false; PRIMP=false; PINV=false;
   PTUT=false; PIHT=false; PKODD=false; _KODD=null; _INV=null; _TUT=null; _IHT=null;
-  FATV={ mode:'liste', q:'', comp:'', bina:'', durum:'', from:'', to:'' }; _FAT=null; SEARCH="";
+  FATV={ mode:'liste', q:'', comp:'', bina:'', bolum:'', sart:'', durum:'', from:'', to:'' }; _FAT=null; SEARCH="";
   render(); try{ window.scrollTo(0,0); }catch(e){}
   // veri acilista inmiyor: once bos liste cizilir, defter gelince yeniden cizilir
   await faturaYukle(); if(PFAT) render();
 }
-function closeFatura(){ PFAT=false; FATV={mode:'liste',q:'',comp:'',bina:'',durum:'',from:'',to:''}; _FAT=null; render(); }
+function closeFatura(){ PFAT=false; FATV={mode:'liste',q:'',comp:'',bina:'',bolum:'',sart:'',durum:'',from:'',to:''}; _FAT=null; render(); }
 /* Sekme degisiminde DURUM SUZGECI SIFIRLANIR. FATV.durum iki ekranda ayri anlam
    tasiyor: listede KAYIT durumu (taslak/kesin/kilitli), mutabakatta URUN durumu
    (fazla/kismi/tam/yok). Tasinsaydi listede "taslak" secip mutabakata gecen
@@ -24181,8 +24199,8 @@ function closeFatura(){ PFAT=false; FATV={mode:'liste',q:'',comp:'',bina:'',duru
    bunu "veri yok" sanirdi. */
 function fatSetMode(m){ FATV.mode=m; FATV.durum=''; render(); try{ window.scrollTo(0,0); }catch(e){} }
 function fatSetF(k,v){ FATV[k]=v; render(); }
-function fatFiltreVar(){ return !!(FATV.q||FATV.comp||FATV.bina||FATV.durum||FATV.from||FATV.to); }
-function fatFiltreTemizle(){ FATV.q=''; FATV.comp=''; FATV.bina=''; FATV.durum=''; FATV.from=''; FATV.to=''; render(); }
+function fatFiltreVar(){ return !!(FATV.q||FATV.comp||FATV.bina||FATV.bolum||FATV.sart||FATV.durum||FATV.from||FATV.to); }
+function fatFiltreTemizle(){ FATV.q=''; FATV.comp=''; FATV.bina=''; FATV.bolum=''; FATV.sart=''; FATV.durum=''; FATV.from=''; FATV.to=''; render(); }
 
 /* Tablo henuz kurulmamissa (SQL calistirilmadi) ekranin basinda net uyari durur -
    ihtiyac/tutanak ekranlariyla ayni desen. */
@@ -24460,7 +24478,7 @@ function fatYeni(){
     senaryo:'TICARIFATURA', faturaTipi:'SATIS', ozellestirmeNo:'TR1.2', ettn:'',
     irsaliyeNo:'', irsaliyeTarihi:'', paraBirimi:'TRY', kur:'', varsayilanKdv:20,
     beyanTutar:'', not:'', pdf:null, durum:'taslak',
-    qty:{}, sb:{}, fq:'', fbina:'', ftum:false, ftumDurum:false };
+    qty:{}, sb:{}, fq:'', fbina:'', fbolum:'', fsart:'', ftum:false, ftumDurum:false };
   FATV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
 }
 function fatDuzenle(id){
@@ -24480,7 +24498,7 @@ function fatDuzenle(id){
     irsaliyeNo:f.irsaliyeNo||'', irsaliyeTarihi:f.irsaliyeTarihi?new Date(f.irsaliyeTarihi).toISOString().slice(0,10):'',
     paraBirimi:f.paraBirimi||'TRY', kur:f.kur||'', varsayilanKdv:20,
     beyanTutar:f.beyanTutar||'', not:f.not||'', durum:fatDurumu(f),
-    pdf:f.pdf||null, qty, sb, fq:'', fbina:'', ftum:true, ftumDurum:true };
+    pdf:f.pdf||null, qty, sb, fq:'', fbina:'', fbolum:'', fsart:'', ftum:true, ftumDurum:true };
   FATV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
 }
 /* Formdan cikis. YUKLENMIS AMA KAYDEDILMEMIS nusha kovadan silinir (iadeKapat ile
@@ -24511,19 +24529,35 @@ function fatPdfKaldir(){
 /* Formda gosterilecek urunler. Kural: secili firmadan alinmis urunler ve KALANI
    olanlar. Zaten miktar girilmis bir urun filtreye takilsa bile DAIMA gosterilir -
    yoksa girilen satir ekrandan kaybolur, kullanici gormeden kaydeder. */
-function fatFormUrunleri(){
+/* tum: onceden hesaplanmis urun listesi (renderFaturaForm bir kez kurar ve hem
+   suzgec seceneklerini hem de bu filtreyi ondan besler - havuz iki kez taranmasin). */
+function fatFormUrunleri(tum){
   const st=_FAT; if(!st) return [];
   const girilen=new Set(Object.keys(st.qty).filter(k=>fatSayi(st.qty[k])>0));
   const firmaAd=((DB.companies||[]).find(c=>c.id===st.companyId)||{}).ad||'';
   const q=st.fq;
-  return fatUrunListesi(st.editId||'').filter(u=>{
+  return (tum||fatUrunListesi(st.editId||'')).filter(u=>{
+    // GIRILMIS satir daima gorunur: yoksa girilen miktar ekrandan kaybolur ve
+    // kullanici gormeden kaydeder
     if(girilen.has(u.key)) return true;
     if(st.fbina && !u.binalar.includes(st.fbina)) return false;
+    if(st.fbolum && !u.bolumler.includes(st.fbolum)) return false;
+    if(st.fsart && !u.sartnameler.includes(st.fsart)) return false;
     if(!st.ftum && firmaAd && !u.firmalar.includes(firmaAd)) return false;
     if(!st.ftumDurum && u.kalan<=FAT_EPS) return false;
-    if(q && !matchText([u.ad,u.code,u.binalar.join(' '),u.firmalar.join(' ')].join(' '),q)) return false;
+    if(q && !matchText([u.ad,u.code,u.binalar.join(' '),u.bolumler.join(' '),
+      u.sartnameler.join(' '),u.firmalar.join(' ')].join(' '),q)) return false;
     return true;
   });
+}
+// suzgec seceneklerini HAVUZDAN uretir: secilince bos liste veren secenek cikmasin
+function fatSecenekler(liste,alan){
+  return [...new Set((liste||[]).flatMap(u=>u[alan]||[]))].filter(Boolean).sort((a,b)=>String(a).localeCompare(String(b),'tr'));
+}
+function fatFormFiltreVar(){ const st=_FAT; return !!(st&&(st.fq||st.fbina||st.fbolum||st.fsart||st.ftum||st.ftumDurum)); }
+function fatFormFiltreTemizle(){
+  const st=_FAT; if(!st) return;
+  st.fq=''; st.fbina=''; st.fbolum=''; st.fsart=''; st.ftum=false; st.ftumDurum=false; render();
 }
 // Bir urunun satir bilgisi (fiyat/iskonto/KDV/diger) - yoksa olusturulur
 function fatSB(st,key){
@@ -24646,8 +24680,12 @@ function fatHepsiniTemizle(){ const st=_FAT; if(!st) return; st.qty={}; render()
 function renderFaturaForm(){
   const st=_FAT;
   const firmalar=fatFirmalar();
-  const binalar=projBuildings();
-  const liste=fatFormUrunleri();
+  // urun havuzu BIR KEZ kurulur: hem suzgec secenekleri hem de liste ondan cikar
+  const tumUrunler=fatUrunListesi(st.editId||'');
+  const binalar=fatSecenekler(tumUrunler,'binalar');
+  const bolumler=fatSecenekler(tumUrunler,'bolumler');
+  const sartnameler=fatSecenekler(tumUrunler,'sartnameler');
+  const liste=fatFormUrunleri(tumUrunler);
   const LIMIT=80;
   const gosterilen=liste.slice(0,LIMIT);
   st._satirlar=[];                       // ekrandaki miktar kutularinin duz listesi
@@ -24667,7 +24705,9 @@ function renderFaturaForm(){
     return `<tr class="${bitti?'bitti':''}">
       <td class="tl-no">${i+1}</td>
       <td><div style="font-size:12.5px">${esc(u.ad||'-')}</div>
-        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(u.code||'-')}${u.unit?' · '+esc(u.unit):''}${u.binalar.length?' · '+esc(u.binalar.join(', ')):''}</div></td>
+        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(u.code||'-')}${u.unit?' · '+esc(u.unit):''}${u.binalar.length?' · '+esc(u.binalar.join(', ')):''}${
+          u.bolumler.length?' · <span style="color:var(--blue)">'+esc(u.bolumler.join(', '))+'</span>':''}${
+          u.sartnameler.length?' · '+esc(u.sartnameler.slice(0,2).join(', '))+(u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''):''}</div></td>
       <td class="fat-alim" title="Alinan ${fmtNum(u.alinan)} · iade ${fmtNum(u.iade)} · daha once faturalanan ${fmtNum(u.fat)}">
         <b>${fmtNum(u.alinan)}</b>${u.iade>0?` · <span style="color:var(--amber)">-${fmtNum(u.iade)}</span>`:''}${u.fat>0?` · <span style="color:${u.durum==='fazla'?'var(--red)':'var(--mute)'}">F${fmtNum(u.fat)}</span>`:''}</td>
       <td class="num" style="font-weight:700;color:${bitti?'var(--dim)':'var(--ink)'}">${fmtNum(Math.max(0,u.kalan))}</td>
@@ -24766,16 +24806,21 @@ function renderFaturaForm(){
       <div class="iht-bar" style="margin-bottom:10px">
         <div class="iht-search">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          <input value="${esc(st.fq)}" placeholder="urun adi, kod, bina..." onchange="fatSetFiltre('fq',this.value.trim())">
+          <input value="${esc(st.fq)}" placeholder="urun adi, kod, bina, bolum, sartname..." onchange="fatSetFiltre('fq',this.value.trim())">
           ${st.fq?`<button class="iht-x" onclick="fatSetFiltre('fq','')">&times;</button>`:''}
         </div>
-        <select onchange="fatSetFiltre('fbina',this.value)"><option value="">Tum binalar</option>
+        <select onchange="fatSetFiltre('fbina',this.value)" title="Urunun alindigi bina"><option value="">Tum binalar</option>
           ${binalar.map(b=>`<option ${st.fbina===b?'selected':''}>${esc(b)}</option>`).join('')}</select>
+        <select onchange="fatSetFiltre('fbolum',this.value)" title="Sartname kaleminin bagli oldugu bolum"><option value="">Tum bolumler</option>
+          ${bolumler.map(b=>`<option ${st.fbolum===b?'selected':''}>${esc(b)}</option>`).join('')}</select>
+        <select onchange="fatSetFiltre('fsart',this.value)" title="Urunun gectigi sartname" style="min-width:150px"><option value="">Tum sartnameler</option>
+          ${sartnameler.map(b=>`<option ${st.fsart===b?'selected':''}>${esc(b)}</option>`).join('')}</select>
         <label class="chk" style="display:flex;align-items:center;gap:6px;font-size:12px">
           <input type="checkbox" ${st.ftum?'checked':''} onchange="fatSetFiltre('ftum',this.checked)"> Diger firmalardan alinanlar</label>
         <label class="chk" style="display:flex;align-items:center;gap:6px;font-size:12px">
           <input type="checkbox" ${st.ftumDurum?'checked':''} onchange="fatSetFiltre('ftumDurum',this.checked)"> Tamami faturalanmislar</label>
         <div class="iht-sag">
+          ${fatFormFiltreVar()?`<button class="iht-reset" onclick="fatFormFiltreTemizle()">Filtreleri temizle</button>`:''}
           ${gosterilen.length?`<button class="iht-reset" onclick="fatHepsiniDoldur()">Gorunenlerin kalanini doldur</button>`:''}
           ${t.satir?`<button class="iht-reset" onclick="fatHepsiniTemizle()">Girilenleri temizle</button>`:''}
         </div>
@@ -24791,7 +24836,7 @@ function renderFaturaForm(){
           <th class="num" title="Ust satir KDV haric (matrah), alt satir KDV dahil toplam">Mal Hizmet Tutari</th>
         </tr></thead><tbody>${satirlar}</tbody></table></div>
         <div class="fat-toplam"><div class="fat-toplam-ic" id="fatToplamBlok">${fatToplamBlokIc()}</div></div>`
-      :`<div class="empty" style="padding:22px"><p>${st.companyId?'Bu firmadan alinmis, faturalanmayi bekleyen urun yok':'Once firma secin'}</p>
+      :`<div class="empty" style="padding:22px"><p>${fatFormFiltreVar()?'Suzgece uyan urun yok':(st.companyId?'Bu firmadan alinmis, faturalanmayi bekleyen urun yok':'Once firma secin')}</p>
         <span style="font-size:12px">${st.companyId?'"Diger firmalardan alinanlar" ya da "Tamami faturalanmislar" kutusunu isaretleyerek listeyi genisletebilirsiniz':'Firma secilince o firmadan alinan urunler listelenir'}</span></div>`}
       ${liste.length>LIMIT?`<p class="t-meta" style="font-size:11.5px;margin-top:8px">+ ${fmtNum(liste.length-LIMIT)} urun daha var - listeyi daraltmak icin arama ya da bina filtresi kullanin</p>`:''}
     </div>
@@ -25096,20 +25141,26 @@ async function fatSil(id){
      2. CIFT FATURA NO - ayni firmadan ayni numara iki kez girilmis. */
 function fatMutUrunFiltre(u){
   if(FATV.bina && !u.binalar.includes(FATV.bina)) return false;
+  if(FATV.bolum && !u.bolumler.includes(FATV.bolum)) return false;
+  if(FATV.sart && !u.sartnameler.includes(FATV.sart)) return false;
   if(FATV.comp){
     const ad=((DB.companies||[]).find(c=>c.id===FATV.comp)||{}).ad||'';
     if(ad && !u.firmalar.includes(ad)) return false;
   }
-  if(FATV.q && !matchText([u.ad,u.code,u.binalar.join(' '),u.firmalar.join(' ')].join(' '),FATV.q)) return false;
+  if(FATV.q && !matchText([u.ad,u.code,u.binalar.join(' '),u.bolumler.join(' '),
+    u.sartnameler.join(' '),u.firmalar.join(' ')].join(' '),FATV.q)) return false;
   return true;
 }
 function fatMutabakatVeri(){
-  const taban=fatUrunListesi().filter(fatMutUrunFiltre);
+  const tum=fatUrunListesi();
+  const taban=tum.filter(fatMutUrunFiltre);
   const sayac={ hepsi:taban.length, fazla:0, kismi:0, tam:0, yok:0 };
   let net=0, fat=0;
   taban.forEach(u=>{ sayac[u.durum]++; net+=u.net; fat+=u.fat; });
   const liste=FATV.durum?taban.filter(u=>u.durum===FATV.durum):taban;
-  return {taban,liste,sayac,net,fat};
+  // secenekler SUZULMEMIS havuzdan: bir bolumu secince oteki bolumler listeden
+  // kaybolsaydi kullanici geri donemezdi
+  return {tum,taban,liste,sayac,net,fat};
 }
 function renderFaturaMutabakat(){
   if(!_FAT_YUKLENDI){
@@ -25121,11 +25172,13 @@ function renderFaturaMutabakat(){
       ${fatMissingWarn()}
       ${fatSekmeler()}</div>`;
   }
-  const {taban,liste,sayac,net,fat}=fatMutabakatVeri();
+  const {tum,taban,liste,sayac,net,fat}=fatMutabakatVeri();
   const cift=fatCiftNolar();
   const fazlaListe=liste.filter(u=>u.durum==='fazla');
   const LIMIT=300;
-  const binalar=projBuildings();
+  const binalar=fatSecenekler(tum,'binalar');
+  const bolumler=fatSecenekler(tum,'bolumler');
+  const sartnameler=fatSecenekler(tum,'sartnameler');
   const firmalar=fatFirmalar();
   const filtreVar=fatFiltreVar();
   const seg=(deger,etiket,n,baslik)=>`<button class="${FATV.durum===deger?'on':''}" onclick="fatSetF('durum','${deger}')" title="${esc(baslik)}">${esc(etiket)}<i>${fmtNum(n)}</i></button>`;
@@ -25165,12 +25218,13 @@ function renderFaturaMutabakat(){
     <p>Secili kumede alinandan fazla faturalanmis urun ve tekrar eden fatura numarasi bulunmuyor.</p></div>`;
 
   let rows='';
-  if(!liste.length) rows=emptyRow(8,filtreVar?'Eslesen urun yok':'Henuz alim kaydi yok','Filtreleri degistirin');
+  if(!liste.length) rows=emptyRow(9,filtreVar?'Eslesen urun yok':'Henuz alim kaydi yok','Filtreleri degistirin');
   else liste.slice(0,LIMIT).forEach(u=>{
     rows+=`<tr>
       <td>${u.matId?`<button class="fat-link" style="font-weight:600" onclick="openMatDetail('${u.matId}')" title="Malzeme kunyesini ac">${esc(u.ad||'-')}</button>`:esc(u.ad||'-')}
         <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(u.code||'-')}</div></td>
       <td class="t-meta">${esc(u.binalar.join(', ')||'-')}</td>
+      <td class="t-meta">${esc(u.bolumler.join(', ')||'-')}${u.sartnameler.length?`<div style="font-size:10.5px">${esc(u.sartnameler.slice(0,2).join(', '))}${u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''}</div>`:''}</td>
       <td class="t-meta">${esc(u.firmalar.join(', ')||'-')}</td>
       <td class="t-qty">${fmtNum(u.alinan)}${u.unit?` <span style="color:var(--mute)">${esc(u.unit)}</span>`:''}</td>
       <td class="t-qty" style="color:${u.iade>0?'var(--amber)':'var(--dim)'}">${u.iade>0?fmtNum(u.iade):'-'}</td>
@@ -25201,8 +25255,12 @@ function renderFaturaMutabakat(){
       </div>
       <select onchange="fatSetF('comp',this.value)"><option value="">Tum firmalar</option>
         ${firmalar.map(c=>`<option value="${esc(c.id)}" ${FATV.comp===c.id?'selected':''}>${esc(c.ad||'-')}</option>`).join('')}</select>
-      <select onchange="fatSetF('bina',this.value)"><option value="">Tum binalar</option>
+      <select onchange="fatSetF('bina',this.value)" title="Urunun alindigi bina"><option value="">Tum binalar</option>
         ${binalar.map(b=>`<option ${FATV.bina===b?'selected':''}>${esc(b)}</option>`).join('')}</select>
+      <select onchange="fatSetF('bolum',this.value)" title="Sartname kaleminin bagli oldugu bolum"><option value="">Tum bolumler</option>
+        ${bolumler.map(b=>`<option ${FATV.bolum===b?'selected':''}>${esc(b)}</option>`).join('')}</select>
+      <select onchange="fatSetF('sart',this.value)" title="Urunun gectigi sartname" style="min-width:150px"><option value="">Tum sartnameler</option>
+        ${sartnameler.map(b=>`<option ${FATV.sart===b?'selected':''}>${esc(b)}</option>`).join('')}</select>
       <div class="iht-sag">
         ${filtreVar?`<button class="iht-reset" onclick="fatFiltreTemizle()">Filtreleri temizle</button>`:''}
         <button class="btn btn-ghost" onclick="exportMutabakatXlsx()">${icoXls()} Mutabakat Excel</button>
@@ -25217,7 +25275,7 @@ function renderFaturaMutabakat(){
     </div>
     <div class="ord-sumline"><b>${fmtNum(liste.length)}</b> urun gosteriliyor${liste.length>LIMIT?` <span class="t-meta">· ilk ${fmtNum(LIMIT)} satir cizildi, tamami Excel ciktisinda</span>`:''}</div>
     <div class="tablewrap"><table><thead><tr>
-      <th>Urun</th><th>Binalar</th><th>Firmalar</th><th>Alinan</th><th>Iade</th>
+      <th>Urun</th><th>Binalar</th><th>Bolum / Sartname</th><th>Firmalar</th><th>Alinan</th><th>Iade</th>
       <th title="Alinan - iade">Net</th><th>Faturalanan</th><th>Kalan / Durum</th>
     </tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
@@ -25227,17 +25285,18 @@ function renderFaturaMutabakat(){
 // Mutabakat: urun bazinda tam dokum. Ekranda ilk 300 satir cizilir, Excel'de TAMAMI.
 function exportMutabakatXlsx(){
   const {liste}=fatMutabakatVeri();
-  const aoa=[["urun_kodu","urun_adi","birim","binalar","firmalar",
+  const aoa=[["urun_kodu","urun_adi","birim","binalar","bolumler","sartnameler","firmalar",
     "alinan","iade","net_alinan","faturalanan","kalan","durum"]];
   liste.forEach(u=>{
     const dur={fazla:'FAZLA',tam:'TAM',kismi:'KISMI',yok:'FATURASIZ'}[u.durum]||'';
-    aoa.push([u.code||'', u.ad||'', u.unit||'', u.binalar.join(', '), u.firmalar.join(', '),
+    aoa.push([u.code||'', u.ad||'', u.unit||'', u.binalar.join(', '),
+      (u.bolumler||[]).join(', '), (u.sartnameler||[]).join(', '), u.firmalar.join(', '),
       u.alinan||0, u.iade||0, u.net||0, u.fat||0, Number((u.kalan||0).toFixed(4)), dur]);
   });
-  if(aoa.length===1) aoa.push(['','','','','',0,0,0,0,0,'']);
+  if(aoa.length===1) aoa.push(new Array(aoa[0].length).fill(''));
   const wb=XLSX.utils.book_new(), ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=[{wch:16},{wch:34},{wch:8},{wch:20},{wch:24},{wch:10},{wch:9},{wch:11},{wch:12},{wch:10},{wch:11}];
-  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:10}})};
+  ws['!cols']=[{wch:16},{wch:34},{wch:8},{wch:20},{wch:18},{wch:22},{wch:24},{wch:10},{wch:9},{wch:11},{wch:12},{wch:10},{wch:11}];
+  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:aoa[0].length-1}})};
   XLSX.utils.book_append_sheet(wb,ws,"Mutabakat");
   XLSX.writeFile(wb,`fatura-mutabakat_${new Date().toISOString().slice(0,10)}.xlsx`);
   logAction('fatura','Mutabakat Excel ciktisi alindi ('+fmtNum(aoa.length-1)+' satir)');
