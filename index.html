@@ -2189,6 +2189,11 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .matd-stats>div{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;text-align:center}
 .matd-stats b{display:block;font-family:var(--mono);font-size:17px;letter-spacing:-.4px}
 .matd-stats span{font-size:10px;color:var(--mute);text-transform:uppercase;letter-spacing:.4px}
+/* TIKLANABILIR kutu (kunyede yalnizca "Faturalanan"): sayinin arkasindaki belgeye
+   goturur. Tiklanabilir OLDUGU gorunmeli - imlec ve hover, alttaki satirlarla ayni
+   dili konusur; yoksa kullanici kutuyu olu bir rakam sanar. */
+.matd-stats>div.tikla{cursor:pointer;transition:border-color .13s,background .13s}
+.matd-stats>div.tikla:hover{border-color:var(--dim);background:var(--hover)}
 .matd-sec{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--mute);margin:16px 0 8px;display:flex;align-items:center;gap:7px}
 .matd-sec span{font-family:var(--mono);background:var(--dim)33;border-radius:5px;padding:1px 7px;font-size:10px}
 .matd-sec i{font-style:normal;margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink)}
@@ -11906,6 +11911,9 @@ function _openMatDetail(matId){
      doner ve kutu hic basilmaz - bkz. matFaturaDurumu. "Siparis" kutusuyla ayni
      kaynaktan (lineAlimMaterial) hesaplandigi icin iki sayi daima tutarlidir. */
   const _fatD=(typeof matFaturaDurumu==='function')?matFaturaDurumu(matId):null;
+  /* FATURALAR: sayinin arkasindaki belgeler. _fatD null iken (defter inmemis)
+     hic sorulmaz - "fatura kaydi yok" demek, veri gelmedigi icin yanlis olurdu. */
+  const _fatK=(_fatD&&typeof matFaturaKayitlari==='function')?matFaturaKayitlari(matId):[];
   // MONTAJ: alimla ayni kural - alternatif urunle yapilan montaj o urune sayilir
   const raps=rEntries().filter(e=>{ const mm=raporMontajMaterial(e); return !!mm&&mm.id===matId; })
     .sort((a,b)=>String(b.tarih||'').localeCompare(String(a.tarih||'')));
@@ -11990,14 +11998,28 @@ function _openMatDetail(matId){
   }).join('');
   const ordRows=ords.length?ords.slice(0,30).map(({o,qty})=>{
     const bc=buildingColor(o.bina);
-    return `<div class="matd-row" onclick="closeModal();openOrderDetail('${o.id}','${m.id}')" title="Fatura detayini ac">
+    return `<div class="matd-row" onclick="closeModal();openOrderDetail('${o.id}','${m.id}')" title="Siparis detayini ac">
       <span class="t-meta" style="flex-shrink:0">${fmtDate(o.date)}</span>
       <span class="mono" style="font-size:11px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.no||'-')}</span>
       <span class="bina-tag" style="background:${bc}22;color:${bc};flex-shrink:0">${esc(o.bina)}</span>
       ${orderCompany(o)?`<span class="t-meta" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(orderCompany(o))}</span>`:''}
       <b style="margin-left:auto;white-space:nowrap;font-family:var(--mono);font-size:12px">${fmtNum(qty)} <span class="t-meta">${esc(unit)}</span></b>
     </div>`;
-  }).join('')+(ords.length>30?`<p class="matd-empty">+ ${ords.length-30} eski fatura daha</p>`:''):`<p class="matd-empty">Bu urun icin siparis kaydi yok.</p>`;
+  }).join('')+(ords.length>30?`<p class="matd-empty">+ ${ords.length-30} eski siparis daha</p>`:''):`<p class="matd-empty">Bu urun icin siparis kaydi yok.</p>`;
+  /* FATURA SATIRLARI: siparis satirlarinin siparis detayini actigi gibi, bunlar da
+     faturanin DETAY SAYFASINI acar. Firma her satirda yazar: ayni urun birden cok
+     firmadan alinmis olabilir ve hangi belgenin hangi firmaya ait oldugu, bakarken
+     tahmin edilecek bir sey degildir. */
+  const fatRows=_fatK.length?_fatK.slice(0,30).map(({f,qty})=>{
+    const firma=fatCompany(f);
+    return `<div class="matd-row" onclick="matDetailGoFatura('${f.id}')" title="Fatura detay sayfasini ac">
+      <span class="t-meta" style="flex-shrink:0">${f.tarih?fmtDate(f.tarih):'-'}</span>
+      <span class="mono" style="font-size:11px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.no||'-')}</span>
+      ${fatKayitRozeti(f)}
+      ${firma?`<span class="t-meta" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(firma)}</span>`:''}
+      <b style="margin-left:auto;white-space:nowrap;font-family:var(--mono);font-size:12px">${fmtNum(qty)} <span class="t-meta">${esc(unit)}</span></b>
+    </div>`;
+  }).join('')+(_fatK.length>30?`<p class="matd-empty">+ ${_fatK.length-30} eski fatura daha</p>`:''):`<p class="matd-empty">Bu urun hicbir fatura kaydinda gecmiyor - alinan malin parasi henuz faturaya baglanmamis.</p>`;
   const rapRows=raps.length?raps.slice(0,30).map(e=>{
     const bc=buildingColor(e.bina);
     return `<div class="matd-row" onclick="matDetailGoRapor('${esc(e.tarih)}')" title="Gunun rapor detayini ac">
@@ -12021,9 +12043,9 @@ function _openMatDetail(matId){
         <div title="${altOrd>0?'Bu urunun YERINE alternatif urunle alinan miktar. Faturada baska urun yazar (miktar o urunun kunyesinde sayilir) ama bu urunun ihtiyaci bu miktarla karsilanmistir - asagida hangi urunle karsilandigi gorunur.':'Bu urunun yerine alternatif urunle yapilmis alim yok - ihtiyaci kendi adina karsilanmis.'}"><b style="color:${altOrd>0?'var(--amber)':'var(--dim)'}">${fmtNum(altOrd)}</b><span>Alternatif Siparis</span></div>
         <div title="Saha raporlarina islenmis montaj toplami"><b>${fmtNum(totRap)}</b><span>Montaj ${esc(unit)}</span></div>
         <div title="Siparis + alternatif siparis - montaj"><b style="color:${kalan<0?'var(--red)':kalan>0?'var(--ink)':'var(--green)'}">${fmtNum(kalan)}</b><span>Kalan ${kalan<0?'(fazla montaj!)':''}</span></div>
-        ${_fatD?`<div title="${_fatD.durum==='fazla'
-          ?`DIKKAT: alinandan ${fmtNum(_fatD.fat-_fatD.net)} FAZLA faturalanmis - ayni mal ikinci kez faturalanmis olabilir.`
-          :`Bu urunden parasi odenen (faturalanan) miktar. Alinan (iade dusulmus) ${fmtNum(_fatD.net)}, kalan ${fmtNum(_fatD.kalan)}.`}"><b style="color:${
+        ${_fatD?`<div class="tikla" onclick="matDetailGoFatura('','${esc(m.code||m.name||'')}')" title="${_fatD.durum==='fazla'
+          ?`DIKKAT: alinandan ${fmtNum(_fatD.fat-_fatD.net)} FAZLA faturalanmis - ayni mal ikinci kez faturalanmis olabilir. Tiklayin: mutabakatta bu urunun satiri acilir.`
+          :`Bu urunden parasi odenen (faturalanan) miktar. Alinan (iade dusulmus) ${fmtNum(_fatD.net)}, kalan ${fmtNum(_fatD.kalan)}. Tiklayin: mutabakatta bu urunun satiri acilir.`}"><b style="color:${
           _fatD.durum==='fazla'?'var(--red)':_fatD.durum==='tam'?'var(--green)':_fatD.fat>0?'var(--amber)':'var(--dim)'
           }">${fmtNum(_fatD.fat)}</b><span>Faturalanan</span></div>`:''}
         <div><b>${usage.length}</b><span>Sartname kalemi</span></div>
@@ -12033,6 +12055,7 @@ function _openMatDetail(matId){
       ${altUse.length?`<div class="matd-sec">Alternatif Olarak Kullanildigi Kalemler <span>${altUse.length}</span><i>bu urun asagidaki kalemlerin yerine onerildi / kullaniliyor</i></div>${altRows}`:''}
       ${yerineSection}
       <div class="matd-sec">Siparisler <span>${ords.length}</span>${totOrd?`<i>${fmtNum(totOrd)} ${esc(unit)}</i>`:''}</div>${ordRows}
+      ${_fatD?`<div class="matd-sec" title="Bu urunun gectigi fatura kayitlari. TASLAK faturalar da listelenir ama faturalanan miktara sayilmaz - kesinlesene kadar hicbir hesaba girmezler.">Faturalar <span>${_fatK.length}</span>${_fatD.fat?`<i>${fmtNum(_fatD.fat)} ${esc(unit)} faturalanmis</i>`:''}</div>${fatRows}`:''}
       <div class="matd-sec">Saha Raporlari - Montaj <span>${raps.length}</span>${totRap?`<i>${fmtNum(totRap)} ${esc(unit)}</i>`:''}</div>${rapRows}
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" style="margin-right:auto" onclick="closeModal();openMaterialModal('${m.id}')">Duzenle</button><button class="btn btn-add" title="Detay sayfasi: buyutulmus urun gorseli + teknik bilgi satirlari" onclick="openMatDetailPage('${m.id}')">${icoDoc()} Detay Sayfasi</button><button class="btn btn-ghost" onclick="closeModal()">Kapat</button></div>
@@ -24403,10 +24426,13 @@ function fatCiftNolar(){
 }
 
 /* ---------- SAYFA ACMA / KAPAMA ---------- */
+/* DONUS DEGERI: sayfa gercekten acildi mi. Baska bir ekrandan (malzeme kunyesi)
+   buraya gecen kod, acik bir formdan ayrilma onayindan VAZGECILDIGINI baska turlu
+   anlayamaz ve kullaniciyi zorla fatura ekranina atardi. */
 async function openFatura(){
-  if(!fatCanSee()){ toast('Bu bolume erisim yetkiniz yok','err'); return; }
+  if(!fatCanSee()){ toast('Bu bolume erisim yetkiniz yok','err'); return false; }
   // form aciksa kenar cubugundan Fatura'ya tekrar basmak da formu kapatir - once sorulur
-  if(!fatAyrilmaOnayi()) return;
+  if(!fatAyrilmaOnayi()) return false;
   PFAT=true;
   PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false;
   PNEWORD=false; PBINAY=false; PKATA=false; PODM=false; PSPECF=false; PRIMP=false; PINV=false;
@@ -24416,6 +24442,7 @@ async function openFatura(){
   render(); try{ window.scrollTo(0,0); }catch(e){}
   // veri acilista inmiyor: once bos liste cizilir, defter gelince yeniden cizilir
   await faturaYukle(); if(PFAT) render();
+  return true;
 }
 function closeFatura(){ if(!fatAyrilmaOnayi()) return; PFAT=false; FATV={mode:'liste',q:'',comp:'',bina:'',bolum:'',sart:'',durum:'',
   from:'',to:'',detay:'',detayGeri:'liste'}; _FAT=null; render(); }
@@ -26296,6 +26323,41 @@ function matFaturaDurumu(matId){
      firma bazinda belirlenir: bir firmadan fazla faturalanmis mal, baska
      firmadan bol alim yapildigi icin "tamam" gorunmemeli. */
   return fatUrunListesiGenel('').find(u=>u.key===k)||null;
+}
+/* Kunyedeki "Faturalanan" sayisinin ARKASINDAKI BELGELER. Sayiyi gormek yetmiyordu:
+   "bu mal hangi belgeyle odendi" sorusu, kunyeden cikip fatura listesinde elle
+   aranarak yanitlaniyordu. Urun anahtari faturaya YAZILDIGI GIBI okunur (r.key) -
+   yeniden cozulseydi, alternatif kurali sonradan degistiginde eski belgeler
+   listeden sessizce dusebilirdi.
+   TASLAKLAR DA LISTELENIR ama rozetiyle ayrilir (bkz. fatDurumu): taslak miktari
+   tavana saymaz, rozetsiz gosterilseydi kesinlesmemis bir belge odenmis okunurdu. */
+function matFaturaKayitlari(matId){
+  if(!_FAT_YUKLENDI||!matId) return [];
+  const k='mat:'+matId;
+  return fatKayitlar().map(f=>{
+    const satirlar=fatSatirlari(f).filter(r=>String(r.key||'')===k);
+    return satirlar.length?{f,qty:satirlar.reduce((t,r)=>t+fatSayi(r.qty),0)}:null;
+  }).filter(Boolean).sort((a,b)=>(b.f.tarih||0)-(a.f.tarih||0));
+}
+/* Kunyeden fatura ekranina gecis. openFatura'dan GECMESININ sebebi render()'in
+   panel sirasi: PLIB/PORD gibi liste bayraklarina PFAT'ten ONCE bakilir, yalnizca
+   PFAT=true demek kullaniciyi kutuphanede birakirdi (bkz. render icindeki sira).
+   openFatura false donerse acik bir formdan ayrilma onayindan vazgecilmistir -
+   kunye kapatilmaz, hicbir sey degismez.
+   id verilmezse MUTABAKATA urun aranarak gidilir: "bu sayi nereden geliyor"
+   sorusunun yeri orasidir, alinan / faturalanan / kalan yan yana durur. */
+async function matDetailGoFatura(id,q){
+  if(!fatCanSee()){ toast('Fatura kontrol bolumune erisim yetkiniz yok','err'); return false; }
+  if(!(await openFatura())) return false;
+  closeModal();
+  if(id){
+    // belge arada silinmis olabilir: liste ekraninda birakilir, sessizce yutulmaz
+    if(!fatKayitlar().some(x=>x.id===id)){ toast('Fatura bulunamadi - silinmis olabilir','err'); return false; }
+    openFaturaDetay(id); return true;
+  }
+  FATV.mode='mutabakat'; FATV.q=String(q||''); render();
+  try{ window.scrollTo(0,0); }catch(e){}
+  return true;
 }
 
 /* ---------- BACKUP ---------- */
