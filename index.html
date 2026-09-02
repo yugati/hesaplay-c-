@@ -2977,6 +2977,8 @@ datalist{display:none}
 .fko-stat{flex-shrink:0;font-size:10.5px;font-family:var(--mono);color:var(--mute);
   min-width:172px;text-align:right}
 .fko-stat b{color:var(--ink)}
+/* .nok-row display:flex oldugu icin [hidden] kendi basina gizlemez */
+.nok-row[hidden]{display:none}
 .nok-row.bitti{opacity:.55}
 .nok-row.bitti .fko-kod{color:var(--mute);text-decoration:line-through}
 .fat-kodbtn{font-size:10.5px;padding:2px 8px;border-radius:6px;border:1px dashed var(--line);
@@ -25079,8 +25081,8 @@ function fatOzelOpen(i){
          dagitilmamis:fatDagitilmamis(u,tablo),
          // urunun HIC koda baglanmamis alimi (canli veride 20 urun boyle):
          // "Kalani Dagit" neden yetmiyor sorusunun cevabi budur
-         kodsuz:(u&&u.kodsuz&&u.kodsuz.net)||0, tablo, pay };
-  fatOzelRender();
+         kodsuz:(u&&u.kodsuz&&u.kodsuz.net)||0, tablo, pay, q:'' };
+  fatOzelRender(true);
 }
 function fatOzelClose(){ _FOK=null; closeModal(); }
 function fatOzelDurum(){
@@ -25114,7 +25116,12 @@ function fatOzelDagit(){
   const f=_FOK; if(!f) return;
   let kalan=fatOzelDurum().artan;
   if(!(kalan>FAT_EPS)){ toast('Dagitilacak miktar kalmadi'); return; }
-  f.tablo.forEach(sat=>{
+  /* ARAMA ACIKSA yalnizca ESLESEN kodlara dagitilir. Aksi halde kullanici
+     suzulmus bir listeye bakarken miktar, ekranda gormedigi bir yerlesime
+     giderdi - "hangisinin parasini odedim" sorusunun cevabi yine kaybolurdu. */
+  const q=fatKodAnahtar(f.q||'');
+  const hedefler=q?f.tablo.filter(x=>fatKodAnahtar(x.kod).indexOf(q)>=0):f.tablo;
+  hedefler.forEach(sat=>{
     if(!(kalan>FAT_EPS)) return;
     const k=fatKodAnahtar(sat.kod);
     const simdi=fatSayi((f.pay[k]||{}).qty);
@@ -25126,8 +25133,9 @@ function fatOzelDagit(){
   });
   fatOzelRender();
   if(kalan>FAT_EPS) toast(fmtNum(kalan)+' birim koda yazilamadi - '
-    +(f.kodsuz>FAT_EPS?'bu urunun alimlarinin bir kismi hicbir yerlesim koduna bagli degil'
-      :'kodlarin kalani yetmiyor'),'err');
+    +(q?'yalnizca aramaya uyan kodlara dagitilir, aramayi temizleyip tekrar deneyin'
+      :(f.kodsuz>FAT_EPS?'bu urunun alimlarinin bir kismi hicbir yerlesim koduna bagli degil'
+        :'kodlarin kalani yetmiyor')),'err');
 }
 function fatOzelTemizle(){ const f=_FOK; if(!f) return; f.pay={}; fatOzelRender(); }
 function fatOzelApply(){
@@ -25146,6 +25154,42 @@ function fatOzelApply(){
   if(liste.length) st.oz[f.key]=liste; else delete st.oz[f.key];
   fatOzelClose(); render();
 }
+/* KOD ARAMASI. Modal yeniden CIZILMEZ - cizilseydi her tusta arama kutusunun
+   odagi kacardi (miktar kutusunda yasanan hatanin aynisi). Yalnizca satirlarin
+   hidden ozelligi degisir. Eslesme ktopKey uzerinden: bosluk/tire/buyuk-kucuk
+   farki silinir, kodun bir parcasi da yeter. */
+function fatOzelAra(el){
+  const f=_FOK; if(!f) return;
+  f.q=String(el.value||'');
+  const x=document.getElementById('fkoAraX'); if(x) x.hidden=!f.q;
+  fatOzelSuz();
+}
+function fatOzelAraTemizle(){
+  const f=_FOK; if(!f) return;
+  f.q='';
+  const el=document.getElementById('fkoAra'); if(el){ el.value=''; el.focus(); }
+  const x=document.getElementById('fkoAraX'); if(x) x.hidden=true;
+  fatOzelSuz();
+}
+function fatOzelSuz(){
+  const f=_FOK; if(!f) return;
+  const q=fatKodAnahtar(f.q||'');
+  let gor=0;
+  f.tablo.forEach(sat=>{
+    const k=fatKodAnahtar(sat.kod);
+    /* MIKTAR GIRILMIS satir suzgece takilsa bile DAIMA gorunur - yoksa
+       kullanici ne sectigini goremeden uygular (form listesindeki kural). */
+    const secili=fatSayi((f.pay[k]||{}).qty)>0;
+    const uy=!q||secili||k.indexOf(q)>=0;
+    const row=document.getElementById('fkoRow'+k);
+    if(row) row.hidden=!uy;
+    if(uy) gor++;
+  });
+  const say=document.getElementById('fkoSay');
+  if(say) say.textContent=q?(fmtNum(gor)+' / '+fmtNum(f.tablo.length)+' kod'):(fmtNum(f.tablo.length)+' kod');
+  const bos=document.getElementById('fkoBos');
+  if(bos) bos.hidden=gor>0;
+}
 function fatOzelSayacHtml(d){
   const renk=Math.abs(d.artan)<=FAT_EPS?'var(--green)':(d.artan>0?'var(--amber)':'var(--red)');
   return `<span class="t-meta">Satir miktari: <b style="color:var(--ink)">${fmtNum(d.hedef)}</b></span>
@@ -25160,7 +25204,7 @@ function fatOzelSayac(){
   if(b){ const blok=!!d.girilen&&Math.abs(d.artan)>FAT_EPS;
     b.disabled=blok; b.style.opacity=blok?'.5':''; b.style.cursor=blok?'not-allowed':''; }
 }
-function fatOzelRender(){
+function fatOzelRender(ilk){
   closeModal(); const f=_FOK; if(!f) return;
   const d=fatOzelDurum();
   const rows=f.tablo.map(sat=>{
@@ -25201,12 +25245,24 @@ function fatOzelRender(){
       ${f.dagitilmamis>FAT_EPS?`<br><b style="color:var(--amber)">Not:</b> bu urunde daha once
         <b>${fmtNum(f.dagitilmamis)}</b> birim kod secilmeden faturalanmis; o miktar hicbir kodun
         "faturali" sutununa yazilmaz, dolayisiyla asagidaki kalanlar oldugundan fazla gorunebilir.`:''}</div>
-    ${f.tablo.length?`<div style="display:flex;gap:8px;margin:12px 0 0;flex-wrap:wrap">
-      <button class="btn btn-ghost" style="padding:7px 13px" onclick="fatOzelDagit()" title="Kalan miktari, kalani olan kodlara sirayla yazar">Kalani Dagit</button>
+    ${f.tablo.length?`<div style="display:flex;gap:8px;margin:12px 0 0;flex-wrap:wrap;align-items:center">
+      <div class="iht-search" style="flex:1;min-width:190px;margin:0">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input id="fkoAra" value="${esc(f.q||'')}" placeholder="kod ara - 00UYB10GH105 ya da bir parcasi"
+          oninput="fatOzelAra(this)" autocomplete="off" spellcheck="false"
+          style="font-family:var(--mono)">
+        <button class="iht-x" id="fkoAraX" ${f.q?'':'hidden'} onclick="fatOzelAraTemizle()" title="Aramayi temizle">&times;</button>
+      </div>
+      <span class="t-meta" id="fkoSay" style="font-family:var(--mono);font-size:11.5px">${fmtNum(f.tablo.length)} kod</span>
+      <button class="btn btn-ghost" style="padding:7px 13px" onclick="fatOzelDagit()" title="Kalan miktari, kalani olan kodlara sirayla yazar. Arama aciksa yalnizca aramaya uyan kodlara dagitir.">Kalani Dagit</button>
       <button class="btn btn-ghost" style="padding:7px 13px" onclick="fatOzelTemizle()">Temizle</button>
     </div>
     <div class="ndg-sayac" id="fkoSayac">${fatOzelSayacHtml(d)}</div>
-    <div class="nxb-list nat-list">${rows}</div>`
+    <div class="nxb-list nat-list">${rows}
+      <div class="empty" id="fkoBos" hidden style="padding:18px"><p>Eslesen kod yok</p>
+        <span style="font-size:12px">Bu urunun alimlarinda o kod gecmiyor - kodu kontrol edin
+        ya da aramayi temizleyip listeye bakin</span></div>
+    </div>`
     :`<div class="empty" style="padding:26px"><p>Bu urunun alimlarinda yerlesim kodu yok</p>
       <span style="font-size:12px">Kod, sartname kaleminin "Ozel No" alanindan ya da siparis satirinin
       Ozel Kod Kiriliminden gelir - ikisi de bos oldugu icin bolunecek bir sey yok.</span></div>`}
@@ -25217,6 +25273,11 @@ function fatOzelRender(){
     </div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   fatOzelSayac();
+  fatOzelSuz();                         // yeniden cizimde arama korunur
+  /* Odak yalnizca ILK acilista arama kutusuna gider: faturadaki kodu yazmak
+     ilk yapilacak is. Kalani Dagit / Temizle sonrasi cizimlerde odak
+     kaydirilmaz - kullanici o an baska bir yerde olabilir. */
+  if(ilk){ const el=document.getElementById('fkoAra'); if(el) try{ el.focus(); }catch(e){} }
 }
 /* Satirdaki kirilim dugmesi. Miktar girilmeden kirilim yapilamaz (bolunecek bir
    sey yok), o yuzden miktarsizken sonuk durur. Metin durumu ANLATIR: hic
