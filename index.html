@@ -24801,6 +24801,8 @@ function fatOzetGuncelle(){
   const tb=document.getElementById('fatToplamBlok'); if(tb) tb.innerHTML=fatToplamBlokIc();
   // satir tutarlari da anlik guncellenir; odak kaybolmaz, yalnizca hucre metni degisir
   (st._satirlar||[]).forEach((sr,i)=>{
+    // kirilim dugmesi ONCE tazelenir: asagidaki erken donus onu atlamasin
+    fatKodBtnGuncelle(i,sr.key);
     const el=document.getElementById('fatST'+i); if(!el) return;
     const bb=(st.sb||{})[sr.key]||{};
     const h=fatSatirHesap({qty:fatSayi(st.qty[sr.key]),fiyat:bb.fiyat,iskontoOrani:bb.iskonto,
@@ -25279,24 +25281,43 @@ function fatOzelRender(ilk){
      kaydirilmaz - kullanici o an baska bir yerde olabilir. */
   if(ilk){ const el=document.getElementById('fkoAra'); if(el) try{ el.focus(); }catch(e){} }
 }
-/* Satirdaki kirilim dugmesi. Miktar girilmeden kirilim yapilamaz (bolunecek bir
-   sey yok), o yuzden miktarsizken sonuk durur. Metin durumu ANLATIR: hic
-   secilmemisse cagri, tamamsa secilen kodlar, tutmuyorsa ne kadarinin acikta
-   kaldigi - kullanici modali acmadan gorur. */
+/* Satirdaki kirilim dugmesi. Miktar girilmeden bolunecek bir sey yok, o yuzden
+   miktarsizken kapali durur. Metin durumu ANLATIR: hic secilmemisse cagri,
+   tamamsa secilen kodlar, tutmuyorsa ne kadarinin acikta kaldigi.
+
+   DURUM ve CIZIM AYRI: miktar kutusu odagi korumak icin render() cagirmaz
+   (bkz. fatSetQty), bu yuzden dugme ilk cizimdeki haliyle donup kalabiliyordu -
+   kullanici miktari girse bile dugme "miktar girilince..." deyip kapali kaliyor,
+   pencere hic acilmiyordu. Artik ayni durum fonksiyonu hem cizimi hem de her
+   tustan sonraki DOM guncellemesini besliyor (fatKodBtnGuncelle). */
+function fatKodBtnDurum(key){
+  const st=_FAT; if(!st) return {sinif:'',aktif:false,metin:''};
+  const q=fatSayi(st.qty[key]);
+  if(!(q>0)) return {sinif:'', aktif:false, metin:'Miktar girilince yerlesim kodu secilebilir'};
+  const d=fatPayDurumu(key), pay=fatFormPay(key);
+  if(d.durum==='yok') return {sinif:'', aktif:true, metin:'Hangi yerlesim icin? - kod sec'};
+  if(d.durum==='tam') return {sinif:'dolu', aktif:true,
+    metin:pay.slice(0,2).map(x=>x.kod+': '+fmtNum(x.qty)).join(' · ')+(pay.length>2?' +'+(pay.length-2):'')};
+  return {sinif:'eksik', aktif:true,
+    metin:d.durum==='eksik'?fmtNum(d.artan)+' birim koda yazilmadi':fmtNum(-d.artan)+' birim fazla yazildi'};
+}
+const FAT_KODBTN_IPUCU='Bu satirin miktarini yerlesim kodlarina bol - hangi yerlesimin parasinin odendigi kayda gecsin';
 function fatKodBtnHtml(i,u){
-  const st=_FAT; if(!st) return '';
-  const q=fatSayi(st.qty[u.key]);
-  const d=fatPayDurumu(u.key);
-  const pay=fatFormPay(u.key);
-  let sinif='', metin;
-  if(!(q>0)) metin='Miktar girilince yerlesim kodu secilebilir';
-  else if(d.durum==='yok') metin='Hangi yerlesim icin? - kod sec';
-  else if(d.durum==='tam'){ sinif=' dolu';
-    metin=pay.slice(0,2).map(x=>x.kod+': '+fmtNum(x.qty)).join(' · ')+(pay.length>2?' +'+(pay.length-2):''); }
-  else { sinif=' eksik';
-    metin=d.durum==='eksik'?fmtNum(d.artan)+' birim koda yazilmadi':fmtNum(-d.artan)+' birim fazla yazildi'; }
-  return `<button type="button" class="fat-kodbtn${sinif}"${q>0?'':' disabled style="opacity:.5;cursor:default"'}
-    onclick="fatOzelOpen(${i})" title="Bu satirin miktarini yerlesim kodlarina bol - hangi yerlesimin parasinin odendigi kayda gecsin">${esc(metin)}</button>`;
+  const b=fatKodBtnDurum(u.key);
+  return `<button type="button" id="fatKB${i}" class="${('fat-kodbtn '+b.sinif).trim()}"${b.aktif?'':' disabled'}
+    style="${b.aktif?'':'opacity:.5;cursor:default'}"
+    onclick="fatOzelOpen(${i})" title="${esc(b.aktif?FAT_KODBTN_IPUCU:'Once bu satira miktar girin')}">${esc(b.metin)}</button>`;
+}
+// Her tustan sonra cagirilir - tablo yeniden CIZILMEZ, yalnizca dugme tazelenir
+function fatKodBtnGuncelle(i,key){
+  const el=document.getElementById('fatKB'+i); if(!el) return;
+  const b=fatKodBtnDurum(key);
+  el.className=('fat-kodbtn '+b.sinif).trim();
+  el.disabled=!b.aktif;
+  el.textContent=b.metin;
+  el.title=b.aktif?FAT_KODBTN_IPUCU:'Once bu satira miktar girin';
+  el.style.opacity=b.aktif?'':'.5';
+  el.style.cursor=b.aktif?'':'default';
 }
 
 /* ---------- DEGISIM OZETI ----------
