@@ -2969,6 +2969,16 @@ datalist{display:none}
   border-radius:0 8px 8px 0;padding-right:8px}
 .fat-gec .im{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.5px;color:var(--red);
   background:color-mix(in srgb,var(--red) 14%,transparent);border-radius:20px;padding:1px 6px;margin-left:5px}
+/* BELGELER BOLUMU: uc nusha yan yana, eksik olan sonuk. Bir faturanin arkasinda
+   hangi kagitlarin durdugu tek bakista gorulsun. */
+.fdet-belge{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+.fdet-bel{border:1px dashed var(--line);border-radius:10px;padding:11px 13px;background:var(--panel2)}
+.fdet-bel.var{border-style:solid;border-color:color-mix(in srgb,var(--green) 40%,transparent)}
+.fdet-bel .ad{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;margin-bottom:5px}
+.fdet-bel.var .ad{color:var(--green)}
+.fdet-bel .yok{font-size:11.5px;color:var(--dim)}
+.fdet-bel .ip{font-size:10.5px;color:var(--mute);margin-top:4px}
+.fdet-bel button.fat-link{font-size:11.5px;font-family:var(--mono);text-align:left;word-break:break-all}
 /* KILIT OLAYLARI GECMISTE RENKLE AYRILIR - bir belgenin hikayesi tek bakista
    okunsun: yesil = kapatildi, kehribar = yeniden acildi, kirmizi = acildiktan
    sonra degistirildi. Kirmizi zaten vardi; kilitleme olumlu/kapatici bir olay
@@ -13322,7 +13332,7 @@ async function confirmWipe(){
        ihtiyac, siparisleri de silmeye zorlamak olurdu. */
     if(sel.includes('fatura')){
       // kayitlar gidiyorsa yuklenen fatura nushalari da kovada yetim kalmasin
-      const yollar=(DB.faturalar||[]).map(f=>f.pdf&&f.pdf.path).filter(Boolean);
+      const yollar=(DB.faturalar||[]).flatMap(f=>fatBelgeYollari(f));
       await sbWipeFaturaData(); DB.faturalar=[]; _FAT=null;
       if(window.sbBelgeSil) yollar.forEach(x=>window.sbBelgeSil(x));
     }
@@ -24424,7 +24434,8 @@ function renderFaturaListe(){
       +(sat.length>3?` +${sat.length-3} urun`:'');
     rows+=`<tr>
       <td><b style="font-family:var(--mono);font-size:12.5px">${esc(f.no||'(no yok)')}</b>
-        ${f.pdf?` <span title="Fatura nushasi ekli" style="color:var(--mute)">${icoDoc()}</span>`:''}
+        ${fatBelgeSayisi(f)?` <span title="${esc(fatBelgeOzet(f))}" style="color:var(--mute)">${icoDoc()}${
+          fatBelgeSayisi(f)>1?`<b style="font-size:9.5px;vertical-align:super">${fatBelgeSayisi(f)}</b>`:''}</span>`:''}
         <div style="margin-top:4px">${fatKayitRozeti(f)}${fatKilitSonrasiDegisti(f)
           ?`<span class="fat-rozet fazla" style="margin-left:4px" title="Bu fatura kilitlendikten sonra acilmis ve degistirilmis - ne degistigi detaydaki gecmiste satir satir duruyor">KILIT SONRASI DEGISTI</span>`:''}</div>
         ${uy.fazla?`<div class="fat-rozet fazla" style="margin-top:4px" title="Bu faturadaki ${uy.fazla} urun, alinan miktardan fazla faturalanmis">${fmtNum(uy.fazla)} URUNDE FAZLA</div>`:''}
@@ -24438,7 +24449,7 @@ function renderFaturaListe(){
         ${tutarFarki?`<div class="fat-rozet kismi" style="margin-top:4px" title="Belgede yazan ${esc(fatPara(f.beyanTutar,f.paraBirimi||'TRY'))}, satirlardan hesaplanan ${esc(fatPara(top.toplam,f.paraBirimi||'TRY'))}">TUTAR FARKI</div>`:''}</td>
       <td><div class="row-actions">
         <button class="mini-btn" title="Faturanin icerigini gor" onclick="openFaturaDetay('${f.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
-        ${f.pdf?`<button class="mini-btn" title="Fatura nushasini ac" onclick="fatPdfAc('${f.id}')">${icoDoc()}</button>`:''}
+        ${fatBelgeSayisi(f)?`<button class="mini-btn" title="${esc(fatBelgeOzet(f))}" onclick="openFaturaDetay('${f.id}')">${icoDoc()}</button>`:''}
         ${fatDuzenlenebilir(f)?`<button class="mini-btn" title="${fatTaslakMi(f)?'Taslagi ac - kesinlestirebilirsiniz':'Duzenle'}" onclick="fatDuzenle('${f.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>`:''}
         ${(!fatTaslakMi(f)&&!fatKilitliMi(f)&&fatCanEdit())?`<button class="mini-btn" title="Faturayi kilitle - bir daha degistirilemez" onclick="fatKilitle('${f.id}')">${icoKilit(false)}</button>`:''}
         ${(fatKilitliMi(f)&&isAdmin())?`<button class="mini-btn" title="Kilidi ac (yonetici)" onclick="fatKilitAc('${f.id}')">${icoKilit(true)}</button>`:''}
@@ -24693,8 +24704,19 @@ function renderFaturaDetay(){
       <div class="fdet-kunye">${kunye}</div>
       ${f.not?`<p style="font-size:12.5px;margin:14px 0 0;padding-top:12px;border-top:1px solid var(--line)">
         <span class="t-meta" style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Not</span><br>${esc(f.not)}</p>`:''}
-      ${f.pdf?`<div style="margin-top:12px"><button class="btn btn-ghost" onclick="fatPdfAc('${f.id}')">${icoDoc()} Fatura Nushasi${
-        f.pdf.name?` · ${esc(f.pdf.name)}`:''}</button></div>`:''}
+    </div>
+
+    <div class="tut-card">
+      <h4>Belgeler <i>${fmtNum(fatBelgeSayisi(f))} / ${fmtNum(FAT_BELGELER.length)} nusha ekli</i></h4>
+      <div class="fdet-belge">
+        ${FAT_BELGELER.map(bl=>{ const v=f[bl.k];
+          return `<div class="fdet-bel${v?' var':''}">
+            <div class="ad">${icoDoc()} ${esc(bl.ad)}</div>
+            ${v?`<button class="fat-link" onclick="fatPdfAc('${f.id}','${bl.k}')" title="Nushayi ac">${esc(v.name||'ac')}</button>`
+               :`<span class="yok">eklenmemis</span>`}
+            <div class="ip">${esc(bl.ip)}</div>
+          </div>`; }).join('')}
+      </div>
     </div>
 
     <div class="tut-card">
@@ -24744,7 +24766,8 @@ function renderFaturaDetay(){
         <span>Miktar <b>${fmtNum(fatToplamMiktar(f))}</b></span>
       </div>
       <div class="sag">
-        ${f.pdf?`<button class="btn btn-ghost" onclick="fatPdfAc('${f.id}')">${icoDoc()} Nusha</button>`:''}
+        ${FAT_BELGELER.filter(bl=>f[bl.k]).map(bl=>
+          `<button class="btn btn-ghost" onclick="fatPdfAc('${f.id}','${bl.k}')" title="${esc(bl.ip)}">${icoDoc()} ${esc(bl.ad.replace(' Nushasi',''))}</button>`).join('')}
         ${fatDuzenlenebilir(f)?`<button class="btn btn-ghost" onclick="fatDuzenle('${f.id}')">${fatTaslakMi(f)?'Taslagi Ac':'Duzenle'}</button>`:''}
         ${(!fatTaslakMi(f)&&!fatKilitliMi(f)&&fatCanEdit())?`<button class="btn btn-ghost" onclick="fatKilitle('${f.id}')">${icoKilit(false)} Kilitle</button>`:''}
         ${(fatKilitliMi(f)&&isAdmin())?`<button class="btn btn-ghost" onclick="fatKilitAc('${f.id}')">${icoKilit(true)} Kilidi Ac</button>`:''}
@@ -24762,7 +24785,28 @@ function icoKilit(acik){
 }
 // Nusha acma uygulamanin ortak yolundan gecer (acPdf): imzali adres, engellenen
 // acilir pencere uyarisi ve hata yedegi tek yerde duruyor - kopyalamak gereksiz.
-function fatPdfAc(id){ const f=fatKayitlar().find(x=>x.id===id); acPdf(f&&f.pdf); }
+/* BELGE YUVALARI. Bir faturanin arkasinda uc kagit durur ve ucu de sonradan
+   "bu odeme neye dayaniyordu" sorusunun kanitidir.
+   ILK YUVANIN ANAHTARI 'pdf' OLARAK KALDI: canlida duran faturalar nushalarini
+   bu alanda tasiyor, yeniden adlandirmak onlari yetim birakirdi. Yeni iki yuva
+   yanina eklendi; butun islemler (yukleme, silme, degisim izi, kova temizligi)
+   bu listeden yurur - bir yuva eklenince tek yerden eklenir. */
+const FAT_BELGELER=[
+  {k:'pdf',         ad:'Fatura Nushasi',   ip:'e-Faturanin kendisi'},
+  {k:'sozlesmePdf', ad:'Sozlesme Nushasi', ip:'Faturanin dayandigi sozlesme'},
+  {k:'irsaliyePdf', ad:'Irsaliye Nushasi', ip:'Mali teslim eden irsaliye'},
+];
+function fatBelgeAnahtar(k){ return FAT_BELGELER.some(b=>b.k===k)?k:'pdf'; }
+// Bir kayittaki (ya da form durumundaki) TUM belge yollari - silme/temizlik icin
+function fatBelgeYollari(x){
+  if(!x) return [];
+  return FAT_BELGELER.map(b=>x[b.k]&&x[b.k].path).filter(Boolean);
+}
+function fatBelgeSayisi(f){ return FAT_BELGELER.filter(b=>f&&f[b.k]).length; }
+function fatBelgeOzet(f){
+  return FAT_BELGELER.filter(b=>f&&f[b.k]).map(b=>b.ad+(f[b.k].name?': '+f[b.k].name:'')).join(' · ');
+}
+function fatPdfAc(id,k){ const f=fatKayitlar().find(x=>x.id===id); acPdf(f&&f[fatBelgeAnahtar(k)]); }
 
 /* ---------- 2) FATURA GIRISI (form) ----------
    Akis: firma + fatura no + tarih girilir, sonra faturadaki URUNLERIN miktarlari
@@ -24782,7 +24826,7 @@ function fatYeni(){
     companyId:fatFirmalar().length===1?fatFirmalar()[0].id:'',
     senaryo:'TICARIFATURA', faturaTipi:'SATIS', ozellestirmeNo:'TR1.2', ettn:'',
     irsaliyeNo:'', irsaliyeTarihi:'', paraBirimi:'TRY', kur:'', varsayilanKdv:20,
-    beyanTutar:'', not:'', pdf:null, durum:'taslak',
+    beyanTutar:'', not:'', pdf:null, sozlesmePdf:null, irsaliyePdf:null, durum:'taslak',
     qty:{}, sb:{}, oz:{}, fq:'', fbina:'', fbolum:'', fsart:'', ftum:false, ftumDurum:false };
   FATV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
 }
@@ -24805,7 +24849,8 @@ function fatDuzenle(id){
     irsaliyeNo:f.irsaliyeNo||'', irsaliyeTarihi:f.irsaliyeTarihi?new Date(f.irsaliyeTarihi).toISOString().slice(0,10):'',
     paraBirimi:f.paraBirimi||'TRY', kur:f.kur||'', varsayilanKdv:20,
     beyanTutar:f.beyanTutar||'', not:f.not||'', durum:fatDurumu(f),
-    pdf:f.pdf||null, qty, sb, oz, fq:'', fbina:'', fbolum:'', fsart:'', ftum:true, ftumDurum:true };
+    pdf:f.pdf||null, sozlesmePdf:f.sozlesmePdf||null, irsaliyePdf:f.irsaliyePdf||null,
+    qty, sb, oz, fq:'', fbina:'', fbolum:'', fsart:'', ftum:true, ftumDurum:true };
   FATV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
 }
 /* Formdan cikis. YUKLENMIS AMA KAYDEDILMEMIS nusha kovadan silinir (iadeKapat ile
@@ -24813,23 +24858,25 @@ function fatDuzenle(id){
    oradaki nusha kayitli faturaya aittir. */
 function fatFormKapat(){
   const st=_FAT;
-  if(st && !st.editId && st.pdf && st.pdf.path && window.sbBelgeSil) window.sbBelgeSil(st.pdf.path);
+  if(st && !st.editId && window.sbBelgeSil) fatBelgeYollari(st).forEach(y=>window.sbBelgeSil(y));
   _FAT=null; FATV.mode='liste'; render(); try{ window.scrollTo(0,0); }catch(e){}
 }
 function fatSetHead(k,v){ if(_FAT){ _FAT[k]=v; render(); } }
 function fatSetFiltre(k,v){ if(_FAT){ _FAT[k]=v; render(); } }
 
-async function fatPickPdf(e){
+async function fatPickPdf(e,k){
   const f=e.target.files[0]; e.target.value=''; if(!f||!_FAT) return;
   if(f.size>20*1024*1024){ toast("PDF 20MB'tan buyuk",'err'); return; }
-  const eski=_FAT.pdf;
-  _FAT.pdf={name:f.name,yukleniyor:1}; render();
-  try{ const y=await window.sbBelgeYukle('fatura',_FAT.id,f); if(_FAT){ _FAT.pdf=y; toast('Fatura nushasi yuklendi'); } }
-  catch(err){ if(_FAT) _FAT.pdf=eski; toast('PDF yuklenemedi: '+((err&&err.message)||'baglanti hatasi'),'err'); }
+  const a=fatBelgeAnahtar(k), ad=(FAT_BELGELER.find(b=>b.k===a)||{}).ad||'Nusha';
+  const eski=_FAT[a];
+  _FAT[a]={name:f.name,yukleniyor:1}; render();
+  try{ const y=await window.sbBelgeYukle('fatura',_FAT.id,f); if(_FAT){ _FAT[a]=y; toast(ad+' yuklendi'); } }
+  catch(err){ if(_FAT) _FAT[a]=eski; toast('PDF yuklenemedi: '+((err&&err.message)||'baglanti hatasi'),'err'); }
   render();
 }
-function fatPdfKaldir(){
-  if(!_FAT) return; const p=_FAT.pdf; _FAT.pdf=null; render();
+function fatPdfKaldir(k){
+  if(!_FAT) return; const a=fatBelgeAnahtar(k), p=_FAT[a];
+  _FAT[a]=null; render();
   if(p&&p.path&&window.sbBelgeSil) window.sbBelgeSil(p.path);
 }
 
@@ -25168,11 +25215,13 @@ function renderFaturaForm(){
           <div class="fhint">Faturanin uzerindeki tutar - satirlardan hesaplananla karsilastirilir</div></div>
         <div class="frow"><label>Not</label>
           <input value="${esc(st.not)}" placeholder="aciklama..." onchange="fatSetHead('not',this.value)"></div>
-        <div class="frow"><label>Fatura Nushasi (PDF)</label>
-          <div class="drop ${st.pdf?'has':''}" onclick="${st.pdf&&st.pdf.yukleniyor?'':`document.getElementById('fatPdfInput').click()`}">${st.pdf
-            ?`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(st.pdf.name)}${st.pdf.yukleniyor?' <span style="opacity:.7">· yukleniyor…</span>':`<button onclick="event.stopPropagation();fatPdfKaldir()">x</button>`}</div>`
+        ${FAT_BELGELER.map(bl=>{ const v=st[bl.k];
+          return `<div class="frow"><label>${esc(bl.ad)} (PDF)</label>
+          <div class="drop ${v?'has':''}" title="${esc(bl.ip)}" onclick="${v&&v.yukleniyor?'':`document.getElementById('fatPdfInput_${bl.k}').click()`}">${v
+            ?`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(v.name)}${v.yukleniyor?' <span style="opacity:.7">· yukleniyor…</span>':`<button onclick="event.stopPropagation();fatPdfKaldir('${bl.k}')">x</button>`}</div>`
             :'<span>PDF secmek icin tiklayin</span>'}</div>
-          <input type="file" id="fatPdfInput" accept="application/pdf" class="hidden" onchange="fatPickPdf(event)"></div>
+          <div class="fhint">${esc(bl.ip)}</div>
+          <input type="file" id="fatPdfInput_${bl.k}" accept="application/pdf" class="hidden" onchange="fatPickPdf(event,'${bl.k}')"></div>`; }).join('')}
       </div>
       ${ayniNo.length?`<div class="fat-uyari dikkat" style="margin:12px 0 0">
         <h5>&#9888; Bu numarayla kayit zaten var</h5>
@@ -25557,7 +25606,7 @@ function fatDegisimOzeti(a,b){
   alan('Kur',a.kur,b.kur,fmtNum);
   alan('Belgedeki odenecek tutar',a.beyanTutar,b.beyanTutar,fmtNum);
   alan('Not',a.not,b.not);
-  alan('Fatura nushasi',(a.pdf&&a.pdf.name)||'',(b.pdf&&b.pdf.name)||'');
+  FAT_BELGELER.forEach(bl=>alan(bl.ad,(a[bl.k]&&a[bl.k].name)||'',(b[bl.k]&&b[bl.k].name)||''));
   alan('Durum',FAT_KAYIT_DURUM[fatDurumu(a)].ad,FAT_KAYIT_DURUM[fatDurumu(b)].ad);
   // SATIRLAR: urun anahtarina gore eslesir - satir sirasi degisse bile dogru esler
   const ma=new Map(fatSatirlari(a).map(r=>[String(r.key||''),r]));
@@ -25711,7 +25760,10 @@ async function fatKaydet(kesin){
     kesinBy:kesin?((eski&&!fatTaslakMi(eski)&&eski.kesinBy)||kim):'',
     kilitTs:null, kilitBy:'',
     // pdf yalnizca KOVAYA yazilmissa saklanir: yarim kalmis yukleme kaydi tasimasin
+    // yalnizca KOVAYA yazilmis nushalar saklanir: yarim kalmis yukleme kaydi tasimasin
     pdf:(st.pdf&&st.pdf.path)?st.pdf:null,
+    sozlesmePdf:(st.sozlesmePdf&&st.sozlesmePdf.path)?st.sozlesmePdf:null,
+    irsaliyePdf:(st.irsaliyePdf&&st.irsaliyePdf.path)?st.irsaliyePdf:null,
     satirlar,
     olusturan:eski?(eski.olusturan||kim):kim, olusturmaTs:eski?(eski.olusturmaTs||Date.now()):Date.now(),
     guncelleyen:eski?kim:'', guncellemeTs:eski?Date.now():null,
@@ -25821,9 +25873,9 @@ async function fatSil(id){
     +`Islem geri alinamaz. Devam edilsin mi?`)) return;
   try{ await sbDeleteFatura(id); }
   catch(e){ fatYazHatasi(e,'silinemedi'); return; }
-  const yol=f.pdf&&f.pdf.path;
+  const yollar=fatBelgeYollari(f);                 // fatura + sozlesme + irsaliye
   DB.faturalar=(DB.faturalar||[]).filter(x=>!x||x.id!==id);
-  if(yol&&window.sbBelgeSil) window.sbBelgeSil(yol);
+  if(window.sbBelgeSil) yollar.forEach(y=>window.sbBelgeSil(y));
   logAction('fatura','Fatura silindi: '+(f.no||'(no yok)')+' · '+(fatCompany(f)||'-')
     +' · '+fmtNum(fatSatirlari(f).length)+' urun · toplam '+fmtNum(fatToplamMiktar(f)));
   if(_FAT&&_FAT.editId===id){ _FAT=null; FATV.mode='liste'; }
