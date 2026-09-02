@@ -24147,7 +24147,18 @@ function fatSatirKodlari(l,oz){
    bayat bir sayidan hesaplanirsa, modulun onlemek icin var oldugu hata tam da
    oradan girerdi. Bunun yerine cagiran ekranlar listeyi BIR KEZ hesaplayip
    ihtiyaci olan yere veriyor (bkz. fatSekmeler(liste)). */
-function fatUrunHavuzu(){
+/* FIRMA IZOLASYONU (kritik kural).
+   Tavan, urunun TUM firmalardan toplam alimi DEGIL, YALNIZCA O FIRMADAN alimidir.
+   Toplasaydi: A firmasindan 100, B'den 50 alinan bir malda A tek basina 150
+   faturalayabilirdi - B'nin alimi A'nin odemesini finanse ederdi. Bu, modulun
+   onlemek icin var oldugu hatanin ta kendisi.
+   companyId bos ('' / null) verilirse TUM firmalar toplanir; bu YALNIZCA genel
+   bakis icindir (bkz. fatUrunListesiGenel) ve TAVAN OLARAK KULLANILMAZ.
+   Firma bilgisi OLMAYAN siparis hicbir firmaya sayilmaz - kime ait oldugu
+   bilinmeyen bir alim, hicbir faturanin dayanagi olamaz. */
+function fatSiparisFirmasi(o){ return String((o&&o.companyId)||''); }
+function fatUrunHavuzu(companyId){
+  const cid=String(companyId||'');
   const m=new Map();
   // ayni urun yuzlerce satirda tekrar ediyor - cozumleme satir basina degil
   // AYIRT EDICI ALANLAR basina bir kez yapilir
@@ -24208,6 +24219,7 @@ function fatUrunHavuzu(){
     }
   };
   (DB.proje.orders||[]).forEach(o=>{
+    if(cid && fatSiparisFirmasi(o)!==cid) return;    // BASKA FIRMANIN alimi hic girmez
     (o.lines||[]).forEach(l=>ekle(l,'alinan',o));
     orderIadeler(o).forEach(ia=>iadeSatirlari(ia).forEach(r=>ekle(r,'iade',o)));
   });
@@ -24215,11 +24227,14 @@ function fatUrunHavuzu(){
 }
 // urunKey -> faturalanan toplam. haricId: duzenlenen faturanin KENDI satirlari
 // disarida birakilir, yoksa kullanici kendi girdigi miktari tavana carpardi.
-function fatIndeks(haricId){
+function fatIndeks(haricId,companyId){
+  const cid=String(companyId||'');
   const m=new Map();
   // TASLAKLAR HARIC: yarim kalmis bir giris kimsenin kalanini yiyemez
   fatKesinler().forEach(f=>{
     if(haricId&&f.id===haricId) return;
+    // BASKA FIRMANIN faturasi bu firmanin kalanini tuketemez
+    if(cid && String(f.companyId||'')!==cid) return;
     fatSatirlari(f).forEach(r=>{
       const k=String((r&&r.key)||''); if(!k) return;
       m.set(k,(m.get(k)||0)+fatSayi(r.qty));
@@ -24233,10 +24248,12 @@ function fatSatirPaylari(r){ const p=r&&r.ozelPay; return Array.isArray(p)?p:[];
 function fatKodAnahtar(kod){ return (typeof ktopKey==='function')?ktopKey(kod):String(kod||'').trim().toLowerCase(); }
 /* 'urunKey|kod' -> BASKA faturalarda o koda yazilan miktar. Urun tavaniyla ayni
    kural: TASLAKLAR SAYILMAZ (yarim kalmis giris kimsenin kalanini yiyemez). */
-function fatKodIndeksi(haricId){
+function fatKodIndeksi(haricId,companyId){
+  const cid=String(companyId||'');
   const m=new Map();
   fatKesinler().forEach(f=>{
     if(haricId&&f.id===haricId) return;
+    if(cid && String(f.companyId||'')!==cid) return;   // firma izolasyonu kod bazinda da gecerli
     fatSatirlari(f).forEach(r=>{
       const k=String((r&&r.key)||''); if(!k) return;
       fatSatirPaylari(r).forEach(p=>{
@@ -24254,9 +24271,9 @@ function fatKodIndeksi(haricId){
    bilinmeyen alimlar) hicbir koda yazilmaz. Bu yuzden kod bazli kalanlarin
    toplami urunun kalanindan BUYUK olabilir - fark fatDagitilmamis ile hesaplanip
    ekranda acikca soylenir, sessizce yutulmaz. */
-function fatKodTablosu(u,haricId){
+function fatKodTablosu(u,haricId,companyId){
   if(!u) return [];
-  const ix=fatKodIndeksi(haricId);
+  const ix=fatKodIndeksi(haricId,companyId);
   return (u.kodlar||[]).map(k=>{
     const fat=ix.get(u.key+'|'+fatKodAnahtar(k.kod))||0;
     return { ...k, fat, kalan:k.net-fat };
@@ -24276,8 +24293,8 @@ function fatDurumHesapla(net,fat){
 /* EKRANLARIN OKUDUGU TEK LISTE. Havuzda olmayip yalnizca faturada gecen urunler
    de eklenir ("alimi yok"): siparis silinmis ya da urun siparisten cikarilmis
    olabilir - o miktar sessizce kaybolmasin, FAZLA olarak gorunsun. */
-function fatUrunListesi(haricId){
-  const hav=fatUrunHavuzu(), ix=fatIndeks(haricId);
+function fatUrunListesi(haricId,companyId){
+  const hav=fatUrunHavuzu(companyId), ix=fatIndeks(haricId,companyId);
   const out=[];
   hav.forEach(g=>{
     const net=Math.max(0,g.alinan-g.iade);
@@ -24297,18 +24314,56 @@ function fatUrunListesi(haricId){
     if(hav.has(k)||!(q>0)) return;
     // ad/kod bilgisi yalnizca fatura satirinda kaldi - ilk bulunan satirdan okunur
     let ornek=null;
-    fatKesinler().some(f=>fatSatirlari(f).some(r=>{ if(String(r.key||'')===k){ ornek=r; return true; } return false; }));
+    const _cid=String(companyId||'');
+    fatKesinler().some(f=>(!_cid||String(f.companyId||'')===_cid)
+      && fatSatirlari(f).some(r=>{ if(String(r.key||'')===k){ ornek=r; return true; } return false; }));
     out.push({ key:k, matId:(ornek&&ornek.matId)||'', code:(ornek&&ornek.code)||'',
       ad:(ornek&&ornek.ad)||'(bilinmeyen urun)', unit:(ornek&&ornek.unit)||'',
       alinan:0, iade:0, binalar:[], firmalar:[], bolumler:[], sartnameler:[], ozelKodlar:[],
       kodlar:[], kodsuz:{alinan:0,iade:0,net:0}, sonTarih:0,
       net:0, fat:q, kalan:-q, durum:'fazla', alimVar:false });
   });
-  return out.sort((a,b)=>{
-    // once sorunlular (fazla), sonra kalani olanlar, sonra ad
-    const p=x=>x.durum==='fazla'?0:(x.kalan>FAT_EPS?1:2);
-    return p(a)-p(b) || String(a.ad||'').localeCompare(String(b.ad||''),'tr');
+  return out.sort(fatUrunSirala);
+}
+// once sorunlular (fazla), sonra kalani olanlar, sonra ad
+function fatUrunSirala(a,b){
+  const p=x=>x.durum==='fazla'?0:(x.kalan>FAT_EPS?1:2);
+  return p(a)-p(b) || String(a.ad||'').localeCompare(String(b.ad||''),'tr');
+}
+/* GENEL BAKIS LISTESI - firma secilmemis Mutabakat icin.
+   Firma bazli listeler UST USTE BINDIRILIR ama DURUM TOPLAMDAN TURETILMEZ:
+   A'da alim 100 / fatura 0, B'de alim 50 / fatura 60 olsaydi global toplam
+   150/60 der ve "sorunsuz" gorunurdu - oysa B 10 fazla faturalamis. Bu yuzden
+   FAZLA, firma bazinda belirlenir ve hangi firmada oldugu da yazilir. */
+function fatUrunListesiGenel(haricId){
+  const idler=[...new Set(
+    (DB.proje.orders||[]).map(o=>fatSiparisFirmasi(o))
+      .concat(fatKayitlar().map(f=>String(f.companyId||''))))].filter(Boolean);
+  const m=new Map();
+  const birlestir=(hedef,ek)=>[...new Set((hedef||[]).concat(ek||[]))];
+  idler.forEach(cid=>{
+    const ad=((DB.companies||[]).find(c=>c.id===cid)||{}).ad||cid;
+    fatUrunListesi(haricId,cid).forEach(u=>{
+      let g=m.get(u.key);
+      if(!g){ g={...u, fazlaFirmalar:[]}; m.set(u.key,g); }
+      else{
+        g.alinan+=u.alinan; g.iade+=u.iade; g.net+=u.net; g.fat+=u.fat; g.kalan+=u.kalan;
+        g.binalar=birlestir(g.binalar,u.binalar); g.firmalar=birlestir(g.firmalar,u.firmalar);
+        g.bolumler=birlestir(g.bolumler,u.bolumler); g.sartnameler=birlestir(g.sartnameler,u.sartnameler);
+        g.ozelKodlar=birlestir(g.ozelKodlar,u.ozelKodlar).sort((x,y)=>String(x).localeCompare(String(y),'tr'));
+        (u.kodlar||[]).forEach(k=>{ const v=g.kodlar.find(x=>fatKodAnahtar(x.kod)===fatKodAnahtar(k.kod));
+          if(v){ v.alinan+=k.alinan; v.iade+=k.iade; v.net+=k.net; } else g.kodlar.push({...k}); });
+        g.kodsuz={ alinan:g.kodsuz.alinan+u.kodsuz.alinan, iade:g.kodsuz.iade+u.kodsuz.iade,
+                   net:g.kodsuz.net+u.kodsuz.net };
+        g.alimVar=g.alimVar||u.alimVar;
+        if(u.sonTarih>g.sonTarih) g.sonTarih=u.sonTarih;
+      }
+      if(u.durum==='fazla') g.fazlaFirmalar.push(ad+' ('+fmtNum(-u.kalan)+')');
+    });
   });
+  const out=[...m.values()];
+  out.forEach(g=>{ g.durum=g.fazlaFirmalar.length?'fazla':fatDurumHesapla(g.net,g.fat); });
+  return out.sort(fatUrunSirala);
 }
 const FAT_DURUM={
   yok:  {ad:'FATURASIZ', aciklama:'Bu urun icin henuz fatura kaydi girilmemis'},
@@ -24414,7 +24469,7 @@ function fatSekmeler(liste){
    fatUrunHavuzu maliyet notu). */
 function fatUyariSayisi(liste){
   if(!_FAT_YUKLENDI) return 0;
-  return (liste||fatUrunListesi()).filter(u=>u.durum==='fazla').length
+  return (liste||fatUrunListesiGenel('')).filter(u=>u.durum==='fazla').length
     +fatCiftNolar().length
     +fatKesinler().filter(fatKilitSonrasiDegisti).length;
 }
@@ -24440,7 +24495,9 @@ function fatListeFiltreli(){
 /* Faturanin kendi uyarisi: iceriginde FAZLA faturalanmis urun var mi. Liste
    satirinda tek bakista gorunur - "hangi belgeye bakayim" sorusunun cevabi. */
 function fatKayitUyarisi(f,durumMap){
-  const dm=durumMap||new Map(fatUrunListesi().map(u=>[u.key,u]));
+  // harita verilmemisse FATURANIN FIRMASINA gore kurulur - baska firmanin alimi
+  // bu belgenin "fazla" degerlendirmesine giremez
+  const dm=durumMap||new Map(fatUrunListesi('',(f&&f.companyId)||'').map(u=>[u.key,u]));
   const fazla=fatSatirlari(f).filter(r=>{ const u=dm.get(String(r.key||'')); return u&&u.durum==='fazla'; }).length;
   return {fazla};
 }
@@ -24450,7 +24507,7 @@ function renderFaturaListe(){
   const tumu=fatKayitlar();
   const firmalar=fatFirmalar();
   // urun listesi TEK KEZ kurulur: hem satir rozetleri hem sekme sayaci ondan okur
-  const urunler=yuklendi?fatUrunListesi():[];
+  const urunler=yuklendi?fatUrunListesiGenel(''):[];
   const durumMap=new Map(urunler.map(u=>[u.key,u]));
   const filtreVar=fatFiltreVar();
   let rows='';
@@ -24573,7 +24630,7 @@ function fatKayitKodOzeti(f,dm){
        - hic secilemezdi (urunun yerlesim kodu yok)               -> normal
      Ayrilmasaydi eski faturalarda "12.898 birim icin kod secilmemis" gibi bir
      uyari cikardi; oysa o urunlerin zaten kodu yok, yapilacak bir sey yok. */
-  const harita=dm||new Map(fatUrunListesi().map(u=>[u.key,u]));
+  const harita=dm||new Map(fatUrunListesi('',(f&&f.companyId)||'').map(u=>[u.key,u]));
   const m=new Map(); let kodsuz=0, secilebilir=0, kodluSatir=0;
   fatSatirlari(f).forEach(r=>{
     const pay=fatSatirPaylari(r);
@@ -24630,7 +24687,10 @@ function renderFaturaDetay(){
     <div class="sel-bc"><button onclick="fatDetayKapat()">${icoArr('left')} Fatura Kontrol</button></div>
     <div class="empty" style="padding:40px"><p>Fatura bulunamadi</p>
       <span style="font-size:12px">Silinmis olabilir - listeye donup tekrar bakin</span></div></div>`;
-  const dm=new Map(fatUrunListesi().map(u=>[u.key,u]));
+  /* Satir durumlari FATURANIN FIRMASINA gore: "alim durumu" sutununda baska bir
+     firmadan alinan mal gorunmemeli - bu belgenin dayanagi yalnizca kendi
+     firmasinin alimlaridir. */
+  const dm=new Map(fatUrunListesi('',f.companyId||'').map(u=>[u.key,u]));
   const satirlar=fatSatirlari(f);
   const pb=f.paraBirimi||'TRY';
   const top=fatKayitToplam(f);
@@ -24653,10 +24713,10 @@ function renderFaturaDetay(){
           title="Bu satirin parasi asagidaki yerlesimler icin odendi">${esc(pay.map(x=>x.kod+': '+fmtNum(x.qty)).join(' · '))}</div>`
           :((u&&u.kodlar&&u.kodlar.length)?`<div class="t-meta" style="font-size:11px">yerlesim kodu secilmemis</div>`:'')}
         ${u?`<div style="margin-top:3px">${fatRozet(u.durum)}${u.kalan<-FAT_EPS?` <span style="color:var(--red);font-size:11px">fazla ${fmtNum(-u.kalan)}</span>`:''}</div>`:''}</td>
-      <td class="fat-alim" title="${u?`Bu urunun TUM siparislerdeki alimi ${fmtNum(u.alinan)}${u.iade>0?', iade '+fmtNum(u.iade):''}, tum faturalarda faturalanani ${fmtNum(u.fat)}, kalani ${fmtNum(Math.max(0,u.kalan))}`:'Bu urunun alim kaydi bulunamadi'}">
+      <td class="fat-alim" title="${u?`${esc(fatCompany(f)||'Bu firma')} siparislerinde alim ${fmtNum(u.alinan)}${u.iade>0?', iade '+fmtNum(u.iade):''}, bu firmanin faturalarinda faturalanan ${fmtNum(u.fat)}, kalan ${fmtNum(Math.max(0,u.kalan))}`:'Bu firmadan bu urun icin alim kaydi yok'}">
         ${u?`<b>${fmtNum(u.alinan)}</b>${u.iade>0?` · <span style="color:var(--amber)">-${fmtNum(u.iade)}</span>`:''}
           <div class="t-meta" style="font-size:10.5px">F${fmtNum(u.fat)} · kalan ${fmtNum(Math.max(0,u.kalan))}</div>`
-        :'<span style="color:var(--red)">alim yok</span>'}</td>
+        :'<span style="color:var(--red)">bu firmadan alim yok</span>'}</td>
       <td class="num">${fmtNum(h.qty)}${r.unit?' <span style="color:var(--mute)">'+esc(r.unit)+'</span>':''}</td>
       <td class="num">${h.fiyat?fatPara(h.fiyat,''):'-'}</td>
       <td class="num">${h.iskO?'%'+fmtNum(h.iskO):'-'}</td>
@@ -24762,10 +24822,10 @@ function renderFaturaDetay(){
     </div>
 
     <div class="tut-card">
-      <h4>Fatura Satirlari <i>${fmtNum(satirlar.length)} satir · "Alim Durumu" o urunun TUM siparislerdeki durumudur</i></h4>
+      <h4>Fatura Satirlari <i>${fmtNum(satirlar.length)} satir · "Alim Durumu" o urunun ${esc(fatCompany(f)||'bu firma')} siparislerindeki durumudur</i></h4>
       <div class="tablewrap"><table class="tut-lines fat-lines"><thead><tr>
         <th>Sira No</th><th>Mal Hizmet</th>
-        <th title="Alinan · iade · tum faturalarda faturalanan · kalan">Alim Durumu</th>
+        <th title="BU FIRMADAN alinan · iade · bu firmanin faturalarinda faturalanan · kalan">Alim Durumu</th>
         <th class="num">Miktar</th><th class="num">Birim Fiyat</th>
         <th class="num">Iskonto Orani</th><th class="num">Iskonto Tutari</th>
         <th class="num">KDV Orani</th><th class="num">KDV Tutari</th>
@@ -24953,7 +25013,35 @@ function fatFormKapat(zorla){
   if(st && !st.editId && window.sbBelgeSil) fatBelgeYollari(st).forEach(y=>window.sbBelgeSil(y));
   _FAT=null; FATV.mode='liste'; render(); try{ window.scrollTo(0,0); }catch(e){}
 }
-function fatSetHead(k,v){ if(_FAT){ _FAT[k]=v; render(); } }
+function fatSetHead(k,v){
+  if(!_FAT) return;
+  if(k==='companyId') return fatFirmaDegistir(v);
+  _FAT[k]=v; render();
+}
+/* FIRMA DEGISINCE LISTE BASTAN KURULUR (izolasyon kuralinin 6. maddesi).
+   Onemli olan liste degil, GIRILMIS MIKTARLAR: yeni firmadan alinmamis bir urune
+   girilmis miktar, listede artik gorunmedigi icin SESSIZCE kaydedilirdi. Bu
+   yuzden gecersiz kalanlar sayilir, kullaniciya sorulur ve temizlenir. */
+function fatFirmaDegistir(v){
+  const st=_FAT; if(!st) return;
+  const yeni=String(v||''), eski=String(st.companyId||'');
+  if(yeni===eski){ st.companyId=yeni; render(); return; }
+  const girilen=Object.keys(st.qty||{}).filter(k=>fatSayi(st.qty[k])>0);
+  if(girilen.length){
+    const gecerli=new Set(yeni?fatUrunListesi(st.editId||'',yeni).map(u=>u.key):[]);
+    const dusecek=girilen.filter(k=>!gecerli.has(k));
+    if(dusecek.length){
+      const ad=((DB.companies||[]).find(c=>c.id===yeni)||{}).ad||'(firma yok)';
+      if(!confirm(`Firma degistiriliyor: ${ad}\n\n`
+        +`Girilmis ${fmtNum(girilen.length)} urunden ${fmtNum(dusecek.length)} tanesi bu firmadan ALINMAMIS.\n`
+        +`Her fatura yalnizca kendi firmasinin alimlarindan kesilebilir - o satirlar SILINECEK.\n\n`
+        +`Devam edilsin mi?`)) return;                 // firma degismez, girilenler durur
+      dusecek.forEach(k=>{ delete st.qty[k]; if(st.sb) delete st.sb[k]; if(st.oz) delete st.oz[k]; });
+      toast(fmtNum(dusecek.length)+' urun listeden dustu - bu firmadan alinmamis','err');
+    }
+  }
+  st.companyId=yeni; render();
+}
 function fatSetFiltre(k,v){ if(_FAT){ _FAT[k]=v; render(); } }
 
 async function fatPickPdf(e,k){
@@ -24980,16 +25068,20 @@ function fatPdfKaldir(k){
 function fatFormUrunleri(tum){
   const st=_FAT; if(!st) return [];
   const girilen=new Set(Object.keys(st.qty).filter(k=>fatSayi(st.qty[k])>0));
-  const firmaAd=((DB.companies||[]).find(c=>c.id===st.companyId)||{}).ad||'';
   const q=st.fq;
-  return (tum||fatUrunListesi(st.editId||'')).filter(u=>{
+  /* YEDEK YOL DA FIRMAYA BAGLI: cagiran liste vermediginde eskiden TUM firmalarin
+     havuzuna dusuyordu - firma izolasyonunda sessiz bir delik. Firma secili
+     degilse liste bostur. */
+  return (tum||(st.companyId?fatUrunListesi(st.editId||'',st.companyId):[])).filter(u=>{
     // GIRILMIS satir daima gorunur: yoksa girilen miktar ekrandan kaybolur ve
     // kullanici gormeden kaydeder
     if(girilen.has(u.key)) return true;
     if(st.fbina && !u.binalar.includes(st.fbina)) return false;
     if(st.fbolum && !u.bolumler.includes(st.fbolum)) return false;
     if(st.fsart && !u.sartnameler.includes(st.fsart)) return false;
-    if(!st.ftum && firmaAd && !u.firmalar.includes(firmaAd)) return false;
+    /* FIRMA SUZGECI YOK: liste zaten yalnizca secili firmanin alimlarindan
+       kuruluyor (bkz. renderFaturaForm). Eski "Diger firmalardan alinanlar"
+       kutusu bu kuralla celisiyordu - kaldirildi. */
     if(!st.ftumDurum && u.kalan<=FAT_EPS) return false;
     if(q && !fatAramaEslesir(u,q)) return false;
     return true;
@@ -25028,16 +25120,16 @@ function fatOzelKodOzet(u,goster){
 function fatSecenekler(liste,alan){
   return [...new Set((liste||[]).flatMap(u=>u[alan]||[]))].filter(Boolean).sort((a,b)=>String(a).localeCompare(String(b),'tr'));
 }
-function fatFormFiltreVar(){ const st=_FAT; return !!(st&&(st.fq||st.fbina||st.fbolum||st.fsart||st.ftum||st.ftumDurum)); }
+function fatFormFiltreVar(){ const st=_FAT; return !!(st&&(st.fq||st.fbina||st.fbolum||st.fsart||st.ftumDurum)); }
 /* Aramayi KORUYUP daraltan her seyi acar: aranan urun bulundu ama firma/bina/durum
    suzgeci gizliyorsa kullanicinin tek tiklamasi yeter (tek render). */
 function fatSuzgeciGevset(){
   const st=_FAT; if(!st) return;
-  st.fbina=''; st.fbolum=''; st.fsart=''; st.ftum=true; st.ftumDurum=true; render();
+  st.fbina=''; st.fbolum=''; st.fsart=''; st.ftumDurum=true; render();
 }
 function fatFormFiltreTemizle(){
   const st=_FAT; if(!st) return;
-  st.fq=''; st.fbina=''; st.fbolum=''; st.fsart=''; st.ftum=false; st.ftumDurum=false; render();
+  st.fq=''; st.fbina=''; st.fbolum=''; st.fsart=''; st.ftumDurum=false; render();
 }
 /* Formdaki kod kirilimi: kodsuz/sifir satirlar elenir, ayni kod iki kez
    yazildiysa toplanir - kayitta ve ekranda hep temiz bir liste durur. */
@@ -25191,7 +25283,11 @@ function renderFaturaForm(){
   const st=_FAT;
   const firmalar=fatFirmalar();
   // urun havuzu BIR KEZ kurulur: hem suzgec secenekleri hem de liste ondan cikar
-  const tumUrunler=fatUrunListesi(st.editId||'');
+  /* FIRMA IZOLASYONU: liste YALNIZCA secili firmanin alimlarindan kurulur.
+     Firma secilmemisken liste BOS gelir - "once firma secin" der. Tum firmalarin
+     urunlerini gosterip sonra suzmek, yanlis firmadan miktar girilmesine kapi
+     acardi (bkz. fatUrunHavuzu'ndaki firma izolasyonu notu). */
+  const tumUrunler=st.companyId?fatUrunListesi(st.editId||'',st.companyId):[];
   const binalar=fatSecenekler(tumUrunler,'binalar');
   const bolumler=fatSecenekler(tumUrunler,'bolumler');
   const sartnameler=fatSecenekler(tumUrunler,'sartnameler');
@@ -25337,8 +25433,6 @@ function renderFaturaForm(){
         <select onchange="fatSetFiltre('fsart',this.value)" title="Urunun gectigi sartname" style="min-width:150px"><option value="">Tum sartnameler</option>
           ${sartnameler.map(b=>`<option ${st.fsart===b?'selected':''}>${esc(b)}</option>`).join('')}</select>
         <label class="chk" style="display:flex;align-items:center;gap:6px;font-size:12px">
-          <input type="checkbox" ${st.ftum?'checked':''} onchange="fatSetFiltre('ftum',this.checked)"> Diger firmalardan alinanlar</label>
-        <label class="chk" style="display:flex;align-items:center;gap:6px;font-size:12px">
           <input type="checkbox" ${st.ftumDurum?'checked':''} onchange="fatSetFiltre('ftumDurum',this.checked)"> Tamami faturalanmislar</label>
         <div class="iht-sag">
           ${fatFormFiltreVar()?`<button class="iht-reset" onclick="fatFormFiltreTemizle()">Filtreleri temizle</button>`:''}
@@ -25348,8 +25442,9 @@ function renderFaturaForm(){
       </div>
       ${gizliN>0?`<div class="fat-uyari dikkat" style="margin:0 0 10px">
         <h5>&#9888; "${esc(st.fq)}" ile eslesen ${fmtNum(gizliN)} urun daha var</h5>
-        <p>Bu urunler suzgeclerin disinda kaldi: baska bir firmadan alinmis, secili bina/bolum
-        disinda ya da tamami zaten faturalanmis olabilir.
+        <p>Bu urunler suzgeclerin disinda kaldi: secili bina/bolum disinda ya da tamami zaten
+        faturalanmis olabilir. (Baska firmadan alinan urunler bu listede HIC yer almaz -
+        her fatura yalnizca kendi firmasinin alimlarindan kesilir.)
         <button class="fat-link" onclick="fatSuzgeciGevset()">Suzgecleri gevset, aramayi koru</button></p></div>`:''}
       ${gosterilen.length?`<div class="tablewrap"><table class="tut-lines fat-lines"><thead><tr>
           <th>Sira No</th><th>Mal Hizmet</th>
@@ -25366,8 +25461,9 @@ function renderFaturaForm(){
           ?(st.fq&&!gizliN?`"${esc(st.fq)}" ile eslesen alim kaydi yok`:'Suzgece uyan urun yok')
           :(st.companyId?'Bu firmadan alinmis, faturalanmayi bekleyen urun yok':'Once firma secin')}</p>
         <span style="font-size:12px">${st.fq&&!gizliN
-          ?'Urun ozel (yerlesim) koduyla da aranabilir. Kod dogruysa o urun icin henuz siparis/alim girilmemis demektir - once alim kaydi olusturulmali'
-          :(st.companyId?'"Diger firmalardan alinanlar" ya da "Tamami faturalanmislar" kutusunu isaretleyerek listeyi genisletebilirsiniz':'Firma secilince o firmadan alinan urunler listelenir')}</span></div>`}
+          ?'Urun ozel (yerlesim) koduyla da aranabilir. Kod dogruysa BU FIRMADAN o urun icin henuz siparis/alim girilmemis demektir'
+          :(st.companyId?'"Tamami faturalanmislar" kutusunu isaretleyerek listeyi genisletebilirsiniz. Liste yalnizca BU FIRMADAN alinan urunleri icerir - baska firmadan alinan mal bu faturaya yazilamaz'
+                        :'Once firma secin: liste yalnizca o firmadan alinan urunlerden kurulur')}</span></div>`}
       ${liste.length>LIMIT?`<p class="t-meta" style="font-size:11.5px;margin-top:8px">+ ${fmtNum(liste.length-LIMIT)} urun daha var - listeyi daraltmak icin arama ya da bina filtresi kullanin</p>`:''}
     </div>
     <div class="fat-foot">
@@ -25410,7 +25506,7 @@ function fatOzelOpen(i){
   const q=fatSayi(st.qty[s.key]);
   if(!(q>0)){ toast('Once bu satira miktar girin - kirilim o miktari boler','err'); return; }
   const u=s.urun||null;
-  const tablo=fatKodTablosu(u,st.editId||'');
+  const tablo=fatKodTablosu(u,st.editId||'',st.companyId||'');
   const pay={};
   ((st.oz||{})[s.key]||[]).forEach(x=>{
     const k=fatKodAnahtar(x.kod); if(!k) return;
@@ -25755,12 +25851,17 @@ async function fatKaydet(kesin){
   const tarih=new Date(st.tarih||Date.now()).getTime();
   if(!isFinite(tarih)){ toast('Fatura tarihi gecersiz','err'); return; }
 
-  const urunler=new Map(fatUrunListesi(st.editId||'').map(u=>[u.key,u]));
+  /* FIRMA IZOLASYONU: tavan YALNIZCA bu faturanin firmasinin alimlarindan
+     hesaplanir. Firma secilmemisken hicbir miktar dogrulanamaz - kaydetmek,
+     dayanagi olmayan bir odeme kaydi yaratmak olurdu. */
+  if(!st.companyId && Object.keys(st.qty||{}).some(k=>fatSayi(st.qty[k])>0)){
+    toast('Once firmayi secin - miktar tavani o firmadan alinan mala gore hesaplanir','err'); return; }
+  const urunler=new Map((st.companyId?fatUrunListesi(st.editId||'',st.companyId):[]).map(u=>[u.key,u]));
   const satirlar=[], sorunlar=[];
   Object.keys(st.qty).forEach(k=>{
     const q=fatSayi(st.qty[k]); if(!(q>0)) return;
     const u=urunler.get(k);
-    if(!u){ sorunlar.push('Urun bulunamadi (alim kaydi silinmis olabilir)'); return; }
+    if(!u){ sorunlar.push('Bu firmadan alinmamis bir urun icin miktar girilmis (alim kaydi silinmis ya da firma degistirilmis olabilir)'); return; }
     /* TAVAN ASIMI: kesinlestirmede satir DUSURULUR ve kayit reddedilir; taslakta
        satir korunur (yarim is kaybolmasin), yalnizca uyari verilir - kesinlestirme
        aninda zaten yeniden denetlenecek. */
@@ -25779,7 +25880,7 @@ async function fatKaydet(kesin){
         sorunlar.push(`${u.ad||u.code||'urun'}: kod kirilimi ${fmtNum(pt)}, satir miktari ${fmtNum(q)}`);
         if(kesin) return;
       }
-      const kt=new Map(fatKodTablosu(u,st.editId||'').map(x=>[fatKodAnahtar(x.kod),x]));
+      const kt=new Map(fatKodTablosu(u,st.editId||'',st.companyId||'').map(x=>[fatKodAnahtar(x.kod),x]));
       let kodSorunu=false;
       pay.forEach(x=>{
         const e=kt.get(fatKodAnahtar(x.kod));
@@ -25987,15 +26088,18 @@ function fatMutUrunFiltre(u){
   if(FATV.bina && !u.binalar.includes(FATV.bina)) return false;
   if(FATV.bolum && !u.bolumler.includes(FATV.bolum)) return false;
   if(FATV.sart && !u.sartnameler.includes(FATV.sart)) return false;
-  if(FATV.comp){
-    const ad=((DB.companies||[]).find(c=>c.id===FATV.comp)||{}).ad||'';
-    if(ad && !u.firmalar.includes(ad)) return false;
-  }
+  /* FATV.comp icin AYRI bir suzgec YOK: firma secilince havuzun kendisi o firmaya
+     gore kuruluyor (bkz. fatMutabakatVeri). Ad uzerinden ikinci bir suzme, ayni
+     adi tasiyan iki kayit varsa yanlis sonuc verirdi. */
   if(FATV.q && !fatAramaEslesir(u,FATV.q)) return false;
   return true;
 }
 function fatMutabakatVeri(){
-  const tum=fatUrunListesi();
+  /* Firma secilmisse havuz O FIRMAYA gore kurulur - "alinan" da "faturalanan" da
+     yalnizca onun. Firma secilmemisse genel bakis: firma bazli listeler ust uste
+     bindirilir ama FAZLA firma bazinda belirlenir (bkz. fatUrunListesiGenel),
+     global toplam bir firmanin fazla faturasini maskeleyemez. */
+  const tum=FATV.comp?fatUrunListesi('',FATV.comp):fatUrunListesiGenel('');
   const taban=tum.filter(fatMutUrunFiltre);
   const sayac={ hepsi:taban.length, fazla:0, kismi:0, tam:0, yok:0 };
   let net=0, fat=0;
@@ -26188,7 +26292,10 @@ function exportFaturaXlsx(){
 function matFaturaDurumu(matId){
   if(!_FAT_YUKLENDI||!matId) return null;
   const k='mat:'+matId;
-  return fatUrunListesi().find(u=>u.key===k)||null;
+  /* Kunye kutusu URUNUN GENEL durumunu gosterir (tum firmalar) - ama FAZLA,
+     firma bazinda belirlenir: bir firmadan fazla faturalanmis mal, baska
+     firmadan bol alim yapildigi icin "tamam" gorunmemeli. */
+  return fatUrunListesiGenel('').find(u=>u.key===k)||null;
 }
 
 /* ---------- BACKUP ---------- */
