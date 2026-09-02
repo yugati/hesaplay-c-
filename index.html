@@ -23966,6 +23966,204 @@ function printIhtiyacPdf(id,kip){
 function icoIhtOzet(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6l-3.2 3.2L15 19H9"/></svg>'; }
 function icoIhtPdf(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6M9 18h4"/></svg>'; }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   KUCUK XLSX YAZICI (bagimsiz, kutuphanesiz)
+   NEDEN KENDI YAZICIMIZ: SheetJS'in ucretsiz surumu hucre BICIMI yazmaz -
+   renk, kenarlik, font, dondurulmus satir hep Pro ozelligi. Istenen cikti
+   "renklendirilmis, sayfalari birbirine bagli" bir kitap oldugu icin dosya
+   dogrudan uretiliyor. Ikinci bir Excel kutuphanesi eklemek paketi ~400 KB
+   buyuturdu; bu yazici ~7 KB.
+   KAPSAM BILEREK DAR: metin/sayi/tarih hucresi, hucre bicimi, sutun
+   genisligi, birlestirilmis hucre, dondurulmus bolme, SAYFA ICI KOPRU ve
+   otomatik suzgec. Formul, resim, grafik, sayfa korumasi YOK - gerekmedi.
+   Zip STORE (sikistirmasiz) yazilir: Excel bunu sorunsuz acar ve boylece
+   deflate uygulamasi tasimak gerekmez; dosyalar zaten kucuk.
+   ═══════════════════════════════════════════════════════════════════════ */
+const _XZ_CRCT=(()=>{ const t=new Uint32Array(256);
+  for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); t[n]=c>>>0; }
+  return t; })();
+function _xzCrc(b){ let c=0xFFFFFFFF; for(let i=0;i<b.length;i++) c=_XZ_CRCT[(c^b[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function _xzUtf8(s){ return new TextEncoder().encode(String(s)); }
+/* Zip: yalnizca STORE. DOS tarihi sabit (01.01.1980) - dosyanin icerigi disinda
+   hicbir sey degismesin ki ayni veriden ayni bayt dizisi ciksin (test edilebilirlik). */
+function xlsxZip(dosyalar){
+  const par=[], mrk=[]; let ofs=0, n=0;
+  const u16=(a,v)=>a.push(v&255,(v>>8)&255), u32=(a,v)=>a.push(v&255,(v>>8)&255,(v>>16)&255,(v>>>24)&255);
+  dosyalar.forEach(f=>{
+    const ad=_xzUtf8(f.ad), veri=f.veri, crc=_xzCrc(veri), boy=veri.length;
+    const h=[]; u32(h,0x04034b50); u16(h,20); u16(h,0x0800); u16(h,0); u16(h,0); u16(h,0x0021);
+    u32(h,crc); u32(h,boy); u32(h,boy); u16(h,ad.length); u16(h,0);
+    const hb=new Uint8Array(h); par.push(hb,ad,veri);
+    const c=[]; u32(c,0x02014b50); u16(c,20); u16(c,20); u16(c,0x0800); u16(c,0); u16(c,0); u16(c,0x0021);
+    u32(c,crc); u32(c,boy); u32(c,boy); u16(c,ad.length); u16(c,0); u16(c,0); u16(c,0); u16(c,0);
+    u32(c,0); u32(c,ofs);
+    mrk.push(new Uint8Array(c),ad);
+    ofs+=hb.length+ad.length+boy; n++;
+  });
+  const mBas=ofs; let mBoy=0; mrk.forEach(x=>mBoy+=x.length);
+  const s=[]; u32(s,0x06054b50); u16(s,0); u16(s,0); u16(s,n); u16(s,n); u32(s,mBoy); u32(s,mBas); u16(s,0);
+  const son=new Uint8Array(s), hep=par.concat(mrk,[son]);
+  let top=0; hep.forEach(x=>top+=x.length);
+  const out=new Uint8Array(top); let p=0; hep.forEach(x=>{ out.set(x,p); p+=x.length; });
+  return out;
+}
+// XML metni: kacis + XML'de YASAK kontrol karakterlerini at (kullanici notlari
+// kopyala-yapistir geldiginde bunlar dosyayi acilamaz hale getiriyordu)
+function _xzX(s){ return String(s==null?'':s)
+  .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,'')
+  .replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c])); }
+function _xzSut(i){ let s='', n=i+1; while(n>0){ const r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=(n-r-1)/26; } return s; }
+// Excel seri tarihi. Yerel gun/ay/yil alinir: saat dilimi yuzunden bir gun
+// kaymasin diye UTC'ye ceviripten sonra hesaplanir.
+function xlsxTarihSeri(d){
+  const t=(d instanceof Date)?d:new Date(d);
+  if(isNaN(t)) return null;
+  return Math.floor(Date.UTC(t.getFullYear(),t.getMonth(),t.getDate())/86400000)+25569;
+}
+// Sayfa adi Excel kurallarina uydurulur: 31 karakter, : \ / ? * [ ] yasak,
+// bos olamaz, tirnakla baslayip bitemez, kitapta TEK olmali.
+function xlsxSayfaAdi(ad,alinanlar){
+  let a=String(ad==null?'':ad).replace(/[:\\\/\?\*\[\]]/g,'-').replace(/^'+|'+$/g,'').trim().slice(0,31);
+  if(!a) a='Sayfa';
+  if(alinanlar){ let t=a, i=2;
+    while(alinanlar.has(t.toLowerCase())){ const ek=' ('+i+')'; t=a.slice(0,31-ek.length)+ek; i++; }
+    alinanlar.add(t.toLowerCase()); a=t; }
+  return a;
+}
+
+function xlsxKitap(){
+  const NS='http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  const sayfalar=[], adlar=new Set();
+  // --- bicim havuzlari (hepsi tekrarsiz) ---
+  const numFmts=[], fonts=[], fills=['<fill><patternFill patternType="none"/></fill>',
+    '<fill><patternFill patternType="gray125"/></fill>'], borders=[], xfs=[];
+  const havuz=(dizi,xml)=>{ const i=dizi.indexOf(xml); return i>=0?i:dizi.push(xml)-1; };
+  function numFmt(kod){ if(!kod) return 0; const i=havuz(numFmts,kod); return 164+i; }
+  function font(o){ o=o||{};
+    return havuz(fonts,'<font>'+(o.b?'<b/>':'')+(o.i?'<i/>':'')+(o.u?'<u/>':'')
+      +'<sz val="'+(o.sz||11)+'"/><color rgb="'+(o.renk||'FF1F2933')+'"/>'
+      +'<name val="'+(o.ad||'Calibri')+'"/><family val="2"/></font>'); }
+  function fill(rgb){ return rgb?havuz(fills,'<fill><patternFill patternType="solid"><fgColor rgb="'+rgb+'"/><bgColor indexed="64"/></patternFill></fill>'):0; }
+  function border(o){ o=o||{};
+    if(!o.l&&!o.r&&!o.t&&!o.b) return havuz(borders,'<border><left/><right/><top/><bottom/><diagonal/></border>');
+    const k=(y,v)=>v?'<'+y+' style="'+(v.s||'thin')+'"><color rgb="'+(v.c||'FFD8DEE6')+'"/></'+y+'>':'<'+y+'/>';
+    return havuz(borders,'<border>'+k('left',o.l)+k('right',o.r)+k('top',o.t)+k('bottom',o.b)+'<diagonal/></border>'); }
+  /* Bicim = font + dolgu + kenarlik + sayi bicimi + hizalama. Ayni bilesim
+     ikinci kez istendiginde AYNI indeks doner: 500 satirlik bir tabloda her
+     hucre kendi bicimini yazsaydi styles.xml megabaytlara cikardi. */
+  function bicim(o){ o=o||{};
+    const hiz=(o.yatay||o.dikey||o.sar||o.girinti)
+      ? '<alignment'+(o.yatay?' horizontal="'+o.yatay+'"':'')+(o.dikey?' vertical="'+o.dikey+'"':'')
+        +(o.sar?' wrapText="1"':'')+(o.girinti?' indent="'+o.girinti+'"':'')+'/>' : '';
+    const nf=numFmt(o.fmt), f=font(o.font), fl=fill(o.dolgu), bd=border(o.kenar);
+    const xml='<xf numFmtId="'+nf+'" fontId="'+f+'" fillId="'+fl+'" borderId="'+bd+'" xfId="0"'
+      +' applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"'+(hiz?' applyAlignment="1"':'')+'>'
+      +hiz+'</xf>';
+    return havuz(xfs,xml); }
+  bicim({});                       // 0 = varsayilan
+
+  function sayfa(ad,secili){
+    const s={ ad:xlsxSayfaAdi(ad,adlar), satirlar:[], _sut:null, _dondur:0, _birles:[], _kopru:[],
+      _suzgec:'', secili:!!secili };
+    s.sutun=w=>{ s._sut=w; return s; };
+    s.dondur=n=>{ s._dondur=n; return s; };
+    s.birlestir=r=>{ s._birles.push(r); return s; };
+    s.suzgec=r=>{ s._suzgec=r; return s; };
+    // hedef hucre verilebilir: kopru sayfanin basina degil ILGILI SATIRA dusmeli
+    s.kopru=(hucre,sayfaAdi,metin,hedef)=>{ s._kopru.push({hucre,
+      hedef:"'"+String(sayfaAdi).replace(/'/g,"''")+"'!"+(hedef||'A1'),metin}); return s; };
+    s.satir=(hucreler,o)=>{ s.satirlar.push({h:(o&&o.h)||0,c:hucreler||[]}); return s.satirlar.length; };
+    s.bos=(n)=>{ for(let i=0;i<(n||1);i++) s.satirlar.push({h:0,c:[]}); return s.satirlar.length; };
+    sayfalar.push(s); return s;
+  }
+
+  function _sayfaXml(s){
+    let enGenis=0;
+    const satirXml=s.satirlar.map((r,ri)=>{
+      const hucreler=r.c.map((c,ci)=>{
+        if(c==null||c==='') return '';
+        const ref=_xzSut(ci)+(ri+1), st=(typeof c==='object'&&c.b!=null)?' s="'+c.b+'"':'';
+        let v=(typeof c==='object'&&'v' in c)?c.v:c, t=(typeof c==='object'&&c.t)||null;
+        if(v==null||v==='') return st?'<c r="'+ref+'"'+st+'/>':'';
+        if(t==='n'||(t==null&&typeof v==='number')){
+          if(!isFinite(v)) return '<c r="'+ref+'"'+st+'/>';
+          return '<c r="'+ref+'"'+st+'><v>'+(Math.round(v*1e6)/1e6)+'</v></c>'; }
+        return '<c r="'+ref+'"'+st+' t="inlineStr"><is><t xml:space="preserve">'+_xzX(v)+'</t></is></c>';
+      }).join('');
+      if(r.c.length>enGenis) enGenis=r.c.length;
+      return hucreler?'<row r="'+(ri+1)+'"'+(r.h?' ht="'+r.h+'" customHeight="1"':'')+'>'+hucreler+'</row>':'';
+    }).join('');
+    const son=_xzSut(Math.max(0,enGenis-1))+Math.max(1,s.satirlar.length);
+    const gorunum='<sheetViews><sheetView showGridLines="0"'+(s.secili?' tabSelected="1"':'')+' workbookViewId="0">'
+      +(s._dondur?'<pane ySplit="'+s._dondur+'" topLeftCell="A'+(s._dondur+1)+'" activePane="bottomLeft" state="frozen"/>'
+        +'<selection pane="bottomLeft" activeCell="A'+(s._dondur+1)+'" sqref="A'+(s._dondur+1)+'"/>':'')
+      +'</sheetView></sheetViews>';
+    const sut=s._sut&&s._sut.length
+      ? '<cols>'+s._sut.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join('')+'</cols>' : '';
+    /* Eleman SIRASI serbest degil (CT_Worksheet dizisi): cols -> sheetData ->
+       autoFilter -> mergeCells -> hyperlinks -> pageMargins. Sira bozulursa
+       Excel dosyayi "onarilmasi gerekiyor" diyerek acar. */
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      +'<worksheet xmlns="'+NS+'" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+      +'<dimension ref="A1:'+son+'"/>'+gorunum+'<sheetFormatPr defaultRowHeight="15"/>'+sut
+      +'<sheetData>'+satirXml+'</sheetData>'
+      +(s._suzgec?'<autoFilter ref="'+s._suzgec+'"/>':'')
+      +(s._birles.length?'<mergeCells count="'+s._birles.length+'">'+s._birles.map(r=>'<mergeCell ref="'+r+'"/>').join('')+'</mergeCells>':'')
+      +(s._kopru.length?'<hyperlinks>'+s._kopru.map(k=>'<hyperlink ref="'+k.hucre+'" location="'+_xzX(k.hedef)+'" display="'+_xzX(k.metin||'')+'"/>').join('')+'</hyperlinks>':'')
+      +'<pageMargins left="0.4" right="0.4" top="0.6" bottom="0.6" header="0.3" footer="0.3"/>'
+      +'</worksheet>';
+  }
+
+  function bayt(){
+    const d=[];
+    d.push({ad:'[Content_Types].xml', veri:_xzUtf8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      +'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+      +'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+      +'<Default Extension="xml" ContentType="application/xml"/>'
+      +'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+      +sayfalar.map((_,i)=>'<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('')
+      +'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+      +'</Types>')});
+    d.push({ad:'_rels/.rels', veri:_xzUtf8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      +'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      +'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+      +'</Relationships>')});
+    d.push({ad:'xl/workbook.xml', veri:_xzUtf8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      +'<workbook xmlns="'+NS+'" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+      +'<sheets>'+sayfalar.map((s,i)=>'<sheet name="'+_xzX(s.ad)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join('')+'</sheets>'
+      +'</workbook>')});
+    d.push({ad:'xl/_rels/workbook.xml.rels', veri:_xzUtf8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      +'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      +sayfalar.map((_,i)=>'<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join('')
+      +'<Relationship Id="rId'+(sayfalar.length+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+      +'</Relationships>')});
+    const sayfaXmlleri=sayfalar.map(_sayfaXml);   // styles.xml'den ONCE: bicimler burada olusuyor
+    d.push({ad:'xl/styles.xml', veri:_xzUtf8('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      +'<styleSheet xmlns="'+NS+'">'
+      +(numFmts.length?'<numFmts count="'+numFmts.length+'">'+numFmts.map((k,i)=>'<numFmt numFmtId="'+(164+i)+'" formatCode="'+_xzX(k)+'"/>').join('')+'</numFmts>':'')
+      +'<fonts count="'+fonts.length+'">'+fonts.join('')+'</fonts>'
+      +'<fills count="'+fills.length+'">'+fills.join('')+'</fills>'
+      +'<borders count="'+borders.length+'">'+borders.join('')+'</borders>'
+      +'<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+      +'<cellXfs count="'+xfs.length+'">'+xfs.join('')+'</cellXfs>'
+      +'<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'
+      +'</styleSheet>')});
+    sayfaXmlleri.forEach((x,i)=>d.push({ad:'xl/worksheets/sheet'+(i+1)+'.xml', veri:_xzUtf8(x)}));
+    return xlsxZip(d);
+  }
+  return { sayfa, bicim, bayt, get sayfalar(){ return sayfalar; } };
+}
+
+/* Uretilen baytlari dosya olarak indirir. Yazicidan AYRI durur: kitabi kurmak
+   tarayici gerektirmesin - icerik testte dogrulanabilsin. */
+function xlsxIndir(ad,bayt){
+  const b=new Blob([bayt],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const u=URL.createObjectURL(b), a=document.createElement('a');
+  a.href=u; a.download=ad; a.style.display='none';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ try{ document.body.removeChild(a); }catch(e){} URL.revokeObjectURL(u); },0);
+}
+
 /* ==================================================================
    FATURA KONTROL — "alinan mal" ile "parasi odenen mal" mutabakati
 
@@ -24607,7 +24805,8 @@ function renderFaturaListe(){
       <input type="date" value="${esc(FATV.to)}" title="Bitis tarihi" onchange="fatSetF('to',this.value)" style="background:var(--bg);border:1px solid var(--line);color:var(--ink);padding:8px 10px;border-radius:9px;font-size:13px">
       <div class="iht-sag">
         ${filtreVar?`<button class="iht-reset" onclick="fatFiltreTemizle()">Filtreleri temizle</button>`:''}
-        ${list.length?`<button class="btn btn-ghost" onclick="exportFaturaXlsx()">${icoXls()} Excel</button>`:''}
+        ${list.length?`<button class="btn btn-ghost" onclick="exportFaturaKitabi()" title="Cok sayfali renkli rapor: her fatura KENDI sayfasinda, ozet sayfasindan koprulerle gezilir; ayrica urun mutabakati ve firma ozeti sayfalari">${icoKitap()} Excel Kitabi</button>`:''}
+        ${list.length?`<button class="btn btn-ghost" onclick="exportFaturaXlsx()" title="Duz liste: her fatura SATIRI bir Excel satiri - pivot/filtre cekmek icin">${icoXls()} Duz Excel</button>`:''}
         ${fatCanEdit()?`<button class="btn btn-add" onclick="fatYeni()">${icoPlus()} Yeni Fatura</button>`:''}
       </div>
     </div>
@@ -26237,7 +26436,8 @@ function renderFaturaMutabakat(){
         ${sartnameler.map(b=>`<option ${FATV.sart===b?'selected':''}>${esc(b)}</option>`).join('')}</select>
       <div class="iht-sag">
         ${filtreVar?`<button class="iht-reset" onclick="fatFiltreTemizle()">Filtreleri temizle</button>`:''}
-        <button class="btn btn-ghost" onclick="exportMutabakatXlsx()">${icoXls()} Mutabakat Excel</button>
+        <button class="btn btn-ghost" onclick="exportFaturaKitabi()" title="Cok sayfali renkli rapor: her fatura KENDI sayfasinda, ozet sayfasindan koprulerle gezilir; ayrica urun mutabakati ve firma ozeti sayfalari">${icoKitap()} Excel Kitabi</button>
+        <button class="btn btn-ghost" onclick="exportMutabakatXlsx()" title="Duz liste: her urun bir Excel satiri - pivot/filtre cekmek icin">${icoXls()} Duz Excel</button>
       </div>
     </div>
     <div class="iht-seg" style="margin-bottom:10px">
@@ -26308,6 +26508,396 @@ function exportFaturaXlsx(){
   XLSX.utils.book_append_sheet(wb,ws,"Faturalar");
   XLSX.writeFile(wb,`faturalar_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast('Fatura listesi Excel indirildi');
+}
+
+// Excel KITABI: cok sayfali cikti - duz Excel ikonundan ayrilsin diye acik kitap
+function icoKitap(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 4h6a3 3 0 013 3v13a2.5 2.5 0 00-2.5-2H2z"/><path d="M22 4h-6a3 3 0 00-3 3v13a2.5 2.5 0 012.5-2H22z"/></svg>'; }
+/* ---------- 5b) FATURA KITABI (cok sayfali, renkli, sayfalari bagli Excel) ----------
+   IS BOLUMU: yukaridaki iki cikti MAKINE icindir - tek sayfa, tek satir tipi,
+   pivot cekilsin diye. Bu ise INSAN icindir: her fatura KENDI SAYFASINDA, ozet
+   sayfasindan kopruyle gezilir, urun mutabakati ayri sayfada ve sorunlu satirlar
+   renkle isaretlidir. Ikisi de duruyor - biri otekinin yerini tutmuyor.
+
+   KAPSAM: EKRANDAKI SUZGEC neyse o (fatListeFiltreli) - kullanicinin gordugu
+   liste ile indirdigi dosya ayni olsun. Hangi suzgecin acik oldugu kapak
+   sayfasinda YAZAR, yoksa "6 fatura bekliyordum, 3 geldi" denir.
+   MUTABAKAT sayfasi ise BILEREK suzgecten bagimsizdir: "alinanin genel toplami"
+   sorusunun cevabi suzgece gore degismemeli.
+
+   FIRMA IZOLASYONU: her fatura sayfasindaki "alim durumu" sutunlari o faturanin
+   KENDI FIRMASININ havuzundan okunur (fatUrunListesi('',companyId)) - baska
+   firmanin alimi bu belgenin dayanagi olamaz. */
+const FKX={ koyu:'FF1B2430', koyu2:'FF2C3A4B', amber:'FFF0A020', amberBg:'FFFFF4E0',
+  ak:'FFFFFFFF', ink:'FF1F2933', mute:'FF6B7785', cizgi:'FFD8DEE6', zebra:'FFF7F9FB',
+  kirmizi:'FFB3261E', kirmiziBg:'FFFCE8E6', yesil:'FF13703A', yesilBg:'FFE6F4EA',
+  sari:'FF8A5A00', sariBg:'FFFFF3DC', gri:'FF5F6B7A', griBg:'FFF0F2F5', link:'FF1155CC' };
+const FKX_DURUM={ fazla:{ad:'FAZLA',bg:FKX.kirmiziBg,fg:FKX.kirmizi}, tam:{ad:'TAM',bg:FKX.yesilBg,fg:FKX.yesil},
+  kismi:{ad:'KISMI',bg:FKX.sariBg,fg:FKX.sari}, yok:{ad:'FATURASIZ',bg:FKX.griBg,fg:FKX.gri} };
+const FKX_KAYIT={ taslak:{bg:FKX.sariBg,fg:FKX.sari}, kesin:{bg:FKX.yesilBg,fg:FKX.yesil},
+  kilitli:{bg:FKX.griBg,fg:FKX.gri} };
+
+/* Bicim sozlugu. Hepsi TEK YERDE: renk/kalinlik kararlari sayfalar arasinda
+   dagilsaydi ayni tablo iki sayfada iki turlu gorunurdu. */
+function fatKitapBicim(wb){
+  const m=wb.bicim, alt={b:{c:FKX.cizgi}}, ust={t:{c:FKX.cizgi}};
+  const B={};
+  B.baslik = m({font:{b:true,sz:15,renk:FKX.ak},dolgu:FKX.koyu,yatay:'left',dikey:'center',girinti:1});
+  B.altBaslik = m({font:{sz:10,renk:FKX.mute,i:true},yatay:'left',dikey:'center',girinti:1});
+  B.band = m({font:{b:true,sz:10,renk:FKX.ink},dolgu:FKX.amberBg,yatay:'left',dikey:'center',girinti:1,
+    kenar:{b:{c:FKX.amber,s:'medium'}}});
+  B.th = m({font:{b:true,sz:10,renk:FKX.ak},dolgu:FKX.koyu2,yatay:'center',dikey:'center',sar:true,kenar:alt});
+  B.link = m({font:{u:true,b:true,sz:10,renk:FKX.link},yatay:'left',dikey:'center'});
+  B.linkH = m({font:{u:true,sz:10.5,renk:FKX.link},yatay:'left',dikey:'center',girinti:1,kenar:alt});
+  B.linkHZ = m({font:{u:true,sz:10.5,renk:FKX.link},dolgu:FKX.zebra,yatay:'left',dikey:'center',girinti:1,kenar:alt});
+  B.etiket = m({font:{b:true,sz:10,renk:FKX.mute},yatay:'left',dikey:'center',girinti:1,dolgu:FKX.griBg,kenar:alt});
+  B.deger = m({font:{sz:11,renk:FKX.ink},yatay:'left',dikey:'center',girinti:1,kenar:alt});
+  B.degerB = m({font:{b:true,sz:11,renk:FKX.ink},yatay:'left',dikey:'center',girinti:1,kenar:alt});
+  B.not = m({font:{sz:10,renk:FKX.sari},dolgu:FKX.sariBg,yatay:'left',dikey:'top',sar:true,girinti:1,kenar:alt});
+  B.kpiEt = m({font:{b:true,sz:9,renk:FKX.mute},dolgu:FKX.griBg,yatay:'center',dikey:'center'});
+  B.kpiDg = m({font:{b:true,sz:14,renk:FKX.ink},yatay:'center',dikey:'center',kenar:alt});
+  B.kpiUy = m({font:{b:true,sz:14,renk:FKX.kirmizi},dolgu:FKX.kirmiziBg,yatay:'center',dikey:'center',kenar:alt});
+  B.dipnot = m({font:{sz:9,renk:FKX.mute,i:true},yatay:'left',dikey:'center',sar:true,girinti:1});
+  // tablo hucreleri: normal / zebra ciftleri
+  const cift=(o)=>[m({...o,kenar:alt}), m({...o,dolgu:FKX.zebra,kenar:alt})];
+  [B.td,B.tdZ]     = cift({font:{sz:10.5},yatay:'left',dikey:'center',girinti:1});
+  [B.tdS,B.tdSZ]   = cift({font:{sz:10.5},yatay:'center',dikey:'center'});
+  [B.kod,B.kodZ]   = cift({font:{sz:10,ad:'Consolas'},yatay:'left',dikey:'center',girinti:1});
+  /* MIKTAR BICIMI HUCRE BASINA SECILIR. Tek bir "#,##0.###" kodu kullanilamadi:
+     Excel bu kodda tam sayilari "1.909." diye ondalik AYIRICIYLA gosteriyor.
+     Ekrandaki fmtNum de ayni ayrimi yapiyor (tam sayi ondaliksiz, kesirli iki
+     haneli) - iki gosterim boylece birbirini tutuyor. */
+  [B.mik,B.mikZ]   = cift({fmt:'#,##0.00',font:{sz:10.5},yatay:'right',dikey:'center'});
+  [B.mikT,B.mikTZ] = cift({fmt:'#,##0',font:{sz:10.5},yatay:'right',dikey:'center'});
+  B.mikSec = (v,z) => { const n=Number(v)||0;
+    return Math.abs(n-Math.round(n))<1e-9 ? (z?B.mikTZ:B.mikT) : (z?B.mikZ:B.mik); };
+  [B.par,B.parZ]   = cift({fmt:'#,##0.00',font:{sz:10.5},yatay:'right',dikey:'center'});
+  [B.parB,B.parBZ] = cift({fmt:'#,##0.00',font:{b:true,sz:10.5},yatay:'right',dikey:'center'});
+  [B.yuz,B.yuzZ]   = cift({fmt:'0"%"',font:{sz:10.5},yatay:'right',dikey:'center'});
+  /* Ayiricilar TIRNAK icinde: bicim dilbilgisinde nokta ondalik ayirici sayilip
+     "dd.mm.yyyy" gecersiz bir kod haline geliyor (Excel'in kendi bicimleyicisi de
+     reddediyor). dd"."mm"."yyyy her yerde ayni sekilde okunur. */
+  [B.trh,B.trhZ]   = cift({fmt:'dd"."mm"."yyyy',font:{sz:10.5},yatay:'center',dikey:'center'});
+  [B.sar,B.sarZ]   = cift({font:{sz:9.5,renk:FKX.mute},yatay:'left',dikey:'center',sar:true,girinti:1});
+  // toplam satiri: ustunde cift cizgi, kalin
+  B.topEt = m({font:{b:true,sz:11,renk:FKX.ink},yatay:'right',dikey:'center',kenar:{t:{s:'double',c:FKX.koyu2}}});
+  B.topSy = m({fmt:'#,##0.00',font:{b:true,sz:11,renk:FKX.ink},yatay:'right',dikey:'center',kenar:{t:{s:'double',c:FKX.koyu2}}});
+  B.topMk = m({fmt:'#,##0.00',font:{b:true,sz:11,renk:FKX.ink},yatay:'right',dikey:'center',kenar:{t:{s:'double',c:FKX.koyu2}}});
+  B.topMkT = m({fmt:'#,##0',font:{b:true,sz:11,renk:FKX.ink},yatay:'right',dikey:'center',kenar:{t:{s:'double',c:FKX.koyu2}}});
+  B.topMkSec = v => { const n=Number(v)||0; return Math.abs(n-Math.round(n))<1e-9?B.topMkT:B.topMk; };
+  B.topBos = m({kenar:{t:{s:'double',c:FKX.koyu2}}});
+  B.fark = m({fmt:'#,##0.00',font:{b:true,sz:11,renk:FKX.kirmizi},dolgu:FKX.kirmiziBg,yatay:'right',dikey:'center',kenar:alt});
+  B.uyari = m({font:{b:true,sz:10,renk:FKX.kirmizi},yatay:'left',dikey:'center',girinti:1,kenar:alt});
+  // durum rozetleri (urun) ve kayit rozetleri (fatura) - ikisi de ayni desen
+  B.durum={}; Object.keys(FKX_DURUM).forEach(k=>{ const d=FKX_DURUM[k];
+    B.durum[k]=m({font:{b:true,sz:10,renk:d.fg},dolgu:d.bg,yatay:'center',dikey:'center',kenar:alt}); });
+  B.kayit={}; Object.keys(FKX_KAYIT).forEach(k=>{ const d=FKX_KAYIT[k];
+    B.kayit[k]=m({font:{b:true,sz:10,renk:d.fg},dolgu:d.bg,yatay:'center',dikey:'center',kenar:alt}); });
+  return B;
+}
+
+// Kitabin kapsamini bir cumleyle anlatir: hangi suzgec acikti?
+function fatKitapKapsam(){
+  const p=[];
+  if(FATV.q) p.push('arama "'+FATV.q+'"');
+  if(FATV.comp) p.push('firma '+(((DB.companies||[]).find(c=>c.id===FATV.comp)||{}).ad||FATV.comp));
+  if(FATV.durum) p.push('durum '+(FAT_KAYIT_DURUM[FATV.durum]||{ad:FATV.durum}).ad);
+  if(FATV.from) p.push(fmtDate(FATV.from)+' sonrasi');
+  if(FATV.to) p.push(fmtDate(FATV.to)+' oncesi');
+  return p.length?p.join(' · '):'suzgec yok - tum faturalar';
+}
+
+/* KITABI KURAR (indirmez). Ayri durmasinin sebebi test edilebilirlik: dosya
+   uretimi tarayici olmadan da calistirilip icerigi dogrulanabiliyor. */
+function fatKitapKur(){
+  const wb=xlsxKitap(), B=fatKitapBicim(wb);
+  const list=fatListeFiltreli();
+  const OZET='Ozet', MUT='Urun Mutabakati', FRM='Firma Ozeti';
+
+  /* SAYFALAR ONCE ACILIR, SONRA DOLDURULUR: kopruler birbirinin SATIR
+     NUMARASINA baktigi icin (mutabakattaki urun satirina inen link gibi)
+     sira once sabitlenmeli. */
+  const sOzet=wb.sayfa(OZET,true);
+  const sayfaEsle=new Map();                       // fatura id -> sayfa
+  list.forEach(f=>{ sayfaEsle.set(f.id, wb.sayfa(f.no||('Fatura '+(sayfaEsle.size+1)))); });
+  const sMut=wb.sayfa(MUT), sFrm=wb.sayfa(FRM);
+
+  // --- ortak hesaplar ---
+  const havuzCache=new Map();
+  const firmaHavuzu=cid=>{ const k=String(cid||'');
+    if(!havuzCache.has(k)) havuzCache.set(k,new Map(fatUrunListesi('',k).map(u=>[u.key,u])));
+    return havuzCache.get(k); };
+  const genel=fatUrunListesiGenel('');
+  const ciftNo=new Set(); fatCiftNolar().forEach(g=>g.forEach(f=>ciftNo.add(f.id)));
+  const paralar=new Set(); list.forEach(f=>paralar.add(f.paraBirimi||'TRY'));
+  const tekPara=paralar.size===1?[...paralar][0]:'';
+
+  // ══════════════ 1) URUN MUTABAKATI (once: satir numaralari lazim) ══════════════
+  sMut.sutun([11,16,46,8,26,16,12,10,12,13,12,28,30]);
+  sMut.birlestir('A1:M1');
+  sMut.satir([{v:'URUN MUTABAKATI — alinan mal ile parasi odenen mal',b:B.baslik}],{h:26});
+  sMut.satir([{v:'◀ Ozet',b:B.link},{v:'Tum urunler listelenir; bu sayfa fatura suzgecinden BAGIMSIZDIR - "alinanin genel toplami" suzgece gore degismemeli.',b:B.dipnot}],{h:16});
+  sMut.kopru('A2',OZET,'◀ Ozet');
+  sMut.birlestir('B2:M2');
+  sMut.bos();
+  const mutBas=sMut.satir(['Durum','Urun Kodu','Urun','Birim','Firmalar','Binalar','Alinan','Iade',
+    'Net (alinan-iade)','Faturalanan','Kalan','Yerlesim Kodlari','Gectigi Faturalar'].map(v=>({v,b:B.th})),{h:30});
+  const urunSatir=new Map();                       // urun key -> mutabakat satir no
+  const faturaGecen=new Map();                     // urun key -> [fatura]
+  fatKayitlar().forEach(f=>fatSatirlari(f).forEach(r=>{
+    const k=String(r.key||''); if(!k) return;
+    if(!faturaGecen.has(k)) faturaGecen.set(k,[]);
+    if(!faturaGecen.get(k).some(x=>x.id===f.id)) faturaGecen.get(k).push(f);
+  }));
+  genel.forEach((u,i)=>{
+    const z=i%2?1:0, td=z?B.tdZ:B.td, kod=z?B.kodZ:B.kod, mik=z?B.mikZ:B.mik, sar=z?B.sarZ:B.sar;
+    const belgeler=(faturaGecen.get(u.key)||[]).slice().sort((a,b)=>(b.tarih||0)-(a.tarih||0));
+    const n=sMut.satir([
+      {v:(FKX_DURUM[u.durum]||{}).ad||'',b:B.durum[u.durum]||td},
+      {v:u.code||'',b:kod}, {v:u.ad||'',b:td}, {v:u.unit||'',b:z?B.tdSZ:B.tdS},
+      {v:(u.firmalar||[]).join(' · '),b:sar}, {v:(u.binalar||[]).join(' · '),b:sar},
+      {v:u.alinan||0,b:B.mikSec(u.alinan,z)}, {v:u.iade||0,b:B.mikSec(u.iade,z)},
+      {v:u.net||0,b:B.mikSec(u.net,z)}, {v:u.fat||0,b:B.mikSec(u.fat,z)},
+      {v:Number((u.kalan||0).toFixed(4)),b:B.mikSec(u.kalan,z)},
+      {v:(u.ozelKodlar||[]).join(' · '),b:sar},
+      {v:belgeler.map(f=>f.no||'-').join(' · '),b:sar}]);
+    urunSatir.set(u.key,n);
+  });
+  if(!genel.length) sMut.satir([{v:'Kayitli alim ya da fatura yok.',b:B.dipnot}]);
+  sMut.dondur(mutBas);
+  sMut.suzgec('A'+mutBas+':M'+Math.max(mutBas,sMut.satirlar.length));
+
+  // ══════════════ 2) FATURA SAYFALARI ══════════════
+  const ozetSatir=new Map();                       // fatura id -> ozet satir no (geri kopru icin)
+  list.forEach(f=>{
+    const s=sayfaEsle.get(f.id), sat=fatSatirlari(f), top=fatKayitToplam(f);
+    const hav=firmaHavuzu(f.companyId), pb=f.paraBirimi||'TRY';
+    const dur=fatDurumu(f), durAd=FAT_KAYIT_DURUM[dur].ad;
+    s.sutun([5,16,46,8,12,13,7,12,14,7,13,15,30,13,13,12,11]);
+    s.birlestir('A1:Q1');
+    s.satir([{v:(f.no||'(numarasiz)')+'  ·  '+(fatCompany(f)||'firma yok'),b:B.baslik}],{h:28});
+    s.satir([{v:'◀ Ozet',b:B.link},{v:'',b:B.link},{v:'Urun Mutabakati ▶',b:B.link}],{h:16});
+    /* A2 koprusu burada DEGIL, Ozet kurulduktan sonra eklenir: belgeye ozet
+       sayfasinin BASINA degil KENDI SATIRINA donulsun. Ayni hucreye iki kopru
+       yazilamaz, o yuzden tek yerde veriliyor. */
+    s.kopru('C2',MUT,'Urun Mutabakati ▶');
+    s.birlestir('A2:B2'); s.birlestir('C2:E2');
+    s.bos();
+    s.birlestir('A4:Q4'); s.satir([{v:'BELGE BILGILERI',b:B.band}],{h:20});
+    const ikili=(e1,d1,b1,e2,d2,b2)=>{
+      const r=new Array(17).fill('');
+      r[0]={v:e1,b:B.etiket}; r[1]={v:'',b:B.etiket}; r[2]={v:d1,b:b1||B.deger};
+      r[3]=r[4]=r[5]={v:'',b:b1||B.deger};
+      r[6]={v:e2,b:B.etiket}; r[7]={v:'',b:B.etiket}; r[8]={v:d2,b:b2||B.deger};
+      r[9]=r[10]=r[11]=r[12]=r[13]=r[14]=r[15]=r[16]={v:'',b:b2||B.deger};
+      const n=s.satir(r,{h:18});
+      s.birlestir('A'+n+':B'+n); s.birlestir('C'+n+':F'+n);
+      s.birlestir('G'+n+':H'+n); s.birlestir('I'+n+':Q'+n);
+      return n;
+    };
+    ikili('Fatura No', f.no||'-', B.degerB, 'Senaryo', f.senaryo||'-');
+    const tn=ikili('Fatura Tarihi','', B.deger, 'Fatura Tipi', f.faturaTipi||'-');
+    s.satirlar[tn-1].c[2]={v:xlsxTarihSeri(f.tarih),b:wb.bicim({fmt:'dd"."mm"."yyyy',font:{sz:11},yatay:'left',dikey:'center',girinti:1,kenar:{b:{c:FKX.cizgi}}})};
+    ikili('Firma', fatCompany(f)||'-', B.degerB, 'Para Birimi', pb+(f.kur?'  ·  kur '+f.kur:''));
+    ikili('Irsaliye', (f.irsaliyeNo||'-')+(f.irsaliyeTarihi?'  ·  '+fmtDate(f.irsaliyeTarihi):''),
+      B.deger, 'Belge Durumu', durAd+(fatKilitSonrasiDegisti(f)?'  ·  KILIT SONRASI DEGISTI':''),
+      fatKilitSonrasiDegisti(f)?B.uyari:B.deger);
+    ikili('ETTN', f.ettn||'-', B.kod, 'Kaydeden', f.olusturan||'-');
+    if(String(f.not||'').trim()){
+      const n=s.satir([{v:'Not',b:B.etiket},{v:'',b:B.etiket},{v:String(f.not).trim(),b:B.not},
+        ...new Array(14).fill({v:'',b:B.not})],{h:34});
+      s.birlestir('A'+n+':B'+n); s.birlestir('C'+n+':Q'+n);
+    }
+    s.bos();
+    s.birlestir('A'+(s.satirlar.length+1)+':Q'+(s.satirlar.length+1));
+    s.satir([{v:'FATURA SATIRLARI  ('+fmtNum(sat.length)+' urun)',b:B.band}],{h:20});
+    const bas=s.satir(['#','Urun Kodu','Mal / Hizmet','Birim','Miktar','Birim Fiyat','Isk %','Iskonto',
+      'Matrah','KDV %','KDV','Satir Toplami','Yerlesim Kodlari',
+      'Bu Firmadan Alinan','Toplam Faturalanan','Kalan','Durum'].map(v=>({v,b:B.th})),{h:32});
+    sat.forEach((r,i)=>{
+      const h=fatSatirHesap(r), z=i%2?1:0;
+      const td=z?B.tdZ:B.td, kod=z?B.kodZ:B.kod, mik=z?B.mikZ:B.mik, par=z?B.parZ:B.par,
+        yuz=z?B.yuzZ:B.yuz, sar=z?B.sarZ:B.sar, ts=z?B.tdSZ:B.tdS;
+      const u=hav.get(String(r.key||''));
+      const n=s.satir([
+        {v:i+1,b:ts}, {v:r.code||'',b:kod},
+        {v:r.ad||'',b:urunSatir.has(String(r.key||''))?(z?B.linkHZ:B.linkH):td},
+        {v:r.unit||'',b:ts}, {v:h.qty,b:B.mikSec(h.qty,z)}, {v:h.fiyat||'',b:par},
+        {v:h.iskO||'',b:yuz}, {v:h.iskonto?Number(h.iskonto.toFixed(2)):'',b:par},
+        {v:Number(h.matrah.toFixed(2)),b:par}, {v:h.kdvO||0,b:yuz},
+        {v:Number(h.kdv.toFixed(2)),b:par}, {v:Number(h.toplam.toFixed(2)),b:z?B.parBZ:B.parB},
+        {v:fatSatirPaylari(r).filter(x=>x.kod).map(x=>x.kod+' ('+fmtNum(x.qty)+')').join(' · '),b:sar},
+        {v:u?u.alinan:'',b:B.mikSec(u&&u.alinan,z)}, {v:u?u.fat:'',b:B.mikSec(u&&u.fat,z)},
+        {v:u?Number(u.kalan.toFixed(4)):'',b:B.mikSec(u&&u.kalan,z)},
+        {v:u?(FKX_DURUM[u.durum]||{}).ad:'ALIM YOK',b:u?(B.durum[u.durum]||td):B.durum.fazla}]);
+      if(urunSatir.has(String(r.key||''))) s.kopru('C'+n,MUT,r.ad||'',('C'+urunSatir.get(String(r.key||''))));
+    });
+    if(!sat.length) s.satir([{v:'Bu faturada urun satiri yok.',b:B.dipnot}]);
+    // TOPLAM
+    const tMik=sat.reduce((a,r)=>a+fatSatirHesap(r).qty,0);
+    const tsat=s.satir([{v:'',b:B.topBos},{v:'',b:B.topBos},{v:'TOPLAM',b:B.topEt},{v:'',b:B.topBos},
+      {v:tMik,b:B.topMkSec(tMik)},{v:'',b:B.topBos},{v:'',b:B.topBos},
+      {v:Number(top.iskonto.toFixed(2)),b:B.topSy},{v:Number(top.matrah.toFixed(2)),b:B.topSy},
+      {v:'',b:B.topBos},{v:Number(top.kdv.toFixed(2)),b:B.topSy},{v:Number(top.toplam.toFixed(2)),b:B.topSy},
+      {v:pb,b:B.topEt},{v:'',b:B.topBos},{v:'',b:B.topBos},{v:'',b:B.topBos},{v:'',b:B.topBos}],{h:20});
+    s.bos();
+    // KDV kirilimi (TC faturasinin alt kosesi) + belge/hesap farki
+    if((top.kdvListe||[]).length){
+      s.birlestir('A'+(s.satirlar.length+1)+':Q'+(s.satirlar.length+1));
+      s.satir([{v:'KDV KIRILIMI',b:B.band}],{h:20});
+      s.satir([{v:'Oran',b:B.th},{v:'Matrah',b:B.th},{v:'KDV',b:B.th}]);
+      top.kdvListe.forEach(k=>s.satir([{v:k.oran,b:B.yuz},{v:Number(k.matrah.toFixed(2)),b:B.par},{v:Number(k.kdv.toFixed(2)),b:B.par}]));
+      s.bos();
+    }
+    const fark=fatTutarFarki(f.beyanTutar,top.toplam);
+    s.birlestir('A'+(s.satirlar.length+1)+':Q'+(s.satirlar.length+1));
+    s.satir([{v:'ODENECEK TUTAR',b:B.band}],{h:20});
+    s.satir([{v:'Belgede yazan',b:B.etiket},{v:'',b:B.etiket},{v:fatSayi(f.beyanTutar)||'',b:B.par},{v:pb,b:B.tdS}]);
+    s.satir([{v:'Satirlardan hesaplanan',b:B.etiket},{v:'',b:B.etiket},{v:Number(top.toplam.toFixed(2)),b:B.parB},{v:pb,b:B.tdS}]);
+    if(fark){
+      s.satir([{v:'FARK',b:B.etiket},{v:'',b:B.etiket},{v:Number(fark.toFixed(2)),b:B.fark},{v:pb,b:B.tdS}]);
+      s.birlestir('E'+s.satirlar.length+':Q'+s.satirlar.length);
+      s.satirlar[s.satirlar.length-1].c[4]={v:'Belgede yazan tutar ile satirlardan hesaplanan tutar tutmuyor - satirlar eksik girilmis ya da belgede baska bir kalem var.',b:B.dipnot};
+    }
+    s.dondur(bas);
+    s.suzgec('A'+bas+':Q'+Math.max(bas,tsat-1));
+  });
+
+  // ══════════════ 3) FIRMA OZETI ══════════════
+  sFrm.sutun([38,9,10,14,16,14,17,6,18]);
+  sFrm.birlestir('A1:I1');
+  sFrm.satir([{v:'FIRMA OZETI',b:B.baslik}],{h:26});
+  sFrm.satir([{v:'◀ Ozet',b:B.link}],{h:16}); sFrm.kopru('A2',OZET,'◀ Ozet');
+  sFrm.bos();
+  const frmBas=sFrm.satir(['Firma','Fatura','Urun Satiri','Miktar','Toplam (KDV\'siz)','KDV','Odenecek','PB','Fazla Faturalanan Urun'].map(v=>({v,b:B.th})),{h:30});
+  const frmMap=new Map();
+  list.forEach(f=>{
+    const k=String(f.companyId||''), ad=fatCompany(f)||'(firma girilmemis)';
+    if(!frmMap.has(k)) frmMap.set(k,{ad,n:0,satir:0,miktar:0,matrah:0,kdv:0,toplam:0,pb:new Set()});
+    const g=frmMap.get(k), t=fatKayitToplam(f), sat=fatSatirlari(f);
+    g.n++; g.satir+=sat.length; g.miktar+=fatToplamMiktar(f);
+    g.matrah+=t.matrah; g.kdv+=t.kdv; g.toplam+=t.toplam; g.pb.add(f.paraBirimi||'TRY');
+  });
+  [...frmMap.entries()].sort((a,b)=>b[1].toplam-a[1].toplam).forEach(([cid,g],i)=>{
+    const z=i%2?1:0, td=z?B.tdZ:B.td, mik=z?B.mikZ:B.mik, par=z?B.parZ:B.par, ts=z?B.tdSZ:B.tdS;
+    const fazla=cid?[...firmaHavuzu(cid).values()].filter(u=>u.durum==='fazla').length:0;
+    sFrm.satir([{v:g.ad,b:td},{v:g.n,b:ts},{v:g.satir,b:ts},{v:g.miktar,b:B.mikSec(g.miktar,z)},
+      {v:Number(g.matrah.toFixed(2)),b:par},{v:Number(g.kdv.toFixed(2)),b:par},
+      {v:Number(g.toplam.toFixed(2)),b:z?B.parBZ:B.parB},{v:[...g.pb].join('/'),b:ts},
+      {v:fazla,b:fazla?B.durum.fazla:ts}]);
+  });
+  if(!frmMap.size) sFrm.satir([{v:'Suzgece uyan fatura yok.',b:B.dipnot}]);
+  sFrm.dondur(frmBas);
+
+  // ══════════════ 4) OZET (kapak) ══════════════
+  sOzet.sutun([5,22,12,34,11,8,13,15,13,16,6,13,34]);
+  sOzet.birlestir('A1:M1'); sOzet.birlestir('A2:M2');
+  sOzet.satir([{v:'FATURA KONTROL RAPORU',b:B.baslik}],{h:30});
+  sOzet.satir([{v:fmtDate(Date.now())+' tarihinde olusturuldu  ·  '+fmtNum(list.length)+' fatura  ·  '+fatKitapKapsam(),b:B.altBaslik}],{h:18});
+  sOzet.bos();
+  sOzet.birlestir('A4:M4'); sOzet.satir([{v:'GENEL DURUM',b:B.band}],{h:20});
+  const toplamSatir=list.reduce((a,f)=>a+fatSatirlari(f).length,0);
+  const toplamMiktar=list.reduce((a,f)=>a+fatToplamMiktar(f),0);
+  const tumTop=list.reduce((a,f)=>{ const t=fatKayitToplam(f); a.matrah+=t.matrah; a.kdv+=t.kdv; a.toplam+=t.toplam; return a; },{matrah:0,kdv:0,toplam:0});
+  const kpi=(etiketler,degerler,uyariIx)=>{
+    const e=new Array(13).fill(''), d=new Array(13).fill('');
+    etiketler.forEach((x,i)=>{ e[i*2]={v:x,b:B.kpiEt}; e[i*2+1]={v:'',b:B.kpiEt}; });
+    degerler.forEach((x,i)=>{ const bb=(uyariIx&&uyariIx.indexOf(i)>=0&&fatSayi(x)>0)?B.kpiUy:B.kpiDg;
+      d[i*2]={v:x,b:bb}; d[i*2+1]={v:'',b:bb}; });
+    const n1=sOzet.satir(e,{h:16}), n2=sOzet.satir(d,{h:22});
+    etiketler.forEach((_,i)=>{ const c=String.fromCharCode(65+i*2), c2=String.fromCharCode(66+i*2);
+      sOzet.birlestir(c+n1+':'+c2+n1); sOzet.birlestir(c+n2+':'+c2+n2); });
+    return n2;
+  };
+  kpi(['FATURA','URUN SATIRI','TOPLAM MIKTAR','TOPLAM (KDV\'SIZ)','KDV','ODENECEK'],
+      [list.length, toplamSatir, fmtNum(toplamMiktar),
+       tekPara?fatPara(tumTop.matrah,tekPara):'karma', tekPara?fatPara(tumTop.kdv,tekPara):'karma',
+       tekPara?fatPara(tumTop.toplam,tekPara):'karma']);
+  sOzet.bos();
+  const fazlaUrun=genel.filter(u=>u.durum==='fazla').length;
+  const farkli=list.filter(f=>fatTutarFarki(f.beyanTutar,fatKayitToplam(f).toplam)).length;
+  const kilitDeg=list.filter(fatKilitSonrasiDegisti).length;
+  sOzet.birlestir('A'+(sOzet.satirlar.length+1)+':M'+(sOzet.satirlar.length+1));
+  sOzet.satir([{v:'DIKKAT EDILECEKLER',b:B.band}],{h:20});
+  kpi(['FAZLA FATURALANAN URUN','TUTAR FARKI OLAN BELGE','KILIT SONRASI DEGISEN','CIFT FATURA NO','TASLAK','KILITLI'],
+      [fazlaUrun, farkli, kilitDeg, list.filter(f=>ciftNo.has(f.id)).length,
+       list.filter(fatTaslakMi).length, list.filter(fatKilitliMi).length], [0,1,2,3]);
+  sOzet.bos();
+  if(!tekPara){
+    sOzet.birlestir('A'+(sOzet.satirlar.length+1)+':M'+(sOzet.satirlar.length+1));
+    sOzet.satir([{v:'Listede birden cok para birimi var ('+[...paralar].join(', ')+') - toplamlar bilerek toplanmadi, her faturanin tutari kendi sutununda durur.',b:B.dipnot}],{h:16});
+    sOzet.bos();
+  }
+  sOzet.birlestir('A'+(sOzet.satirlar.length+1)+':M'+(sOzet.satirlar.length+1));
+  sOzet.satir([{v:'FATURALAR  —  numaraya tiklayin, belgenin kendi sayfasi acilir',b:B.band}],{h:20});
+  const ozBas=sOzet.satir(['#','Fatura No','Tarih','Firma','Durum','Satir','Miktar','Toplam (KDV\'siz)',
+    'KDV','Odenecek','PB','Tutar Farki','Uyari'].map(v=>({v,b:B.th})),{h:30});
+  list.forEach((f,i)=>{
+    const z=i%2?1:0, td=z?B.tdZ:B.td, mik=z?B.mikZ:B.mik, par=z?B.parZ:B.par, ts=z?B.tdSZ:B.tdS;
+    const t=fatKayitToplam(f), dur=fatDurumu(f), sayfa=sayfaEsle.get(f.id);
+    const fark=fatTutarFarki(f.beyanTutar,t.toplam);
+    const hav=firmaHavuzu(f.companyId);
+    const fazla=fatSatirlari(f).filter(r=>{ const u=hav.get(String(r.key||'')); return u&&u.durum==='fazla'; }).length;
+    const uy=[]; if(fazla) uy.push(fmtNum(fazla)+' urunde FAZLA faturalama');
+    if(fark) uy.push('tutar farki '+fatPara(fark,f.paraBirimi||'TRY'));
+    if(fatKilitSonrasiDegisti(f)) uy.push('kilit sonrasi degisti');
+    if(ciftNo.has(f.id)) uy.push('ayni fatura no baska belgede de var');
+    const n=sOzet.satir([{v:i+1,b:ts},{v:f.no||'(numarasiz)',b:B.linkH},
+      {v:xlsxTarihSeri(f.tarih),b:z?B.trhZ:B.trh},{v:fatCompany(f)||'-',b:td},
+      {v:FAT_KAYIT_DURUM[dur].ad,b:B.kayit[dur]},{v:fatSatirlari(f).length,b:ts},
+      {v:fatToplamMiktar(f),b:B.mikSec(fatToplamMiktar(f),z)},{v:Number(t.matrah.toFixed(2)),b:par},
+      {v:Number(t.kdv.toFixed(2)),b:par},{v:Number(t.toplam.toFixed(2)),b:z?B.parBZ:B.parB},
+      {v:f.paraBirimi||'TRY',b:ts},{v:fark?Number(fark.toFixed(2)):'',b:fark?B.fark:par},
+      {v:uy.join(' · '),b:uy.length?B.uyari:td}]);
+    ozetSatir.set(f.id,n);
+    if(sayfa) sOzet.kopru('B'+n,sayfa.ad,f.no||'',('A1'));
+  });
+  if(!list.length) sOzet.satir([{v:'Suzgece uyan fatura yok.',b:B.dipnot}]);
+  else sOzet.satir([{v:'',b:B.topBos},{v:'',b:B.topBos},{v:'',b:B.topBos},{v:'',b:B.topBos},
+    {v:'TOPLAM',b:B.topEt},{v:toplamSatir,b:B.topMkT},{v:toplamMiktar,b:B.topMkSec(toplamMiktar)},
+    {v:tekPara?Number(tumTop.matrah.toFixed(2)):'',b:B.topSy},
+    {v:tekPara?Number(tumTop.kdv.toFixed(2)):'',b:B.topSy},
+    {v:tekPara?Number(tumTop.toplam.toFixed(2)):'',b:B.topSy},
+    {v:tekPara||'',b:B.topEt},{v:'',b:B.topBos},{v:'',b:B.topBos}],{h:20});
+  sOzet.suzgec('A'+ozBas+':M'+Math.max(ozBas,sOzet.satirlar.length-1));
+  sOzet.bos();
+  sOzet.birlestir('A'+(sOzet.satirlar.length+1)+':M'+(sOzet.satirlar.length+1));
+  sOzet.satir([{v:'URUN BAZINDA GENEL TOPLAM  —  alinan mal ile faturalanan mal',b:B.band}],{h:20});
+  const gAlinan=genel.reduce((a,u)=>a+(u.alinan||0),0), gIade=genel.reduce((a,u)=>a+(u.iade||0),0);
+  const gNet=genel.reduce((a,u)=>a+(u.net||0),0), gFat=genel.reduce((a,u)=>a+(u.fat||0),0);
+  const say={fazla:0,tam:0,kismi:0,yok:0}; genel.forEach(u=>say[u.durum]++);
+  sOzet.satir(['Urun','Alinan','Iade','Net','Faturalanan','Kalan','Fazla','Tam','Kismi','Faturasiz'].map(v=>({v,b:B.th})),{h:26});
+  sOzet.satir([{v:genel.length,b:B.tdS},{v:gAlinan,b:B.mikSec(gAlinan)},{v:gIade,b:B.mikSec(gIade)},
+    {v:gNet,b:B.mikSec(gNet)},{v:gFat,b:B.mikSec(gFat)},
+    {v:Number((gNet-gFat).toFixed(4)),b:B.mikSec(gNet-gFat)},
+    {v:say.fazla,b:say.fazla?B.durum.fazla:B.tdS},{v:say.tam,b:B.durum.tam},
+    {v:say.kismi,b:B.durum.kismi},{v:say.yok,b:B.durum.yok}],{h:20});
+  const dn=sOzet.satir([{v:'Bu blok TUM urunleri kapsar (fatura suzgecinden bagimsiz). Ayrintili dokum: '+MUT+' sayfasi.',b:B.dipnot}],{h:16});
+  sOzet.birlestir('A'+dn+':M'+dn);
+  sOzet.bos();
+  const lk=sOzet.satir([{v:'▶ '+MUT,b:B.link},{v:'',b:B.link},{v:'▶ '+FRM,b:B.link}],{h:18});
+  sOzet.kopru('A'+lk,MUT,'▶ '+MUT); sOzet.kopru('C'+lk,FRM,'▶ '+FRM);
+  sOzet.birlestir('A'+lk+':B'+lk); sOzet.birlestir('C'+lk+':D'+lk);
+
+  // Her fatura sayfasindan ozetteki KENDI SATIRINA donus
+  list.forEach(f=>{ const s=sayfaEsle.get(f.id);
+    if(s) s.kopru('A2',OZET,'◀ Ozet','B'+(ozetSatir.get(f.id)||1)); });
+
+  return {wb, list, genel};
+}
+
+function exportFaturaKitabi(){
+  if(!fatCanSee()){ toast('Bu bolume erisim yetkiniz yok','err'); return; }
+  if(!_FAT_YUKLENDI){ toast('Fatura defteri henuz yuklenmedi','warn'); return; }
+  try{
+    const {wb,list}=fatKitapKur();
+    const ad='fatura-kitabi_'+new Date().toISOString().slice(0,10)+'.xlsx';
+    xlsxIndir(ad,wb.bayt());
+    logAction('fatura','Fatura kitabi (cok sayfali Excel) alindi - '+list.length+' fatura, '+wb.sayfalar.length+' sayfa');
+    toast(fmtNum(list.length)+' fatura · '+fmtNum(wb.sayfalar.length)+' sayfa Excel indirildi');
+  }catch(err){
+    console.error('fatura kitabi',err);
+    toast('Excel olusturulamadi: '+((err&&err.message)||err),'err');
+  }
 }
 
 /* ---------- 6) MALZEME KUNYESINE YANSIMA ----------
