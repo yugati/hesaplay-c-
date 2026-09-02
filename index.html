@@ -2969,6 +2969,29 @@ datalist{display:none}
   border-radius:0 8px 8px 0;padding-right:8px}
 .fat-gec .im{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.5px;color:var(--red);
   background:color-mix(in srgb,var(--red) 14%,transparent);border-radius:20px;padding:1px 6px;margin-left:5px}
+/* LISTEDEKI TUTAR HUCRESI: matrah ve KDV SONUK, odenecek BELIRGIN.
+   Kullanicinin listede aradigi tek sayi odenecek tutardir; matrah ve KDV onu
+   dogrulamak icin durur, dikkati boluşturmemeli. Sayilar alt alta ve sagda
+   hizali - farkli faturalarin tutari goz suzerek karsilastirilabilsin.
+   DIGER VERGILER yalnizca varsa yazilir: yazilmasaydi matrah+KDV toplami
+   tutari vermez, kullanici da aritmetikte hata arardi. */
+/* min-width canli veriden olculdu: en uzun tutar 14 karakter ("6.920.029,31"
+   + para birimi), 14px mono ~8.4px/karakter + etiket + bosluk = ~148px. Dar
+   kalsaydi sayi kirilir, sutunlar goz suzerek karsilastirilamazdi. */
+.fat-tut{display:flex;flex-direction:column;gap:1px;min-width:148px}
+.fat-tut .sat{display:flex;justify-content:space-between;gap:9px;align-items:baseline;
+  font-size:10.5px;font-weight:500;color:var(--mute);line-height:1.5}
+.fat-tut .sat i{font-style:normal;opacity:.85}
+.fat-tut .sat span{font-family:var(--mono);white-space:nowrap}
+.fat-tut .ana{display:flex;justify-content:space-between;gap:9px;align-items:baseline;
+  margin-top:3px;padding-top:4px;border-top:1px solid var(--line)}
+.fat-tut .ana i{font-style:normal;font-size:9.5px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.5px;color:var(--mute)}
+.fat-tut .ana b{font-family:var(--mono);font-size:14px;font-weight:800;letter-spacing:-.3px;
+  color:var(--ink);white-space:nowrap}
+.fat-tut .ana b em{font-style:normal;font-size:9.5px;font-weight:700;color:var(--mute);margin-left:3px}
+.fat-tut .kur{color:var(--dim)}
+@media(max-width:900px){.fat-tut{min-width:0}.fat-tut .ana b{font-size:13px}}
 /* BELGELER BOLUMU: uc nusha yan yana, eksik olan sonuk. Bir faturanin arkasinda
    hangi kagitlarin durdugu tek bakista gorulsun. */
 .fdet-belge{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
@@ -24455,8 +24478,16 @@ function renderFaturaListe(){
       <td class="t-meta">${esc(fatCompany(f)||'-')}</td>
       <td class="t-meta" style="max-width:320px">${ozet||'-'}</td>
       <td class="t-qty">${fmtNum(fatToplamMiktar(f))}<div class="t-meta" style="font-size:11px">${fmtNum(sat.length)} urun</div></td>
-      <td class="t-qty">${top.toplam>0?esc(fatPara(top.toplam,f.paraBirimi||'TRY')):'<span style="color:var(--dim)">-</span>'}
-        ${top.kdv>0?`<div class="t-meta" style="font-size:10.5px">KDV ${esc(fatPara(top.kdv,''))}</div>`:''}
+      <td class="t-qty">${top.toplam>0?(()=>{
+        const pb=f.paraBirimi||'TRY', kur=fatSayi(f.kur);
+        return `<div class="fat-tut">
+          <div class="sat"><i>Toplam</i><span>${esc(fatPara(top.matrah,''))}</span></div>
+          <div class="sat"><i>KDV</i><span>${esc(fatPara(top.kdv,''))}</span></div>
+          ${top.diger>0?`<div class="sat"><i>Diger</i><span>${esc(fatPara(top.diger,''))}</span></div>`:''}
+          <div class="ana"><i>Tutar</i><b>${esc(fatPara(top.toplam,''))}<em>${esc(pb)}</em></b></div>
+          ${(pb!=='TRY'&&kur>0)?`<div class="sat kur" title="Kur ${fmtNum(kur)} - ${esc(fatPara(top.toplam,pb))} karsiligi">
+            <i>&asymp; TL</i><span>${esc(fatPara(top.toplam*kur,''))}</span></div>`:''}
+        </div>`; })():'<span style="color:var(--dim)">-</span>'}
         ${tutarFarki?`<div class="fat-rozet kismi" style="margin-top:4px" title="Belgede yazan ${esc(fatPara(f.beyanTutar,f.paraBirimi||'TRY'))}, satirlardan hesaplanan ${esc(fatPara(top.toplam,f.paraBirimi||'TRY'))}">TUTAR FARKI</div>`:''}</td>
       <td><div class="row-actions">
         <button class="mini-btn" title="Faturanin icerigini gor" onclick="openFaturaDetay('${f.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
