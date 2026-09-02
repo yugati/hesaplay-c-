@@ -2969,6 +2969,16 @@ datalist{display:none}
   border-radius:0 8px 8px 0;padding-right:8px}
 .fat-gec .im{display:inline-block;font-size:9.5px;font-weight:800;letter-spacing:.5px;color:var(--red);
   background:color-mix(in srgb,var(--red) 14%,transparent);border-radius:20px;padding:1px 6px;margin-left:5px}
+/* KILIT OLAYLARI GECMISTE RENKLE AYRILIR - bir belgenin hikayesi tek bakista
+   okunsun: yesil = kapatildi, kehribar = yeniden acildi, kirmizi = acildiktan
+   sonra degistirildi. Kirmizi zaten vardi; kilitleme olumlu/kapatici bir olay
+   oldugu halde duz metin olarak geciyordu. */
+.fat-gec.kapandi{border-left-color:var(--green);background:color-mix(in srgb,var(--green) 6%,transparent);
+  border-radius:0 8px 8px 0;padding-right:8px}
+.fat-gec.acildi{border-left-color:var(--amber);background:color-mix(in srgb,var(--amber) 5%,transparent);
+  border-radius:0 8px 8px 0;padding-right:8px}
+.fat-gec .im.ok{color:var(--green);background:color-mix(in srgb,var(--green) 14%,transparent)}
+.fat-gec .im.uyari{color:var(--amber);background:color-mix(in srgb,var(--amber) 14%,transparent)}
 /* FATURA DETAY SAYFASI: belge kunyesi iki sutunlu bir kimlik izgarasinda durur -
    modaldeki dar grid'de alanlar alt alta eziliyor, ETTN gibi uzun degerler
    okunamiyordu. */
@@ -24532,6 +24542,35 @@ function fatKayitKodOzeti(f,dm){
   return { kodlar:[...m.values()].sort((a,b)=>String(a.kod).localeCompare(String(b.kod),'tr')),
            kodsuz, secilebilir, kodluSatir, satir:fatSatirlari(f).length };
 }
+/* Gecmis satirinin turu. YENI kayitlarda h.tur yazilidir; ESKI kayitlarda
+   (canlida duran faturalar) alan yok, metinden cozulur. Yalnizca metne bakmak
+   yeterli olmazdi: metin ileride degisirse renk sessizce kaybolurdu. */
+function fatGecTur(h){
+  if(!h) return '';
+  if(h.tur==='kilit'||h.tur==='kilitAc') return h.tur;
+  const ne=String(h.ne||'');
+  if(ne.indexOf('KILIT ACILDI')===0) return 'kilitAc';
+  if(ne==='Fatura kilitlendi') return 'kilit';
+  return '';
+}
+/* Kilit satirlarinin etiketi. "ILK KILIT" ancak EMIN OLUNABILDIGINDE yazilir:
+   gecmis son 20 kayitla sinirli (slice(-20)), dolayisiyla liste dolduysa daha
+   eski bir kilit dusmus olabilir - o durumda ilk olduguna dair bir sey iddia
+   edilmez, duz "KILITLENDI" denir. */
+const FAT_GECMIS_TAVAN=20;
+function fatKilitEtiketleri(f){
+  const hist=(f&&f.history)||[];
+  const kesin=hist.length<FAT_GECMIS_TAVAN;     // hicbir kayit dusmemis
+  const et=new Map(); let acilmaGoruldu=false, ilkVerildi=false;
+  hist.forEach(h=>{
+    const t=fatGecTur(h);
+    if(t==='kilitAc'){ acilmaGoruldu=true; return; }
+    if(t!=='kilit') return;
+    if(kesin&&!acilmaGoruldu&&!ilkVerildi){ et.set(h,'ILK KILIT'); ilkVerildi=true; }
+    else et.set(h,acilmaGoruldu?'YENIDEN KILITLENDI':'KILITLENDI');
+  });
+  return et;
+}
 function renderFaturaDetay(){
   const f=fatKayitlar().find(x=>x.id===FATV.detay);
   if(!f) return `<div class="tut-wrap">
@@ -24583,12 +24622,20 @@ function renderFaturaDetay(){
   /* GECMIS: modaldeki 10 kayit siniri KALDIRILDI. Kilit acildiktan sonraki
      duzenlemeleri gormek icin gelinen sayfa burasi - kirpmak, tam da aranan
      kaydi gizleyebilirdi. */
-  const gecmis=(f.history||[]).slice().reverse().map(h=>
-    `<div class="fat-gec${h.kilitSonrasi?' kilit':''}">
-      <div class="bas">${esc(_auditTime(h.ts))} · <b>${esc(h.user||'-')}</b>${h.kilitSonrasi?' <span class="im">KILIT ACILDIKTAN SONRA</span>':''}</div>
+  const kilitEt=fatKilitEtiketleri(f);
+  const gecmis=(f.history||[]).slice().reverse().map(h=>{
+    const tur=fatGecTur(h);
+    /* Kirmizi ONCELIKLI: bir satir hem kilit sonrasi hem baska bir sey olamaz,
+       ama olsaydi "acildiktan sonra degistirildi" bilgisi digerlerinden onemli. */
+    const sinif=h.kilitSonrasi?' kilit':(tur==='kilit'?' kapandi':(tur==='kilitAc'?' acildi':''));
+    const im=h.kilitSonrasi?'<span class="im">KILIT ACILDIKTAN SONRA</span>'
+      :(tur==='kilit'?`<span class="im ok">${esc(kilitEt.get(h)||'KILITLENDI')}</span>`
+      :(tur==='kilitAc'?'<span class="im uyari">ACILDI</span>':''));
+    return `<div class="fat-gec${sinif}">
+      <div class="bas">${esc(_auditTime(h.ts))} · <b>${esc(h.user||'-')}</b>${im}</div>
       <div class="ne">${esc(h.ne||'')}</div>
       ${(h.degisiklikler&&h.degisiklikler.length)?`<ul>${h.degisiklikler.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
-    </div>`).join('');
+    </div>`; }).join('');
 
   const kunye=[['Fatura No',f.no],
     ['Fatura Tarihi',fmtDate(f.tarih)],
@@ -25732,7 +25779,7 @@ async function fatKilitle(id){
     +`Kilitlendikten sonra duzenlenemez ve silinemez.\nKilidi yalnizca yonetici acabilir. Devam edilsin mi?`)) return;
   const kim=(CURRENT_USER&&CURRENT_USER.username)||'';
   const yeni={...f, durum:'kilitli', kilitTs:Date.now(), kilitBy:kim,
-    history:[...(f.history||[]),{ts:Date.now(),user:kim,ne:'Fatura kilitlendi'}].slice(-20)};
+    history:[...(f.history||[]),{ts:Date.now(),user:kim,tur:'kilit',ne:'Fatura kilitlendi'}].slice(-20)};
   try{ await sbUpdateFatura(id,yeni); }catch(e){ fatYazHatasi(e,'kilitlenemedi'); return; }
   const i=DB.faturalar.findIndex(x=>x&&x.id===id); if(i>=0) DB.faturalar[i]=yeni;
   logAction('fatura','Fatura kilitlendi: '+(f.no||'(no yok)')+' · '+(fatCompany(f)||'-'));
@@ -25751,7 +25798,7 @@ async function fatKilitAc(id){
      kapatildiktan sonra acilmis olmasi, sonradan bakan icin kalici bir bilgidir. */
   const yeni={...f, durum:'kesin', kilitTs:null, kilitBy:'',
     sonKilitAcma:{ts:Date.now(), user:kim, kilitleyen:f.kilitBy||'', kilitTs:f.kilitTs||null},
-    history:[...(f.history||[]),{ts:Date.now(),user:kim,
+    history:[...(f.history||[]),{ts:Date.now(),user:kim,tur:'kilitAc',
       ne:`KILIT ACILDI (kilitleyen: ${f.kilitBy||'-'}${f.kilitTs?', '+fmtDate(f.kilitTs):''}) - bundan sonraki degisiklikler isaretlenir`}].slice(-20)};
   try{ await sbUpdateFatura(id,yeni); }catch(e){ fatYazHatasi(e,'kilidi acilamadi'); return; }
   const i=DB.faturalar.findIndex(x=>x&&x.id===id); if(i>=0) DB.faturalar[i]=yeni;
