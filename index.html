@@ -3930,7 +3930,14 @@ document.addEventListener('DOMContentLoaded', async function(){
   }
 });
 // Sayfa yenilenirken / kapatılırken gezinti durumunu kaydet
-window.addEventListener('beforeunload', function(){
+window.addEventListener('beforeunload', function(e){
+  /* Acik fatura formunda kaydedilmemis is varsa tarayicinin KENDI onayi cikar -
+     yenileme ve sekme kapatma uygulama icindeki onaya hic ugramaz. */
+  try{
+    if(typeof fatFormDegisti==='function' && FATV.mode==='form' && fatFormDegisti()){
+      e.preventDefault(); e.returnValue='';
+    }
+  }catch(_){}
   if(!CURRENT_USER) return;
   try {
     sessionStorage.setItem('navState', JSON.stringify({
@@ -3946,7 +3953,9 @@ function startClock(){
   document.getElementById('dbInfo').textContent="Supabase - otomatik kaydedilir";
 }
 
-function switchSection(s){ if(!canSee(s)){ toast('Bu bolume erisim yetkiniz yok','err'); return; } SEC=s; TAB=(s==='proje'?'spec':'stok'); SEARCH=""; GFILTER="";
+function switchSection(s){ if(!canSee(s)){ toast('Bu bolume erisim yetkiniz yok','err'); return; }
+  // acik fatura formunda kaydedilmemis is varsa once sorulur (bkz. fatAyrilmaOnayi)
+  if(typeof fatAyrilmaOnayi==='function' && !fatAyrilmaOnayi()) return; SEC=s; TAB=(s==='proje'?'spec':'stok'); SEARCH=""; GFILTER="";
   PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PNEWORD=false; PBINAY=false; PKATA=false; PODM=false; PSPECF=false; PRIMP=false; PINV=false; PTUT=false; PKODD=false; PIHT=false; PFAT=false; _KODD=null; _RIMP=null; // acik panelleri kapat
   RV.silMod=false; RV.silGun=new Set(); _RSIL=null; // silme modu bolum degisince kapanir
   if(s==='saha'){ render(); initSaha(); } else render();
@@ -24318,6 +24327,8 @@ function fatCiftNolar(){
 /* ---------- SAYFA ACMA / KAPAMA ---------- */
 async function openFatura(){
   if(!fatCanSee()){ toast('Bu bolume erisim yetkiniz yok','err'); return; }
+  // form aciksa kenar cubugundan Fatura'ya tekrar basmak da formu kapatir - once sorulur
+  if(!fatAyrilmaOnayi()) return;
   PFAT=true;
   PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false;
   PNEWORD=false; PBINAY=false; PKATA=false; PODM=false; PSPECF=false; PRIMP=false; PINV=false;
@@ -24328,7 +24339,7 @@ async function openFatura(){
   // veri acilista inmiyor: once bos liste cizilir, defter gelince yeniden cizilir
   await faturaYukle(); if(PFAT) render();
 }
-function closeFatura(){ PFAT=false; FATV={mode:'liste',q:'',comp:'',bina:'',bolum:'',sart:'',durum:'',
+function closeFatura(){ if(!fatAyrilmaOnayi()) return; PFAT=false; FATV={mode:'liste',q:'',comp:'',bina:'',bolum:'',sart:'',durum:'',
   from:'',to:'',detay:'',detayGeri:'liste'}; _FAT=null; render(); }
 /* Sekme degisiminde DURUM SUZGECI SIFIRLANIR. FATV.durum iki ekranda ayri anlam
    tasiyor: listede KAYIT durumu (taslak/kesin/kilitli), mutabakatta URUN durumu
@@ -24828,6 +24839,7 @@ function fatYeni(){
     irsaliyeNo:'', irsaliyeTarihi:'', paraBirimi:'TRY', kur:'', varsayilanKdv:20,
     beyanTutar:'', not:'', pdf:null, sozlesmePdf:null, irsaliyePdf:null, durum:'taslak',
     qty:{}, sb:{}, oz:{}, fq:'', fbina:'', fbolum:'', fsart:'', ftum:false, ftumDurum:false };
+  fatImzala();                       // bu andan sonraki her degisiklik korunur
   FATV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
 }
 function fatDuzenle(id){
@@ -24851,12 +24863,61 @@ function fatDuzenle(id){
     beyanTutar:f.beyanTutar||'', not:f.not||'', durum:fatDurumu(f),
     pdf:f.pdf||null, sozlesmePdf:f.sozlesmePdf||null, irsaliyePdf:f.irsaliyePdf||null,
     qty, sb, oz, fq:'', fbina:'', fbolum:'', fsart:'', ftum:true, ftumDurum:true };
+  fatImzala();                       // duzenleme formu DOLU acilir - olcut "degisti"
   FATV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
+}
+/* ---------- KAZA ILE AYRILMA KORUMASI (form sayfasi) ----------
+   Fatura girisi uzun bir is: onlarca satir, miktar, fiyat, yerlesim kodu kirilimi.
+   Sayfadan yanlislikla cikmak (Vazgec, kenar cubugu, tarayici yenileme) bunlarin
+   hepsini goturuyordu. Modallerdeki setModalGuard'in sayfa karsiligi.
+
+   OLCUT "DEGISTI", "DOLU" DEGIL: duzenleme formu zaten dolu acilir; "dolu" olcutu
+   hicbir sey degistirmeden cikmayi da engeller, koruma da guvenilmez hale gelirdi.
+   Form ACILIRKEN bir imza alinir, cikista yeniden hesaplanip karsilastirilir.
+
+   SUZGEC ALANLARI (fq, fbina, ...) IMZAYA GIRMEZ: liste daraltmak veri girisi
+   degildir, arama yaptigi icin uyari almak korumayi gurultuye cevirirdi. */
+function fatFormImza(st){
+  if(!st) return '';
+  const q={}; Object.keys(st.qty||{}).forEach(k=>{ const v=fatSayi(st.qty[k]); if(v>0) q[k]=v; });
+  const sb={}; Object.keys(st.sb||{}).forEach(k=>{ const b=st.sb[k]||{};
+    const t=[b.fiyat,b.iskonto,b.kdv,b.diger].map(x=>(x===''||x==null)?'':fatSayi(x));
+    if(t.some(x=>x!=='')) sb[k]=t.join('|'); });
+  const oz={}; Object.keys(st.oz||{}).forEach(k=>{ const pay=st.oz[k]||[];
+    if(pay.length) oz[k]=pay.map(x=>x.kod+':'+fatSayi(x.qty)).join(','); });
+  return JSON.stringify([ String(st.no||'').trim(), st.tarih||'', st.companyId||'',
+    st.senaryo||'', st.faturaTipi||'', String(st.ozellestirmeNo||'').trim(),
+    String(st.ettn||'').trim(), String(st.irsaliyeNo||'').trim(), st.irsaliyeTarihi||'',
+    st.paraBirimi||'', st.kur||'', st.beyanTutar||'', String(st.not||'').trim(),
+    FAT_BELGELER.map(b=>(st[b.k]&&(st[b.k].path||st[b.k].name))||''),
+    q, sb, oz ]);
+}
+function fatImzala(){ if(_FAT) _FAT._imza=fatFormImza(_FAT); }
+function fatFormDegisti(){ return !!_FAT && fatFormImza(_FAT)!==_FAT._imza; }
+/* Ayrilma onayi. NE KAYBEDILECEGI SAYIYLA soylenir: "degisiklikler kaybolacak"
+   demek, kullanicinin 40 satir girip girmedigini hatirlamasini beklemek olurdu.
+   Taslak Kaydet de hatirlatilir - cogu durumda dogru cikis yolu odur. */
+function fatAyrilmaOnayi(){
+  /* Kosul PFAT'e BAGLANMAZ: _FAT dolu ve mod 'form' ise form zaten aciktir.
+     Bayrak baska bir yolla dusurulseydi koruma sessizce kalkardi. */
+  if(!(FATV.mode==='form'&&_FAT)) return true;
+  if(!fatFormDegisti()) return true;
+  const o=fatGirilenOzet(), no=String(_FAT.no||'').trim();
+  const firma=((DB.companies||[]).find(c=>c.id===_FAT.companyId)||{}).ad||'';
+  return confirm('Bu faturada KAYDEDILMEMIS degisiklikler var:\n\n'
+    +(no?'No: '+no+'\n':'')
+    +(firma?'Firma: '+firma+'\n':'')
+    +(o.satir?fmtNum(o.satir)+' urun · toplam '+fmtNum(o.miktar)+' miktar'
+      +(o.t.toplam>0?' · '+fatPara(o.t.toplam,_FAT.paraBirimi||'TRY'):'')+'\n':'')
+    +'\nSayfadan ayrilirsaniz girdikleriniz KAYBOLUR.\n'
+    +'Yarim biraktiysaniz once "Taslak Kaydet" diyebilirsiniz.\n\nYine de cikilsin mi?');
 }
 /* Formdan cikis. YUKLENMIS AMA KAYDEDILMEMIS nusha kovadan silinir (iadeKapat ile
    ayni gerekce): form iptal edilirse dosya sahipsiz kalirdi. Duzenlemede DOKUNULMAZ -
-   oradaki nusha kayitli faturaya aittir. */
-function fatFormKapat(){
+   oradaki nusha kayitli faturaya aittir.
+   zorla=true: kaydetme yolundan gelen bilincli kapatma - onay sorulmaz. */
+function fatFormKapat(zorla){
+  if(!zorla&&!fatAyrilmaOnayi()) return;
   const st=_FAT;
   if(st && !st.editId && window.sbBelgeSil) fatBelgeYollari(st).forEach(y=>window.sbBelgeSil(y));
   _FAT=null; FATV.mode='liste'; render(); try{ window.scrollTo(0,0); }catch(e){}
