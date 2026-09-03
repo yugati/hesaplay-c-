@@ -8389,10 +8389,10 @@ async function saveMaterial(id){ if(!guard('editMaterial'))return;
   });
   const altCodes=varyant.satirlar.map(r=>r.kod);
   // ayni kod/ad cakismasi (farkli kayit) - varyant kodlar dahil: bir kod yalnizca TEK urune ait olabilir
-  const myCodes=[code,...altCodes].filter(Boolean).map(c=>c.toLowerCase());
+  const myCodes=[code,...altCodes].filter(Boolean).map(_kimlikTemiz);
   const dup=(DB.proje.materials||[]).find(x=>{
     if(x.id===id) return false;
-    const xCodes=matAllCodes(x).map(c=>c.toLowerCase());
+    const xCodes=matAllCodes(x).map(_kimlikTemiz);
     if(myCodes.length && myCodes.some(c=>xCodes.includes(c))) return true;
     return matKey(x.code,x.name)===matKey(code,name);
   });
@@ -8720,10 +8720,10 @@ function _topmSatirCoz(r,i,gorulen){
     const k=x.kod.toLowerCase(); if(gor.has(k)) return false; gor.add(k); return true;
   });
   const altCodes=varyant.satirlar.map(x=>x.kod);
-  const kodlar=[code,...altCodes].filter(Boolean).map(c=>c.toLowerCase());
+  const kodlar=[code,...altCodes].filter(Boolean).map(_kimlikTemiz);
   // 1) KUTUPHANEYE karsi: bir kod yalnizca TEK urune ait olabilir (saveMaterial ile ayni kural)
   const dup=(DB.proje.materials||[]).find(x=>{
-    const xk=matAllCodes(x).map(c=>c.toLowerCase());
+    const xk=matAllCodes(x).map(_kimlikTemiz);
     if(kodlar.length && kodlar.some(c=>xk.includes(c))) return true;
     return matKey(x.code,x.name)===matKey(code,name);
   });
@@ -12270,15 +12270,27 @@ async function sartOdaKaldir(lokId){
 // bir etiketin icinde virgul hic olusmaz (round-trip Excel'de bozulmaz)
 function parseTagsCell(v){ return String(v||'').split(',').map(t=>t.trim()).filter(Boolean); }
 function formatTagsCell(tags){ return (tags||[]).join(', '); }
-function matKey(code,name){ return (code&&String(code).trim())?('c:'+String(code).trim().toLowerCase()):('n:'+String(name||'').trim().toLowerCase()); }
+/* URUN KIMLIGINDE BOSLUK VE SATIR SONU ANLAM TASIMAZ.
+   Olculen hata (3 Eyl 2026): Excel'den gelen cok satirli hucreler her disa/ice
+   aktarma turunda bir "\r" daha kazaniyor. matKey eskiden yalnizca .trim() yapiyordu -
+   dizenin ICINDEKI "\r\n" ile "\n" farkini gormedigi icin findMaterial mevcut kaydi
+   bulamiyor ve ayni urun her ice aktarmada YENIDEN aciliyordu. Canli veride tek bir
+   urunun (GOST 8509-93, kodu satir sonu iceriyor) 5 kopyasi vardi; CR sayilari
+   1,2,3,4,5 ve olusturma tarihleri 5 ayri ice aktarma gunu.
+   Artik tum bosluk dizileri (satir sonu, sekme, cift bosluk) tek bosluga indirilir:
+   bir urunun kimligi bosluk bicimine gore degismez. Yon BILEREK gevsektir - iki kayit
+   yalnizca boslukla ayriliyorsa ayni urundur. */
+function _kimlikTemiz(s){ return String(s==null?'':s).replace(/\s+/g,' ').trim().toLowerCase(); }
+function matKey(code,name){ const c=_kimlikTemiz(code); return c?('c:'+c):('n:'+_kimlikTemiz(name)); }
 // VARYANT KOD: ayni fiziksel urun birden fazla kodla bilinebilir (uretici kod yenilemesi,
 // tedarikci katalog farki, birlestirmeden kalan eski kod). Teknik ozellikler tek kayitta durur;
 // mt.altCodes o kayda isaret eden ek kodlardir. Bir kod sistemde yalnizca TEK urune ait olabilir.
 function matAllCodes(m){ return [m.code,...(m.altCodes||[])].map(c=>String(c==null?'':c).trim()).filter(Boolean); }
 function findMaterial(code,name){ const k=matKey(code,name);
   let mt=(DB.proje.materials||[]).find(m=>matKey(m.code,m.name)===k);
-  if(!mt && code && String(code).trim()){ const c=String(code).trim().toLowerCase();
-    mt=(DB.proje.materials||[]).find(m=>(m.altCodes||[]).some(x=>String(x).trim().toLowerCase()===c)); }
+  // varyant kodu eslesmesi de bosluga duyarsiz olmali (bkz. matKey / _kimlikTemiz)
+  if(!mt && code && String(code).trim()){ const c=_kimlikTemiz(code);
+    mt=(DB.proje.materials||[]).find(m=>(m.altCodes||[]).some(x=>_kimlikTemiz(x)===c)); }
   return mt; }
 // GEVSEK ESLESME (toplu iceri aktarma): kutuphane adlari cogunlukla cift dillidir
 // ("СРЭ-... / SRE-..."); Excel'de yalniz tek yarisi yazilirsa birebir eslesme bulunamaz ve
@@ -12907,6 +12919,18 @@ function _kayitImza(list){
 function _degisenKayitlar(list,imza){
   return (list||[]).filter(x=>x&&x.id&&imza.get(x.id)!==JSON.stringify(x));
 }
+/* EXCEL SATIR SONU DUZELTMESI - olculmus bir hatanin onlemi.
+   Her disa/ice aktarma turunda cok satirli hucreler bir CR daha kazaniyordu: uygulama
+   LF yaziyor, Excel onu CRLF'e cevirip geri veriyor, bir sonraki tur onun onune bir CR
+   daha ekliyor. Sonuc iki katliydi:
+   (a) KODU satir sonu iceren urun her ice aktarmada YENI kayit olarak aciliyordu -
+       canli veride tek bir urunun (GOST 8509-93) 5 kopyasi olusmustu, CR sayilari
+       1,2,3,4,5 ve olusturma tarihleri 5 ayri ice aktarma gunu (bkz. matKey yorumu).
+   (b) marka / not / ad / standart alanlari gorunmez CR yuzunden "degismis" sayilip her
+       turda gereksizce sunucuya yaziliyordu - 3 Eyl 2026 aktarmasinda 129 malzeme ve
+       180 sartname kalemi bu yuzden yazildi, hicbirinin icerigi degismemisti.
+   Birikmis CR dizileri tek LF'e indirilir; LF yapisi (kasitli bos satirlar) korunur. */
+function _crTemiz(v){ return String(v==null?'':v).replace(/\r+\n?/g,'\n').trim(); }
 function upsertMaterialsFromRows(rows, report){
   if(!rows||rows.length<2) return;
   const h=_firstDataRow(rows); const pick=_hdrMap(rows[h]);
@@ -12927,12 +12951,12 @@ function upsertMaterialsFromRows(rows, report){
   if(iCode<0 || iName<0){ return; } // malzeme sayfasi yok/uyumsuz - sessizce gec
   for(let r=h+1;r<rows.length;r++){
     const row=rows[r]; if(!row || row.every(c=>String(c).trim()==='')) continue;
-    const code=String(row[iCode]??'').trim();
-    const name=String(row[iName]??'').trim();
+    const code=_crTemiz(row[iCode]).trim();
+    const name=_crTemiz(row[iName]).trim();
     if(!code && !name) continue;
     // sablon aciklama satirini atla
     if(/^(REQUIRED|optional|REQ|blank|ZORUNLU|ops)/i.test(code)) continue;
-    const action=(iAct>=0?String(row[iAct]??'').trim().toLowerCase():'');
+    const action=(iAct>=0?_crTemiz(row[iAct]).trim().toLowerCase():'');
     // mevcut kaydi bul: kod varsa koda gore, kod bos ise ada gore eslestir
     // (matKey ayni kurali kullanir; aksi halde ayni Excel tekrar yuklendiginde kodsuz satirlar cogalir)
     const existing=findMaterial(code,name);
@@ -12946,18 +12970,18 @@ function upsertMaterialsFromRows(rows, report){
       } else if(existing){ report.errors.push(`Malzeme satir ${r+1}: "${code}" kullanimda, silinemez`); }
       continue;
     }
-    const brand=iBrand>=0?String(row[iBrand]??'').trim():'';
-    const cat=iCat>=0?String(row[iCat]??'').trim():'';
-    const unit=iUnit>=0?String(row[iUnit]??'').trim():'';
-    const note=iNote>=0?String(row[iNote]??'').trim():'';
-    const standart=iStd>=0?String(row[iStd]??'').trim():'';
-    const weightRaw=iWeight>=0?String(row[iWeight]??'').trim():'';
+    const brand=iBrand>=0?_crTemiz(row[iBrand]).trim():'';
+    const cat=iCat>=0?_crTemiz(row[iCat]).trim():'';
+    const unit=iUnit>=0?_crTemiz(row[iUnit]).trim():'';
+    const note=iNote>=0?_crTemiz(row[iNote]).trim():'';
+    const standart=iStd>=0?_crTemiz(row[iStd]).trim():'';
+    const weightRaw=iWeight>=0?_crTemiz(row[iWeight]).trim():'';
     const weight=(weightRaw!==''&&!isNaN(Number(weightRaw)))?Number(weightRaw):null;
     const tags=iTags>=0?parseTagsCell(row[iTags]):[];
     const altCodes=iAltCodes>=0?parseTagsCell(row[iAltCodes]).filter(c=>c.toLowerCase()!==code.toLowerCase()):[];
-    const proje=iProje>=0?String(row[iProje]??'').trim():'';
-    const img=iImg>=0?String(row[iImg]??'').trim():'';
-    const img2=iImg2>=0?String(row[iImg2]??'').trim():'';
+    const proje=iProje>=0?_crTemiz(row[iProje]).trim():'';
+    const img=iImg>=0?_crTemiz(row[iImg]).trim():'';
+    const img2=iImg2>=0?_crTemiz(row[iImg2]).trim():'';
     if(existing){ // UPDATE
       /* DEGISMEDIYSE DOKUNMA: updatedAt her eslesen satirda tazelenirse, hicbir seyi
          degistirmeden ayni Excel'i yuklemek butun kutuphaneyi "degismis" gosterir -
