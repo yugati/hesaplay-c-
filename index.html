@@ -25077,7 +25077,7 @@ function renderFaturaListe(){
       <input type="date" value="${esc(FATV.to)}" title="Bitis tarihi" onchange="fatSetF('to',this.value)" style="background:var(--bg);border:1px solid var(--line);color:var(--ink);padding:8px 10px;border-radius:9px;font-size:13px">
       <div class="iht-sag">
         ${filtreVar?`<button class="iht-reset" onclick="fatFiltreTemizle()">Filtreleri temizle</button>`:''}
-        ${list.length?`<button class="btn btn-ghost" onclick="exportFaturaKitabi()" title="Cok sayfali renkli rapor: her fatura KENDI sayfasinda, ozet sayfasindan koprulerle gezilir; ayrica urun mutabakati ve firma ozeti sayfalari">${icoKitap()} Excel Kitabi</button>`:''}
+        ${list.length?`<button class="btn btn-ghost" onclick="fatKitapDilSor()" title="Cok sayfali renkli rapor: her fatura KENDI sayfasinda, ozet sayfasindan koprulerle gezilir; ayrica urun mutabakati ve firma ozeti sayfalari. Turkce / Rusca / Ingilizce secilebilir">${icoKitap()} Excel Kitabi</button>`:''}
         ${list.length?`<button class="btn btn-ghost" onclick="exportFaturaXlsx()" title="Duz liste: her fatura SATIRI bir Excel satiri - pivot/filtre cekmek icin">${icoXls()} Duz Excel</button>`:''}
         ${fatCanEdit()?`<button class="btn btn-add" onclick="fatYeni()">${icoPlus()} Yeni Fatura</button>`:''}
       </div>
@@ -26708,7 +26708,7 @@ function renderFaturaMutabakat(){
         ${sartnameler.map(b=>`<option ${FATV.sart===b?'selected':''}>${esc(b)}</option>`).join('')}</select>
       <div class="iht-sag">
         ${filtreVar?`<button class="iht-reset" onclick="fatFiltreTemizle()">Filtreleri temizle</button>`:''}
-        <button class="btn btn-ghost" onclick="exportFaturaKitabi()" title="Cok sayfali renkli rapor: her fatura KENDI sayfasinda, ozet sayfasindan koprulerle gezilir; ayrica urun mutabakati ve firma ozeti sayfalari">${icoKitap()} Excel Kitabi</button>
+        <button class="btn btn-ghost" onclick="fatKitapDilSor()" title="Cok sayfali renkli rapor: her fatura KENDI sayfasinda, ozet sayfasindan koprulerle gezilir; ayrica urun mutabakati ve firma ozeti sayfalari. Turkce / Rusca / Ingilizce secilebilir">${icoKitap()} Excel Kitabi</button>
         <button class="btn btn-ghost" onclick="exportMutabakatXlsx()" title="Duz liste: her urun bir Excel satiri - pivot/filtre cekmek icin">${icoXls()} Duz Excel</button>
       </div>
     </div>
@@ -26803,10 +26803,190 @@ const FKX={ koyu:'FF1B2430', koyu2:'FF2C3A4B', amber:'FFF0A020', amberBg:'FFFFF4
   ak:'FFFFFFFF', ink:'FF1F2933', mute:'FF6B7785', cizgi:'FFD8DEE6', zebra:'FFF7F9FB',
   kirmizi:'FFB3261E', kirmiziBg:'FFFCE8E6', yesil:'FF13703A', yesilBg:'FFE6F4EA',
   sari:'FF8A5A00', sariBg:'FFFFF3DC', gri:'FF5F6B7A', griBg:'FFF0F2F5', link:'FF1155CC' };
-const FKX_DURUM={ fazla:{ad:'FAZLA',bg:FKX.kirmiziBg,fg:FKX.kirmizi}, tam:{ad:'TAM',bg:FKX.yesilBg,fg:FKX.yesil},
-  kismi:{ad:'KISMI',bg:FKX.sariBg,fg:FKX.sari}, yok:{ad:'FATURASIZ',bg:FKX.griBg,fg:FKX.gri} };
+/* Yalnizca RENK. Rozetin METNI sozlukte (FKX_SOZLUK.durum) - iki yerde
+   durursa biri cevrilir oteki unutulur. */
+const FKX_DURUM={ fazla:{bg:FKX.kirmiziBg,fg:FKX.kirmizi}, tam:{bg:FKX.yesilBg,fg:FKX.yesil},
+  kismi:{bg:FKX.sariBg,fg:FKX.sari}, yok:{bg:FKX.griBg,fg:FKX.gri} };
 const FKX_KAYIT={ taslak:{bg:FKX.sariBg,fg:FKX.sari}, kesin:{bg:FKX.yesilBg,fg:FKX.yesil},
   kilitli:{bg:FKX.griBg,fg:FKX.gri} };
+
+/* ---------- DIL: ciktinin METNI cevrilir, DUZENI DEGISMEZ ----------
+   Ayni belgeyi tedarikci, saha ve denetci okuyor; kimi Turkce, kimi Rusca,
+   kimi Ingilizce. Cevrilen sey YALNIZCA METINDIR: sayfa duzeni, sutun sirasi
+   ve genisligi, renkler, sayi ve tarih bicimi UC DILDE DE BIREBIR AYNI kalir.
+   Boylece iki ayri dilde alinmis iki dosya yan yana konup satir satir
+   karsilastirilabilir - "hangi sutun neydi" diye aramak gerekmez.
+
+   UYGULAMA ARAYUZU TURKCE KALIR: cevrilen sey DOSYADIR, ekran degil. Ekran
+   dilini de cevirmek bambaska (ve cok daha buyuk) bir istir; burada yapiliyor
+   gibi gorunmesi yanlis beklenti yaratirdi.
+
+   Sozlukler AYNI ANAHTARLARI tasimak zorundadir - eksik anahtar, ciktida
+   "undefined" yazan bir baslik demektir. Test bunu dogruluyor. */
+const FAT_KITAP_DILLER=[
+  {kod:'tr', ad:'Turkce',    yerel:'Türkçe',  ipucu:'Basliklar ve aciklamalar Turkce'},
+  {kod:'ru', ad:'Rusca',     yerel:'Русский', ipucu:'Zagolovki i poyasneniya na russkom'},
+  {kod:'en', ad:'Ingilizce', yerel:'English', ipucu:'Headings and notes in English'}];
+let FAT_KITAP_DIL='tr';          // son secim: bir dahaki sefere hazir gelsin
+const FKX_SOZLUK={
+ tr:{
+  dosya:'fatura-kitabi',
+  sOzet:'Ozet', sMut:'Urun Mutabakati', sFrm:'Firma Ozeti', sFatura:n=>'Fatura '+n,
+  geri:'◀ Ozet', gitMut:'Urun Mutabakati ▶', git:s=>'▶ '+s,
+  durum:{fazla:'FAZLA', tam:'TAM', kismi:'KISMI', yok:'FATURASIZ'},
+  kayit:{taslak:'TASLAK', kesin:'KESIN', kilitli:'KILITLI'},
+  mutBaslik:'URUN MUTABAKATI — alinan mal ile parasi odenen mal',
+  mutNot:'Tum urunler listelenir; bu sayfa fatura suzgecinden BAGIMSIZDIR - "alinanin genel toplami" suzgece gore degismemeli.',
+  mutTh:['Durum','Urun Kodu','Urun','Birim','Firmalar','Binalar','Alinan','Iade',
+    'Net (alinan-iade)','Faturalanan','Kalan','Yerlesim Kodlari','Gectigi Faturalar'],
+  mutBos:'Kayitli alim ya da fatura yok.',
+  numarasiz:'(numarasiz)', firmaYok:'firma yok',
+  belgeBilgi:'BELGE BILGILERI',
+  eFaturaNo:'Fatura No', eSenaryo:'Senaryo', eTarih:'Fatura Tarihi', eTip:'Fatura Tipi',
+  eFirma:'Firma', ePara:'Para Birimi', eIrsaliye:'Irsaliye', eBelgeDurum:'Belge Durumu',
+  eEttn:'ETTN', eKaydeden:'Kaydeden', eNot:'Not', kur:'kur',
+  kilitDegisti:'KILIT SONRASI DEGISTI',
+  satirBand:n=>'FATURA SATIRLARI  ('+n+' urun)',
+  satirTh:['#','Urun Kodu','Mal / Hizmet','Birim','Miktar','Birim Fiyat','Isk %','Iskonto',
+    'Matrah','KDV %','KDV','Satir Toplami','Yerlesim Kodlari',
+    'Bu Firmadan Alinan','Toplam Faturalanan','Kalan','Durum'],
+  satirBos:'Bu faturada urun satiri yok.',
+  alimYok:'ALIM YOK', toplam:'TOPLAM',
+  kdvBand:'KDV KIRILIMI', kdvTh:['Oran','Matrah','KDV'],
+  odBand:'ODENECEK TUTAR', odBelge:'Belgede yazan', odHesap:'Satirlardan hesaplanan',
+  odFark:'FARK',
+  odFarkNot:'Belgede yazan tutar ile satirlardan hesaplanan tutar tutmuyor - satirlar eksik girilmis ya da belgede baska bir kalem var.',
+  frmBaslik:'FIRMA OZETI',
+  frmTh:['Firma','Fatura','Urun Satiri','Miktar',"Toplam (KDV'siz)",'KDV','Odenecek','PB','Fazla Faturalanan Urun'],
+  firmaGirilmemis:'(firma girilmemis)', suzgecBos:'Suzgece uyan fatura yok.',
+  ozBaslik:'FATURA KONTROL RAPORU',
+  ozAlt:(t,n,k)=>t+' tarihinde olusturuldu  ·  '+n+' fatura  ·  '+k,
+  ozGenel:'GENEL DURUM',
+  kpi1:['FATURA','URUN SATIRI','TOPLAM MIKTAR',"TOPLAM (KDV'SIZ)",'KDV','ODENECEK'],
+  karma:'karma',
+  ozDikkat:'DIKKAT EDILECEKLER',
+  kpi2:['FAZLA FATURALANAN URUN','TUTAR FARKI OLAN BELGE','KILIT SONRASI DEGISEN','CIFT FATURA NO','TASLAK','KILITLI'],
+  karmaNot:p=>'Listede birden cok para birimi var ('+p+') - toplamlar bilerek toplanmadi, her faturanin tutari kendi sutununda durur.',
+  ozFatBand:'FATURALAR  —  numaraya tiklayin, belgenin kendi sayfasi acilir',
+  ozTh:['#','Fatura No','Tarih','Firma','Durum','Satir','Miktar',"Toplam (KDV'siz)",
+    'KDV','Odenecek','PB','Tutar Farki','Uyari'],
+  uyFazla:n=>n+' urunde FAZLA faturalama',
+  uyFark:p=>'tutar farki '+p,
+  uyKilit:'kilit sonrasi degisti',
+  uyCift:'ayni fatura no baska belgede de var',
+  gtBand:'URUN BAZINDA GENEL TOPLAM  —  alinan mal ile faturalanan mal',
+  gtTh:['Urun','Alinan','Iade','Net','Faturalanan','Kalan','Fazla','Tam','Kismi','Faturasiz'],
+  gtNot:s=>'Bu blok TUM urunleri kapsar (fatura suzgecinden bagimsiz). Ayrintili dokum: '+s+' sayfasi.',
+  kpArama:q=>'arama "'+q+'"', kpFirma:x=>'firma '+x, kpDurum:x=>'durum '+x,
+  kpSonra:t=>t+' sonrasi', kpOnce:t=>t+' oncesi', kpYok:'suzgec yok - tum faturalar',
+ },
+ ru:{
+  dosya:'kniga-schetov',
+  sOzet:'Сводка', sMut:'Сверка по товарам', sFrm:'Сводка по компаниям', sFatura:n=>'Счёт '+n,
+  geri:'◀ Сводка', gitMut:'Сверка по товарам ▶', git:s=>'▶ '+s,
+  durum:{fazla:'ИЗЛИШЕК', tam:'ПОЛНОСТЬЮ', kismi:'ЧАСТИЧНО', yok:'БЕЗ СЧЁТА'},
+  kayit:{taslak:'ЧЕРНОВИК', kesin:'ОКОНЧАТЕЛЬНЫЙ', kilitli:'ЗАБЛОКИРОВАН'},
+  mutBaslik:'СВЕРКА ПО ТОВАРАМ — полученный товар и оплаченный товар',
+  mutNot:'Перечислены все товары; эта страница НЕ ЗАВИСИТ от фильтра счетов — «общий итог полученного» не должен меняться из-за фильтра.',
+  mutTh:['Статус','Код товара','Товар','Ед.','Компании','Здания','Получено','Возврат',
+    'Нетто (получено-возврат)','Выставлено','Остаток','Коды размещения','Счета, где встречается'],
+  mutBos:'Нет ни закупок, ни счетов.',
+  numarasiz:'(без номера)', firmaYok:'компания не указана',
+  belgeBilgi:'ДАННЫЕ ДОКУМЕНТА',
+  eFaturaNo:'Номер счёта', eSenaryo:'Сценарий', eTarih:'Дата счёта', eTip:'Тип счёта',
+  eFirma:'Компания', ePara:'Валюта', eIrsaliye:'Накладная', eBelgeDurum:'Статус документа',
+  eEttn:'ETTN', eKaydeden:'Внёс', eNot:'Примечание', kur:'курс',
+  kilitDegisti:'ИЗМЕНЁН ПОСЛЕ БЛОКИРОВКИ',
+  satirBand:n=>'СТРОКИ СЧЁТА  ('+n+' поз.)',
+  satirTh:['№','Код товара','Товар / услуга','Ед.','Количество','Цена за ед.','Скидка %','Скидка',
+    'Налоговая база','НДС %','НДС','Сумма строки','Коды размещения',
+    'Получено от этой компании','Всего выставлено','Остаток','Статус'],
+  satirBos:'В этом счёте нет строк товаров.',
+  alimYok:'НЕТ ЗАКУПКИ', toplam:'ИТОГО',
+  kdvBand:'РАЗБИВКА ПО НДС', kdvTh:['Ставка','Налоговая база','НДС'],
+  odBand:'СУММА К ОПЛАТЕ', odBelge:'Указано в документе', odHesap:'Рассчитано по строкам',
+  odFark:'РАСХОЖДЕНИЕ',
+  odFarkNot:'Сумма, указанная в документе, не совпадает с рассчитанной по строкам — строки введены не полностью либо в документе есть другая позиция.',
+  frmBaslik:'СВОДКА ПО КОМПАНИЯМ',
+  frmTh:['Компания','Счетов','Строк','Количество','Итого (без НДС)','НДС','К оплате','Вал.','Товаров с излишком'],
+  firmaGirilmemis:'(компания не указана)', suzgecBos:'Нет счетов, соответствующих фильтру.',
+  ozBaslik:'ОТЧЁТ ПО КОНТРОЛЮ СЧЕТОВ',
+  ozAlt:(t,n,k)=>'Сформирован '+t+'  ·  счетов: '+n+'  ·  '+k,
+  ozGenel:'ОБЩАЯ КАРТИНА',
+  kpi1:['СЧЕТОВ','СТРОК','ОБЩЕЕ КОЛИЧЕСТВО','ИТОГО (БЕЗ НДС)','НДС','К ОПЛАТЕ'],
+  karma:'смешанная',
+  ozDikkat:'НА ЧТО ОБРАТИТЬ ВНИМАНИЕ',
+  kpi2:['ТОВАРОВ С ИЗЛИШКОМ','ДОКУМЕНТОВ С РАСХОЖДЕНИЕМ','ИЗМЕНЕНО ПОСЛЕ БЛОКИРОВКИ',
+    'ДУБЛИ НОМЕРОВ','ЧЕРНОВИКОВ','ЗАБЛОКИРОВАНО'],
+  karmaNot:p=>'В списке несколько валют ('+p+') — итоги намеренно не суммированы, сумма каждого счёта остаётся в своей строке.',
+  ozFatBand:'СЧЕТА  —  нажмите на номер, откроется страница документа',
+  ozTh:['№','Номер счёта','Дата','Компания','Статус','Строк','Количество','Итого (без НДС)',
+    'НДС','К оплате','Вал.','Расхождение','Предупреждение'],
+  uyFazla:n=>'излишек по '+n+' товарам',
+  uyFark:p=>'расхождение суммы '+p,
+  uyKilit:'изменён после блокировки',
+  uyCift:'такой же номер счёта есть в другом документе',
+  gtBand:'ОБЩИЙ ИТОГ ПО ТОВАРАМ  —  полученный товар и выставленный в счёт',
+  gtTh:['Товаров','Получено','Возврат','Нетто','Выставлено','Остаток','Излишек','Полностью','Частично','Без счёта'],
+  gtNot:s=>'Этот блок охватывает ВСЕ товары (не зависит от фильтра счетов). Подробная расшифровка: страница «'+s+'».',
+  kpArama:q=>'поиск "'+q+'"', kpFirma:x=>'компания '+x, kpDurum:x=>'статус '+x,
+  kpSonra:t=>'после '+t, kpOnce:t=>'до '+t, kpYok:'фильтр не задан — все счета',
+ },
+ en:{
+  dosya:'invoice-book',
+  sOzet:'Summary', sMut:'Product Reconciliation', sFrm:'Company Summary', sFatura:n=>'Invoice '+n,
+  geri:'◀ Summary', gitMut:'Product Reconciliation ▶', git:s=>'▶ '+s,
+  durum:{fazla:'OVER', tam:'COMPLETE', kismi:'PARTIAL', yok:'NOT INVOICED'},
+  kayit:{taslak:'DRAFT', kesin:'FINAL', kilitli:'LOCKED'},
+  mutBaslik:'PRODUCT RECONCILIATION — goods received vs goods paid for',
+  mutNot:'All products are listed; this sheet is INDEPENDENT of the invoice filter - the "grand total received" must not change with a filter.',
+  mutTh:['Status','Product Code','Product','Unit','Companies','Buildings','Received','Returned',
+    'Net (received-returned)','Invoiced','Remaining','Placement Codes','Invoices Containing It'],
+  mutBos:'No purchases or invoices on record.',
+  numarasiz:'(no number)', firmaYok:'no company',
+  belgeBilgi:'DOCUMENT DETAILS',
+  eFaturaNo:'Invoice No', eSenaryo:'Scenario', eTarih:'Invoice Date', eTip:'Invoice Type',
+  eFirma:'Company', ePara:'Currency', eIrsaliye:'Delivery Note', eBelgeDurum:'Document Status',
+  eEttn:'ETTN', eKaydeden:'Entered By', eNot:'Note', kur:'rate',
+  kilitDegisti:'CHANGED AFTER LOCK',
+  satirBand:n=>'INVOICE LINES  ('+n+' products)',
+  satirTh:['#','Product Code','Goods / Service','Unit','Quantity','Unit Price','Disc %','Discount',
+    'Taxable Amount','VAT %','VAT','Line Total','Placement Codes',
+    'Received From This Company','Total Invoiced','Remaining','Status'],
+  satirBos:'This invoice has no product lines.',
+  alimYok:'NO PURCHASE', toplam:'TOTAL',
+  kdvBand:'VAT BREAKDOWN', kdvTh:['Rate','Taxable Amount','VAT'],
+  odBand:'AMOUNT PAYABLE', odBelge:'Stated on document', odHesap:'Calculated from lines',
+  odFark:'DIFFERENCE',
+  odFarkNot:'The amount stated on the document does not match the amount calculated from the lines - the lines may be incomplete or the document contains another item.',
+  frmBaslik:'COMPANY SUMMARY',
+  frmTh:['Company','Invoices','Lines','Quantity','Total (excl. VAT)','VAT','Payable','Cur.','Over-Invoiced Products'],
+  firmaGirilmemis:'(no company)', suzgecBos:'No invoices match the filter.',
+  ozBaslik:'INVOICE CONTROL REPORT',
+  ozAlt:(t,n,k)=>'Generated on '+t+'  ·  '+n+' invoices  ·  '+k,
+  ozGenel:'OVERVIEW',
+  kpi1:['INVOICES','LINES','TOTAL QUANTITY','TOTAL (EXCL. VAT)','VAT','PAYABLE'],
+  karma:'mixed',
+  ozDikkat:'POINTS OF ATTENTION',
+  kpi2:['OVER-INVOICED PRODUCTS','DOCUMENTS WITH DIFFERENCE','CHANGED AFTER LOCK',
+    'DUPLICATE NUMBERS','DRAFTS','LOCKED'],
+  karmaNot:p=>'The list contains more than one currency ('+p+') - totals are deliberately not summed; each invoice keeps its amount in its own row.',
+  ozFatBand:'INVOICES  —  click a number to open that document\'s own sheet',
+  ozTh:['#','Invoice No','Date','Company','Status','Lines','Quantity','Total (excl. VAT)',
+    'VAT','Payable','Cur.','Difference','Warning'],
+  uyFazla:n=>'over-invoicing on '+n+' products',
+  uyFark:p=>'amount difference '+p,
+  uyKilit:'changed after lock',
+  uyCift:'the same invoice number exists on another document',
+  gtBand:'GRAND TOTAL BY PRODUCT  —  goods received vs goods invoiced',
+  gtTh:['Products','Received','Returned','Net','Invoiced','Remaining','Over','Complete','Partial','Not Invoiced'],
+  gtNot:s=>'This block covers ALL products (independent of the invoice filter). Detailed breakdown: "'+s+'" sheet.',
+  kpArama:q=>'search "'+q+'"', kpFirma:x=>'company '+x, kpDurum:x=>'status '+x,
+  kpSonra:t=>'after '+t, kpOnce:t=>'before '+t, kpYok:'no filter - all invoices',
+ }
+};
+function fatKitapSozluk(dil){ return FKX_SOZLUK[String(dil||'').toLowerCase()]||FKX_SOZLUK.tr; }
+function fatKitapDilAdi(dil){ const d=FAT_KITAP_DILLER.find(x=>x.kod===dil); return d?d.yerel:'Türkçe'; }
 
 /* Bicim sozlugu. Hepsi TEK YERDE: renk/kalinlik kararlari sayfalar arasinda
    dagilsaydi ayni tablo iki sayfada iki turlu gorunurdu. */
@@ -26868,29 +27048,31 @@ function fatKitapBicim(wb){
 }
 
 // Kitabin kapsamini bir cumleyle anlatir: hangi suzgec acikti?
-function fatKitapKapsam(){
+function fatKitapKapsam(L){
+  L=L||fatKitapSozluk('tr');
   const p=[];
-  if(FATV.q) p.push('arama "'+FATV.q+'"');
-  if(FATV.comp) p.push('firma '+(((DB.companies||[]).find(c=>c.id===FATV.comp)||{}).ad||FATV.comp));
-  if(FATV.durum) p.push('durum '+(FAT_KAYIT_DURUM[FATV.durum]||{ad:FATV.durum}).ad);
-  if(FATV.from) p.push(fmtDate(FATV.from)+' sonrasi');
-  if(FATV.to) p.push(fmtDate(FATV.to)+' oncesi');
-  return p.length?p.join(' · '):'suzgec yok - tum faturalar';
+  if(FATV.q) p.push(L.kpArama(FATV.q));
+  if(FATV.comp) p.push(L.kpFirma(((DB.companies||[]).find(c=>c.id===FATV.comp)||{}).ad||FATV.comp));
+  if(FATV.durum) p.push(L.kpDurum(L.kayit[FATV.durum]||FATV.durum));
+  if(FATV.from) p.push(L.kpSonra(fmtDate(FATV.from)));
+  if(FATV.to) p.push(L.kpOnce(fmtDate(FATV.to)));
+  return p.length?p.join(' · '):L.kpYok;
 }
 
 /* KITABI KURAR (indirmez). Ayri durmasinin sebebi test edilebilirlik: dosya
    uretimi tarayici olmadan da calistirilip icerigi dogrulanabiliyor. */
-function fatKitapKur(){
+function fatKitapKur(dil){
+  const L=fatKitapSozluk(dil||FAT_KITAP_DIL);
   const wb=xlsxKitap(), B=fatKitapBicim(wb);
   const list=fatListeFiltreli();
-  const OZET='Ozet', MUT='Urun Mutabakati', FRM='Firma Ozeti';
+  const OZET=L.sOzet, MUT=L.sMut, FRM=L.sFrm;
 
   /* SAYFALAR ONCE ACILIR, SONRA DOLDURULUR: kopruler birbirinin SATIR
      NUMARASINA baktigi icin (mutabakattaki urun satirina inen link gibi)
      sira once sabitlenmeli. */
   const sOzet=wb.sayfa(OZET,true);
   const sayfaEsle=new Map();                       // fatura id -> sayfa
-  list.forEach(f=>{ sayfaEsle.set(f.id, wb.sayfa(f.no||('Fatura '+(sayfaEsle.size+1)))); });
+  list.forEach(f=>{ sayfaEsle.set(f.id, wb.sayfa(f.no||L.sFatura(sayfaEsle.size+1))); });
   const sMut=wb.sayfa(MUT), sFrm=wb.sayfa(FRM);
 
   // --- ortak hesaplar ---
@@ -26906,13 +27088,12 @@ function fatKitapKur(){
   // ══════════════ 1) URUN MUTABAKATI (once: satir numaralari lazim) ══════════════
   sMut.sutun([11,16,46,8,26,16,12,10,12,13,12,28,30]);
   sMut.birlestir('A1:M1');
-  sMut.satir([{v:'URUN MUTABAKATI — alinan mal ile parasi odenen mal',b:B.baslik}],{h:26});
-  sMut.satir([{v:'◀ Ozet',b:B.link},{v:'Tum urunler listelenir; bu sayfa fatura suzgecinden BAGIMSIZDIR - "alinanin genel toplami" suzgece gore degismemeli.',b:B.dipnot}],{h:16});
-  sMut.kopru('A2',OZET,'◀ Ozet');
+  sMut.satir([{v:L.mutBaslik,b:B.baslik}],{h:26});
+  sMut.satir([{v:L.geri,b:B.link},{v:L.mutNot,b:B.dipnot}],{h:16});
+  sMut.kopru('A2',OZET,L.geri);
   sMut.birlestir('B2:M2');
   sMut.bos();
-  const mutBas=sMut.satir(['Durum','Urun Kodu','Urun','Birim','Firmalar','Binalar','Alinan','Iade',
-    'Net (alinan-iade)','Faturalanan','Kalan','Yerlesim Kodlari','Gectigi Faturalar'].map(v=>({v,b:B.th})),{h:30});
+  const mutBas=sMut.satir(L.mutTh.map(v=>({v,b:B.th})),{h:30});
   const urunSatir=new Map();                       // urun key -> mutabakat satir no
   const faturaGecen=new Map();                     // urun key -> [fatura]
   fatKayitlar().forEach(f=>fatSatirlari(f).forEach(r=>{
@@ -26924,7 +27105,7 @@ function fatKitapKur(){
     const z=i%2?1:0, td=z?B.tdZ:B.td, kod=z?B.kodZ:B.kod, mik=z?B.mikZ:B.mik, sar=z?B.sarZ:B.sar;
     const belgeler=(faturaGecen.get(u.key)||[]).slice().sort((a,b)=>(b.tarih||0)-(a.tarih||0));
     const n=sMut.satir([
-      {v:(FKX_DURUM[u.durum]||{}).ad||'',b:B.durum[u.durum]||td},
+      {v:L.durum[u.durum]||'',b:B.durum[u.durum]||td},
       {v:u.code||'',b:kod}, {v:u.ad||'',b:td}, {v:u.unit||'',b:z?B.tdSZ:B.tdS},
       {v:(u.firmalar||[]).join(' · '),b:sar}, {v:(u.binalar||[]).join(' · '),b:sar},
       {v:u.alinan||0,b:B.mikSec(u.alinan,z)}, {v:u.iade||0,b:B.mikSec(u.iade,z)},
@@ -26934,7 +27115,7 @@ function fatKitapKur(){
       {v:belgeler.map(f=>f.no||'-').join(' · '),b:sar}]);
     urunSatir.set(u.key,n);
   });
-  if(!genel.length) sMut.satir([{v:'Kayitli alim ya da fatura yok.',b:B.dipnot}]);
+  if(!genel.length) sMut.satir([{v:L.mutBos,b:B.dipnot}]);
   sMut.dondur(mutBas);
   sMut.suzgec('A'+mutBas+':M'+Math.max(mutBas,sMut.satirlar.length));
 
@@ -26943,18 +27124,18 @@ function fatKitapKur(){
   list.forEach(f=>{
     const s=sayfaEsle.get(f.id), sat=fatSatirlari(f), top=fatKayitToplam(f);
     const hav=firmaHavuzu(f.companyId), pb=f.paraBirimi||'TRY';
-    const dur=fatDurumu(f), durAd=FAT_KAYIT_DURUM[dur].ad;
+    const dur=fatDurumu(f), durAd=L.kayit[dur];
     s.sutun([5,16,46,8,12,13,7,12,14,7,13,15,30,13,13,12,11]);
     s.birlestir('A1:Q1');
-    s.satir([{v:(f.no||'(numarasiz)')+'  ·  '+(fatCompany(f)||'firma yok'),b:B.baslik}],{h:28});
-    s.satir([{v:'◀ Ozet',b:B.link},{v:'',b:B.link},{v:'Urun Mutabakati ▶',b:B.link}],{h:16});
+    s.satir([{v:(f.no||L.numarasiz)+'  ·  '+(fatCompany(f)||L.firmaYok),b:B.baslik}],{h:28});
+    s.satir([{v:L.geri,b:B.link},{v:'',b:B.link},{v:L.gitMut,b:B.link}],{h:16});
     /* A2 koprusu burada DEGIL, Ozet kurulduktan sonra eklenir: belgeye ozet
        sayfasinin BASINA degil KENDI SATIRINA donulsun. Ayni hucreye iki kopru
        yazilamaz, o yuzden tek yerde veriliyor. */
-    s.kopru('C2',MUT,'Urun Mutabakati ▶');
+    s.kopru('C2',MUT,L.gitMut);
     s.birlestir('A2:B2'); s.birlestir('C2:E2');
     s.bos();
-    s.birlestir('A4:Q4'); s.satir([{v:'BELGE BILGILERI',b:B.band}],{h:20});
+    s.birlestir('A4:Q4'); s.satir([{v:L.belgeBilgi,b:B.band}],{h:20});
     const ikili=(e1,d1,b1,e2,d2,b2)=>{
       const r=new Array(17).fill('');
       r[0]={v:e1,b:B.etiket}; r[1]={v:'',b:B.etiket}; r[2]={v:d1,b:b1||B.deger};
@@ -26966,25 +27147,23 @@ function fatKitapKur(){
       s.birlestir('G'+n+':H'+n); s.birlestir('I'+n+':Q'+n);
       return n;
     };
-    ikili('Fatura No', f.no||'-', B.degerB, 'Senaryo', f.senaryo||'-');
-    const tn=ikili('Fatura Tarihi','', B.deger, 'Fatura Tipi', f.faturaTipi||'-');
+    ikili(L.eFaturaNo, f.no||'-', B.degerB, L.eSenaryo, f.senaryo||'-');
+    const tn=ikili(L.eTarih,'', B.deger, L.eTip, f.faturaTipi||'-');
     s.satirlar[tn-1].c[2]={v:xlsxTarihSeri(f.tarih),b:wb.bicim({fmt:'dd"."mm"."yyyy',font:{sz:11},yatay:'left',dikey:'center',girinti:1,kenar:{b:{c:FKX.cizgi}}})};
-    ikili('Firma', fatCompany(f)||'-', B.degerB, 'Para Birimi', pb+(f.kur?'  ·  kur '+f.kur:''));
-    ikili('Irsaliye', (f.irsaliyeNo||'-')+(f.irsaliyeTarihi?'  ·  '+fmtDate(f.irsaliyeTarihi):''),
-      B.deger, 'Belge Durumu', durAd+(fatKilitSonrasiDegisti(f)?'  ·  KILIT SONRASI DEGISTI':''),
+    ikili(L.eFirma, fatCompany(f)||'-', B.degerB, L.ePara, pb+(f.kur?'  ·  '+L.kur+' '+f.kur:''));
+    ikili(L.eIrsaliye, (f.irsaliyeNo||'-')+(f.irsaliyeTarihi?'  ·  '+fmtDate(f.irsaliyeTarihi):''),
+      B.deger, L.eBelgeDurum, durAd+(fatKilitSonrasiDegisti(f)?'  ·  '+L.kilitDegisti:''),
       fatKilitSonrasiDegisti(f)?B.uyari:B.deger);
-    ikili('ETTN', f.ettn||'-', B.kod, 'Kaydeden', f.olusturan||'-');
+    ikili(L.eEttn, f.ettn||'-', B.kod, L.eKaydeden, f.olusturan||'-');
     if(String(f.not||'').trim()){
-      const n=s.satir([{v:'Not',b:B.etiket},{v:'',b:B.etiket},{v:String(f.not).trim(),b:B.not},
+      const n=s.satir([{v:L.eNot,b:B.etiket},{v:'',b:B.etiket},{v:String(f.not).trim(),b:B.not},
         ...new Array(14).fill({v:'',b:B.not})],{h:34});
       s.birlestir('A'+n+':B'+n); s.birlestir('C'+n+':Q'+n);
     }
     s.bos();
     s.birlestir('A'+(s.satirlar.length+1)+':Q'+(s.satirlar.length+1));
-    s.satir([{v:'FATURA SATIRLARI  ('+fmtNum(sat.length)+' urun)',b:B.band}],{h:20});
-    const bas=s.satir(['#','Urun Kodu','Mal / Hizmet','Birim','Miktar','Birim Fiyat','Isk %','Iskonto',
-      'Matrah','KDV %','KDV','Satir Toplami','Yerlesim Kodlari',
-      'Bu Firmadan Alinan','Toplam Faturalanan','Kalan','Durum'].map(v=>({v,b:B.th})),{h:32});
+    s.satir([{v:L.satirBand(fmtNum(sat.length)),b:B.band}],{h:20});
+    const bas=s.satir(L.satirTh.map(v=>({v,b:B.th})),{h:32});
     sat.forEach((r,i)=>{
       const h=fatSatirHesap(r), z=i%2?1:0;
       const td=z?B.tdZ:B.td, kod=z?B.kodZ:B.kod, mik=z?B.mikZ:B.mik, par=z?B.parZ:B.par,
@@ -27000,13 +27179,13 @@ function fatKitapKur(){
         {v:fatSatirPaylari(r).filter(x=>x.kod).map(x=>x.kod+' ('+fmtNum(x.qty)+')').join(' · '),b:sar},
         {v:u?u.alinan:'',b:B.mikSec(u&&u.alinan,z)}, {v:u?u.fat:'',b:B.mikSec(u&&u.fat,z)},
         {v:u?Number(u.kalan.toFixed(4)):'',b:B.mikSec(u&&u.kalan,z)},
-        {v:u?(FKX_DURUM[u.durum]||{}).ad:'ALIM YOK',b:u?(B.durum[u.durum]||td):B.durum.fazla}]);
+        {v:u?L.durum[u.durum]:L.alimYok,b:u?(B.durum[u.durum]||td):B.durum.fazla}]);
       if(urunSatir.has(String(r.key||''))) s.kopru('C'+n,MUT,r.ad||'',('C'+urunSatir.get(String(r.key||''))));
     });
-    if(!sat.length) s.satir([{v:'Bu faturada urun satiri yok.',b:B.dipnot}]);
+    if(!sat.length) s.satir([{v:L.satirBos,b:B.dipnot}]);
     // TOPLAM
     const tMik=sat.reduce((a,r)=>a+fatSatirHesap(r).qty,0);
-    const tsat=s.satir([{v:'',b:B.topBos},{v:'',b:B.topBos},{v:'TOPLAM',b:B.topEt},{v:'',b:B.topBos},
+    const tsat=s.satir([{v:'',b:B.topBos},{v:'',b:B.topBos},{v:L.toplam,b:B.topEt},{v:'',b:B.topBos},
       {v:tMik,b:B.topMkSec(tMik)},{v:'',b:B.topBos},{v:'',b:B.topBos},
       {v:Number(top.iskonto.toFixed(2)),b:B.topSy},{v:Number(top.matrah.toFixed(2)),b:B.topSy},
       {v:'',b:B.topBos},{v:Number(top.kdv.toFixed(2)),b:B.topSy},{v:Number(top.toplam.toFixed(2)),b:B.topSy},
@@ -27015,20 +27194,20 @@ function fatKitapKur(){
     // KDV kirilimi (TC faturasinin alt kosesi) + belge/hesap farki
     if((top.kdvListe||[]).length){
       s.birlestir('A'+(s.satirlar.length+1)+':Q'+(s.satirlar.length+1));
-      s.satir([{v:'KDV KIRILIMI',b:B.band}],{h:20});
-      s.satir([{v:'Oran',b:B.th},{v:'Matrah',b:B.th},{v:'KDV',b:B.th}]);
+      s.satir([{v:L.kdvBand,b:B.band}],{h:20});
+      s.satir(L.kdvTh.map(v=>({v,b:B.th})));
       top.kdvListe.forEach(k=>s.satir([{v:k.oran,b:B.yuz},{v:Number(k.matrah.toFixed(2)),b:B.par},{v:Number(k.kdv.toFixed(2)),b:B.par}]));
       s.bos();
     }
     const fark=fatTutarFarki(f.beyanTutar,top.toplam);
     s.birlestir('A'+(s.satirlar.length+1)+':Q'+(s.satirlar.length+1));
-    s.satir([{v:'ODENECEK TUTAR',b:B.band}],{h:20});
-    s.satir([{v:'Belgede yazan',b:B.etiket},{v:'',b:B.etiket},{v:fatSayi(f.beyanTutar)||'',b:B.par},{v:pb,b:B.tdS}]);
-    s.satir([{v:'Satirlardan hesaplanan',b:B.etiket},{v:'',b:B.etiket},{v:Number(top.toplam.toFixed(2)),b:B.parB},{v:pb,b:B.tdS}]);
+    s.satir([{v:L.odBand,b:B.band}],{h:20});
+    s.satir([{v:L.odBelge,b:B.etiket},{v:'',b:B.etiket},{v:fatSayi(f.beyanTutar)||'',b:B.par},{v:pb,b:B.tdS}]);
+    s.satir([{v:L.odHesap,b:B.etiket},{v:'',b:B.etiket},{v:Number(top.toplam.toFixed(2)),b:B.parB},{v:pb,b:B.tdS}]);
     if(fark){
-      s.satir([{v:'FARK',b:B.etiket},{v:'',b:B.etiket},{v:Number(fark.toFixed(2)),b:B.fark},{v:pb,b:B.tdS}]);
+      s.satir([{v:L.odFark,b:B.etiket},{v:'',b:B.etiket},{v:Number(fark.toFixed(2)),b:B.fark},{v:pb,b:B.tdS}]);
       s.birlestir('E'+s.satirlar.length+':Q'+s.satirlar.length);
-      s.satirlar[s.satirlar.length-1].c[4]={v:'Belgede yazan tutar ile satirlardan hesaplanan tutar tutmuyor - satirlar eksik girilmis ya da belgede baska bir kalem var.',b:B.dipnot};
+      s.satirlar[s.satirlar.length-1].c[4]={v:L.odFarkNot,b:B.dipnot};
     }
     s.dondur(bas);
     s.suzgec('A'+bas+':Q'+Math.max(bas,tsat-1));
@@ -27037,13 +27216,13 @@ function fatKitapKur(){
   // ══════════════ 3) FIRMA OZETI ══════════════
   sFrm.sutun([38,9,10,14,16,14,17,6,18]);
   sFrm.birlestir('A1:I1');
-  sFrm.satir([{v:'FIRMA OZETI',b:B.baslik}],{h:26});
-  sFrm.satir([{v:'◀ Ozet',b:B.link}],{h:16}); sFrm.kopru('A2',OZET,'◀ Ozet');
+  sFrm.satir([{v:L.frmBaslik,b:B.baslik}],{h:26});
+  sFrm.satir([{v:L.geri,b:B.link}],{h:16}); sFrm.kopru('A2',OZET,L.geri);
   sFrm.bos();
-  const frmBas=sFrm.satir(['Firma','Fatura','Urun Satiri','Miktar','Toplam (KDV\'siz)','KDV','Odenecek','PB','Fazla Faturalanan Urun'].map(v=>({v,b:B.th})),{h:30});
+  const frmBas=sFrm.satir(L.frmTh.map(v=>({v,b:B.th})),{h:30});
   const frmMap=new Map();
   list.forEach(f=>{
-    const k=String(f.companyId||''), ad=fatCompany(f)||'(firma girilmemis)';
+    const k=String(f.companyId||''), ad=fatCompany(f)||L.firmaGirilmemis;
     if(!frmMap.has(k)) frmMap.set(k,{ad,n:0,satir:0,miktar:0,matrah:0,kdv:0,toplam:0,pb:new Set()});
     const g=frmMap.get(k), t=fatKayitToplam(f), sat=fatSatirlari(f);
     g.n++; g.satir+=sat.length; g.miktar+=fatToplamMiktar(f);
@@ -27057,16 +27236,16 @@ function fatKitapKur(){
       {v:Number(g.toplam.toFixed(2)),b:z?B.parBZ:B.parB},{v:[...g.pb].join('/'),b:ts},
       {v:fazla,b:fazla?B.durum.fazla:ts}]);
   });
-  if(!frmMap.size) sFrm.satir([{v:'Suzgece uyan fatura yok.',b:B.dipnot}]);
+  if(!frmMap.size) sFrm.satir([{v:L.suzgecBos,b:B.dipnot}]);
   sFrm.dondur(frmBas);
 
   // ══════════════ 4) OZET (kapak) ══════════════
   sOzet.sutun([5,22,12,34,11,8,13,15,13,16,6,13,34]);
   sOzet.birlestir('A1:M1'); sOzet.birlestir('A2:M2');
-  sOzet.satir([{v:'FATURA KONTROL RAPORU',b:B.baslik}],{h:30});
-  sOzet.satir([{v:fmtDate(Date.now())+' tarihinde olusturuldu  ·  '+fmtNum(list.length)+' fatura  ·  '+fatKitapKapsam(),b:B.altBaslik}],{h:18});
+  sOzet.satir([{v:L.ozBaslik,b:B.baslik}],{h:30});
+  sOzet.satir([{v:L.ozAlt(fmtDate(Date.now()),fmtNum(list.length),fatKitapKapsam(L)),b:B.altBaslik}],{h:18});
   sOzet.bos();
-  sOzet.birlestir('A4:M4'); sOzet.satir([{v:'GENEL DURUM',b:B.band}],{h:20});
+  sOzet.birlestir('A4:M4'); sOzet.satir([{v:L.ozGenel,b:B.band}],{h:20});
   const toplamSatir=list.reduce((a,f)=>a+fatSatirlari(f).length,0);
   const toplamMiktar=list.reduce((a,f)=>a+fatToplamMiktar(f),0);
   const tumTop=list.reduce((a,f)=>{ const t=fatKayitToplam(f); a.matrah+=t.matrah; a.kdv+=t.kdv; a.toplam+=t.toplam; return a; },{matrah:0,kdv:0,toplam:0});
@@ -27080,42 +27259,41 @@ function fatKitapKur(){
       sOzet.birlestir(c+n1+':'+c2+n1); sOzet.birlestir(c+n2+':'+c2+n2); });
     return n2;
   };
-  kpi(['FATURA','URUN SATIRI','TOPLAM MIKTAR','TOPLAM (KDV\'SIZ)','KDV','ODENECEK'],
+  kpi(L.kpi1,
       [list.length, toplamSatir, fmtNum(toplamMiktar),
-       tekPara?fatPara(tumTop.matrah,tekPara):'karma', tekPara?fatPara(tumTop.kdv,tekPara):'karma',
-       tekPara?fatPara(tumTop.toplam,tekPara):'karma']);
+       tekPara?fatPara(tumTop.matrah,tekPara):L.karma, tekPara?fatPara(tumTop.kdv,tekPara):L.karma,
+       tekPara?fatPara(tumTop.toplam,tekPara):L.karma]);
   sOzet.bos();
   const fazlaUrun=genel.filter(u=>u.durum==='fazla').length;
   const farkli=list.filter(f=>fatTutarFarki(f.beyanTutar,fatKayitToplam(f).toplam)).length;
   const kilitDeg=list.filter(fatKilitSonrasiDegisti).length;
   sOzet.birlestir('A'+(sOzet.satirlar.length+1)+':M'+(sOzet.satirlar.length+1));
-  sOzet.satir([{v:'DIKKAT EDILECEKLER',b:B.band}],{h:20});
-  kpi(['FAZLA FATURALANAN URUN','TUTAR FARKI OLAN BELGE','KILIT SONRASI DEGISEN','CIFT FATURA NO','TASLAK','KILITLI'],
+  sOzet.satir([{v:L.ozDikkat,b:B.band}],{h:20});
+  kpi(L.kpi2,
       [fazlaUrun, farkli, kilitDeg, list.filter(f=>ciftNo.has(f.id)).length,
        list.filter(fatTaslakMi).length, list.filter(fatKilitliMi).length], [0,1,2,3]);
   sOzet.bos();
   if(!tekPara){
     sOzet.birlestir('A'+(sOzet.satirlar.length+1)+':M'+(sOzet.satirlar.length+1));
-    sOzet.satir([{v:'Listede birden cok para birimi var ('+[...paralar].join(', ')+') - toplamlar bilerek toplanmadi, her faturanin tutari kendi sutununda durur.',b:B.dipnot}],{h:16});
+    sOzet.satir([{v:L.karmaNot([...paralar].join(', ')),b:B.dipnot}],{h:16});
     sOzet.bos();
   }
   sOzet.birlestir('A'+(sOzet.satirlar.length+1)+':M'+(sOzet.satirlar.length+1));
-  sOzet.satir([{v:'FATURALAR  —  numaraya tiklayin, belgenin kendi sayfasi acilir',b:B.band}],{h:20});
-  const ozBas=sOzet.satir(['#','Fatura No','Tarih','Firma','Durum','Satir','Miktar','Toplam (KDV\'siz)',
-    'KDV','Odenecek','PB','Tutar Farki','Uyari'].map(v=>({v,b:B.th})),{h:30});
+  sOzet.satir([{v:L.ozFatBand,b:B.band}],{h:20});
+  const ozBas=sOzet.satir(L.ozTh.map(v=>({v,b:B.th})),{h:30});
   list.forEach((f,i)=>{
     const z=i%2?1:0, td=z?B.tdZ:B.td, mik=z?B.mikZ:B.mik, par=z?B.parZ:B.par, ts=z?B.tdSZ:B.tdS;
     const t=fatKayitToplam(f), dur=fatDurumu(f), sayfa=sayfaEsle.get(f.id);
     const fark=fatTutarFarki(f.beyanTutar,t.toplam);
     const hav=firmaHavuzu(f.companyId);
     const fazla=fatSatirlari(f).filter(r=>{ const u=hav.get(String(r.key||'')); return u&&u.durum==='fazla'; }).length;
-    const uy=[]; if(fazla) uy.push(fmtNum(fazla)+' urunde FAZLA faturalama');
-    if(fark) uy.push('tutar farki '+fatPara(fark,f.paraBirimi||'TRY'));
-    if(fatKilitSonrasiDegisti(f)) uy.push('kilit sonrasi degisti');
-    if(ciftNo.has(f.id)) uy.push('ayni fatura no baska belgede de var');
-    const n=sOzet.satir([{v:i+1,b:ts},{v:f.no||'(numarasiz)',b:B.linkH},
+    const uy=[]; if(fazla) uy.push(L.uyFazla(fmtNum(fazla)));
+    if(fark) uy.push(L.uyFark(fatPara(fark,f.paraBirimi||'TRY')));
+    if(fatKilitSonrasiDegisti(f)) uy.push(L.uyKilit);
+    if(ciftNo.has(f.id)) uy.push(L.uyCift);
+    const n=sOzet.satir([{v:i+1,b:ts},{v:f.no||L.numarasiz,b:B.linkH},
       {v:xlsxTarihSeri(f.tarih),b:z?B.trhZ:B.trh},{v:fatCompany(f)||'-',b:td},
-      {v:FAT_KAYIT_DURUM[dur].ad,b:B.kayit[dur]},{v:fatSatirlari(f).length,b:ts},
+      {v:L.kayit[dur],b:B.kayit[dur]},{v:fatSatirlari(f).length,b:ts},
       {v:fatToplamMiktar(f),b:B.mikSec(fatToplamMiktar(f),z)},{v:Number(t.matrah.toFixed(2)),b:par},
       {v:Number(t.kdv.toFixed(2)),b:par},{v:Number(t.toplam.toFixed(2)),b:z?B.parBZ:B.parB},
       {v:f.paraBirimi||'TRY',b:ts},{v:fark?Number(fark.toFixed(2)):'',b:fark?B.fark:par},
@@ -27123,9 +27301,9 @@ function fatKitapKur(){
     ozetSatir.set(f.id,n);
     if(sayfa) sOzet.kopru('B'+n,sayfa.ad,f.no||'',('A1'));
   });
-  if(!list.length) sOzet.satir([{v:'Suzgece uyan fatura yok.',b:B.dipnot}]);
+  if(!list.length) sOzet.satir([{v:L.suzgecBos,b:B.dipnot}]);
   else sOzet.satir([{v:'',b:B.topBos},{v:'',b:B.topBos},{v:'',b:B.topBos},{v:'',b:B.topBos},
-    {v:'TOPLAM',b:B.topEt},{v:toplamSatir,b:B.topMkT},{v:toplamMiktar,b:B.topMkSec(toplamMiktar)},
+    {v:L.toplam,b:B.topEt},{v:toplamSatir,b:B.topMkT},{v:toplamMiktar,b:B.topMkSec(toplamMiktar)},
     {v:tekPara?Number(tumTop.matrah.toFixed(2)):'',b:B.topSy},
     {v:tekPara?Number(tumTop.kdv.toFixed(2)):'',b:B.topSy},
     {v:tekPara?Number(tumTop.toplam.toFixed(2)):'',b:B.topSy},
@@ -27133,39 +27311,71 @@ function fatKitapKur(){
   sOzet.suzgec('A'+ozBas+':M'+Math.max(ozBas,sOzet.satirlar.length-1));
   sOzet.bos();
   sOzet.birlestir('A'+(sOzet.satirlar.length+1)+':M'+(sOzet.satirlar.length+1));
-  sOzet.satir([{v:'URUN BAZINDA GENEL TOPLAM  —  alinan mal ile faturalanan mal',b:B.band}],{h:20});
+  sOzet.satir([{v:L.gtBand,b:B.band}],{h:20});
   const gAlinan=genel.reduce((a,u)=>a+(u.alinan||0),0), gIade=genel.reduce((a,u)=>a+(u.iade||0),0);
   const gNet=genel.reduce((a,u)=>a+(u.net||0),0), gFat=genel.reduce((a,u)=>a+(u.fat||0),0);
   const say={fazla:0,tam:0,kismi:0,yok:0}; genel.forEach(u=>say[u.durum]++);
-  sOzet.satir(['Urun','Alinan','Iade','Net','Faturalanan','Kalan','Fazla','Tam','Kismi','Faturasiz'].map(v=>({v,b:B.th})),{h:26});
+  sOzet.satir(L.gtTh.map(v=>({v,b:B.th})),{h:26});
   sOzet.satir([{v:genel.length,b:B.tdS},{v:gAlinan,b:B.mikSec(gAlinan)},{v:gIade,b:B.mikSec(gIade)},
     {v:gNet,b:B.mikSec(gNet)},{v:gFat,b:B.mikSec(gFat)},
     {v:Number((gNet-gFat).toFixed(4)),b:B.mikSec(gNet-gFat)},
     {v:say.fazla,b:say.fazla?B.durum.fazla:B.tdS},{v:say.tam,b:B.durum.tam},
     {v:say.kismi,b:B.durum.kismi},{v:say.yok,b:B.durum.yok}],{h:20});
-  const dn=sOzet.satir([{v:'Bu blok TUM urunleri kapsar (fatura suzgecinden bagimsiz). Ayrintili dokum: '+MUT+' sayfasi.',b:B.dipnot}],{h:16});
+  const dn=sOzet.satir([{v:L.gtNot(MUT),b:B.dipnot}],{h:16});
   sOzet.birlestir('A'+dn+':M'+dn);
   sOzet.bos();
-  const lk=sOzet.satir([{v:'▶ '+MUT,b:B.link},{v:'',b:B.link},{v:'▶ '+FRM,b:B.link}],{h:18});
-  sOzet.kopru('A'+lk,MUT,'▶ '+MUT); sOzet.kopru('C'+lk,FRM,'▶ '+FRM);
+  const lk=sOzet.satir([{v:L.git(MUT),b:B.link},{v:'',b:B.link},{v:L.git(FRM),b:B.link}],{h:18});
+  sOzet.kopru('A'+lk,MUT,L.git(MUT)); sOzet.kopru('C'+lk,FRM,L.git(FRM));
   sOzet.birlestir('A'+lk+':B'+lk); sOzet.birlestir('C'+lk+':D'+lk);
 
   // Her fatura sayfasindan ozetteki KENDI SATIRINA donus
   list.forEach(f=>{ const s=sayfaEsle.get(f.id);
-    if(s) s.kopru('A2',OZET,'◀ Ozet','B'+(ozetSatir.get(f.id)||1)); });
+    if(s) s.kopru('A2',OZET,L.geri,'B'+(ozetSatir.get(f.id)||1)); });
 
-  return {wb, list, genel};
+  return {wb, list, genel, L};
 }
 
-function exportFaturaKitabi(){
+/* DIL SECIMI dosya URETILMEDEN once sorulur. Uretip sonra "yanlis dil" demek,
+   300 KB'lik bir dosyayi bosuna indirtmek olurdu. Son secim hatirlanir: ayni
+   kullanici cogunlukla ayni dilde aliyor, her seferinde ayni tiklama olmasin. */
+function fatKitapDilSor(){
   if(!fatCanSee()){ toast('Bu bolume erisim yetkiniz yok','err'); return; }
   if(!_FAT_YUKLENDI){ toast('Fatura defteri henuz yuklenmedi','warn'); return; }
+  const n=fatListeFiltreli().length;
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:480px">
+    <div class="modal-head"><h3>Excel Kitabi - Dil</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body">
+      <p class="t-meta" style="margin:0 0 12px;line-height:1.55"><b>${fmtNum(n)}</b> fatura · <b>${fmtNum(n+3)}</b> sayfa.
+        Dosyadaki <b>butun basliklar, sutun adlari ve aciklamalar</b> secilen dilde yazilir.
+        Sayfa duzeni, sutun sirasi, renkler ve sayi/tarih bicimi <b>uc dilde de birebir ayni</b> kalir -
+        iki ayri dilde alinan iki dosya yan yana konup satir satir karsilastirilabilir.</p>
+      ${FAT_KITAP_DILLER.map(d=>`<div class="matd-row" onclick="exportFaturaKitabi('${d.kod}')" title="${esc(d.ipucu)}">
+        <span class="cat-tag" style="background:var(--primary)22;color:var(--primary);font-weight:700;flex-shrink:0">${d.kod.toUpperCase()}</span>
+        <b style="font-size:13px;flex-shrink:0">${esc(d.yerel)}</b>
+        <span class="t-meta" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(d.ipucu)}</span>
+        ${FAT_KITAP_DIL===d.kod?`<span class="t-meta" style="margin-left:auto;flex-shrink:0">son secim</span>`:''}
+      </div>`).join('')}
+      <p class="t-meta" style="margin:10px 0 0;font-size:11px">Uygulama ekrani Turkce kalir - cevrilen sey yalnizca indirilen dosyadir.</p>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Vazgec</button></div>
+  </div></div>`;
+  closeModal();
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function exportFaturaKitabi(dil){
+  if(!fatCanSee()){ toast('Bu bolume erisim yetkiniz yok','err'); return; }
+  if(!_FAT_YUKLENDI){ toast('Fatura defteri henuz yuklenmedi','warn'); return; }
+  closeModal();
+  // bilinmeyen kod sessizce Turkceye dusmez, SON SECIME duser - kullanicinin
+  // en son bilerek sectigi dil, varsayilandan daha iyi bir tahmindir
+  const d=FAT_KITAP_DILLER.some(x=>x.kod===dil)?dil:FAT_KITAP_DIL;
   try{
-    const {wb,list}=fatKitapKur();
-    const ad='fatura-kitabi_'+new Date().toISOString().slice(0,10)+'.xlsx';
+    const {wb,list,L}=fatKitapKur(d);
+    FAT_KITAP_DIL=d;
+    const ad=L.dosya+'_'+new Date().toISOString().slice(0,10)+'.xlsx';
     xlsxIndir(ad,wb.bayt());
-    logAction('fatura','Fatura kitabi (cok sayfali Excel) alindi - '+list.length+' fatura, '+wb.sayfalar.length+' sayfa');
-    toast(fmtNum(list.length)+' fatura · '+fmtNum(wb.sayfalar.length)+' sayfa Excel indirildi');
+    logAction('fatura','Fatura kitabi ('+d.toUpperCase()+') alindi - '+list.length+' fatura, '+wb.sayfalar.length+' sayfa');
+    toast(fmtNum(list.length)+' fatura · '+fmtNum(wb.sayfalar.length)+' sayfa · '+fatKitapDilAdi(d)+' Excel indirildi');
   }catch(err){
     console.error('fatura kitabi',err);
     toast('Excel olusturulamadi: '+((err&&err.message)||err),'err');
