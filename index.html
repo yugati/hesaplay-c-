@@ -2508,6 +2508,34 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .nord-tur label.on{border-color:var(--blue);background:color-mix(in srgb,var(--blue) 10%,var(--panel));color:var(--ink)}
 .nord-tur input{width:auto;margin:0;flex-shrink:0}
 .nord-tur-info{font-size:11px;color:var(--dim);font-family:var(--mono);margin-top:7px;line-height:1.55}
+/* ═══ COKLU SARTNAME SECIMI ═══════════════════════════════════════════════════
+   Tek <select multiple> DEGIL, onay kutulu liste: Ctrl+tik ile secim uzun kod
+   listelerinde yanlislikla tum secimi sifirliyor ve dokunmatikte kullanilamiyor.
+   Liste kaydirmali ve sabit yukseklikte - 60 sartnameli bir binada form aksi halde
+   ekrandan tasiyor ve alttaki alanlar (sirket, PDF) gorunmuyordu. */
+.frow labellabel.nord-sart-sw{display:flex;align-items:center;gap:8px;margin:0 0 8px;cursor:pointer;
+  text-transform:none;letter-spacing:0;font-size:12.5px;color:var(--ink);font-weight:500}
+label.nord-sart-sw input{width:auto;margin:0;cursor:pointer;flex:none}
+.nord-sart-arac{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:7px}
+.nord-sart-arac .btn{padding:4px 10px;font-size:11.5px;min-height:0}
+.nord-sart-liste{max-height:calc(30 * var(--vh));min-height:64px;overflow-y:auto;
+  border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.frow labellabel.nord-sart-row{display:flex;align-items:center;gap:9px;padding:7px 10px;cursor:pointer;
+  border-bottom:1px solid var(--line);text-transform:none;letter-spacing:0;font-weight:400;
+  font-size:12px;color:var(--ink);margin:0;transition:background var(--transition)}
+.nord-sart-row:last-child{border-bottom:none}
+.nord-sart-row:hover{background:var(--hover)}
+/* Secili satir SOL KENAR CIZGISIYLE isaretlenir: onay kutusu 60 satirli listede
+   tarama sirasinda gozden kaciyor, renkli kenar bir bakista okunuyor. */
+.nord-sart-row.on{background:color-mix(in srgb,var(--primary) 8%,transparent);
+  box-shadow:inset 3px 0 0 var(--primary)}
+label.nord-sart-row input{width:auto;margin:0;cursor:pointer;flex:none}
+.nord-sart-row .nss-kod{font-family:var(--mono);font-size:11.5px;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}
+.nord-sart-row .nss-bol{font-size:11px;color:var(--mute);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.nord-sart-row .nss-n{margin-left:auto;flex:none;font-family:var(--mono);font-size:10.5px;
+  color:var(--mute);background:var(--bg);border:1px solid var(--line);border-radius:20px;padding:1px 8px}
 /* toplu malzeme secici: satir tiklanabilir <label>, miktar kutusu secilmeden pasif */
 .nat-list{max-height:400px}
 .nat-row{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;background:var(--panel);border:1px solid var(--line);border-radius:9px;cursor:pointer;transition:border-color .12s,background .12s;margin:0}
@@ -19520,7 +19548,7 @@ function openNewOrderPage(){
   if(!guard('order'))return;
   if(DB.proje.specs.filter(s=>!s.is_deleted).length===0){ toast("Once sartname kalemleri tanimlanmali","err"); return; }
   const bins=binaOptsFor('').filter(b=>canSeeBuilding(b));
-  NORD={no:'',date:new Date().toISOString().slice(0,10),bina:bins[0]||'',sart:'',companyId:'',newCompany:'',pdf:null,imzaYok:false,lines:[_nordEmptyLine()],editId:null,draftId:null,..._nordAtamaDefaults()};
+  NORD={no:'',date:new Date().toISOString().slice(0,10),bina:bins[0]||'',sart:'',sartCoklu:false,sartlar:[],companyId:'',newCompany:'',pdf:null,imzaYok:false,lines:[_nordEmptyLine()],editId:null,draftId:null,..._nordAtamaDefaults()};
   // PINV: fatura detay sayfasindan gelinmis olabilir - o sayfa render sirasinda panellerden
   // ONCE bakildigi icin burada kapatilmazsa siparis ekrani hic gorunmez
   PNEWORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PBINAY=false; PINV=false; _INV=null; SEARCH="";
@@ -19580,6 +19608,15 @@ function nordEditSartFiltresi(o,lines){
   const grups=[...new Set((lines||[]).map(l=>l.grup).filter(Boolean))];
   return (grups.length===1 && gecerli.has(grups[0]))?grups[0]:'';
 }
+/* Duzenlemeye acilista SARTNAME KIPI: kaydedilmis coklu secim varsa (iki ya da daha fazla
+   gecerli grup) coklu kip acilir, yoksa tek deger cozulur. Gecerlilik suzgeci sart: sonradan
+   silinmis/yeniden adlandirilmis bir grup secili gorunup arama sonuclarini bosaltirdi. */
+function nordEditSartDurumu(o,lines){
+  const gecerli=new Set(nordSartGrupListesi(o.bina||'').map(x=>x.g));
+  const kayitli=(Array.isArray(o.sartFiltreler)?o.sartFiltreler:[]).filter(g=>gecerli.has(g));
+  if(kayitli.length>1) return {coklu:true,sartlar:kayitli,sart:''};
+  return {coklu:false,sartlar:[],sart:kayitli[0]||nordEditSartFiltresi(o,lines)};
+}
 function openEditOrderPage(orderId){
   const o=(DB.proje.orders||[]).find(x=>x.id===orderId);
   if(!o){ toast('Siparis bulunamadi','err'); return; }
@@ -19619,8 +19656,9 @@ function openEditOrderPage(orderId){
   });
   // ATAMA siparisi duzenlenirken sart bos birakilmaz: atamada NORD.sart HEDEF SARTNAME'dir
   // (karsilik kalemin acildigi yer), yalnizca bir arama filtresi degil.
+  const _sd=o.tur==='atama'?{coklu:false,sartlar:[],sart:o.hedefSart||''}:nordEditSartDurumu(o,lines);
   NORD={no:o.no||'',date:o.date?new Date(o.date).toISOString().slice(0,10):new Date().toISOString().slice(0,10),
-    bina:o.bina||'',sart:o.tur==='atama'?(o.hedefSart||''):nordEditSartFiltresi(o,lines),companyId,newCompany,pdf:o.pdf||null,imzaYok:!!o.imzaYok,lines:lines.length?lines:[_nordEmptyLine()],editId:orderId,draftId:null,
+    bina:o.bina||'',sart:_sd.sart,sartCoklu:_sd.coklu,sartlar:_sd.sartlar,companyId,newCompany,pdf:o.pdf||null,imzaYok:!!o.imzaYok,lines:lines.length?lines:[_nordEmptyLine()],editId:orderId,draftId:null,
     tur:o.tur==='atama'?'atama':'normal',kaynakBina:o.kaynakBina||'',kaynakSart:o.kaynakSart||'',atamaNeden:o.atamaNeden||'',atamaAciklama:o.atamaAciklama||'',
     tedarikBina:o.tedarikBina||'',tedarikSart:o.tedarikSart||'',tedarikNot:o.tedarikNot||''};
   // PINV: fatura detay sayfasindan gelinmis olabilir - o sayfa render sirasinda panellerden
@@ -19651,9 +19689,74 @@ function nordAltToLine(a,sp,qty,raw){
   const la=altLive(a); // birim/marka/foto kutuphaneden CANLI okunur - alt kaydindaki bayat kopya degil
   return {specId:sp.id,altId:a.id,code:la.code,ad:la.name,cat:sp.cat||'',unit:la.unit||sp.unit||'',grup:specGroupKey(sp),img:la.img,brand:la.brand,qty:qty!=null&&!isNaN(qty)?qty:'',raw:raw||''};
 }
-// SARTNAME FILTRESI: secilirse arama/eslestirme yalniz o sartnamenin kalemlerinde yapilir.
-// Ayni urun birden fazla sartnamede gectiginde Excel yapistirma eslesmesi tekillesir.
-function nordSartMatch(s){ return !NORD.sart||specGroupKey(s)===NORD.sart; }
+/* ═══ SARTNAME FILTRESI ═════════════════════════════════════════════════════════
+   Secilirse arama/eslestirme yalniz o sartnamenin kalemlerinde yapilir; ayni urun birden
+   fazla sartnamede gectiginde Excel yapistirma eslesmesi tekillesir.
+   TEK ve COKLU olmak uzere iki kip vardir; kip NORD.sartCoklu ile acilip kapanir:
+     kapali -> NORD.sart   (tek deger, eski davranis birebir korunur)
+     acik   -> NORD.sartlar (dizi; bir fatura birkac sartnameye ait kalem tasiyabiliyor)
+   IKISI BIRDEN OKUNMAZ: kip hangisiyse yalnizca o alan gecerlidir (bkz. nordSartMatch),
+   yoksa kapatildiktan sonra unutulmus bir dizi aramayi sessizce daraltirdi.
+   ATAMADA COKLU YOKTUR: orada NORD.sart bir filtre degil, karsilik kalemlerin ACILDIGI
+   hedef sartnamedir - birden fazla hedef anlamsizdir (bkz. atamaEnsureSpec). */
+function nordSartlar(){ const x=NORD&&NORD.sartlar; return Array.isArray(x)?x:[]; }
+function nordSartCoklu(){ return !!(NORD&&NORD.sartCoklu&&!nordAtama()); }
+// Etkin filtre kumesi - bos kume "tumu" demektir
+function nordSartSecili(){
+  if(nordSartCoklu()) return nordSartlar();
+  return (NORD&&NORD.sart)?[NORD.sart]:[];
+}
+function nordSartMatch(s){
+  const sec=nordSartSecili();
+  if(!sec.length) return true;
+  return sec.indexOf(specGroupKey(s))>=0;
+}
+/* Binanin sartname gruplari: kalemi GERCEKTEN olan gruplar, kalem sayisi ve bolum adiyla.
+   Tek/coklu secim ve <option> listesi ayni kaynaktan beslenir - biri digerinde olmayan bir
+   grubu gosterirse kip degistirince secim sessizce kaybolurdu. */
+function nordSartGrupListesi(bina){
+  if(!bina) return [];
+  const gc={}; (DB.proje.specs||[]).filter(x=>!x.is_deleted&&(x.bina||'')===bina)
+    .forEach(x=>{ const g=specGroupKey(x); gc[g]=(gc[g]||0)+1; });
+  const srMeta=new Map((DB.proje.sartnames||[]).filter(x=>x.bina===bina).map(x=>[x.code,x]));
+  return Object.keys(gc).sort((a,b)=>a.localeCompare(b,'tr'))
+    .map(g=>({g,n:gc[g],section:(srMeta.get(g)||{}).section||''}));
+}
+/* Kip anahtari. Secim KIPLER ARASINDA TASINIR: acilirken tek deger dizinin ilk uyesi olur,
+   kapanirken dizinin ilk uyesi tek deger olur - kullanici ayni filtreyi bastan kurmasin. */
+function nordSartCokluSet(on){
+  if(!NORD) return;
+  if(on){
+    const mevcut=NORD.sart?[NORD.sart]:[];
+    NORD.sartlar=nordSartlar().length?nordSartlar():mevcut;
+    NORD.sartCoklu=true; NORD.sart='';
+  } else {
+    const ilk=nordSartlar()[0]||'';
+    NORD.sartCoklu=false; NORD.sartlar=[]; NORD.sart=ilk;
+  }
+  render();
+}
+// Listedeki bir sartnameyi ac/kapa - indeksle adreslenir (kod metni onclick'e gomulmez)
+function nordSartToggle(i){
+  if(!NORD) return;
+  const liste=nordSartGrupListesi(NORD.bina||''); const it=liste[i]; if(!it) return;
+  const cur=nordSartlar().slice();
+  const k=cur.indexOf(it.g);
+  if(k>=0) cur.splice(k,1); else cur.push(it.g);
+  NORD.sartlar=cur; render();
+}
+function nordSartTumu(on){
+  if(!NORD) return;
+  NORD.sartlar=on?nordSartGrupListesi(NORD.bina||'').map(x=>x.g):[];
+  render();
+}
+// Satir arama kutusunun ipucu metni: kac sartname icinde arandigi
+function nordSartOzet(){
+  const sec=nordSartSecili();
+  if(!sec.length) return '';
+  if(sec.length===1) return sec[0];
+  return sec.length+' sartname';
+}
 function nordSetSart(v){
   // ATAMA modunda NORD.sart yalnizca bir filtre degil, karsilik kalemlerin acildigi HEDEF
   // SARTNAME'dir: degistirilirse bagli satirlar baska sartnamedeki kalemleri gosterir kalir.
@@ -19666,11 +19769,30 @@ function nordSetSart(v){
 // Bir binanin sartname (grup) <option> listesi - hem hedef hem kaynak secimi kullanir.
 // Kaynak: kalemi GERCEKTEN olan gruplar; boylece secim her zaman en az bir kalemle eslesir.
 function nordSartOptsFor(bina,selected){
-  if(!bina) return '';
-  const gc={}; (DB.proje.specs||[]).filter(s=>!s.is_deleted&&(s.bina||'')===bina).forEach(s=>{ const g=specGroupKey(s); gc[g]=(gc[g]||0)+1; });
-  const srMeta=new Map((DB.proje.sartnames||[]).filter(x=>x.bina===bina).map(x=>[x.code,x]));
-  return Object.keys(gc).sort((a,b)=>a.localeCompare(b,'tr')).map(g=>{ const sr=srMeta.get(g);
-    return `<option value="${esc(g)}" ${selected===g?'selected':''}>${esc(g)}${sr&&sr.section?' · '+esc(sr.section):''} (${gc[g]} kalem)</option>`; }).join('');
+  return nordSartGrupListesi(bina).map(({g,n,section})=>
+    `<option value="${esc(g)}" ${selected===g?'selected':''}>${esc(g)}${section?' · '+esc(section):''} (${n} kalem)</option>`).join('');
+}
+/* COKLU SECIM KUTUSU: her sartname bir onay kutusu. Tek <select multiple> kullanilmadi -
+   Ctrl+tik ile secim, uzun kod listelerinde yanlislikla tum secimi sifirlayabiliyor ve
+   dokunmatikte kullanilamiyor. */
+function nordSartCokluHtml(bina){
+  const liste=nordSartGrupListesi(bina);
+  if(!liste.length) return `<p class="t-meta" style="margin:0">Bu binada sartname kalemi yok.</p>`;
+  const sec=nordSartlar();
+  const kalem=liste.filter(x=>sec.indexOf(x.g)>=0).reduce((t,x)=>t+x.n,0);
+  return `<div class="nord-sart-arac">
+      <button type="button" class="btn btn-ghost" onclick="nordSartTumu(true)">Tumunu Sec</button>
+      <button type="button" class="btn btn-ghost" onclick="nordSartTumu(false)">Secimi Temizle</button>
+      <span class="t-meta" style="margin-left:auto">${sec.length?`${fmtNum(sec.length)} sartname · ${fmtNum(kalem)} kalem`:'secim yok - tum kalemlerde aranir'}</span>
+    </div>
+    <div class="nord-sart-liste">${liste.map(({g,n,section},i)=>{
+      const on=sec.indexOf(g)>=0;
+      return `<label class="nord-sart-row ${on?'on':''}">
+        <input type="checkbox" ${on?'checked':''} onchange="nordSartToggle(${i})">
+        <span class="nss-kod">${esc(g)}</span>
+        ${section?`<span class="nss-bol">${esc(section)}</span>`:''}
+        <span class="nss-n">${fmtNum(n)}</span>
+      </label>`; }).join('')}</div>`;
 }
 const ATAMA_NEDENLERI=[['sartname-disi','Hedef binanin sartnamesinde tanimli degil'],
   ['ortak','Ortak / tip malzeme - tek sartnamede tanimli'],
@@ -19686,7 +19808,8 @@ function nordSetTur(v){
   if(NORD.lines.some(l=>nordLineOk(l)||l.raw) && !confirm('Siparis turu degisince girilen malzeme satirlari temizlenecek. Devam edilsin mi?')){ render(); return; }
   NORD.tur=yeni;
   NORD.lines=[_nordEmptyLine()];
-  NORD.sart='';   // atamada hedef sartname bilincli secilmeli, "tumu" gecerli degil
+  // atamada hedef sartname bilincli secilmeli, "tumu" gecerli degil; coklu kip de kapanir
+  NORD.sart=''; NORD.sartlar=[]; if(yeni==='atama') NORD.sartCoklu=false;
   // tedarik kaynagi her iki turde de gecerlidir - tur degisince SILINMEZ (yalnizca atamaya ozel alanlar temizlenir)
   if(yeni==='normal') Object.assign(NORD,{kaynakBina:'',kaynakSart:'',atamaNeden:'',atamaAciklama:''});
   render();
@@ -21190,10 +21313,12 @@ function nordSetBina(b){
   if(nordAtama()){
     if((b||'')===(NORD.bina||'')) return;
     if(NORD.lines.some(l=>nordLineOk(l)||l.raw) && !confirm('Hedef bina degisince atanan malzeme satirlari temizlenecek. Devam edilsin mi?')){ render(); return; }
-    NORD.bina=b; NORD.sart=''; NORD.lines=[_nordEmptyLine()]; render(); return;
+    NORD.bina=b; NORD.sart=''; NORD.sartlar=[]; NORD.lines=[_nordEmptyLine()]; render(); return;
   }
   NORD.bina=b;
-  NORD.sart=''; // sartname filtresi binaya ozgudur - yeni binada tum kalemlerle baslanir
+  // sartname filtresi binaya ozgudur - yeni binada tum kalemlerle baslanir. Coklu secim de
+  // sifirlanir: kodlar binaya ait, otekinin listesinde bulunmayan bir secim aramayi bosaltirdi.
+  NORD.sart=''; NORD.sartlar=[];
   NORD.lines=NORD.lines.map(l=>{
     const src=l.specId?((l.code?l.code+' ':'')+(l.ad||'')):l.raw;
     if(!src) return _nordEmptyLine();
@@ -21384,7 +21509,7 @@ function nordLinesHtml(){
           ${l.img?`<img src="${l.img}" class="nord-thumb">`:''}
           <div class="nord-prod-txt"><b>${esc(l.ad)}</b><span>${esc([l.code,l.brand].filter(Boolean).join(' · '))}</span>${tags}</div></div>
        <div class="ac-wrap" style="display:none"><input id="nord_ad_${i}"></div>`
-      :`<div class="ac-wrap"><input id="nord_ad_${i}" placeholder="${l.dagitKey?'Bu urun birden fazla kaleme dagitilacak':l.raw?'Eslesme bulunamadi - urun secin':(NORD.sart?esc(NORD.sart)+' icinde ara...':'Ozel no, spek no veya ad ara...')}" value="${esc(l.raw||'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" onclick="nordAc(${i})" style="cursor:pointer${l.raw?';border-color:var(--red)66':''}">${status}</div>`;
+      :`<div class="ac-wrap"><input id="nord_ad_${i}" placeholder="${l.dagitKey?'Bu urun birden fazla kaleme dagitilacak':l.raw?'Eslesme bulunamadi - urun secin':(nordSartOzet()?esc(nordSartOzet())+' icinde ara...':'Ozel no, spek no veya ad ara...')}" value="${esc(l.raw||'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" onclick="nordAc(${i})" style="cursor:pointer${l.raw?';border-color:var(--red)66':''}">${status}</div>`;
     // parcali giris binasinda satir opsiyonel olarak bir lokasyona baglanabilir (toplu alimlar lokasyonsuz girilebilir)
     /* LOKASYON: satirda ozel kod kirilimi varsa lokasyon KIRILIMDAN gelir - kodlarin
        katlari defterden cozulur (bkz. nordOzelApply). Birden fazla kata dagilmissa tek
@@ -21497,10 +21622,13 @@ function renderNewOrderPage(){
           <div class="frow"><label>${nordAtama()?'Hedef Bina':'Bina'} * <span class="t-meta">(${specCount} sartname kalemi)</span></label>
             <select onchange="nordSetBina(this.value)">${bins.map(b=>`<option ${b===NORD.bina?'selected':''}>${esc(b)}</option>`).join('')}</select></div>
           <div class="frow"><label>${nordAtama()?'Hedef Sartname *':'Sartname'} <span class="t-meta">(${nordAtama()?'karsilik kalemler buraya acilir':'aramayi daraltir'})</span></label>
-            <select onchange="nordSetSart(this.value)">
+            ${nordAtama()?'':`<label class="nord-sart-sw" title="Bir fatura birkac sartnameye ait kalem tasiyorsa acin: arama secilen sartnamelerin TAMAMINDA yapilir. Kapatirsaniz secimin ilki tek filtre olarak kalir.">
+              <input type="checkbox" ${nordSartCoklu()?'checked':''} onchange="nordSartCokluSet(this.checked)">
+              <span>Coklu sartname secimi</span></label>`}
+            ${nordSartCoklu()?nordSartCokluHtml(NORD.bina):`<select onchange="nordSetSart(this.value)">
               <option value="">${nordAtama()?'- secin -':`- tumu (${specCount} kalem) -`}</option>
               ${nordSartOptsFor(NORD.bina,NORD.sart)}
-            </select></div>
+            </select>`}</div>
           ${nordAtama()?`
           <div class="frow"><label>Atama Nedeni</label>
             <select onchange="NORD.atamaNeden=this.value">
@@ -21659,6 +21787,9 @@ async function saveNewOrder(){
     // siparis yeniden duzenlemeye acildiginda ayni secimle acilsin diye saklanir
     // (bkz. nordEditSartFiltresi). Atamada secim zaten hedefSart olarak kaydedilir.
     sartFiltre:atama?'':(NORD.sart||''),
+    // COKLU KIP: birden fazla sartname secilmisse dizisi de saklanir; duzenlemeye acilista
+    // kip ve secim aynen geri gelir (bkz. nordEditSartDurumu).
+    sartFiltreler:atama?[]:(NORD.sartCoklu?nordSartlar().slice():[]),
     // ATAMA kunyesi: bina daima HEDEF binadir (tum ekranlar o.bina okur), kaynak yalnizca iz
     tur:atama?'atama':'normal', kaynakBina:atama?NORD.kaynakBina:'', kaynakSart:atama?(NORD.kaynakSart||''):'',
     hedefSart:atama?(NORD.sart||''):'', atamaNeden:atama?(NORD.atamaNeden||''):'', atamaAciklama:atama?(NORD.atamaAciklama||''):'',
@@ -21737,6 +21868,7 @@ async function nordSaveDraft(){
   if(!hasAny){ toast('Taslak icin en az siparis no veya bir urun girin','err'); return; }
   const id=NORD.draftId||uid();
   const draft={ id, src:'nord', no:(NORD.no||'').trim(), date:NORD.date, bina:NORD.bina, sart:NORD.sart||'',
+    sartCoklu:!!NORD.sartCoklu, sartlar:nordSartlar().slice(),
     companyId:NORD.companyId||'', newCompany:NORD.newCompany||'', pdf:NORD.pdf||null, imzaYok:!!NORD.imzaYok,
     tur:NORD.tur||'normal', kaynakBina:NORD.kaynakBina||'', kaynakSart:NORD.kaynakSart||'',
     atamaNeden:NORD.atamaNeden||'', atamaAciklama:NORD.atamaAciklama||'',
@@ -21756,6 +21888,7 @@ function nordOpenDraft(id){
   const d=orderDraftsGet().find(x=>x.id===id);
   if(!d){ toast('Taslak bulunamadi','err'); return; }
   NORD={ no:d.no||'', date:d.date||new Date().toISOString().slice(0,10), bina:d.bina||'', sart:d.sart||'',
+    sartCoklu:!!d.sartCoklu, sartlar:Array.isArray(d.sartlar)?d.sartlar.slice():[],
     companyId:d.companyId||'', newCompany:d.newCompany||'', pdf:d.pdf||null, imzaYok:!!d.imzaYok,
     tur:d.tur==='atama'?'atama':'normal', kaynakBina:d.kaynakBina||'', kaynakSart:d.kaynakSart||'',
     atamaNeden:d.atamaNeden||'', atamaAciklama:d.atamaAciklama||'',
