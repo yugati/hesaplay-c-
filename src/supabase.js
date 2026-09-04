@@ -874,7 +874,15 @@ export async function sbLoadAllData(scope) {
      siparis goremez ve "hic fatura kesilmemis" gibi bir tabloyla karsilasirdi.
      Sunucudaki karsiligi lib/yetki.js OKUMA_MODULLERI - ikisi birlikte degisir. */
   const needProjeFull = need('proje') || need('siparis') || need('fatura')
-  const needCompanies = need('proje') || need('tanimlar') || need('siparis') || need('fatura')
+  /* 'rapor' DA SIRKETLERI ISTER: Tutanak ekrani ("Tutanak Ac") canSee('rapor') ile
+     aciliyor ve tutanagin TESLIM EDEN firmasi Sirketler kaydina baglanir - hem
+     belge kodunun firma harfleri (index.html tutKodOnek) hem ciktinin anteti
+     (tutAntet) oradan okunur. Liste inmediginde tutSetParty firmaId'yi hicbir
+     zaman kuramiyor, tutanak KODSUZ kaliyor ve antet eski yedege dusuyordu;
+     Sirketler'e tasima yapildiginda antet de tamamen bosalacakti.
+     Sunucudaki karsiligi lib/yetki.js OKUMA_MODULLERI.companies - ikisi birlikte
+     degisir, yalnizca burasi degistirilirse istek 403 doner. */
+  const needCompanies = need('proje') || need('tanimlar') || need('siparis') || need('fatura') || need('rapor')
 
   const tasks = { settingsRes: anahtarDegerGetir('app_settings') }
   if (need('alet')) {
