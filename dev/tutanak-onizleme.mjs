@@ -28,7 +28,7 @@ const PORT = Number(process.env.PORT) || 5180;
    Satir numarasi SABITLENMEZ: bloklar adiyla bulunur, boylece dosyada
    satir kaydiran her duzenlemeden sonra da calisir. */
 const FONKSIYONLAR = [
-  'tutFirma', 'tutIadeVar', 'tutIadeTarihi', 'tutAntet', 'tutLineImg',
+  'sirketAntet', 'tutFirma', 'tutIadeVar', 'tutIadeTarihi', 'tutAntet', 'tutLineImg',
   'tutFilledLines', 'tutTotals',
   'tutanakPrintCss', 'tutPrintHead', 'tutPrintFoot', 'tutPrintTableHead', 'tutanakPrintHtml'
 ];
