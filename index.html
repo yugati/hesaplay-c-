@@ -19819,7 +19819,7 @@ function openNewOrderPage(){
   if(!guard('order'))return;
   if(DB.proje.specs.filter(s=>!s.is_deleted).length===0){ toast("Once sartname kalemleri tanimlanmali","err"); return; }
   const bins=binaOptsFor('').filter(b=>canSeeBuilding(b));
-  NORD={no:'',date:new Date().toISOString().slice(0,10),bina:bins[0]||'',sart:'',sartCoklu:false,sartlar:[],companyId:'',newCompany:'',pdf:null,imzaYok:false,lines:[_nordEmptyLine()],editId:null,draftId:null,..._nordAtamaDefaults()};
+  NORD={no:'',date:new Date().toISOString().slice(0,10),bina:bins[0]||'',sart:'',sartCoklu:false,sartlar:[],companyId:'',newCompany:'',pdf:null,imzaYok:false,not:'',lines:[_nordEmptyLine()],editId:null,draftId:null,..._nordAtamaDefaults()};
   // PINV: fatura detay sayfasindan gelinmis olabilir - o sayfa render sirasinda panellerden
   // ONCE bakildigi icin burada kapatilmazsa siparis ekrani hic gorunmez
   PNEWORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PBINAY=false; PINV=false; _INV=null; SEARCH="";
@@ -19929,7 +19929,7 @@ function openEditOrderPage(orderId){
   // (karsilik kalemin acildigi yer), yalnizca bir arama filtresi degil.
   const _sd=o.tur==='atama'?{coklu:false,sartlar:[],sart:o.hedefSart||''}:nordEditSartDurumu(o,lines);
   NORD={no:o.no||'',date:o.date?new Date(o.date).toISOString().slice(0,10):new Date().toISOString().slice(0,10),
-    bina:o.bina||'',sart:_sd.sart,sartCoklu:_sd.coklu,sartlar:_sd.sartlar,companyId,newCompany,pdf:o.pdf||null,imzaYok:!!o.imzaYok,lines:lines.length?lines:[_nordEmptyLine()],editId:orderId,draftId:null,
+    bina:o.bina||'',sart:_sd.sart,sartCoklu:_sd.coklu,sartlar:_sd.sartlar,companyId,newCompany,pdf:o.pdf||null,imzaYok:!!o.imzaYok,not:'',lines:lines.length?lines:[_nordEmptyLine()],editId:orderId,draftId:null,
     tur:o.tur==='atama'?'atama':'normal',kaynakBina:o.kaynakBina||'',kaynakSart:o.kaynakSart||'',atamaNeden:o.atamaNeden||'',atamaAciklama:o.atamaAciklama||'',
     tedarikBina:o.tedarikBina||'',tedarikSart:o.tedarikSart||'',tedarikNot:o.tedarikNot||''};
   // PINV: fatura detay sayfasindan gelinmis olabilir - o sayfa render sirasinda panellerden
@@ -21924,6 +21924,12 @@ function renderNewOrderPage(){
             <span class="ibi" tabindex="0">i<span>Fotograf/kopya elinizde ama imzali asil evrak henuz ulasmadiysa isaretleyin. Siparis karesinde <b style="color:var(--red)">kirmizi unlem</b> gorunur; evrak gelince siparis detayindan tek dugumle kaldirirsiniz. Stok ve ilerlemeyi etkilemez.</span></span>
           </div>
         </div>
+        <div class="nord-card">
+          <div class="nord-card-title">${icoNot()} Siparis Notu
+            <span class="ibi" tabindex="0">i<span>Bu siparise dustugunuz serbest not - miktar, stok ve ilerleme hesaplarina karismaz. Siparis detayinda NOTLAR bolumunde gorunur, sonradan da not eklenebilir.</span></span>
+          </div>
+          <div class="frow" style="margin:0"><textarea rows="2" placeholder="orn. iki koli eksik geldi, irsaliye elde fatura bekleniyor..." oninput="NORD.not=this.value">${esc(NORD.not||'')}</textarea></div>
+        </div>
         <div class="nord-card nord-paste-hint">
           <div class="nord-card-title">${icoMerge()} Tedarik Kaynagi
             <span class="ibi" tabindex="0">i<span>Malzeme fiilen hangi binanin hazir sartnamesinden alindi? <b>Her urun icin ayri ayri</b> belirtilir: satirdaki <b>"+ Tedarik kaynagi"</b> dugmesine basin.<br>Yalnizca kunye bilgisidir - secilen binanin hedef, alim ve montaj sayilari <b>degismez</b>, hicbir dusum yapilmaz.</span></span>
@@ -22073,8 +22079,12 @@ async function saveNewOrder(){
     // fisleri kayittan duser ve alimdan dusulen miktarlar sessizce geri gelirdi.
     iadeler:exOrder?orderIadeler(exOrder):[],
     // NOTLAR DA TASINIR - gerekce iadelerle ayni: nesne sifirdan kuruluyor, aktarilmazsa
-    // siparise dusulmus butun notlar her duzenlemede sessizce silinirdi.
-    notlar:exOrder?orderNotlar(exOrder):[]};
+    // siparise dusulmus butun notlar her duzenlemede sessizce silinirdi. Formdaki not kutusuna
+    // bir sey yazildiysa (yeni siparis ya da duzenlemede eklenen ek not) listeye eklenir.
+    notlar:(()=>{ const nl=exOrder?orderNotlar(exOrder).slice():[];
+      const txt=(NORD.not||'').trim();
+      if(txt) nl.push({id:uid(),ts:Date.now(),user:CURRENT_USER.username,text:txt});
+      return nl; })()};
   /* Iade STOK HAREKETLERI de fislerden yeniden uretilir (siparisin binasi/no'su/tarihi
      duzenlemede degismis olabilir). AMA newItems'a KATILMAZ, ayri durur:
      alim girisleri her duzenlemede YENI kimlikle (uid) yazilir, eski kimlikler silinir -
@@ -22145,7 +22155,7 @@ async function nordSaveDraft(){
   const id=NORD.draftId||uid();
   const draft={ id, src:'nord', no:(NORD.no||'').trim(), date:NORD.date, bina:NORD.bina, sart:NORD.sart||'',
     sartCoklu:!!NORD.sartCoklu, sartlar:nordSartlar().slice(),
-    companyId:NORD.companyId||'', newCompany:NORD.newCompany||'', pdf:NORD.pdf||null, imzaYok:!!NORD.imzaYok,
+    companyId:NORD.companyId||'', newCompany:NORD.newCompany||'', pdf:NORD.pdf||null, imzaYok:!!NORD.imzaYok, not:NORD.not||'',
     tur:NORD.tur||'normal', kaynakBina:NORD.kaynakBina||'', kaynakSart:NORD.kaynakSart||'',
     atamaNeden:NORD.atamaNeden||'', atamaAciklama:NORD.atamaAciklama||'',
     tedarikBina:NORD.tedarikBina||'', tedarikSart:NORD.tedarikSart||'', tedarikNot:NORD.tedarikNot||'',
@@ -22165,7 +22175,7 @@ function nordOpenDraft(id){
   if(!d){ toast('Taslak bulunamadi','err'); return; }
   NORD={ no:d.no||'', date:d.date||new Date().toISOString().slice(0,10), bina:d.bina||'', sart:d.sart||'',
     sartCoklu:!!d.sartCoklu, sartlar:Array.isArray(d.sartlar)?d.sartlar.slice():[],
-    companyId:d.companyId||'', newCompany:d.newCompany||'', pdf:d.pdf||null, imzaYok:!!d.imzaYok,
+    companyId:d.companyId||'', newCompany:d.newCompany||'', pdf:d.pdf||null, imzaYok:!!d.imzaYok, not:d.not||'',
     tur:d.tur==='atama'?'atama':'normal', kaynakBina:d.kaynakBina||'', kaynakSart:d.kaynakSart||'',
     atamaNeden:d.atamaNeden||'', atamaAciklama:d.atamaAciklama||'',
     tedarikBina:d.tedarikBina||'', tedarikSart:d.tedarikSart||'', tedarikNot:d.tedarikNot||'',
