@@ -8849,6 +8849,206 @@ function topmYapistirUygula(){
   toast(satirlar.length+' urun kutusu olusturuldu');
 }
 
+/* ── EXCEL DOSYASINDAN YUKLEME (SABLON) ───────────────────────────────────────
+   "Excel'den Yapistir" pano icindir: Excel'i acip satirlari secip kopyalamak
+   gerekir ve cok satirli hucreler (marka/not) yapistirmada bozulur. Dosya yolu
+   ikisini de atlar - .xlsx dogrudan okunur.
+
+   SUTUNLAR kutuphane disa aktarmasinin (exportMaterialLib) urun sutunlariyla
+   BIREBIR ayni isim ve sirada. Boylece ogrenilecek TEK bir "ic format" var:
+   kutuphaneden indirilen dosya da, bu sayfanin sablonu da ayni okuyucudan gecer.
+   Baslik eslestirmesi _hdrMap ile esnektir (buyuk/kucuk harf, Turkce karakter,
+   "Agirlik (kg)" gibi parantezli ekler farketmez), sutun sirasi degisse de
+   calisir; tanimadigi sutunlari yok sayar.
+
+   EKLEME-ONLY, BILEREK: dosya veritabanina YAZILMAZ, yalnizca kutulari doldurur.
+   Excel'in genel ice aktarma yolu (upsertMaterialsFromRows) mevcut kaydi bulunca
+   GUNCELLER ve bagli sartname satirlarina da yazar - bu sayfa bilerek oraya
+   girmez. Kutuphanede zaten olan bir kod/ad kutuda hata olur, sessizce ustune
+   yazilmaz; yazma yine yalnizca "Tumunu Ekle" ile, sbInsertProjeMaterials'tan.
+   Bu yuzden sablonda ACTION/islem sutunu da YOKTUR - silme/guncelleme yolu
+   acilmasin diye. */
+const TOPM_XLS_BASLIK=['Malzeme Ismi','Standart Numarasi','Urun Kodu','Marka','Agirlik (kg)','Not','Etiket','Resim Linki','Resim Linki 2','Birim','Kategori','Proje','Varyant Kodlar'];
+const TOPM_XLS_GENIS=[{wch:42},{wch:18},{wch:18},{wch:16},{wch:11},{wch:24},{wch:24},{wch:40},{wch:40},{wch:8},{wch:14},{wch:16},{wch:22}];
+function topmSablonIndir(){
+  const wb=XLSX.utils.book_new();
+  /* 1) DOLDURULACAK sayfa: yalnizca baslik satiri. Ornek satirlar bilerek AYRI
+     sayfada durur - sablonun icinde birakilan ornek satir, silmeyi unutan
+     kullaniciya kutuphaneye sahte urun ekletirdi. */
+  const ws=XLSX.utils.aoa_to_sheet([TOPM_XLS_BASLIK.slice()]);
+  ws['!cols']=TOPM_XLS_GENIS.slice();
+  XLSX.utils.book_append_sheet(wb,ws,'Yeni Urunler');
+  // 2) ORNEK: ayni basliklar + doldurulmus satirlar. Okuyucu bu sayfayi ATLAR.
+  const wsOrn=XLSX.utils.aoa_to_sheet([TOPM_XLS_BASLIK.slice(),
+    ['Galvaniz Kablo Tavasi 200mm','TS EN 61386','121491','Hilti',0.45,'Kapakli, delikli','Tava, Galvaniz, Ic Mekan','','','metre','Tava','X Santiyesi','121491-100, 121491-300'],
+    ['LED Armatur 36W IP65','TS EN 60598','ARM-3665','Philips, Osram',1.2,'','Aydinlatma, IP65','','','adet','Aydinlatma','',''],
+    ['Kablo Kanali 40x40','','KK4040','',0.28,'PVC','Kanal','','','metre','Tava','','']]);
+  wsOrn['!cols']=TOPM_XLS_GENIS.slice();
+  XLSX.utils.book_append_sheet(wb,wsOrn,'ORNEK');
+  /* 3) BOLUMLER: Kategori sutununa yazilabilecek gecerli degerler. Tanimsiz bir
+     bolum kutuda hata verdigi icin (bkz. _topmSatirCoz) liste sablonun icinde
+     olmali - kullanici tahmin etmek zorunda kalmasin. Markalar bilgi amacli:
+     listede olmayan marka kabul edilir, kutuda "yabanci" isaretiyle gorunur. */
+  const bolumler=topmKategoriler().slice().sort((a,b)=>String(a).localeCompare(String(b),'tr'));
+  const markalar=markaListesi().map(x=>x.ad).sort((a,b)=>String(a).localeCompare(String(b),'tr'));
+  const gecerli=[['BOLUM (Kategori sutunu - birebir yazin)','MARKA (bilgi amacli - liste disi da yazilabilir)']];
+  for(let i=0;i<Math.max(bolumler.length,markalar.length);i++) gecerli.push([bolumler[i]||'',markalar[i]||'']);
+  const wsG=XLSX.utils.aoa_to_sheet(gecerli); wsG['!cols']=[{wch:44},{wch:46}];
+  XLSX.utils.book_append_sheet(wb,wsG,'Bolumler');
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+    ['TOPLU URUN EKLEME SABLONU - NASIL KULLANILIR'],
+    [''],
+    ['0) BU DOSYA YALNIZCA YENI URUN EKLER. Mevcut bir urunu guncellemez, silmez,'],
+    ['   uzerine yazmaz. Kutuphanede zaten olan bir urun kodu veya ad, yuklemeden'],
+    ['   sonra kutusunda hata olarak isaretlenir ve eklenmez; diger satirlar'],
+    ['   eklenir. Mevcut urunu degistirmek icin kutuphane satirindaki duzenle'],
+    ['   dugmesini kullanin.'],
+    [''],
+    ['1) Sadece "Yeni Urunler" sayfasini doldurun. Her satir bir yeni urun olur.'],
+    ['   Baslik satirini silmeyin, sutun adlarini degistirmeyin. Sutun sirasini'],
+    ['   degistirebilir, kullanmadiginiz sutunlari bos birakabilirsiniz.'],
+    ['   "ORNEK", "Bolumler" ve bu sayfa okunmaz - silmenize gerek yok.'],
+    [''],
+    ['2) ZORUNLU tek alan: Malzeme Ismi. Digerleri opsiyoneldir.'],
+    [''],
+    ['3) COK DEGERLI HUCRELER - hepsi ayni hucrede, VIRGULLE ayrilir:'],
+    ['   Marka          : Hilti, Schneider'],
+    ['   Etiket         : Yangin, Exproof, HDG'],
+    ['   Varyant Kodlar : 121491-100, 121491-300   (ayni urunun olcu/renk halleri,'],
+    ['                    her biri kendi urun kodu; ana kodun kendisi yazilmaz)'],
+    [''],
+    ['4) Agirlik (kg): sayi olmali (orn. 0,45). Bos birakilabilir. Sayi olmayan'],
+    ['   deger yazilirsa satir kutuda "Agirlik sayisal olmali" hatasi verir.'],
+    [''],
+    ['5) Kategori: "Bolumler" sayfasindaki degerlerden biri olmali (birebir).'],
+    ['   Listede olmayan bir bolum yazarsaniz satir hata verir - once Bolum &'],
+    ['   Sartname ekranindan bolumu tanimlayin. Bos birakilabilir.'],
+    [''],
+    ['6) Resim Linki / Resim Linki 2: dogrudan resim dosyasina isaret eden http'],
+    ['   adresi. Bilgisayardaki fotograf dosyalari Excel ile yuklenemez - onlari'],
+    ['   yukleme sonrasi kutunun icinden secebilirsiniz.'],
+    [''],
+    ['7) Varyantlarin olcu/renk gibi OZELLIK SUTUNLARI Excel ile aktarilamaz;'],
+    ['   yalnizca varyant kodlari gelir. Ozellikleri kutu icinden ekleyebilirsiniz.'],
+    [''],
+    ['8) Dosyayi "Excel\'den Yukle" ile secin: satirlar kutu olarak acilir, ekranda'],
+    ['   duzeltebilirsiniz. Kutuphaneye yazma yalnizca "Tumunu Ekle" ile olur.'],
+    [''],
+    ['9) Kutuphaneden indirilen "Malzeme_Kutuphanesi" Excel\'i de ayni sutunlari'],
+    ['   tasidigi icin bu ekrana dogrudan yuklenebilir - yalnizca yeni satirlari'],
+    ['   eklenir, mevcutlar hata olarak isaretlenir.']
+  ]),'OKUBENI');
+  XLSX.writeFile(wb,'toplu_urun_ekleme_sablonu.xlsx');
+  toast('Sablon indirildi');
+}
+/* Urun sayfasini bul: once sablonun/kutuphane ciktisinin adlari, sonra "Malzeme
+   Ismi" basligi tasiyan ilk sayfa. Bilgi sayfalari (ORNEK/OKUBENI/Bolumler/
+   Kategori Ozeti/Teknik Bilgi) elenir - "Teknik Bilgi" sayfasinda da malzeme adi
+   sutunu vardir, elenmezse yanlislikla o okunurdu. */
+function _topmXlsSayfa(wb){
+  const atla=/ornek|okubeni|bolumler|kategori ozeti|teknik/;
+  const sadelestir=s=>norm(s).replace(/[^a-z0-9]/g,'');
+  let bosAday=null;                       // basligi dogru ama veri satiri olmayan sayfa
+  const dene=nm=>{
+    const ws=wb.Sheets[nm]; if(!ws) return null;
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false,defval:''});
+    if(!rows||!rows.length) return null;
+    const pick=_hdrMap(rows[_firstDataRow(rows)]||[]);
+    if(pick('malzeme ismi','malzeme adi','material_name','materialname','malzeme','urun adi','ad','name')<0) return null;
+    /* DOLU sayfa her zaman one gecer: doldurulmamis "Yeni Urunler" sayfasi yuzunden
+       baska sayfadaki veri gozden kacmasin. Bos sayfa yine de akilda tutulur -
+       doldurulmamis sablon yuklendiginde "sayfa bulunamadi" gibi yaniltici bir
+       uyari yerine dogrusu ("veri satiri yok") verilebilsin diye. */
+    if(rows.length>1) return rows;
+    if(!bosAday) bosAday=rows;
+    return null;
+  };
+  for(const tercih of ['Yeni Urunler','Malzeme_Kutuphanesi','Malzemeler']){
+    const hit=wb.SheetNames.find(s=>sadelestir(s)===sadelestir(tercih));
+    if(hit){ const r=dene(hit); if(r) return r; }
+  }
+  for(const nm of wb.SheetNames){ if(atla.test(norm(nm))) continue; const r=dene(nm); if(r) return r; }
+  return bosAday;
+}
+/* Virgullu ondalik: hucre METIN olarak bicimlenmisse ("0,45") sayiya cevrilir.
+   Gercek sayi hucreleri zaten 0.45 olarak gelir, dokunulmaz. */
+function _topmSayiHucre(v){
+  const s=String(v==null?'':v).trim().replace(/\s/g,'');
+  return /^-?\d+(?:[.,]\d+)?$/.test(s)?s.replace(',','.'):s;
+}
+function topmExcelDosya(e){
+  const f=_TOPM, dosya=e.target.files&&e.target.files[0];
+  e.target.value='';                       // ayni dosya ust uste secilebilsin
+  if(!f||!dosya)return;
+  const rd=new FileReader();
+  rd.onload=ev=>{ try{
+    const wb=XLSX.read(ev.target.result,{type:'binary'});
+    const rows=_topmXlsSayfa(wb);
+    if(!rows){ toast('Excel\'de urun sayfasi bulunamadi - "Malzeme Ismi" baslikli bir sayfa gerekli','err'); return; }
+    const h=_firstDataRow(rows), pick=_hdrMap(rows[h]||[]);
+    // alias listeleri upsertMaterialsFromRows ile ayni - iki yol ayni dosyayi okur
+    const iName =pick('material_name','materialname','malzeme ismi','malzeme adi','malzeme','urun adi','ad','name');
+    const iCode =pick('material_code','materialcode','urun kodu','kod','kodu','code');
+    const iBrand=pick('brand','marka');
+    const iCat  =pick('category','kategori','bolum');
+    const iUnit =pick('unit','birim');
+    const iNote =pick('note','aciklama','not','notu');
+    const iStd  =pick('standart numarasi','standart no','standart','standardi','standard');
+    const iWgt  =pick('agirlik (kg)','agirlik(kg)','agirlik_kg','agirlik','agirligi','weight','weight (kg)','kg');
+    const iTags =pick('etiket','etiketler','tags','tag');
+    const iAlt  =pick('varyant kodlar','varyant kod','varyant kodu','varyant','alternatif kodlar','alias','variant codes');
+    const iProje=pick('proje','project');
+    const iImg  =pick('resim linki','resim_linki','image_url','imageurl','resim url','resim','fotograf linki','fotograf','foto','photo','image','gorsel');
+    const iImg2 =pick('resim linki 2','resim_linki_2','resim url 2','fotograf linki 2','fotograf 2','image_url_2','image2','photo2');
+    if(iName<0){ toast('Sayfada "Malzeme Ismi" sutunu yok - sablonu indirip kullanin','err'); return; }
+    const veri=rows.slice(h+1).filter(r=>r&&r.some(c=>String(c).trim()!==''));
+    if(!veri.length){ toast('Dosyada veri satiri yok','err'); return; }
+    /* Her satir tam bir form kutusu acar: cok satirli dosya tarayiciyi zorlar.
+       Sinir koymak yerine ne olacagi soylenip karar kullaniciya birakilir. */
+    if(veri.length>200 && !confirm(veri.length+' satir bulundu - hepsi ayri urun kutusu olarak acilacak ve sayfa yavaslayabilir.\n\nDevam edilsin mi?')) return;
+    let eklenen=0, atlanan=0;
+    veri.forEach(row=>{
+      const al=ix=>ix>=0?_crTemiz(row[ix]).trim():'';
+      const name=al(iName), code=al(iCode);
+      if(!name&&!code){ atlanan++; return; }
+      if(/^(REQUIRED|optional|REQ|blank|ZORUNLU|ops)\b/i.test(name)){ atlanan++; return; }   // sablon aciklama satiri
+      const r=_topmBosSatir();
+      r.name=name; r.code=code;
+      r.brand=al(iBrand)?matBrandParts(al(iBrand).replace(/\s*,\s*/g,'\n')):[];
+      r.standart=al(iStd); r.weight=_topmSayiHucre(al(iWgt)); r.unit=al(iUnit);
+      r.cat=al(iCat); r.tags=parseTagsCell(al(iTags)); r.proje=al(iProje); r.note=al(iNote);
+      // base64 gomulu resim hucreye sigmaz; yalnizca gercek adresler alinir
+      const im=al(iImg), im2=al(iImg2);
+      r.img=/^https?:\/\//i.test(im)?im:null;
+      r.img2=/^https?:\/\//i.test(im2)?im2:null;
+      r.varyant={alanlar:[],satirlar:parseTagsCell(al(iAlt)).map(c=>({kod:c,d:[]}))};
+      f.rows.push(r); eklenen++;
+    });
+    if(!eklenen){ toast('Okunabilir urun satiri bulunamadi','err'); return; }
+    f.rows=f.rows.filter(topmSatirDolu);            // yuklemeden onceki bos kutular gereksiz
+    if(!f.rows.length) f.rows.push(_topmBosSatir());
+    const hata=topmOnDenetim();                     // hatayi kaydede basmadan gorsun
+    topmDraw();
+    const ek=(atlanan?', '+atlanan+' satir atlandi':'');
+    if(hata) toast(eklenen+' urun kutusu olusturuldu'+ek+' - '+hata+' kutuda uyari var','err');
+    else toast(eklenen+' urun kutusu olusturuldu'+ek);
+  }catch(err){ console.error(err); toast('Excel okunamadi: '+((err&&err.message)||err),'err'); } };
+  rd.readAsBinaryString(dosya);
+}
+/* PESIN DENETIM: kaydetmedeki (topmSaveAll) denetimin AYNISI, yazmadan. 100
+   satirlik bir dosyada hatayi ancak "Tumunu Ekle"ye basinca gormek gec kaliyordu.
+   Yalnizca r.err'i isaretler; hicbir sey eklemez/yazmaz. */
+function topmOnDenetim(){
+  const f=_TOPM; if(!f) return 0;
+  const gorulen={keys:new Map(),codes:new Map()}; let hata=0;
+  f.rows.forEach((r,i)=>{
+    if(!topmSatirDolu(r)){ r.err=''; return; }
+    const res=_topmSatirCoz(r,i,gorulen);
+    r.err=res.err||''; if(res.err) hata++;
+  });
+  return hata;
+}
+
 /* Tek kutunun dogrulanmasi + kayit nesnesinin uretilmesi. gorulen: bu kaydetme
    turundaki onceki kutularin anahtar/kod haritasi (sayfa ici tekrar denetimi). */
 function _topmSatirCoz(r,i,gorulen){
@@ -8876,18 +9076,34 @@ function _topmSatirCoz(r,i,gorulen){
     const k=x.kod.toLowerCase(); if(gor.has(k)) return false; gor.add(k); return true;
   });
   const altCodes=varyant.satirlar.map(x=>x.kod);
-  const kodlar=[code,...altCodes].filter(Boolean).map(_kimlikTemiz);
+  const kodlarHam=[code,...altCodes].filter(Boolean);
+  const kodlar=kodlarHam.map(_kimlikTemiz);
+  const kodYazi=c=>kodlarHam[kodlar.indexOf(c)]||c;   // mesajda kullanicinin yazdigi hali gorunsun
+  /* CAKISMA MESAJI HANGI ALANIN carpistigini SOYLER. Onceden tek bir "zaten var" /
+     "N. kutudaki urunun ayni" cumlesi vardi ve ADI farkli, KODU ayni kalemlerde
+     (orn. ayni cizim kodlu ama farkli KKS etiketli panolar: ...00BKP22GH001 ve
+     ...00BKP23GH001) kullanici hakli olarak "adlar farkli, neden hata veriyor"
+     diye takiliyordu. Kimlik KODUN KENDISIDIR - matKey'e bakin: kod doluysa ada
+     hic bakilmaz, dolayisiyla ayni kod = ayni urun. Mesaj bunu ve cikis yolunu
+     acikca yazar; kural degismez, yalnizca anlasilir olur. */
   // 1) KUTUPHANEYE karsi: bir kod yalnizca TEK urune ait olabilir (saveMaterial ile ayni kural)
-  const dup=(DB.proje.materials||[]).find(x=>{
+  let carpanKod='';
+  const dupKod=kodlar.length?(DB.proje.materials||[]).find(x=>{
     const xk=matAllCodes(x).map(_kimlikTemiz);
-    if(kodlar.length && kodlar.some(c=>xk.includes(c))) return true;
-    return matKey(x.code,x.name)===matKey(code,name);
-  });
-  if(dup) return {err:'Kutuphanede zaten var: '+(dup.code||dup.name)+' - degistirmek icin kutuphane satirindaki duzenle dugmesini kullanin'};
-  // 2) BU SAYFADAKI onceki kutulara karsi
+    const c=kodlar.find(k=>xk.includes(k));
+    if(c){ carpanKod=c; return true; }
+    return false;
+  }):null;
+  if(dupKod) return {err:'"'+kodYazi(carpanKod)+'" kodu kutuphanede zaten kayitli: '+(dupKod.name||dupKod.code)+' - ayni kod iki ayri urune verilemez (adlar farkli olsa da). Kodu bos birakin ya da bu kaleme kendi kodunu verin.'};
+  const dupAd=(DB.proje.materials||[]).find(x=>matKey(x.code,x.name)===matKey(code,name));
+  if(dupAd) return {err:'Kutuphanede zaten var: '+(dupAd.code||dupAd.name)+' - degistirmek icin kutuphane satirindaki duzenle dugmesini kullanin'};
+  // 2) BU SAYFADAKI onceki kutulara karsi. KOD once bakilir: kod carpismasinda
+  //    "ayni urun" degil, hangi KODUN tekrar ettigi yazilsin diye.
+  for(const c of kodlar) if(gorulen.codes.has(c))
+    return {err:'"'+kodYazi(c)+'" kodu '+(gorulen.codes.get(c)+1)+'. kutuda da geciyor - ayni kod iki ayri urune verilemez (adlar farkli olsa da). Kodu bos birakin ya da her kaleme kendi kodunu verin.'};
   const anahtar=matKey(code,name);
-  if(gorulen.keys.has(anahtar)) return {err:(gorulen.keys.get(anahtar)+1)+'. kutudaki urunun ayni'};
-  for(const c of kodlar) if(gorulen.codes.has(c)) return {err:'"'+c+'" kodu '+(gorulen.codes.get(c)+1)+'. kutuda da geciyor'};
+  if(gorulen.keys.has(anahtar))
+    return {err:(gorulen.keys.get(anahtar)+1)+'. kutudaki urunun ayni'+(code?'':' - kod bos oldugu icin ad kimlik sayilir')};
   gorulen.keys.set(anahtar,i); kodlar.forEach(c=>gorulen.codes.set(c,i));
   const now=Date.now();
   return {mat:{id:uid(),code,name,brand:(r.brand||[]).join('\n'),unit:String(r.unit||'').trim(),cat,
@@ -8998,16 +9214,19 @@ function renderTopluMalPage(){
     <div class="sel-bc"><button onclick="closeTopluMalPage()">${icoArr('left')} Malzeme Kutuphanesi</button> ${icoChevron()} <b>Toplu Urun Ekleme</b></div>
     <div class="page-head"><h1>Toplu Urun Ekleme</h1>
       <p class="page-sub">Her kutu bir yeni urun - "Yeni Malzeme" formunun tamami, istediginiz kadar kutu yan yana</p></div>
-    <div class="kata-intro">Kutulari doldurun, <b>Tumunu Ekle</b> hepsini tek seferde kutuphaneye yazar. <b>+ Urun Kutusu Ekle</b> ile yeni kutu acilir; <b>Excel'den Yapistir</b> ile kopyaladiginiz satirlardan toplu kutu uretilir. Hatali kutu sayfada kalir ve nedeni kutunun basinda yazar, digerleri eklenir. <span class="specf-req">*</span> isaretli alan zorunludur.</div>
+    <div class="kata-intro">Kutulari doldurun, <b>Tumunu Ekle</b> hepsini tek seferde kutuphaneye yazar. <b>+ Urun Kutusu Ekle</b> ile yeni kutu acilir; <b>Excel'den Yapistir</b> ile kopyaladiginiz satirlardan, <b>Excel'den Yukle</b> ile doldurdugunuz .xlsx dosyasindan toplu kutu uretilir (<b>Sablon Indir</b> ile bos dosyayi alabilirsiniz). Hatali kutu sayfada kalir ve nedeni kutunun basinda yazar, digerleri eklenir. <span class="specf-req">*</span> isaretli alan zorunludur.</div>
     <datalist id="topmTagList">${allTags.map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
     <div class="topm-bar">
       <button class="btn btn-add" onclick="topmAddRow()">${icoPlus()} Urun Kutusu Ekle</button>
       <button class="btn btn-ghost" title="Excel'den kopyaladiginiz satirlari kutulara donustur" onclick="topmYapistirAc()">${icoXls()} Excel'den Yapistir</button>
+      <button class="btn btn-ghost" title="Doldurulmus .xlsx dosyasindan kutu uret - dosya kutuphaneye YAZILMAZ, once kutulara doner" onclick="document.getElementById('topmXlsFile').click()">${icoXlsIc()} Excel'den Yukle</button>
+      <input type="file" id="topmXlsFile" accept=".xlsx,.xls" class="hidden" onchange="topmExcelDosya(event)">
+      <button class="btn btn-ghost" title="Bos Excel sablonunu indir - sutunlar kutuphane ciktisiyla ayni" onclick="topmSablonIndir()">${icoXlsDis()} Sablon Indir</button>
       <span class="specfg-cnt" id="topmCount"></span>
     </div>
     <div class="topm-cards" id="topmCards">${f.rows.map((r,i)=>topmCardHtml(i)).join('')}</div>
     ${savedHtml}
-    <p class="specf-note">Bu sayfa yalnizca YENI urun ekler: kutuphanede zaten olan bir kod ya da ad kutuda hata verir, uzerine yazmaz - mevcut urunu degistirmek icin kutuphane satirindaki duzenle dugmesini kullanin.</p>
+    <p class="specf-note">Bu sayfa yalnizca YENI urun ekler: kutuphanede zaten olan bir kod ya da ad kutuda hata verir, uzerine yazmaz - mevcut urunu degistirmek icin kutuphane satirindaki duzenle dugmesini kullanin. Yuklenen Excel dosyasi da dogrudan kutuphaneye yazilmaz; once kutulara donusur, kayit yalnizca <b>Tumunu Ekle</b> ile yapilir.</p>
     <div class="kata-page-foot">
       <button class="btn btn-ghost" style="margin-right:auto" onclick="closeTopluMalPage()">${icoArr('left')} Geri Don</button>
       <button class="btn btn-ghost" onclick="topmAddRow()">${icoPlus()} Kutu Ekle</button>
