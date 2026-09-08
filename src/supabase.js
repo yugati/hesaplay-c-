@@ -84,25 +84,67 @@ export async function sbGetAllUsers() {
   return authFetch('/api/users')
 }
 
-export async function sbCreateUser({ username, password, role, sections, buildings, permissions }) {
+export async function sbCreateUser({ username, password, role, sections, buildings, permissions, tel, email, meslek }) {
   return authFetch('/api/users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, role, sections, buildings, permissions: permissions || {} }),
+    body: JSON.stringify({ username, password, role, sections, buildings, permissions: permissions || {}, tel, email, meslek }),
   })
 }
 
-export async function sbUpdateUser(id, { password, role, sections, buildings, permissions }) {
+export async function sbUpdateUser(id, { password, role, sections, buildings, permissions, tel, email, meslek }) {
   return authFetch(`/api/users/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password, role, sections, buildings, permissions }),
+    body: JSON.stringify({ password, role, sections, buildings, permissions, tel, email, meslek }),
   })
 }
 
 export async function sbDeleteUser(id) {
   await authFetch(`/api/users/${encodeURIComponent(id)}`, { method: 'DELETE' })
   return true
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Davetler — kendi organizasyonuna eposta ile kullanici davet etme.
+// sbListInvites/sbCreateInvite/sbResendInvite/sbRevokeInvite: admin oturumu
+// gerektirir (users.js ile ayni authFetch deseni).
+// sbDavetOnizle/sbDavetKabul: KIMLIK DOGRULAMASIZ genel uclara gider - davet
+// kabul eden kisi henuz giris yapmamistir, authFetch zaten token yoksa
+// Authorization basligi eklemiyor (bkz. authFetch yukarida).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function sbListInvites() {
+  return authFetch('/api/invites')
+}
+
+export async function sbCreateInvite({ email, role, sections, buildings, permissions }) {
+  return authFetch('/api/invites', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, role, sections, buildings, permissions: permissions || {} }),
+  })
+}
+
+export async function sbResendInvite(id) {
+  return authFetch(`/api/invites/${encodeURIComponent(id)}`, { method: 'PUT' })
+}
+
+export async function sbRevokeInvite(id) {
+  await authFetch(`/api/invites/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  return true
+}
+
+export async function sbDavetOnizle(token) {
+  return authFetch(`/api/davet/${encodeURIComponent(token)}`)
+}
+
+export async function sbDavetKabul(token, { username, password }) {
+  return authFetch(`/api/davet/${encodeURIComponent(token)}/kabul`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

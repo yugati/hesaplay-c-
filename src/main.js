@@ -13,6 +13,13 @@ import {
   sbCreateUser,
   sbUpdateUser,
   sbDeleteUser,
+  // Davetler
+  sbListInvites,
+  sbCreateInvite,
+  sbResendInvite,
+  sbRevokeInvite,
+  sbDavetOnizle,
+  sbDavetKabul,
   // Organizasyon
   sbOrgListesi,
   sbOrgGecis,
@@ -240,6 +247,14 @@ window.sbGetAllUsers       = sbGetAllUsers
 window.sbCreateUser        = sbCreateUser
 window.sbUpdateUser        = sbUpdateUser
 window.sbDeleteUser        = sbDeleteUser
+
+// ─── Davetler ────────────────────────────────────────────────────────────────
+window.sbListInvites       = sbListInvites
+window.sbCreateInvite      = sbCreateInvite
+window.sbResendInvite      = sbResendInvite
+window.sbRevokeInvite      = sbRevokeInvite
+window.sbDavetOnizle       = sbDavetOnizle
+window.sbDavetKabul        = sbDavetKabul
 
 // ─── Organizasyon ────────────────────────────────────────────────────────────
 window.sbOrgListesi        = sbOrgListesi

@@ -30,7 +30,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { username, password, role, sections, buildings, permissions } = req.body || {}
+    const { username, password, role, sections, buildings, permissions, tel, email, meslek } = req.body || {}
     if (!username || !password) { res.status(400).json({ error: 'Kullanici adi ve sifre gerekli' }); return }
     // Asama 4: yeni sifreler asgari kuraldan gecer (bkz. lib/password.js sifreKurallari)
     const kuralHatasi = sifreKurallari(password, username)
@@ -43,7 +43,7 @@ export default async function handler(req, res) {
          veritabanindan elle konur (bkz. migration_org_1.sql). */
       const { data, error } = await supabaseAdmin
         .from('users')
-        .insert([{ username, password: hashed, role, sections, buildings, permissions: permissions || {}, org_id: org, is_super: false }])
+        .insert([{ username, password: hashed, role, sections, buildings, permissions: permissions || {}, tel: tel || '', email: email || '', meslek: meslek || '', org_id: org, is_super: false }])
         .select().single()
       if (error) throw error
       const safe = { ...data }; delete safe.password

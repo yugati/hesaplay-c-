@@ -34,9 +34,12 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
-    const { password, role, sections, buildings, permissions } = req.body || {}
+    const { password, role, sections, buildings, permissions, tel, email, meslek } = req.body || {}
     const update = { role, sections, buildings }
     if (permissions !== undefined) update.permissions = permissions
+    if (tel !== undefined) update.tel = tel
+    if (email !== undefined) update.email = email
+    if (meslek !== undefined) update.meslek = meslek
     if (password) {
       // Asama 4: sifre kurali. Kullanici adi hedef kayittan geliyor ki "sifre =
       // kullanici adi" durumu da yakalansin.
