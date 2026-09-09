@@ -4522,6 +4522,65 @@ function exportBinaSpecExcel(){
   XLSX.writeFile(wb,`${PBINA}_${PCAT}_${PSPEC}_${new Date().toISOString().slice(0,10)}.xlsx`.replace(/[\\/:*?"<>|]/g,'-'));
   toast("Excel ciktisi indirildi");
 }
+/* ===== MAIN ALANINA YAZ - ODAKTAKI ARAMA KUTUSUNU KOPARMADAN ==============
+   iOS Safari'de odaktaki oge DOM'dan cikinca klavye HARF duzlemine doner.
+   Arama kutusu her tusa basista render() ile bastan yaratildigi icin, urun
+   kodu yazarken her RAKAMDAN sonra klavye harflere atliyordu (telefondan
+   bildirildi). Ayni kopma masaustunde de imleci ve secimi her tusta yeniden
+   kurduruyordu (wireToolbar'daki setSelectionRange yamasi bu yuzden vardi).
+
+   Cozum: cizim sirasinda odakta bir arama kutusu varsa O DUGUM YERINDE
+   BIRAKILIR. Kokten kutuya inen yol uzerindeki kapsayicilar korunur (yalnizca
+   nitelikleri tazelenir), yolun DISINDA kalan butun kardesler yenisiyle
+   degistirilir - yani ekranin geri kalani tam olarak eskisi gibi tazelenir,
+   kutu ise DOM'dan hic kopmaz, dolayisiyla odak da klavye de bozulmaz.
+
+   Hizalama tutmazsa (yeni ekranda arama yok, yapi degismis) duz innerHTML'e
+   dusulur: davranis bugunkunun birebir aynisi olur. Odakta arama kutusu
+   YOKKEN de - yani cizimlerin neredeyse tamaminda - duz innerHTML calisir. */
+function mainYaz(m,html){
+  const ara=document.activeElement;
+  /* Yalnizca ODAKTAKI bir INPUT korunur (arama kutulari, form alanlari).
+     Kimligi olmayan ya da input olmayan odaklar icin duz innerHTML - yani
+     cizimlerin neredeyse tamami bugunku yoldan gecer. */
+  if(!(m&&ara&&ara.id&&ara.tagName==='INPUT'&&m.contains(ara))){ m.innerHTML=html; return; }
+  const yeni=document.createElement('div');
+  yeni.innerHTML=html;
+  const yeniAra=/^[A-Za-z][\w-]*$/.test(ara.id)?yeni.querySelector('#'+ara.id):null;
+  if(!yeniAra){ m.innerHTML=html; return; }   // kutu yeni ekranda yok: normal cizim
+  const zEski=[], zYeni=[];
+  for(let n=ara;n&&n!==m;n=n.parentElement) zEski.unshift(n);
+  for(let n=yeniAra;n&&n!==yeni;n=n.parentElement) zYeni.unshift(n);
+  if(!zEski.length||zEski.length!==zYeni.length){ m.innerHTML=html; return; }
+  /* Kutunun NITELIKLERI tazelenir (sinif, ipucu, disabled...); value ATLANIR,
+     onu asagidaki senkron kurali yonetir. */
+  mainNitelik(yeniAra,ara,'value');
+  /* DEGER SENKRONU: kutunun icerigi PROGRAMLA degismis olabilir - "Filtreleri
+     temizle", kapsam sekmesi ve bolum degisimi SEARCH'u bosaltir. iOS Safari'de
+     bir dugmeye dokunmak odagi kutudan ALMAZ, dolayisiyla o cizimde de kutu
+     korunur; senkron olmasa liste bosalir ama kutuda eski yazi kalirdi.
+     Kullanici yazarken iki deger zaten esittir, bu satir hic calismaz. */
+  const yeniDeger=yeniAra.getAttribute('value');
+  if(yeniDeger!=null&&yeniDeger!==ara.value) ara.value=yeniDeger;
+  let eEb=m, yEb=yeni;
+  for(let i=0;i<zYeni.length;i++){
+    const eYol=zEski[i], yYol=zYeni[i];
+    const cocuklar=[...yEb.childNodes];
+    const k=cocuklar.indexOf(yYol);
+    [...eEb.childNodes].forEach(c=>{ if(c!==eYol) c.remove(); });
+    cocuklar.forEach((c,idx)=>{ if(c===yYol) return;
+      if(idx<k) eEb.insertBefore(c,eYol); else eEb.appendChild(c); });
+    // yol uzerindeki KAPSAYICILARIN nitelikleri de tazelenir (sinif/stil
+    // degismis olabilir); kutunun kendisi yukarida zaten guncellendi
+    if(i<zYeni.length-1) mainNitelik(yYol,eYol);
+    eEb=eYol; yEb=yYol;
+  }
+}
+function mainNitelik(kaynak,hedef,atla){
+  [...hedef.attributes].forEach(a=>{ if(a.name!==atla&&!kaynak.hasAttribute(a.name)) hedef.removeAttribute(a.name); });
+  [...kaynak.attributes].forEach(a=>{ if(a.name!==atla&&hedef.getAttribute(a.name)!==a.value) hedef.setAttribute(a.name,a.value); });
+}
+
 function render(){
   const m=document.getElementById('mainArea');
   const inPanel = (PUSERS&&isAdmin()) || (PAUDIT&&isAdmin()) || PLIB || PDEF || PORD || PCOMP || PEKIP || PNEWORD || PBINAY || PKATA || PODM || PSPECF || PRIMP || PINV || PTUT || PIHT || PFAT || PKODD || PTOPM || PTOPG;
@@ -4533,7 +4592,7 @@ function render(){
      Geri Don ile PINV kapaninca arkadaki liste kaldigi yerden gorunur.
      Siparis silinmisse sayfa kendiliginden dusulur. */
   if(PINV){
-    if(_INV && (DB.proje.orders||[]).some(x=>x.id===_INV.id)){ m.innerHTML=renderOrderPage(); return; }
+    if(_INV && (DB.proje.orders||[]).some(x=>x.id===_INV.id)){ mainYaz(m,renderOrderPage()); return; }
     PINV=false; _INV=null;
   }
   /* TOPLU URUN EKLEME sayfasi: kutuphane LISTESINDEN girilir, bu yuzden PINV gibi
@@ -4541,7 +4600,7 @@ function render(){
      liste kazanir ve sayfa hic gorunmezdi. Kapaninca PLIB kaldigi icin kutuphane
      listesi kendiliginden geri gelir. */
   if(PTOPM){
-    if(_TOPM){ m.innerHTML=renderTopluMalPage(); topmAfterRender(); return; }
+    if(_TOPM){ mainYaz(m,renderTopluMalPage()); topmAfterRender(); return; }
     PTOPM=false;
   }
   /* MOBILIZASYON TOPLU MALZEME EKLEME sayfasi: PTOPM ile ayni kusakta ve ayni
@@ -4550,44 +4609,44 @@ function render(){
      ASAGISINDA karara baglandigi icin daha sonra bakilsaydi arkadaki liste
      kazanir ve sayfa hic gorunmezdi. Kapaninca arkadaki ekran geri gelir. */
   if(PTOPG){
-    if(_TOPG){ m.innerHTML=renderTopluGeciciPage(); topgAfterRender(); return; }
+    if(_TOPG){ mainYaz(m,renderTopluGeciciPage()); topgAfterRender(); return; }
     PTOPG=false;
   }
   // GENEL paneller: hangi bolumde olursak olalim acilabilir (SEC'ten bagimsiz)
-  if(PUSERS && isAdmin()){ m.innerHTML=renderUsers(); wireToolbar&&wireToolbar(); return; }
-  if(PAUDIT && isAdmin()){ m.innerHTML=renderAudit(); wireToolbar&&wireToolbar(); return; }
-  if(PLIB){ m.innerHTML=renderMaterialLib(); wireToolbar(); return; }
-  if(PDEF){ m.innerHTML=renderDefinitions(); wireToolbar(); return; }
-  if(PBINAY){ m.innerHTML=renderBinalarYonetim(); wireToolbar(); return; }
-  if(PNEWORD){ m.innerHTML=renderNewOrderPage(); wireNewOrderPage(); return; }
-  if(PORD){ m.innerHTML=renderAllOrders(); wireToolbar(); return; }
-  if(PCOMP){ m.innerHTML=renderCompanies(); wireToolbar(); return; }
-  if(PEKIP){ m.innerHTML=renderEkipler(); wireToolbar(); return; }
+  if(PUSERS && isAdmin()){ mainYaz(m,renderUsers()); wireToolbar&&wireToolbar(); return; }
+  if(PAUDIT && isAdmin()){ mainYaz(m,renderAudit()); wireToolbar&&wireToolbar(); return; }
+  if(PLIB){ mainYaz(m,renderMaterialLib()); wireToolbar(); return; }
+  if(PDEF){ mainYaz(m,renderDefinitions()); wireToolbar(); return; }
+  if(PBINAY){ mainYaz(m,renderBinalarYonetim()); wireToolbar(); return; }
+  if(PNEWORD){ mainYaz(m,renderNewOrderPage()); wireNewOrderPage(); return; }
+  if(PORD){ mainYaz(m,renderAllOrders()); wireToolbar(); return; }
+  if(PCOMP){ mainYaz(m,renderCompanies()); wireToolbar(); return; }
+  if(PEKIP){ mainYaz(m,renderEkipler()); wireToolbar(); return; }
   // KOD DEFTERI tam sayfasi: BINA baglamina baglidir (sartnameden bagimsiz) - kod-kat
   // eslesmesi bina genelinde tektir. Baska binaya gecilirse sayfa kendiliginden dusulur.
   if(PKODD){
-    if(_KODD && _KODD.bina===PBINA){ m.innerHTML=renderKodDefteriPage(); koddRecount(); return; }
+    if(_KODD && _KODD.bina===PBINA){ mainYaz(m,renderKodDefteriPage()); koddRecount(); return; }
     PKODD=false; _KODD=null;
   }
   // KAT ATA tam sayfasi: acik sartname baglami (bina+sartname) korunuyorsa gosterilir;
   // baglam degistiyse (baska sartnameye/binaya gecildi) sayfa kendiliginden dusulur
   if(PKATA){
-    if(_KATA && _KATA.bina===PBINA && _KATA.code===PSPEC){ m.innerHTML=renderKatAtaPage(); katAtaRecount(); return; }
+    if(_KATA && _KATA.bina===PBINA && _KATA.code===PSPEC){ mainYaz(m,renderKatAtaPage()); katAtaRecount(); return; }
     PKATA=false;
   }
   // ODA METRAJI tam sayfasi: acik sartname baglami + gecerli oda korunuyorsa gosterilir
   if(PODM){
-    if(_ODM && _ODM.bina===PBINA && _ODM.code===PSPEC && getLok(_ODM.lokId)){ m.innerHTML=renderOdaMetrajPage(); return; }
+    if(_ODM && _ODM.bina===PBINA && _ODM.code===PSPEC && getLok(_ODM.lokId)){ mainYaz(m,renderOdaMetrajPage()); return; }
     PODM=false; _ODM=null;
   }
   // RAPOR EXCEL ICE AKTARMA (tam sayfa inceleme/onay ekrani)
   if(PRIMP){
-    if(_RIMP){ m.innerHTML=renderRaporImportPage(); return; }
+    if(_RIMP){ mainYaz(m,renderRaporImportPage()); return; }
     PRIMP=false;
   }
   // SARTNAME KALEMI toplu giris gridi (tam sayfa): acildigi ekran baglami korunuyorsa gosterilir
   if(PSPECF){
-    if(_SPECF && _SPECF.ctx.bina===PBINA && _SPECF.ctx.cat===PCAT && _SPECF.ctx.code===PSPEC){ m.innerHTML=renderSpecFormPage(); specfAfterRender(); return; }
+    if(_SPECF && _SPECF.ctx.bina===PBINA && _SPECF.ctx.cat===PCAT && _SPECF.ctx.code===PSPEC){ mainYaz(m,renderSpecFormPage()); specfAfterRender(); return; }
     PSPECF=false; _SPECF=null;
   }
   /* TUTANAK sayfasi EN SONDA bakilir: boylece tutanak acikken sidebar'dan baska bir
@@ -4601,20 +4660,20 @@ function render(){
   /* FATURA KONTROL sayfasi da ayni kusakta: acikken sidebar'dan baska bir panele
      gecilirse o panel kazansin. PIHT/PTUT ile ayni anda acik olamaz (acilis
      fonksiyonlari birbirinin bayragini dusurur), sira yine de sabitlendi. */
-  if(PFAT){ m.innerHTML=renderFaturaPage(); wireToolbar(); return; }
-  if(PIHT){ m.innerHTML=renderIhtiyacPage(); wireToolbar(); return; }
-  if(PTUT){ m.innerHTML=renderTutanakPage(); wireToolbar(); return; }
+  if(PFAT){ mainYaz(m,renderFaturaPage()); wireToolbar(); return; }
+  if(PIHT){ mainYaz(m,renderIhtiyacPage()); wireToolbar(); return; }
+  if(PTUT){ mainYaz(m,renderTutanakPage()); wireToolbar(); return; }
   if(SEC==='proje'){
-    if(!PBINA){ m.innerHTML=renderBinaSecim(); wireToolbar(); return; }
-    if(!PCAT){ m.innerHTML=renderKategoriSecim(); wireToolbar(); return; }
-    if(!PSPEC){ m.innerHTML=renderSpekSecim(); wireToolbar(); return; }
-    m.innerHTML=projeFilterBar()+projeSubnav()+(TAB==='spec'?renderSpec():TAB==='log'?renderProjeLog():renderProjeOrders());
+    if(!PBINA){ mainYaz(m,renderBinaSecim()); wireToolbar(); return; }
+    if(!PCAT){ mainYaz(m,renderKategoriSecim()); wireToolbar(); return; }
+    if(!PSPEC){ mainYaz(m,renderSpekSecim()); wireToolbar(); return; }
+    mainYaz(m,projeFilterBar()+projeSubnav()+(TAB==='spec'?renderSpec():TAB==='log'?renderProjeLog():renderProjeOrders()));
   }
-  else if(SEC==='gecici') m.innerHTML=geciciSubnav()+(TAB==='orders'?renderOrders():renderLibrary());
-  else if(SEC==='alet') m.innerHTML=renderAletler();
-  else if(SEC==='saha') m.innerHTML=renderSaha();
-  else if(SEC==='rapor'){ m.innerHTML=renderRapor(); wireToolbar(); return; }
-  else if(SEC==='hakedis'){ m.innerHTML=renderHakedis(); wireToolbar(); return; }
+  else if(SEC==='gecici') mainYaz(m,geciciSubnav()+(TAB==='orders'?renderOrders():renderLibrary()));
+  else if(SEC==='alet') mainYaz(m,renderAletler());
+  else if(SEC==='saha') mainYaz(m,renderSaha());
+  else if(SEC==='rapor'){ mainYaz(m,renderRapor()); wireToolbar(); return; }
+  else if(SEC==='hakedis'){ mainYaz(m,renderHakedis()); wireToolbar(); return; }
   wireToolbar();
 }
 // proje filtrelenmis item/spec/order yardimcilari
@@ -16494,7 +16553,10 @@ function renderProjeLog(){
 
 /* ---------- shared UI helpers ---------- */
 function statRow(arr){ return `<div class="stats">`+arr.map(([l,v,s,c])=>`<div class="stat"><div class="strip" style="background:${c}"></div><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`).join('')+`</div>`; }
-function searchBox(ph){ return `<div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4-4"/></svg><input id="searchBox" placeholder="${ph}" value="${esc(SEARCH)}"></div>`; }
+/* autocorrect/autocapitalize KAPALI: bu kutuya cogunlukla urun kodu yaziliyor
+   ("00UYB18EM0426"); iOS kodu bir kelimeye "duzeltiyor" ve ilk harfi buyutuyordu.
+   Arama zaten buyuk-kucuk harf ayirmiyor (norm), kapatmanin bir maliyeti yok. */
+function searchBox(ph){ return `<div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4-4"/></svg><input id="searchBox" placeholder="${ph}" value="${esc(SEARCH)}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></div>`; }
 function emptyRow(cols,t,s){ return `<tr><td colspan="${cols}"><div class="empty"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-14L4 7m8 4v10M4 7v10l8 4"/></svg><p>${t}</p><span style="font-size:12px">${s}</span></div></td></tr>`; }
 function phThumb(cls){ return `<div class="${cls||'thumb-ph'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="9" cy="9" r="2"/></svg></div>`; }
 function icoXls(){return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>';}
@@ -16596,7 +16658,13 @@ function renkHex(r){ const m={'Kirmizi':'#ef4444','Kırmızı':'#ef4444','Siyah'
 function attr(o){ return JSON.stringify(JSON.stringify(o)).replace(/'/g,"\\'"); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function wireToolbar(){ const s=document.getElementById('searchBox');
-  if(s) s.oninput=e=>{ SEARCH=e.target.value; const p=e.target.selectionStart; render(); const n=document.getElementById('searchBox'); if(n){n.focus();n.setSelectionRange(p,p);} }; }
+  if(s) s.oninput=e=>{ SEARCH=e.target.value; const el=e.target, p=el.selectionStart; render();
+    const n=document.getElementById('searchBox'); if(!n) return;
+    /* Kutu korunduysa (bkz. mainYaz) odak da imlec de zaten yerinde: focus()
+       ya da setSelectionRange cagirmak iOS'ta klavyeyi harf duzlemine
+       dondurur. Yalnizca kutu gercekten yenilendiyse geri kurulur. */
+    if(n===el) return;
+    n.focus(); try{ n.setSelectionRange(p,p); }catch(err){} }; }
 function toast(msg,type){ const w=document.getElementById('toasts'); const t=document.createElement('div');
   const cls={err:'err',error:'err',warn:'warn',warning:'warn',info:'info'}[type]||'';
   t.className='toast'+(cls?' '+cls:''); t.textContent=msg; w.appendChild(t);
@@ -27821,7 +27889,8 @@ function fatAra(el){
     render();
     if(!bizdeydi) return;
     const n=document.getElementById('fatAraKutu');
-    if(n){ n.focus(); try{ n.setSelectionRange(p,p); }catch(e){} }
+    if(!n||n===el) return;               // kutu korundu (bkz. mainYaz): dokunma
+    n.focus(); try{ n.setSelectionRange(p,p); }catch(e){}
   },170);
 }
 function fatAraSil(){
