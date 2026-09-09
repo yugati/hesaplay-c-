@@ -803,7 +803,7 @@ tbody tr:hover{background:var(--hover)}
 .brand-cell .cat-tag.expanded{white-space:normal;word-break:break-word;line-height:1.4}
 /* MARKA KUTUPHANESI: cip secici, logo onizleme, "listede olmayan" paneli */
 .marka-cips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px;min-height:24px;align-items:center}
-.marka-cip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:3px 8px;font-size:11.5px;font-weight:600;font-family:var(--mono);color:var(--ink);white-space:nowrap}
+.marka-cip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:3px 8px;font-size:11.5px;font-weight:600;font-family:var(--mono);color:var(--ink);max-width:100%;white-space:normal;word-break:break-word;line-height:1.35}
 .marka-cip img{width:18px;height:18px;object-fit:contain;border-radius:3px;background:#fff}
 .marka-cip b{cursor:pointer;opacity:.55;font-weight:700;font-size:13px;line-height:1}
 .marka-cip b:hover{opacity:1;color:var(--red)}
@@ -2246,7 +2246,7 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
    sanmisti. Sarmalayinca alt satira geciyor, hepsi gorunur kaliyor. */
 .modal-foot{padding:16px 20px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;position:sticky;bottom:0;background:var(--panel)}
 .frow{margin-bottom:14px}
-.frow.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.frow.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
 .frow.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .frow.four{display:grid;grid-template-columns:1fr .7fr 1fr 1fr;gap:10px}
 .frow label{display:block;font-size:11px;color:var(--mute);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
@@ -2392,6 +2392,18 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .mdp-note{margin-top:14px;border:1px dashed var(--line);border-radius:10px;padding:10px 12px;background:var(--panel2)}
 .mdp-note b{display:block;font-size:9.5px;letter-spacing:.5px;color:var(--mute);font-family:var(--mono);margin-bottom:5px}
 .mdp-note span{font-size:12.5px;color:var(--ink);line-height:1.6;white-space:pre-wrap;word-break:break-word}
+/* ACILIR NOT KUTUSU (Detay Sayfasi > DIGER NOT): baslik bir dugmedir, metin altinda acilip
+   kapanir. Diger Not cogunlukla cok satirli iki dilli teknik aciklama tasiyor ve acik dururken
+   sayfanin gerisini (teknik bilgi, kullanim ozeti) asagi itiyordu - bu yuzden KAPALI acilir.
+   Acik/kapali durumu _mdpNot2Acik'te yasar: kucuk resim degistirmek ya da teknik bilgi
+   kaydetmek sayfayi bastan cizdigi icin (bkz. mdpSetImg / _openMatDetailPage) DOM'da tutulsa
+   kaybolurdu. Baska bir malzemeye gecildiginde kapali baslar. */
+.mdp-note-head{display:flex;align-items:center;gap:8px;width:100%;padding:0;margin:0;background:none;border:0;font:inherit;color:inherit;text-align:left;cursor:pointer}
+.mdp-note-head b{margin-bottom:0}
+.mdp-note-ok{margin-left:auto;flex-shrink:0;display:inline-flex;align-items:center;color:var(--mute);transition:transform .16s}
+.mdp-note.on .mdp-note-ok{transform:rotate(90deg)}
+.mdp-note-head:hover b,.mdp-note-head:hover .mdp-note-ok{color:var(--ink)}
+.mdp-note-body{font-size:12.5px;color:var(--ink);line-height:1.6;white-space:pre-wrap;word-break:break-word;margin-top:9px}
 .mdp-sec{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--mute);margin:22px 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .mdp-sec span{font-family:var(--mono);background:var(--dim)33;border-radius:5px;padding:1px 7px;font-size:10px}
 .mdp-sec i{font-style:normal;font-family:var(--mono);font-size:10.5px;color:var(--dim);text-transform:none;letter-spacing:0}
@@ -13935,6 +13947,8 @@ function matKullanimOzet(matId){
 }
 
 let _mdpId=null, _mdpEdit=false, _mdpRows=null, _mdpImgIdx=0;
+// DIGER NOT kutusu acik mi (bkz. .mdp-note-head CSS notu): sayfa bastan cizilse de korunur
+let _mdpNot2Acik=false;
 
 function openMatDetailPage(matId){
   // hata sessizce yutulmasin (openMatDetail ile ayni desen)
@@ -13944,7 +13958,7 @@ function openMatDetailPage(matId){
 function _openMatDetailPage(matId){
   const m=getMaterial(matId);
   if(!m){ toast('Malzeme bulunamadi - sayfayi yenileyin','warn'); return; }
-  if(_mdpId!==matId) _mdpImgIdx=0;   // baska urune gecildi: kucuk resim secimi tasinmaz
+  if(_mdpId!==matId){ _mdpImgIdx=0; _mdpNot2Acik=false; }   // baska urune gecildi: kucuk resim secimi ve acik not tasinmaz
   _mdpId=matId; _mdpEdit=false; _mdpRows=null;
   const imgs=[m.img,m.img2].filter(Boolean);
   if(_mdpImgIdx>=imgs.length) _mdpImgIdx=0;
@@ -13998,7 +14012,12 @@ function _openMatDetailPage(matId){
           <div class="mdp-chips">${chips||'<span class="t-meta" style="font-size:11px">Kod/marka/etiket girilmemis</span>'}</div>
           ${quick?`<div class="mdp-quick">${quick}</div>`:''}
           ${not?`<div class="mdp-note"><b>KUTUPHANE NOTU</b><span>${esc(not)}</span></div>`:''}
-          ${not2?`<div class="mdp-note"><b>DIGER NOT</b><span>${esc(not2)}</span></div>`:''}
+          ${not2?`<div class="mdp-note${_mdpNot2Acik?' on':''}">
+            <button type="button" class="mdp-note-head" onclick="mdpNot2Toggle(this)" aria-expanded="${_mdpNot2Acik?'true':'false'}" title="${_mdpNot2Acik?'Kapatmak':'Okumak'} icin tiklayin">
+              <b>DIGER NOT</b><span class="mdp-note-ok">${icoChevron()}</span>
+            </button>
+            <div class="mdp-note-body" ${_mdpNot2Acik?'':'hidden'}>${esc(not2)}</div>
+          </div>`:''}
         </div>
       </div>
       <div id="mdpTek">${mdpTekHtml()}</div>
@@ -14082,6 +14101,16 @@ function mdpFootHtml(){
 function mdpRedraw(){
   const t=document.getElementById('mdpTek'); if(t) t.innerHTML=mdpTekHtml();
   const f=document.getElementById('mdpFoot'); if(f) f.innerHTML=mdpFootHtml();
+}
+/* DIGER NOT ac/kapa. Sayfa yeniden cizilmez - yalnizca kutu guncellenir; durum
+   _mdpNot2Acik'e yazilir ki sonraki cizimde (kucuk resim/teknik bilgi) ayni kalsin. */
+function mdpNot2Toggle(kutu){
+  _mdpNot2Acik=!_mdpNot2Acik;
+  const box=kutu&&kutu.closest('.mdp-note'); if(!box) return;
+  const govde=box.querySelector('.mdp-note-body'); if(govde) govde.hidden=!_mdpNot2Acik;
+  box.classList.toggle('on',_mdpNot2Acik);
+  kutu.setAttribute('aria-expanded',_mdpNot2Acik?'true':'false');
+  kutu.title=(_mdpNot2Acik?'Kapatmak':'Okumak')+' icin tiklayin';
 }
 function mdpSetImg(i){
   if(_mdpEdit){ toast('Once teknik bilgiyi kaydedin ya da vazgecin'); return; }
