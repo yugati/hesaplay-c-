@@ -2217,6 +2217,10 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .merge-card-head{margin-bottom:8px}
 .merge-tag{display:inline-block;font-size:10px;font-weight:700;font-family:var(--mono);color:var(--green);background:#22c55e1a;border:1px solid #22c55e55;border-radius:5px;padding:2px 7px;letter-spacing:.3px}
 .merge-tag.rm{color:var(--red);background:#ef44441a;border-color:#ef444455}
+/* KORUNUR: silinemeyen (bagli) mukerrer kayit - kirmizi "SILINECEK" ile ayni yerde durur ama
+   kullanicinin onu silinecek sanmamasi icin amber ve kilit anlaminda ayri bir renk tasir */
+.merge-tag.lock{color:var(--amber);background:#f0a0201a;border-color:#f0a02055}
+.dedupe-row.lock{border-color:#f0a02055;background:#f0a02010;cursor:pointer}
 .merge-card .img-prev{width:100%;height:110px;object-fit:contain;border-radius:8px;background:var(--bg);margin-bottom:10px}
 .merge-card .mc-name{font-weight:700;font-size:13px;margin-bottom:8px;min-height:34px}
 .mc-row{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:4px 0;border-bottom:1px dashed var(--line)}
@@ -13419,7 +13423,7 @@ function _odaMetrajRowHtml(s,lokId,pending){
   const skey=norm((s.name||'')+' '+(s.poz||'')+' '+(s.code||'')+' '+katAtaKodlar(s).join(' '));
   return `<tr data-somrow="${esc(skey)}">
     <td style="max-width:340px"><div style="font-weight:600;font-size:12.5px;line-height:1.3">${esc(s.name)}</div>
-      <div style="font-size:10.5px;color:var(--mute);font-family:var(--mono);margin-top:2px">${[s.poz?'Poz '+s.poz:'',s.code].filter(Boolean).map(esc).join(' · ')}</div></td>
+      <div style="font-size:10.5px;color:var(--mute);font-family:var(--mono);margin-top:2px">${[s.poz?'Poz '+s.poz:'',katAtaKodlar(s).join(' '),s.code].filter(Boolean).map(esc).join(' · ')}</div></td>
     <td class="t-meta" style="white-space:nowrap">${esc(s.unit||'-')}</td>
     <td class="t-meta" style="text-align:right;font-family:var(--mono);white-space:nowrap">${hasDist?fmtNum(others):`<span title="Bu kalemde dagilim yok - genel hedef">${fmtNum(s.target)}*</span>`}</td>
     <td style="text-align:right"><input type="number" step="any" min="0" placeholder="—" value="${pv!==''&&pv!=null?esc(pv):''}" data-spec="${s.id}" class="som-inp"></td>
@@ -14627,10 +14631,14 @@ const openEvet=['evet','e','var','acik','yes','y','true','x','1'].includes(norm(
 // satiri varsa mukerrer sayilir (Excel'in coklu sekme/gecikmis senkron yuzunden iki kez
 // yuklenmesi gibi durumlarda olusabilir). En eski kayit (id'nin basindaki zaman damgasi
 // kucuk olan) tutulur, digerleri silinir.
+// OZEL NO ANAHTARIN PARCASIDIR (_specSaveCore kimligiyle ayni): ayni poz altinda ayni urunden
+// birden fazla kalem, yerlesim (ozel) numaralariyla ayrilarak MESRU sekilde durabilir - prohodka /
+// welding box / klemens kutusu gibi her ornegi kendi kodu icin uretilen kalemler boyledir. Ozel no
+// anahtarda olmasaydi bu kalemler "mukerrer" gorunur ve Kayit Temizligi onlari silmeyi onerirdi.
 function findDuplicateSpecs(){
   const groups={};
   DB.proje.specs.filter(s=>!s.is_deleted).forEach(s=>{
-    const key=(s.matId||matKey(s.code,s.name))+'|'+(s.bina||'')+'|'+(s.cat||'')+'|'+specGroupKey(s)+'|'+(s.poz||'').trim().toLowerCase();
+    const key=(s.matId||matKey(s.code,s.name))+'|'+(s.bina||'')+'|'+(s.cat||'')+'|'+specGroupKey(s)+'|'+(s.poz||'').trim().toLowerCase()+'|'+(s.ozelNo||'').trim().toLowerCase();
     (groups[key]=groups[key]||[]).push(s);
   });
   return Object.values(groups).filter(g=>g.length>1);
@@ -14717,28 +14725,52 @@ async function dedupeProjeSpecs(){
   const orph=findOrphanSpecs();
   const stale=findStaleCodeMaterials(new Set(orph.free.map(s=>s.id)));
   if(!dupGroups.length && !orph.free.length && !orph.linked && !stale.length){ toast('Mukerrer, sahipsiz ya da eski kodlu kayit bulunamadi - kayitlar temiz'); return; }
-  _DEDUPE={groups:dupGroups.map(g=>{ const sorted=g.slice().sort((a,b)=>a.id<b.id?-1:1); return {items:sorted,keepId:sorted[0].id,include:true}; }),
+  /* BAGLI KAYIT KORUMASI: siparis satiri / saha raporu / stok hareketi tasiyan bir kalem
+     silinirse o satirlarin specId'si bosa duser - miktarlari hicbir ilerleme hesabina girmez
+     ve hangi kaleme ait olduklari geri bulunamaz. Excel'in replaceScope silmesi bu korumayi
+     zaten uyguluyordu (bkz. korunan/silinecek); iki silme yolu artik ayni kurali paylasiyor.
+     refIdx bir kez kurulur ve ekran boyunca sabit kalir. */
+  const refIdx=buildSpecRefIndex();
+  _DEDUPE={refIdx,
+    groups:dupGroups.map(g=>{ const sorted=g.slice().sort((a,b)=>a.id<b.id?-1:1);
+      // KALACAK KAYIT VARSAYILANI BAGLI OLANDIR - Excel importunun mukerrer onarimindaki kuralla
+      // ayni ("ANA KAYIT, BAGLI OLANDIR"): boylece guncelleme bagli veriyi tasiyan kayitta kalir.
+      const keep=sorted.find(s=>refIdx.has(s.id))||sorted[0];
+      // hicbir kaydi silinemeyen grup (kalacak disindakilerin hepsi bagli) ISARETSIZ acilir -
+      // "N kaydi sil" sayaci gercekten silinecek olani gostersin
+      const silinebilir=sorted.some(s=>s.id!==keep.id && !refIdx.has(s.id));
+      return {items:sorted,keepId:keep.id,include:silinebilir}; }),
     orphans:{list:orph.free.map(sp=>({sp,include:true})), linked:orph.linked},
     stale:{list:stale.map(x=>({...x,include:true}))}};
   renderDedupeModal();
 }
+// Kalemin bagli kayit ozeti ({items,ordLines,raps}) - bagli degilse undefined
+function dedupeBagli(id){ return (_DEDUPE&&_DEDUPE.refIdx)?_DEDUPE.refIdx.get(id):null; }
+/* Bir gruptan GERCEKTEN silinecekler: kalacak kayit disindakiler, BAGLI olanlar HARIC.
+   Ekrandaki sayac, onay metni ve silme islemi UCU DE bu fonksiyondan gecer - boylece
+   kullaniciya gosterilen sayi ile silinen sayi ayrisamaz. */
+function dedupeSilinecekler(g){ return g.items.filter(s=>s.id!==g.keepId && !dedupeBagli(s.id)); }
 function dedupeGroupHtml(g,gi){
   const ref=g.items[0];
+  const silN=dedupeSilinecekler(g).length;
   const rows=g.items.map(s=>{
-    const isKeep=g.keepId===s.id; const ts=uidTime(s.id);
-    return `<div class="dedupe-row ${isKeep?'keep':''}" onclick="dedupePickKeep(${gi},'${s.id}')">
-      <span class="merge-tag ${isKeep?'':'rm'}">${isKeep?'KALACAK':'SILINECEK'}</span>
-      <span class="dedupe-row-meta">${s.poz?'Poz '+esc(s.poz)+' · ':''}Hedef ${fmtNum(s.target)} ${esc(s.unit||'')}${ts?' · '+fmtDT(ts):''}</span>
+    const isKeep=g.keepId===s.id; const ts=uidTime(s.id); const r=dedupeBagli(s.id);
+    // BAGLI kayit "SILINECEK" gorunmez: kullanici onu silinecek sanip onaylamasin diye
+    // KORUNUR yazar, neye bagli oldugunu da satirda soyler
+    const durum=isKeep?'KALACAK':(r?'KORUNUR':'SILINECEK');
+    return `<div class="dedupe-row ${isKeep?'keep':(r?'lock':'')}" onclick="dedupePickKeep(${gi},'${s.id}')">
+      <span class="merge-tag ${isKeep?'':(r?'lock':'rm')}"${r&&!isKeep?' title="Bagli kayit - hicbir kosulda silinmez"':''}>${durum}</span>
+      <span class="dedupe-row-meta">${s.poz?'Poz '+esc(s.poz)+' · ':''}${s.ozelNo?'Ozel '+esc(s.ozelNo)+' · ':''}Hedef ${fmtNum(s.target)} ${esc(s.unit||'')}${ts?' · '+fmtDT(ts):''}${r?` · <b style="color:var(--amber)">${esc(specRefLabel(r))}</b>`:''}</span>
     </div>`;
   }).join('');
   return `<div class="dedupe-group">
     <div class="dedupe-group-head">
-      <input type="checkbox" ${g.include?'checked':''} onclick="dedupeToggleGroup(${gi},this.checked)">
+      <input type="checkbox" ${g.include?'checked':''} ${silN?'':'disabled title="Bu grupta silinebilecek kayit yok - kalacak disindakilerin hepsi bagli"'} onclick="dedupeToggleGroup(${gi},this.checked)">
       <div style="flex:1;min-width:0">
         <div class="mc-name" style="margin-bottom:2px;min-height:0">${esc(ref.name)}</div>
         <div class="t-meta" style="font-size:11px">${[ref.code,ref.bina,ref.cat,specGroupKey(ref)].filter(Boolean).map(esc).join(' · ')}</div>
       </div>
-      <span class="cat-tag" style="background:var(--dim)33;color:var(--text);flex-shrink:0">${g.items.length} kayit</span>
+      <span class="cat-tag" style="background:var(--dim)33;color:var(--text);flex-shrink:0">${g.items.length} kayit · ${silN?silN+' silinecek':'silinecek yok'}</span>
     </div>
     <div class="dedupe-rows">${rows}</div>
   </div>`;
@@ -14751,10 +14783,11 @@ function renderDedupeModal(){
   const orphSel=orph.list.filter(o=>o.include).length;
   const stale=(_DEDUPE.stale&&_DEDUPE.stale.list)||[];
   const staleSel=stale.filter(o=>o.include).length;
-  const toDeleteCount=includedGroups.reduce((n,g)=>n+g.items.length-1,0)+orphSel+staleSel;
+  // BAGLI kayitlar sayilmaz: dugmedeki sayi ile gercekte silinen sayi ayni olmali
+  const toDeleteCount=includedGroups.reduce((n,g)=>n+dedupeSilinecekler(g).length,0)+orphSel+staleSel;
   const dupHtml=groups.length?`
     <div class="matd-sec" style="margin-top:0">Mukerrer Kayitlar <span>${groups.length} grup</span></div>
-    <p class="t-meta" style="margin-bottom:12px;line-height:1.5">Ayni urun + bina + bolum + sartname (+ poz) icin birden fazla kayit bulundu. Kalacak kaydi secmek icin karttaki satira tiklayin; bir grubu bu temizlikten cikarmak icin ustundeki kutuyu kaldirin.</p>
+    <p class="t-meta" style="margin-bottom:12px;line-height:1.5">Ayni urun + bina + bolum + sartname + poz + ozel no icin birden fazla kayit bulundu. Ayni poz'da farkli ozel nolu kalemler mukerrer DEGILDIR - bu listede gorunmezler. Siparis satiri, saha raporu ya da stok hareketi <b>bagli</b> olan kayit hicbir kosulda silinmez: KORUNUR olarak isaretlenir ve neye bagli oldugu satirda yazar. Kalacak kaydi secmek icin karttaki satira tiklayin; bir grubu bu temizlikten cikarmak icin ustundeki kutuyu kaldirin.</p>
     <label class="chk" style="display:flex;align-items:center;gap:8px;padding:6px 0;font-weight:600;border-bottom:1px solid var(--line);margin-bottom:10px">
       <input type="checkbox" ${includedGroups.length===groups.length?'checked':''} onclick="dedupeToggleAll(this.checked)"> Tum gruplari sec (${includedGroups.length}/${groups.length})
     </label>
@@ -14809,13 +14842,19 @@ function closeDedupeModal(){ _DEDUPE=null; closeModal(); }
 async function confirmDedupe(){
   if(!isAdmin()){ toast('Bu islem sadece yoneticilere aittir','err'); return; }
   if(!_DEDUPE)return;
-  const delSpecs=[]; let dupN=0, orphN=0;
-  _DEDUPE.groups.forEach(g=>{ if(!g.include)return; g.items.forEach(s=>{ if(s.id!==g.keepId){ delSpecs.push(s.id); dupN++; } }); });
+  const delSpecs=[]; let dupN=0, orphN=0, korunanN=0;
+  /* SON SUZGEC: silme listesi de dedupeSilinecekler'den gecer. Ekran zaten bagli kaydi
+     KORUNUR gosteriyor ama koruma yalnizca gorunumde kalmamali - eski bir _DEDUPE durumu
+     ya da ekrandan sonra degisen bir bag bu satirda yakalanir. */
+  _DEDUPE.groups.forEach(g=>{ if(!g.include)return;
+    dedupeSilinecekler(g).forEach(s=>{ delSpecs.push(s.id); dupN++; });
+    korunanN+=g.items.filter(s=>s.id!==g.keepId&&dedupeBagli(s.id)).length; });
   ((_DEDUPE.orphans&&_DEDUPE.orphans.list)||[]).forEach(o=>{ if(o.include){ delSpecs.push(o.sp.id); orphN++; } });
   const delMats=[]; ((_DEDUPE.stale&&_DEDUPE.stale.list)||[]).forEach(o=>{ if(o.include) delMats.push(o.m.id); });
   if(!delSpecs.length&&!delMats.length){ toast('Silinecek kayit secili degil','err'); return; }
   const parca=[dupN?dupN+' mukerrer kalem':'', orphN?orphN+' sahipsiz (binasiz) kalem':'', delMats.length?delMats.length+' eski kodlu malzeme':''].filter(Boolean).join(' + ');
-  if(!confirm(`${parca} onayladiginiz gibi silinecek. Bu islem geri alinamaz. Devam edilsin mi?`)) return;
+  const korunanNot=korunanN?`\n\n${korunanN} mukerrer kalem KORUNUYOR - siparis / rapor / stok kaydi bagli oldugu icin silinmiyor.`:'';
+  if(!confirm(`${parca} onayladiginiz gibi silinecek.${korunanNot}\n\nBu islem geri alinamaz. Devam edilsin mi?`)) return;
   await Promise.all([
     ...(delSpecs.length?[sbDeleteProjeSpecs(delSpecs)]:[]),
     ...(delMats.length?[sbDeleteProjeMaterials(delMats)]:[])
@@ -16730,8 +16769,8 @@ function _specFormFields(v){
     {k:'cat',t:'Bolum',h:'',half:1,html:`<select id="s_cat" onchange="specModalRefresh()">${(DB.proje.sections||PROJ_CATS).map(c=>`<option ${v.cat===c?'selected':''}>${esc(c)}</option>`).join('')}</select>`},
     {k:'grup',t:'Sartname',req:1,h:'',html:`<select id="s_grup">${grps.length?grps.map(g=>`<option ${v.grup===g?'selected':''}>${esc(g)}</option>`).join(''):'<option value="">- once Bolum & Sartname ekranindan tanimlayin -</option>'}</select>`},
     {k:'mat',t:'Malzeme',req:1,h:'(kutuphaneden secin - bilgiler otomatik gelir)',html:`<div id="s_matBox">${specMatBoxHtml()}</div>`},
-    {k:'poz',t:'Poz No',h:'(bu sartnamedeki satir no)',half:1,html:`<input id="s_poz" value="${esc(v.poz||'')}" placeholder="orn. 191">`},
-    {k:'ozelno',t:'Özel No',h:'(sistematik takip no - orn. 00UYB12EM0044)',half:1,html:`<input id="s_ozelno" value="${esc(v.ozelNo||'')}" placeholder="varsa ozel no">`},
+    {k:'poz',t:'Poz No',h:'(sartname satir/tasarim no - ayni poz birden cok kalemde olabilir)',half:1,html:`<input id="s_poz" value="${esc(v.poz||'')}" placeholder="orn. 191">`},
+    {k:'ozelno',t:'Özel No',h:'(yerlesim / takip no, orn. 00UYB12EM0044 - ayni pozdaki kalemleri ayiran alan)',half:1,html:`<input id="s_ozelno" value="${esc(v.ozelNo||'')}" placeholder="varsa ozel no">`},
     {k:'target',t:'Hedef Miktar',req:1,h:'',html:`<input id="s_target" type="number" step="any" value="${v.open?'':esc(v.target)}" placeholder="0" ${v.open?'disabled':''}>`},
     {k:'lok',t:'Parca Bazinda Metraj Dagilimi',h:'(opsiyonel - girilirse Hedef Miktar toplamdan gelir)',bare:1,html:`<div id="s_lokWrap"></div>`},
     {k:'open',t:'Acik Kalem',h:'(miktar henuz belli degilse)',bare:1,html:`<div class="frow"><label style="display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none"><input type="checkbox" id="s_open" style="width:auto;margin:0" ${v.open?'checked':''} onchange="const t=document.getElementById('s_target');t.disabled=this.checked;if(this.checked)t.value='';"> Miktar henuz belli degil (acik kalem)</label>
@@ -16954,7 +16993,7 @@ function renderSpecFormPage(){
       <p class="page-sub">${f.id?(sp?esc(sp.name)+(sp.code?` · <span style="font-family:var(--mono)">${esc(sp.code)}</span>`:''):''):'Her satir bir kalem - malzeme secince altta yeni satir acilir, Enter ile alt satira gecilir'}</p></div>
     <div class="kata-intro">${f.id
       ?'Modaldeki alanlarin aynisi - sutun duzeninde, genis calisma alaninda.'
-      :'Bina, Bolum ve Sartname ustte <b>bir kez</b> secilir ve alttaki tum satirlara uygulanir. Her satirda malzemeyi kutuphaneden secin, poz/miktar girin; <b>Tumunu Kaydet</b> dolu satirlarin hepsini kaydeder. Hatali satir gridde kalir ve nedeni satirda gosterilir, digerleri kaydedilir.'} <span class="specf-req">*</span> isaretli alanlar zorunludur.</div>
+      :'Bina, Bolum ve Sartname ustte <b>bir kez</b> secilir ve alttaki tum satirlara uygulanir. Her satirda malzemeyi kutuphaneden secin, poz/miktar girin; <b>Tumunu Kaydet</b> dolu satirlarin hepsini kaydeder. Ayni urunu ayni poz altinda birden cok kez eklemek icin her satira farkli <b>Ozel No</b> yazin. Hatali satir gridde kalir ve nedeni satirda gosterilir, digerleri kaydedilir.'} <span class="specf-req">*</span> isaretli alanlar zorunludur.</div>
     <div class="specfg-head">
       <div class="frow"><label>Bina</label><select onchange="specfHead('bina',this.value)"><option value="">- secilmedi -</option>${binaOptsFor(f.head.bina).map(b=>`<option ${f.head.bina===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div>
       <div class="frow"><label>Bolum</label><select onchange="specfHead('cat',this.value)">${(DB.proje.sections||PROJ_CATS).map(c=>`<option ${f.head.cat===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
@@ -16980,7 +17019,7 @@ function renderSpecFormPage(){
     </tr></thead><tbody id="specfgBody">${f.rows.map((r,i)=>specfRowHtml(i)).join('')}</tbody></table></div>
     ${f.id?'':`<button class="add-line specfg-addrow" onclick="specfAddRow()">+ Satir Ekle</button>`}
     ${savedHtml}
-    <p class="specf-note">Malzeme bilgisi (kod, ad, marka, standart, agirlik, etiket, foto) Malzeme Kutuphanesinden gelir. Ayni malzeme ayni sartnamede ancak FARKLI Poz No ile birden fazla kez gecebilir. Acik kalem: hedef girilmez, alimlar sinirsiz, ilerleme yuzdesine karismaz.</p>
+    <p class="specf-note">Malzeme bilgisi (kod, ad, marka, standart, agirlik, etiket, foto) Malzeme Kutuphanesinden gelir. Ayni malzeme ayni sartnamede birden fazla kez gecebilir: farkli Poz No ile, ya da AYNI Poz No altinda farkli <b>Ozel No</b> ile (her ornegi kendi yerlesim kodu icin uretilen kalemler boyledir). Acik kalem: hedef girilmez, alimlar sinirsiz, ilerleme yuzdesine karismaz.</p>
     <div class="kata-page-foot">
       <button class="btn btn-ghost" style="margin-right:auto" onclick="closeSpecFormPage()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M19 12H5M12 19l-7-7 7-7"/></svg> Geri Don</button>
       <span class="specfg-cnt" id="specfgCount"></span>
@@ -17300,18 +17339,56 @@ async function _specSaveCore(v){
   if(!openQty&&(target===''||isNaN(target))&&!lokRows.length){return {ok:false,msg:"Hedef miktar zorunlu - miktar belli degilse 'acik kalem' isaretleyin"};}
   if(!grup){return {ok:false,msg:"Sartname secimi zorunlu - once Bolum & Sartname ekranindan tanimlayin"};}
   const code=mat.code||''; const name=mat.ad||'';
-  // kimlik = poz + urun (matKey: kod varsa kod, yoksa ad). Ayni poz + ayni ad ama FARKLI kod
-  // farkli urun sayilir (izin verilir); ayni poz'da ayni urun (ayni kod, veya kodsuzsa ayni ad) tekrar edemez.
-  // Poz No, ayni urunun sartnamede birden fazla satirla gecmesine izin veren TEK ayirt edici alan.
-  // Yeni kalemin Poz No'su BOSSA ayirt edici deger yok demektir: mevcut kaydin poz'u ne olursa olsun
-  // (bos veya dolu) ayni urun bu bina+sartnamede zaten varsa tekrar eklenemez.
+  // kimlik = poz + OZEL NO + urun (matKey: kod varsa kod, yoksa ad). Ayni poz + ayni ad ama FARKLI
+  // kod farkli urun sayilir (izin verilir).
+  // AYIRT EDICI ALANLAR POZ VE OZEL NO'DUR - ikisi birlikte. Ayni urun ayni pozda birden fazla kez
+  // gecebilir, yeter ki OZEL NO'lari farkli olsun: prohodka / welding box / klemens kutusu gibi
+  // kalemlerde poz ORTAK TASARIM KODUDUR, uretilen her ornegi ayiran sey yerlesim (ozel) numarasidir.
+  // Bu kalemlerde urun kodu ve adi hepsinde AYNIDIR, cogunda urun kodu hic yoktur (matKey ad dalina
+  // duser) - o zaman ozel no tek ayirt edici alandir.
+  // Excel importu bu kurali ZATEN boyle uyguluyordu (bkz. upsertSpecsFromRows / skey: '|p:'+pozKey+
+  // '|o:'+ozelKey). Elle giris ve toplu giris gridi de ayni kurala baglandi ki iki yol ayni veriyi
+  // uretsin - eskiden import'un actigi kalemi kullanici elle acamiyordu.
+  // POZ VE OZEL NO'NUN IKISI DE BOSSA ayirt edici deger yok demektir: mevcut kaydin poz/ozel no'su
+  // ne olursa olsun ayni urun bu bina+sartnamede zaten varsa tekrar eklenemez (kazayla ayni
+  // malzemeyi iki kez ekleme korumasi aynen duruyor).
+  const dupPozKey=poz.toLowerCase(), dupOzelKey=ozelNo.toLowerCase();
   const dup=DB.proje.specs.find(s=>{
     if(s.id===id||s.is_deleted||s.bina!==bina||specGroupKey(s)!==grup) return false;
     if(matKey(s.code,s.name)!==matKey(code,name)) return false;
-    if(!poz) return true;
-    return (s.poz||'').trim().toLowerCase()===poz.toLowerCase();
+    if(!poz&&!ozelNo) return true;
+    return (s.poz||'').trim().toLowerCase()===dupPozKey && (s.ozelNo||'').trim().toLowerCase()===dupOzelKey;
   });
-  if(dup){return {ok:false,msg:poz?`Bu urun bu pozda ("${poz}") zaten var`:"Bu malzeme bu sartnamede zaten var (Poz No girilmedigi icin mevcut kayitla cakisiyor): "+(code||name)};}
+  /* CAKISMA MESAJI HANGI ALANIN carpistigini VE CIKIS YOLUNU soyler - malzeme kutuphanesindeki
+     kod cakismasi mesajiyla ayni yaklasim (bkz. 9335 civari). Tek bir "zaten var" cumlesi, ayni
+     pozda ikinci kalemi Ozel No ile acabilecegini bilmeyen kullaniciyi duvara toslatiyordu. */
+  if(dup){
+    const msg = (poz&&ozelNo) ? `Bu urun bu poz + ozel no ikilisiyle zaten var (Poz "${poz}" / Ozel No "${ozelNo}")`
+      : poz ? `Bu urun bu pozda ("${poz}") ozel no'suz zaten var - ayni pozda ikinci kez eklemek icin Ozel No girin`
+      : ozelNo ? `Bu urun bu ozel no ile ("${ozelNo}") zaten var`
+      : "Bu malzeme bu sartnamede zaten var (Poz No / Ozel No girilmedigi icin mevcut kayitla cakisiyor): "+(code||name);
+    return {ok:false,msg};
+  }
+  /* AYNI POZDA OZEL NO ATLANAMAZ. Kimlik poz+ozel no ikilisi oldugu icin "poz X / ozel no bos"
+     teknik olarak "poz X / ozel no A"dan farkli bir kimliktir ve kural onu gecirirdi. Ama bu
+     pozda ZATEN ozel nolu kardesleri varsa, ozel no'su bos yeni kalem fiilen KIMLIKSIZ kalir:
+     Oda Metraji satiri, Kat Ata eslesmesi, siparis yapistirma eslesmesi ve Kayit Temizligi
+     ayirimi - hepsi ozel nodan gider (bkz. katAtaIndex, nordMatchSpec, findDuplicateSpecs).
+     Ozellikle urun kodu OLMAYAN kalemlerde (matKey ad dalina duser) ekranda 20 ayni satirdan
+     biri olur ve hangisi oldugu hicbir yerde okunamaz. Bu neredeyse her zaman kullanicinin
+     Ozel No yazmayi atlamasidir - sessizce kabul etmek yerine geri cevrilir ve ne yapmasi
+     gerektigi soylenir.
+     TERSI SERBEST: hic ozel nolu kardesi olmayan bir pozda Ozel No zorunlu DEGILDIR; poz tek
+     basina ayirt ediyorsa eski davranis aynen surer. */
+  if(poz&&!ozelNo){
+    const ozelliKardes=DB.proje.specs.filter(s=>s.id!==id&&!s.is_deleted&&s.bina===bina
+      &&specGroupKey(s)===grup&&matKey(s.code,s.name)===matKey(code,name)
+      &&(s.poz||'').trim().toLowerCase()===dupPozKey&&String(s.ozelNo||'').trim());
+    if(ozelliKardes.length){
+      const ornek=ozelliKardes.slice(0,3).map(s=>String(s.ozelNo).trim()).join(', ');
+      return {ok:false,msg:`Bu urun bu pozda ("${poz}") ozel no ile kayitli - ${ozelliKardes.length} kalem var (${ornek}${ozelliKardes.length>3?' ...':''}). Yeni kalemi ayirt etmek icin Ozel No girin`};
+    }
+  }
   // kutuphane kaydini al/dogrula (matId varsa onu kullan, yoksa kod/ad ile bul/olustur)
   let mt = mat.matId ? getMaterial(mat.matId) : null;
   if(!mt) mt=ensureMaterial({code,name,unit:mat.unit,cat,brand:mat.brand,img:mat.img,standart:mat.standart,weight:mat.weight,tags:mat.tags});
