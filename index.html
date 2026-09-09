@@ -160,7 +160,11 @@ html.theme-anim, html.theme-anim *, html.theme-anim *::before, html.theme-anim *
      viewport birimi yerine bu token kullanilir: calc(92 * var(--vh)) gibi.
      Telefonda/baskida --ui-scale 1'e dustugu icin token aynen 1vh'a esitlenir -
      duzeltme kendiliginden devre disi kalir, mobil davranis degismez. */
-  --vh:calc(1vh / var(--ui-scale))}
+  --vh:calc(1vh / var(--ui-scale));
+  /* Ayni duzeltmenin GENISLIK karsiligi: zoomlu belgede 100vw, gorsel ekranin
+     %90'i kadar yer kaplar. Pencereyi enine DOLDURMASI gereken yerlerde
+     (fatura formunun genis calisma alani) ham vw yerine bu token kullanilir. */
+  --vw:calc(1vw / var(--ui-scale))}
 html{zoom:var(--ui-scale)}
 @media(max-width:767px){:root{--ui-scale:1}}
 @media print{:root{--ui-scale:1}}
@@ -1760,10 +1764,13 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .inv-imza-warn .ord-imza-warn{width:22px;height:22px;font-size:13px;margin:0;cursor:default}
 .order-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;cursor:pointer;transition:border-color .15s,transform .1s,box-shadow .15s;box-shadow:var(--shadow-sm)}
 .order-card:hover{border-color:#a855f7;transform:translateY(-2px);box-shadow:var(--shadow-md)}
-.order-card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}
-.order-no{font-size:15px;display:flex;align-items:center;gap:6px}
-.order-no svg{width:15px;height:15px;color:#a855f7}
-.order-date{font-size:11px;color:var(--mute);font-family:var(--mono)}
+.order-card-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding-bottom:8px;margin-bottom:9px;border-bottom:1px dashed var(--line);min-height:17px}
+.order-badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.order-badges>*{margin-left:0!important}
+.order-card-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:9px}
+.order-no{font-size:15px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.order-no svg{width:15px;height:15px;color:#a855f7;flex-shrink:0}
+.order-date{font-size:11px;color:var(--mute);font-family:var(--mono);flex-shrink:0;white-space:nowrap}
 .order-meta{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
 .order-codes{font-size:11px;color:var(--mute);font-family:var(--mono);margin-bottom:10px;min-height:14px;line-height:1.4}
 .order-spekno{font-size:11px;color:#a855f7;font-family:var(--mono);font-weight:600;margin:-4px 0 8px}
@@ -2791,10 +2798,18 @@ datalist{display:none}
   .modal{max-width:100%;width:100%;border-radius:16px 16px 0 0;max-height:calc(94 * var(--vh))}
   .modal.wide{max-width:100%}
 
-  /* Arac cubugu ve arama dikeye gecsin */
-  .toolbar{flex-direction:column;align-items:stretch}
-  .search{flex:none;min-width:0;width:100%}
-  .toolbar>.btn,.toolbar>.selbox{width:100%}
+  /* ARAC CUBUGU: arama tam satir, IKON dugmeleri YAN YANA.
+     Once butun cubuk dikey yigina ceviriliyordu (flex-direction:column).
+     Metinli dugmeler icin dogruydu; ama kutuphane cubuklarindaki dugmelerin
+     cogu artik yalnizca IKON (.btn-ciplak) ve her biri tam genislikte, bos bir
+     seride tek basina duruyordu - alti dugme alti satir, ~340px olu yukseklik
+     (telefonda olculdu). Simdi arama kendi satirini alir, ikonlar onun altinda
+     tek serit halinde dizilir. Metinli dugmeler (Excel, Yeni Malzeme...) tam
+     genislikte KALIR: parmakla basilan hedef genis olsun. */
+  .search{flex:1 1 100%;min-width:0;width:100%}
+  .toolbar>.btn:not(.btn-ciplak),.toolbar>.selbox{width:100%}
+  /* ikon dugmesi kendi genisliginde durur; 44px dokunma hedefi korunur */
+  .toolbar>.btn-ciplak{width:auto;flex:0 0 auto;min-width:44px;min-height:44px;padding:8px}
 
   /* Yigin/kart satirlari sarilabilsin */
   .log-row,.rap-row{flex-wrap:wrap}
@@ -3094,6 +3109,112 @@ datalist{display:none}
 .fat-uyari li b{font-family:var(--mono);font-size:11px}
 .fat-uyari .fat-link{background:none;border:none;color:var(--primary);cursor:pointer;
   font:inherit;font-size:11.5px;padding:0;text-decoration:underline;text-underline-offset:2px}
+/* ==================================================================
+   FATURA FORMU: GENIS CALISMA ALANI
+   Fatura girisi bu programdaki EN UZUN istir - yuzlerce alim satirinin
+   icinden belgedekiler bulunur, her birine dort sayi yazilir. Form
+   .tut-wrap'in 1240px kapagi altinda calisiyordu: 10 sutunlu satir
+   tablosu kendi icinde yatay kayiyor, urun adi iki-uc satira boluniyor,
+   sayi kutulari birbirine giriyordu. Fatura formu artik pencereyi sonuna
+   kadar kullanir ve genis ekranda main'in 1600px kapagini da asar: kutu
+   ortada durur (left:50% ustundeki ortali kutuya gore + translateX),
+   min() sayesinde kenarda daima bosluk kalir - yatay kaydirma dogmaz. */
+/* Genisleme main'in KAPAGI KALDIRILARAK yapilir, viewport aritmetigiyle degil:
+   html'de zoom:0.9 durdugu icin vw ile kurulan her hesap %10 kayar ve kutu
+   ekranin disina tasar (olculdu). Kapak kalkinca genisligi tarayici zaten
+   dogru kurar; kutu 2400px'de durur - daha genisi tabloyu okunmaz kilar. */
+main:has(>.fat-form-wrap){max-width:none}
+.fat-form-wrap{max-width:2400px}
+/* Menuyu kaldiran dugme kunye seridinin sagina yaslanir. Menunun yer kapladigi
+   tek yer masaustu oldugu icin altinda gizlenir - orada basildiginda hicbir sey
+   kazanilmaz, yalnizca kafa karistirirdi. */
+.sel-bc .fat-genis-btn{display:none;margin-left:auto;align-items:center;gap:7px;background:var(--panel2);
+  border:1px solid var(--line);color:var(--mute);border-radius:9px;padding:5px 11px;
+  font-size:12px;font-weight:600;font-family:inherit;cursor:pointer;
+  transition:border-color var(--transition),color var(--transition)}
+.sel-bc .fat-genis-btn:hover{color:var(--ink);border-color:var(--dim)}
+.sel-bc .fat-genis-btn svg{width:14px;height:14px;opacity:.75}
+@media(min-width:1024px){ .sel-bc .fat-genis-btn{display:inline-flex} }
+/* Kunye izgarasi genis ekranda auto-fit ile 8-9 sutuna dagiliyordu; alanlar
+   ince seritlere donuyordu. Genis ekranda SABIT 5 sutun: 15 alan tam 3 satir. */
+@media(min-width:1400px){ .fat-form-wrap .tut-grid{grid-template-columns:repeat(5,minmax(0,1fr))} }
+
+/* ==================================================================
+   FATURA FORMU ARAMA PANELI
+   Uc katman: (1) arama satiri + sayac + toplu eylemler, (2) etiketli
+   suzgecler, (3) etkin suzgec cipleri. Ekranin tepesine yapisir (header
+   56px) - uzun listede asagi inildiginde arama kutusu ve "kac urun
+   goruluyor" bilgisi gozden kaybolmasin.
+   ================================================================== */
+.fat-ara{position:sticky;top:56px;z-index:20;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);box-shadow:var(--shadow-sm);padding:11px 13px 12px;margin-bottom:11px}
+.fat-ara .ust{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+/* ARAMA KUTUSU panelin en genis ogesidir: bu ekranda en cok kullanilan alan
+   odur. Ikon solda; kutu doluyken temizleme dugmesi, bosken kisayol ipucu sagda. */
+/* Kutu buyuyebilir ama sinirsiz degil: 2000px'lik ekranda tum boslugu yutunca
+   sayac ile eylemler kutudan metrelerce uzaga dusuyordu. Artan yeri .eyl'in
+   margin-left:auto'su alir - sayac aramanin YANINDA, eylemler sagda kalir. */
+.fat-ara .kutu{position:relative;display:flex;align-items:center;flex:1 1 360px;max-width:760px;min-width:230px}
+.fat-ara .kutu>svg{position:absolute;left:13px;width:16px;height:16px;color:var(--dim);pointer-events:none}
+.fat-ara .kutu input{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--ink);
+  padding:11px 46px 11px 38px;border-radius:11px;font-size:14px;outline:none;font-family:inherit;
+  transition:border-color var(--transition),box-shadow var(--transition)}
+.fat-ara .kutu input:focus{border-color:var(--primary);box-shadow:var(--ring) color-mix(in srgb,var(--primary) 20%,transparent)}
+.fat-ara .kutu input::placeholder{color:var(--dim)}
+.fat-ara .kutu kbd{position:absolute;right:12px;font-family:var(--mono);font-size:10.5px;color:var(--dim);
+  background:var(--panel2);border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;
+  padding:1px 7px;pointer-events:none}
+.fat-ara .kutu .sil{position:absolute;right:9px;background:none;border:none;color:var(--dim);cursor:pointer;
+  font-size:17px;line-height:1;padding:3px 7px;border-radius:7px;font-family:inherit}
+.fat-ara .kutu .sil:hover{color:var(--ink);background:var(--hover)}
+/* SAYAC: "kac urun goruyorum / suzgece kac urun uyuyor / kac satir dolu".
+   Fatura girisindeki uc temel soru; listeye bakmadan yanitlanir. */
+.fat-ara .sayac{display:flex;align-items:baseline;gap:7px;font-size:12px;color:var(--mute);white-space:nowrap}
+.fat-ara .sayac b{font-family:var(--mono);font-size:16px;font-weight:800;color:var(--ink);letter-spacing:-.4px}
+.fat-ara .sayac i{font-style:normal;font-family:var(--mono);color:var(--dim)}
+.fat-ara .sayac .bitmis{font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--mute);
+  background:var(--hover);border:1px solid var(--line);border-radius:20px;padding:2px 9px}
+.fat-ara .sayac .dolu{font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--green);
+  background:color-mix(in srgb,var(--green) 12%,transparent);
+  border:1px solid color-mix(in srgb,var(--green) 32%,transparent);border-radius:20px;padding:2px 9px}
+.fat-ara .eyl{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.fat-ara .eyl button{background:var(--panel2);border:1px solid var(--line);color:var(--mute);
+  border-radius:9px;padding:8px 13px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;
+  transition:border-color var(--transition),color var(--transition),background var(--transition)}
+.fat-ara .eyl button:hover{color:var(--ink);border-color:var(--dim);background:var(--hover)}
+/* SUZGECLER: her acilir listenin USTUNDE ne oldugu yazar. Eskiden dordu de
+   yan yana duruyordu; hangisinin ne oldugu ancak ustune gelince anlasiliyordu.
+   Secili olan cercevesinden belli olur (.on). */
+.fat-ara .suz{display:flex;gap:10px;flex-wrap:wrap;margin-top:11px;padding-top:11px;border-top:1px solid var(--line)}
+.fat-ara .fs{display:flex;flex-direction:column;gap:4px;flex:0 1 240px;min-width:150px}
+.fat-ara .fs>span{font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim);font-weight:700}
+.fat-ara .fs select{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--ink);
+  padding:8px 10px;border-radius:9px;font-size:12.5px;outline:none;font-family:inherit;
+  transition:border-color var(--transition)}
+.fat-ara .fs select:focus{border-color:var(--primary)}
+.fat-ara .fs select.on{border-color:color-mix(in srgb,var(--primary) 55%,transparent);font-weight:600}
+/* ETKIN SUZGEC CIPLERI: "neden bu urun listede yok" sorusunun cevabi cogu
+   zaman unutulmus bir suzgectir - acik olanlar yazili durur, tek tikla kalkar. */
+.fat-ara .cipler{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-top:10px}
+.fat-ara .cipler>.et{font-size:9.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim);font-weight:700}
+.fat-ara .cip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-family:inherit;
+  background:color-mix(in srgb,var(--primary) 10%,transparent);
+  border:1px solid color-mix(in srgb,var(--primary) 30%,transparent);
+  color:var(--mute);border-radius:20px;padding:3px 11px;cursor:pointer;max-width:300px;
+  transition:border-color var(--transition)}
+.fat-ara .cip b{color:var(--ink);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fat-ara .cip i{font-style:normal;font-size:14px;line-height:1;color:var(--dim)}
+.fat-ara .cip:hover{border-color:var(--primary)}
+.fat-ara .cip:hover i{color:var(--red)}
+.fat-ara .cip.hepsi{background:none;border-style:dashed;border-color:var(--line)}
+@media(max-width:760px){ .fat-ara{position:static} .fat-ara .eyl{margin-left:0;width:100%} }
+/* URUN LISTESI CALISMA ALANI: tablo kendi penceresinde kayar, baslik satiri
+   (thead) yukarida yapisik kalir. Onceden liste sayfayla birlikte kaydigi
+   icin 80 satirin ortasinda hangi sutuna sayi yazildigi gorunmuyordu.
+   Alcak ekranlarda kapatilir - orada ic ice iki kaydirma alani birbirine girer. */
+.fat-lines-alan{max-height:calc(70 * var(--vh))}
+.fat-lines-alan thead th{z-index:3}
+@media(max-height:720px){ .fat-lines-alan{max-height:none} }
 /* SATIR TABLOSU: TC e-Fatura duzeni - miktar, birim fiyat, iskonto, KDV, diger
    vergiler ve satir tutari yan yana. Sutun sayisi fazla oldugu icin tablo kendi
    icinde yatay kayar (.tablewrap overflow:auto) - sayfa govdesi kaymaz. */
@@ -3105,7 +3226,18 @@ datalist{display:none}
 .fat-lines input.num.dolu{border-color:var(--green);font-weight:700}
 .fat-lines input.num.dar,.fat-lines select.num.dar{width:70px}
 .fat-lines select.num{text-align:left;padding-right:4px}
-.fat-lines tr.bitti{opacity:.5}
+/* TAMAMI FATURALANMIS SATIR: goruntude var, islemde yok. Solukluk tek basina
+   yetmez - "neden yazamiyorum" sorusunu dogurur; bu yuzden urun adinin altinda
+   gerekcesi yazili bir kilit rozeti durur. Kutular zaten disabled gelir;
+   pointer-events ile fare de onlara hic ulasmaz. Satirin TAMAMINA konmaz -
+   konsaydi urun adi ve kodu secilip kopyalanamazdi. Vurgu (hover) da
+   kaldirilir: fare uzerine gelince "burada bir sey yapabilirim" demesin. */
+.fat-lines tr.bitti{opacity:.62;background:var(--panel2)}
+.fat-lines tr.bitti input,.fat-lines tr.bitti select,.fat-lines tr.bitti button{pointer-events:none}
+.fat-bitti{display:inline-flex;align-items:center;gap:5px;margin-top:4px;font-size:10.5px;font-weight:700;
+  letter-spacing:.2px;color:var(--mute);background:var(--hover);
+  border:1px solid var(--line);border-radius:20px;padding:2px 9px;white-space:nowrap}
+.fat-bitti svg{width:11px;height:11px;opacity:.8;flex:none}
 .fat-lines .satir-tutar{font-weight:700;font-family:var(--mono);font-size:12px;white-space:nowrap}
 /* KDV ORANININ ALTINDA HESAPLANAN TUTAR: oran tek basina "ne kadar KDV odedim"
    sorusunu yanitlamiyor; kagitta da oran ile tutar YAN YANA duruyor. */
@@ -6291,7 +6423,9 @@ function renderSidebar(){
   if(isAdmin()) ops+=it('Kayıt Temizliği','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>','dedupeProjeSpecs()',false,'','Mukerrer kayitlari, binasiz (sahipsiz) kalemleri ve kutuphanede sikismis eski ozel-kodlu malzemeleri gosterir - onayladiklariniz silinir');
   if(can('wipe')) danger+=it('Temizle','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg>','wipeAllData()',false,'danger','Girilen tum verileri sil');
   const groups=[top,mid,ops,danger].filter(Boolean).join('<div class="sb-sep"></div>');
-  const app=document.getElementById('app'); if(app) app.classList.toggle('sb-none',!groups);
+  /* sb-none: ya gosterilecek menu yok, ya da fatura formu genis alan modunda.
+     Ikinci durumda menu KAYBOLMAZ - form kapaninca kendiliginden geri gelir. */
+  const app=document.getElementById('app'); if(app) app.classList.toggle('sb-none',!groups||fatGenisAlanAcik());
   el.innerHTML=`<div class="sb-head"><b>Menü</b><button class="mini-btn" onclick="closeSidebar()">x</button></div>`
     +groups;
 }
@@ -7292,10 +7426,14 @@ function renderAllOrders(){
       const qty=(o.lines||[]).reduce((x,l)=>x+(Number(l.qty)||0),0);
       const col=buildingColor(o.bina);
       const urunOzet=(o.lines||[]).slice(0,3).map(l=>esc(l.ad.split('/').pop().trim())).join(', ')+((o.lines||[]).length>3?` +${o.lines.length-3} urun`:'');
+      const badges=[atamaBadge(o),imzaWarnBadge(o),iadeBadge(o),notBadge(o)].join('');
       cards+=`<div class="order-card" onclick="openOrderDetail('${o.id}')">
-        <div class="order-card-top">
-          <div class="order-no">${icoDoc()} <b>${esc(o.no)}</b>${atamaBadge(o)}${imzaWarnBadge(o)}${iadeBadge(o)}${notBadge(o)}</div>
+        <div class="order-card-head">
+          <div class="order-badges">${badges}</div>
           <span class="order-date">${fmtDate(o.date)}</span>
+        </div>
+        <div class="order-card-top">
+          <div class="order-no">${icoDoc()} <b>${esc(o.no)}</b></div>
         </div>
         <div class="order-spekno">Spek No: ${codes.length?esc(codes.slice(0,5).join(', '))+(codes.length>5?` +${codes.length-5}`:''):'-'}</div>
         <div class="order-meta">
@@ -7339,10 +7477,14 @@ function renderOrderDrafts(tabs,drafts){
       const comp=d.newCompany||((DB.companies||[]).find(c=>c.id===d.companyId)||{}).ad||'';
       const named=(d.lines||[]).filter(l=>l.ad);
       const urunOzet=named.slice(0,3).map(l=>esc(String(l.ad).split('/').pop().trim())).join(', ')+(named.length>3?` +${named.length-3} urun`:'');
+      const dbadges=[atamaBadge(d),imzaWarnBadge(d),`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber)">TASLAK</span>`,d.src==='modal'?'<span class="cat-tag" style="background:var(--dim)33;color:var(--mute)">eski form</span>':''].join('');
       cards+=`<div class="order-card" style="border-style:dashed" onclick="nordOpenDraftRoute('${d.src}','${d.id}')">
-        <div class="order-card-top">
-          <div class="order-no">${icoDoc()} <b>${esc(d.no||'(no yok)')}</b>${atamaBadge(d)}${imzaWarnBadge(d)} <span class="cat-tag" style="background:var(--amber)22;color:var(--amber);margin-left:4px">TASLAK</span>${d.src==='modal'?'<span class="cat-tag" style="background:var(--dim)33;color:var(--mute);margin-left:3px">eski form</span>':''}</div>
+        <div class="order-card-head">
+          <div class="order-badges">${dbadges}</div>
           <span class="order-date">${d.savedAt?fmtDate(d.savedAt):''}</span>
+        </div>
+        <div class="order-card-top">
+          <div class="order-no">${icoDoc()} <b>${esc(d.no||'(no yok)')}</b></div>
         </div>
         <div class="order-meta" style="margin-top:8px">
           <span class="bina-tag" style="background:${col}22;color:${col};border:1px solid ${col}55">${esc(bina||'-')}</span>
@@ -15571,10 +15713,14 @@ function renderProjeOrders(){
       const qty=o.lines.reduce((x,l)=>x+(Number(l.qty)||0),0);
       const col=buildingColor(o.bina);
       const urunOzet=o.lines.slice(0,3).map(l=>esc(l.ad.split('/').pop().trim())).join(', ')+(o.lines.length>3?` +${o.lines.length-3} urun`:'');
+      const badges=[atamaBadge(o),imzaWarnBadge(o),iadeBadge(o),notBadge(o)].join('');
       cards+=`<div class="order-card" onclick="openOrderDetail('${o.id}')">
-        <div class="order-card-top">
-          <div class="order-no">${icoDoc()} <b>${esc(o.no)}</b>${atamaBadge(o)}${imzaWarnBadge(o)}${iadeBadge(o)}${notBadge(o)}</div>
+        <div class="order-card-head">
+          <div class="order-badges">${badges}</div>
           <span class="order-date">${fmtDate(o.date)}</span>
+        </div>
+        <div class="order-card-top">
+          <div class="order-no">${icoDoc()} <b>${esc(o.no)}</b></div>
         </div>
         <div class="order-spekno">Spek No: ${codes.length?esc(codes.slice(0,5).join(', '))+(codes.length>5?` +${codes.length-5}`:''):'-'}</div>
         <div class="order-meta">
@@ -27526,7 +27672,7 @@ function fatYeni(){
     senaryo:'TICARIFATURA', faturaTipi:'SATIS', ozellestirmeNo:'TR1.2', ettn:'',
     irsaliyeNo:'', irsaliyeTarihi:'', paraBirimi:'TRY', kur:'', varsayilanKdv:20,
     beyanTutar:'', not:'', pdf:null, sozlesmePdf:null, irsaliyePdf:null, durum:'taslak',
-    qty:{}, sb:{}, oz:{}, fq:'', fbina:'', fbolum:'', fsart:'', ftum:false, ftumDurum:false };
+    qty:{}, sb:{}, oz:{}, fq:'', fbina:'', fbolum:'', fsart:'', ftum:false, fgizleBitmis:false };
   fatImzala();                       // bu andan sonraki her degisiklik korunur
   FATV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
 }
@@ -27550,7 +27696,7 @@ function fatDuzenle(id){
     paraBirimi:f.paraBirimi||'TRY', kur:f.kur||'', varsayilanKdv:20,
     beyanTutar:f.beyanTutar||'', not:f.not||'', durum:fatDurumu(f),
     pdf:f.pdf||null, sozlesmePdf:f.sozlesmePdf||null, irsaliyePdf:f.irsaliyePdf||null,
-    qty, sb, oz, fq:'', fbina:'', fbolum:'', fsart:'', ftum:true, ftumDurum:true };
+    qty, sb, oz, fq:'', fbina:'', fbolum:'', fsart:'', ftum:true, fgizleBitmis:false };
   fatImzala();                       // duzenleme formu DOLU acilir - olcut "degisti"
   FATV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
 }
@@ -27641,6 +27787,60 @@ function fatFirmaDegistir(v){
 }
 function fatSetFiltre(k,v){ if(_FAT){ _FAT[k]=v; render(); } }
 
+/* GENIS CALISMA ALANI: fatura girisi boyunca sol menuyu kaldirir (232px).
+   Sayfayi genisletmenin en buyuk tek kazanci budur - 1366px'lik bir ekranda
+   calisma alani %22 buyur, ki orada main'in kendi kapagi zaten binmiyordu.
+   Yalnizca FORM acikken ve yalnizca masaustunde (>=1024px, altinda menu zaten
+   yer kaplamaz, cekmece olarak acilir) gecerlidir; secim tarayicida saklanir,
+   bir dahaki faturada da acik gelir. */
+let FAT_GENIS=(()=>{ try{ return localStorage.getItem('faturaGenisAlan')==='1'; }catch(e){ return false; } })();
+function fatGenisAlanAcik(){ return !!(FAT_GENIS && _FAT); }
+function fatGenisAlanDegistir(){
+  FAT_GENIS=!FAT_GENIS;
+  try{ localStorage.setItem('faturaGenisAlan',FAT_GENIS?'1':'0'); }catch(e){}
+  render();
+}
+
+/* CANLI ARAMA. Kutu eskiden onchange ile calisiyordu: kullanici yazdiktan
+   sonra Enter'a basmadan ya da kutudan cikmadan liste degismiyordu -
+   "aradim, cikmadi" sanisinin bir kaynagi buydu. Artik her tusta suzulur.
+   render() sayfayi bastan cizdigi icin suzme 170ms geciktirilir (hizli
+   yazarken her harfte tum havuz taranmasin), cizimden sonra imlec kendi
+   yerine konur - bkz. setLokwQ, ayni kalip. */
+let _FAT_ARA_T=null;
+function fatAra(el){
+  const st=_FAT; if(!st) return;
+  st.fq=el.value;                      // trim EDILMEZ: yazarken bosluk silinirse imlec geri kayar
+  const p=el.selectionStart;
+  clearTimeout(_FAT_ARA_T);
+  _FAT_ARA_T=setTimeout(()=>{
+    if(!_FAT) return;
+    /* Odak, cizimden ONCE bakilir: kullanici bu 170ms icinde bir miktar
+       kutusuna gectiyse liste yine suzulur ama imlec ondan CALINMAZ. */
+    const bizdeydi=document.activeElement===el||document.activeElement&&document.activeElement.id==='fatAraKutu';
+    render();
+    if(!bizdeydi) return;
+    const n=document.getElementById('fatAraKutu');
+    if(n){ n.focus(); try{ n.setSelectionRange(p,p); }catch(e){} }
+  },170);
+}
+function fatAraSil(){
+  clearTimeout(_FAT_ARA_T);
+  if(!_FAT) return; _FAT.fq=''; render();
+  const n=document.getElementById('fatAraKutu'); if(n) n.focus();
+}
+/* Esc kutuyu temizler ve olay YUKARI CIKMAZ: genel dinleyici Escape'i gorurse
+   kenar cubugunu kapatir, kullanici yalnizca aramayi silmek istemistir.
+   Enter beklemeden hemen suzer. */
+function fatAraTus(e){
+  if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); fatAraSil(); return; }
+  if(e.key==='Enter'){
+    e.preventDefault(); clearTimeout(_FAT_ARA_T); render();
+    const n=document.getElementById('fatAraKutu');
+    if(n){ n.focus(); try{ n.setSelectionRange(n.value.length,n.value.length); }catch(err){} }
+  }
+}
+
 async function fatPickPdf(e,k){
   const f=e.target.files[0]; e.target.value=''; if(!f||!_FAT) return;
   if(f.size>20*1024*1024){ toast("PDF 20MB'tan buyuk",'err'); return; }
@@ -27679,7 +27879,13 @@ function fatFormUrunleri(tum){
     /* FIRMA SUZGECI YOK: liste zaten yalnizca secili firmanin alimlarindan
        kuruluyor (bkz. renderFaturaForm). Eski "Diger firmalardan alinanlar"
        kutusu bu kuralla celisiyordu - kaldirildi. */
-    if(!st.ftumDurum && u.kalan<=FAT_EPS) return false;
+    /* TAMAMI FATURALANMIS SATIR ELENMEZ - SOLUK VE KILITLI GOSTERILIR.
+       Eskiden listeden dusuyordu ve kullanici "bu urun neden yok" diye
+       ariyordu; oysa cevap "parasi zaten odenmis" idi ve bunu ancak suzgeci
+       degistirerek gorebiliyordu. Artik satir yerinde durur, kalani sifir
+       oldugu her yerden bellidir ve HICBIR kutusu yazilamaz (bkz. bitti).
+       Gizleme istege bagli kalir: uzun listede goz yormasin diye. */
+    if(st.fgizleBitmis && u.kalan<=FAT_EPS) return false;
     if(q && !fatAramaEslesir(u,q)) return false;
     return true;
   });
@@ -27717,16 +27923,17 @@ function fatOzelKodOzet(u,goster){
 function fatSecenekler(liste,alan){
   return [...new Set((liste||[]).flatMap(u=>u[alan]||[]))].filter(Boolean).sort((a,b)=>String(a).localeCompare(String(b),'tr'));
 }
-function fatFormFiltreVar(){ const st=_FAT; return !!(st&&(st.fq||st.fbina||st.fbolum||st.fsart||st.ftumDurum)); }
+function fatFormFiltreVar(){ const st=_FAT; return !!(st&&(String(st.fq||'').trim()||st.fbina||st.fbolum||st.fsart||st.fgizleBitmis)); }
 /* Aramayi KORUYUP daraltan her seyi acar: aranan urun bulundu ama firma/bina/durum
    suzgeci gizliyorsa kullanicinin tek tiklamasi yeter (tek render). */
 function fatSuzgeciGevset(){
   const st=_FAT; if(!st) return;
-  st.fbina=''; st.fbolum=''; st.fsart=''; st.ftumDurum=true; render();
+  st.fbina=''; st.fbolum=''; st.fsart=''; st.fgizleBitmis=false; render();
 }
 function fatFormFiltreTemizle(){
   const st=_FAT; if(!st) return;
-  st.fq=''; st.fbina=''; st.fbolum=''; st.fsart=''; st.ftumDurum=false; render();
+  clearTimeout(_FAT_ARA_T);            // bekleyen canli arama cizimi sonradan odagi calmasin
+  st.fq=''; st.fbina=''; st.fbolum=''; st.fsart=''; st.fgizleBitmis=false; render();
 }
 /* Formdaki kod kirilimi: kodsuz/sifir satirlar elenir, ayni kod iki kez
    yazildiysa toplanir - kayitta ve ekranda hep temiz bir liste durur. */
@@ -27895,13 +28102,30 @@ function renderFaturaForm(){
   const gizliN=st.fq
     ? tumUrunler.filter(u=>fatAramaEslesir(u,st.fq)).length-liste.filter(u=>fatAramaEslesir(u,st.fq)).length
     : 0;
+  /* TAMAMLANANLAR EN ALTA. Liste LIMIT'te kesiliyor; bitmis satirlar araya
+     karissaydi hala yazilabilecek satirlarin yerini yerlerdi. Sirasi gelmis
+     bir istisna var: miktar GIRILMIS bir satir bitmis gorunse bile yukarida
+     kalir (arada baskasi faturalamis olabilir - kullanici bunu gormeli). */
+  const bitmis=u=>!(u.kalan>FAT_EPS)&&!(fatSayi(st.qty[u.key])>0);
+  liste.sort((a,b)=>(bitmis(a)?1:0)-(bitmis(b)?1:0));
+  const bitmisN=liste.filter(bitmis).length;
   const LIMIT=80;
   const gosterilen=liste.slice(0,LIMIT);
+  const doldurulabilir=gosterilen.some(u=>u.kalan>FAT_EPS);
   st._satirlar=[];                       // ekrandaki miktar kutularinin duz listesi
   // ayni firmadan ayni numarali baska bir kayit var mi - kaydetmeden ONCE soylenir
   const ayniNo=String(st.no||'').trim()?fatKayitlar().filter(f=>f.id!==st.editId
     && norm(String(f.no||'').trim())===norm(String(st.no||'').trim())
     && (f.companyId||'')===(st.companyId||'')):[];
+  /* ETKIN SUZGEC CIPLERI: hangi suzgeclerin acik oldugu tek bakista gorulsun
+     ve tek tiklamayla kalksin. "Bu urun neden listede yok" sorusunun cevabi
+     cogu zaman unutulmus bir bina/bolum/durum suzgecidir. */
+  const cipler=[];
+  if(String(st.fq||'').trim()) cipler.push({et:'Arama',dg:String(st.fq).trim(),fn:"fatAraSil()"});
+  if(st.fbina)     cipler.push({et:'Bina',dg:st.fbina,fn:"fatSetFiltre('fbina','')"});
+  if(st.fbolum)    cipler.push({et:'Bolum',dg:st.fbolum,fn:"fatSetFiltre('fbolum','')"});
+  if(st.fsart)     cipler.push({et:'Sartname',dg:st.fsart,fn:"fatSetFiltre('fsart','')"});
+  if(st.fgizleBitmis) cipler.push({et:'Durum',dg:'Tamamlananlar gizli',fn:"fatSetFiltre('fgizleBitmis',false)"});
   const satirlar=gosterilen.map(u=>{
     const i=st._satirlar.length;
     st._satirlar.push({key:u.key,matId:u.matId,ad:u.ad,code:u.code,unit:u.unit,kalan:u.kalan,urun:u});
@@ -27918,7 +28142,8 @@ function renderFaturaForm(){
           u.bolumler.length?' · <span style="color:var(--blue)">'+esc(u.bolumler.join(', '))+'</span>':''}${
           u.sartnameler.length?' · '+esc(u.sartnameler.slice(0,2).join(', '))+(u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''):''}</div>
         ${u.ozelKodlar&&u.ozelKodlar.length?`<div class="t-meta" style="font-size:11px;font-family:var(--mono)">${fatOzelKodOzet(u)}</div>`:''}
-        ${(u.kodlar&&u.kodlar.length)?fatKodBtnHtml(i,u):''}</td>
+        ${bitti?`<div class="fat-bitti" title="Bu urunden alinan miktarin TAMAMI daha once faturalanmis - bu faturaya yazilamaz. Satir yalnizca gorulsun diye listede durur.">${icoKilit(false)} Tamami faturalandi</div>`:''}
+        ${(u.kodlar&&u.kodlar.length)?fatKodBtnHtml(i,u,bitti):''}</td>
       <td class="fat-alim" title="Alinan ${fmtNum(u.alinan)} · iade ${fmtNum(u.iade)} · daha once faturalanan ${fmtNum(u.fat)}">
         <b>${fmtNum(u.alinan)}</b>${u.iade>0?` · <span style="color:var(--amber)">-${fmtNum(u.iade)}</span>`:''}${u.fat>0?` · <span style="color:${u.durum==='fazla'?'var(--red)':'var(--mute)'}">F${fmtNum(u.fat)}</span>`:''}</td>
       <td class="num" style="font-weight:700;color:${bitti?'var(--dim)':'var(--ink)'}">${fmtNum(Math.max(0,u.kalan))}</td>
@@ -27946,8 +28171,14 @@ function renderFaturaForm(){
     </tr>`;
   }).join('');
   const t=fatGirilenOzet();
-  return `<div class="tut-wrap">
-    <div class="sel-bc"><button onclick="fatFormKapat()">${icoArr('left')} Fatura listesine don</button></div>
+  return `<div class="tut-wrap fat-form-wrap">
+    <div class="sel-bc"><button onclick="fatFormKapat()">${icoArr('left')} Fatura listesine don</button>
+      <button class="fat-genis-btn" onclick="fatGenisAlanDegistir()"
+        title="${FAT_GENIS?'Sol menuyu geri getirir':'Sol menuyu gizler, satir tablosuna 232px daha yer acar'}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${FAT_GENIS
+          ?'<path d="M9 3v18M4 3h16a1 1 0 011 1v16a1 1 0 01-1 1H4a1 1 0 01-1-1V4a1 1 0 011-1z"/>'
+          :'<path d="M4 3h16a1 1 0 011 1v16a1 1 0 01-1 1H4a1 1 0 01-1-1V4a1 1 0 011-1z"/><path d="M14 8l3 4-3 4M10 8l-3 4 3 4"/>'}</svg>
+        ${FAT_GENIS?'Menuyu geri getir':'Genis calisma alani'}</button></div>
     <div class="sel-head"><h2>${st.editId?(st.durum==='taslak'?'Taslak Fatura':'Faturayi Duzenle'):'Yeni Fatura'}</h2>
       <p>Faturada yazan <b>urunleri ve miktarlari</b> girin. Miktar o urunun toplam alimindan dusulur;
         <b>kalan miktardan fazlasi yazilamaz</b> - boylece ayni mal ikinci kez faturalanamaz.</p></div>
@@ -28021,34 +28252,59 @@ function renderFaturaForm(){
     </div>
     <div class="tut-card">
       <h4>Faturadaki Urunler <i>miktarlari girin - kalan, o urunun toplam alimindan artakalandir</i></h4>
-      <div class="iht-bar" style="margin-bottom:10px">
-        <div class="iht-search">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-          <input value="${esc(st.fq)}" placeholder="ozel kod (00UYB10GH105), urun adi, kod, bina, bolum..." onchange="fatSetFiltre('fq',this.value.trim())"
-            title="Faturada urun ozel (yerlesim) koduyla yaziliysa dogrudan o kodu aratin">
-          ${st.fq?`<button class="iht-x" onclick="fatSetFiltre('fq','')">&times;</button>`:''}
+      <div class="fat-ara">
+        <div class="ust">
+          <div class="kutu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input id="fatAraKutu" value="${esc(st.fq)}" autocomplete="off" spellcheck="false"
+              placeholder="Urun adi, stok kodu ya da ozel (yerlesim) kodu ara - orn. 00UYB10GH105"
+              oninput="fatAra(this)" onkeydown="fatAraTus(event)"
+              title="Yazdikca suzulur. Faturada urun ozel (yerlesim) koduyla yaziliysa dogrudan o kodu aratin. Esc temizler">
+            ${st.fq?`<button class="sil" onclick="fatAraSil()" title="Aramayi temizle (Esc)">&times;</button>`
+                   :`<kbd title="Klavyede / tusuna basinca imlec bu kutuya gelir">/</kbd>`}
+          </div>
+          <div class="sayac" title="Listede cizilen urun sayisi${liste.length>gosterilen.length?` - suzgece uyan ${fmtNum(liste.length)} urunun ilk ${fmtNum(LIMIT)} tanesi cizilir`:''}${bitmisN?` - ${fmtNum(bitmisN)} urunun tamami zaten faturalanmis (soluk satirlar, yazilamaz)`:''}${t.satir?` - ${fmtNum(t.satir)} satira miktar girildi`:''}">
+            <b>${fmtNum(gosterilen.length)}</b> urun${liste.length>gosterilen.length?` <i>/ ${fmtNum(liste.length)}</i>`:''}
+            ${bitmisN?`<span class="bitmis">${fmtNum(bitmisN)} tamamlandi</span>`:''}
+            ${t.satir?`<span class="dolu">${fmtNum(t.satir)} satir dolu</span>`:''}
+          </div>
+          <div class="eyl">
+            ${doldurulabilir?`<button onclick="fatHepsiniDoldur()" title="Ekranda gorunen her urunun KALAN miktarini kutusuna yazar - tamami faturalanmis satirlara dokunmaz">Gorunenlerin kalanini doldur</button>`:''}
+            ${t.satir?`<button onclick="fatHepsiniTemizle()" title="Girilen tum miktarlari, fiyatlari ve kod kirilimlarini siler">Girilenleri temizle</button>`:''}
+          </div>
         </div>
-        <select onchange="fatSetFiltre('fbina',this.value)" title="Urunun alindigi bina"><option value="">Tum binalar</option>
-          ${binalar.map(b=>`<option ${st.fbina===b?'selected':''}>${esc(b)}</option>`).join('')}</select>
-        <select onchange="fatSetFiltre('fbolum',this.value)" title="Sartname kaleminin bagli oldugu bolum"><option value="">Tum bolumler</option>
-          ${bolumler.map(b=>`<option ${st.fbolum===b?'selected':''}>${esc(b)}</option>`).join('')}</select>
-        <select onchange="fatSetFiltre('fsart',this.value)" title="Urunun gectigi sartname" style="min-width:150px"><option value="">Tum sartnameler</option>
-          ${sartnameler.map(b=>`<option ${st.fsart===b?'selected':''}>${esc(b)}</option>`).join('')}</select>
-        <label class="chk" style="display:flex;align-items:center;gap:6px;font-size:12px">
-          <input type="checkbox" ${st.ftumDurum?'checked':''} onchange="fatSetFiltre('ftumDurum',this.checked)"> Tamami faturalanmislar</label>
-        <div class="iht-sag">
-          ${fatFormFiltreVar()?`<button class="iht-reset" onclick="fatFormFiltreTemizle()">Filtreleri temizle</button>`:''}
-          ${gosterilen.length?`<button class="iht-reset" onclick="fatHepsiniDoldur()">Gorunenlerin kalanini doldur</button>`:''}
-          ${t.satir?`<button class="iht-reset" onclick="fatHepsiniTemizle()">Girilenleri temizle</button>`:''}
+        <div class="suz">
+          <label class="fs"><span>Bina</span>
+            <select class="${st.fbina?'on':''}" onchange="fatSetFiltre('fbina',this.value)" title="Urunun alindigi bina">
+              <option value="">Tum binalar${binalar.length?` (${fmtNum(binalar.length)})`:''}</option>
+              ${binalar.map(b=>`<option ${st.fbina===b?'selected':''}>${esc(b)}</option>`).join('')}</select></label>
+          <label class="fs"><span>Bolum</span>
+            <select class="${st.fbolum?'on':''}" onchange="fatSetFiltre('fbolum',this.value)" title="Sartname kaleminin bagli oldugu bolum">
+              <option value="">Tum bolumler${bolumler.length?` (${fmtNum(bolumler.length)})`:''}</option>
+              ${bolumler.map(b=>`<option ${st.fbolum===b?'selected':''}>${esc(b)}</option>`).join('')}</select></label>
+          <label class="fs"><span>Sartname</span>
+            <select class="${st.fsart?'on':''}" onchange="fatSetFiltre('fsart',this.value)" title="Urunun gectigi sartname">
+              <option value="">Tum sartnameler${sartnameler.length?` (${fmtNum(sartnameler.length)})`:''}</option>
+              ${sartnameler.map(b=>`<option ${st.fsart===b?'selected':''}>${esc(b)}</option>`).join('')}</select></label>
+          <label class="fs"><span>Faturalanma durumu</span>
+            <select class="${st.fgizleBitmis?'on':''}" onchange="fatSetFiltre('fgizleBitmis',this.value==='gizle')"
+              title="Tamami faturalanmis urunler listede SOLUK durur ve yazilamaz. Uzun listede goz yormasin isteniyorsa gizlenebilir">
+              <option value="tum" ${st.fgizleBitmis?'':'selected'}>Tumu - tamamlananlar soluk</option>
+              <option value="gizle" ${st.fgizleBitmis?'selected':''}>Tamamlananlari gizle</option>
+            </select></label>
         </div>
+        ${cipler.length?`<div class="cipler"><span class="et">Etkin suzgec</span>
+          ${cipler.map(c=>`<button class="cip" onclick="${c.fn}" title="Bu suzgeci kaldir">${c.et}: <b>${esc(c.dg)}</b><i>&times;</i></button>`).join('')}
+          ${cipler.length>1?`<button class="cip hepsi" onclick="fatFormFiltreTemizle()">Tumunu temizle</button>`:''}
+        </div>`:''}
       </div>
       ${gizliN>0?`<div class="fat-uyari dikkat" style="margin:0 0 10px">
         <h5>&#9888; "${esc(st.fq)}" ile eslesen ${fmtNum(gizliN)} urun daha var</h5>
-        <p>Bu urunler suzgeclerin disinda kaldi: secili bina/bolum disinda ya da tamami zaten
-        faturalanmis olabilir. (Baska firmadan alinan urunler bu listede HIC yer almaz -
+        <p>Bu urunler suzgeclerin disinda kaldi: secili bina/bolum disinda${st.fgizleBitmis?' ya da tamami zaten faturalanmis':''}
+        olabilir. (Baska firmadan alinan urunler bu listede HIC yer almaz -
         her fatura yalnizca kendi firmasinin alimlarindan kesilir.)
         <button class="fat-link" onclick="fatSuzgeciGevset()">Suzgecleri gevset, aramayi koru</button></p></div>`:''}
-      ${gosterilen.length?`<div class="tablewrap"><table class="tut-lines fat-lines"><thead><tr>
+      ${gosterilen.length?`<div class="tablewrap fat-lines-alan"><table class="tut-lines fat-lines"><thead><tr>
           <th>Sira No</th><th>Mal Hizmet</th>
           <th title="Alinan · iade · daha once faturalanan">Alim Durumu</th>
           <th class="num" title="Bu faturada en fazla yazilabilecek miktar">Kalan</th>
@@ -28061,10 +28317,10 @@ function renderFaturaForm(){
         <div class="fat-toplam"><div class="fat-toplam-ic" id="fatToplamBlok">${fatToplamBlokIc()}</div></div>`
       :`<div class="empty" style="padding:22px"><p>${fatFormFiltreVar()
           ?(st.fq&&!gizliN?`"${esc(st.fq)}" ile eslesen alim kaydi yok`:'Suzgece uyan urun yok')
-          :(st.companyId?'Bu firmadan alinmis, faturalanmayi bekleyen urun yok':'Once firma secin')}</p>
+          :(st.companyId?'Bu firmadan alinmis urun yok':'Once firma secin')}</p>
         <span style="font-size:12px">${st.fq&&!gizliN
           ?'Urun ozel (yerlesim) koduyla da aranabilir. Kod dogruysa BU FIRMADAN o urun icin henuz siparis/alim girilmemis demektir'
-          :(st.companyId?'"Tamami faturalanmislar" kutusunu isaretleyerek listeyi genisletebilirsiniz. Liste yalnizca BU FIRMADAN alinan urunleri icerir - baska firmadan alinan mal bu faturaya yazilamaz'
+          :(st.companyId?(fatFormFiltreVar()?'Suzgecleri kaldirarak listeyi genisletebilirsiniz. ':'')+'Liste yalnizca BU FIRMADAN alinan urunleri icerir - baska firmadan alinan mal bu faturaya yazilamaz'
                         :'Once firma secin: liste yalnizca o firmadan alinan urunlerden kurulur')}</span></div>`}
       ${liste.length>LIMIT?`<p class="t-meta" style="font-size:11.5px;margin-top:8px">+ ${fmtNum(liste.length-LIMIT)} urun daha var - listeyi daraltmak icin arama ya da bina filtresi kullanin</p>`:''}
     </div>
@@ -28342,11 +28598,15 @@ function fatKodBtnDurum(key){
     metin:d.durum==='eksik'?fmtNum(d.artan)+' birim koda yazilmadi':fmtNum(-d.artan)+' birim fazla yazildi'};
 }
 const FAT_KODBTN_IPUCU='Bu satirin miktarini yerlesim kodlarina bol - hangi yerlesimin parasinin odendigi kayda gecsin';
-function fatKodBtnHtml(i,u){
+/* kilitli: tamami faturalanmis satir. Dugme YOK EDILMEZ - varsa eski kod
+   dagilimi okunabilsin diye durur, ama acilmaz. */
+function fatKodBtnHtml(i,u,kilitli){
   const b=fatKodBtnDurum(u.key);
-  return `<button type="button" id="fatKB${i}" class="${('fat-kodbtn '+b.sinif).trim()}"${b.aktif?'':' disabled'}
-    style="${b.aktif?'':'opacity:.5;cursor:default'}"
-    onclick="fatOzelOpen(${i})" title="${esc(b.aktif?FAT_KODBTN_IPUCU:'Once bu satira miktar girin')}">${esc(b.metin)}</button>`;
+  const aktif=b.aktif&&!kilitli;
+  return `<button type="button" id="fatKB${i}" class="${('fat-kodbtn '+b.sinif).trim()}"${aktif?'':' disabled'}
+    style="${aktif?'':'opacity:.5;cursor:default'}"
+    onclick="fatOzelOpen(${i})" title="${esc(aktif?FAT_KODBTN_IPUCU
+      :(kilitli?'Tamami faturalanmis - bu satirda islem yapilamaz':'Once bu satira miktar girin'))}">${esc(b.metin)}</button>`;
 }
 // Her tustan sonra cagirilir - tablo yeniden CIZILMEZ, yalnizca dugme tazelenir
 function fatKodBtnGuncelle(i,key){
@@ -29922,6 +30182,15 @@ function cmdkGo(i){ const r=_cmdkResults[i]; if(!r)return; closeCmdk(); r.go(); 
 document.addEventListener('keydown',e=>{
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){ e.preventDefault();
     if(document.getElementById('cmdkBg'))closeCmdk(); else openCmdk(); return; }
+  /* "/" ile fatura formundaki urun aramasina atlanir - belgeden sayi okurken
+     elin fareye gitmesi gerekmesin. Ctrl+K global palete ayrildigi icin ayri
+     bir tus secildi. Bir yazi alanindayken ya da palet acikken calismaz. */
+  if(e.key==='/'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!document.getElementById('cmdkBg')){
+    const t=e.target,tn=(t&&t.tagName)||'';
+    if(tn==='INPUT'||tn==='TEXTAREA'||tn==='SELECT'||(t&&t.isContentEditable)) return;
+    const k=document.getElementById('fatAraKutu');
+    if(k){ e.preventDefault(); k.focus(); k.select(); return; }
+  }
   if(e.key==='Escape'){
     if(document.getElementById('cmdkBg')){ closeCmdk(); return; }
     const lb=document.querySelector('.lightbox'); if(lb){ lb.remove(); return; }
