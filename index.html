@@ -563,6 +563,9 @@ main{flex:1;padding:clamp(16px,2vw,28px);max-width:1600px;width:100%;margin:0 au
 .ord-add-square svg{width:30px;height:30px;flex:0 0 auto}
 @media(max-width:560px){ .ord-add-square{width:84px;height:84px;font-size:11px;border-radius:14px} .ord-add-square svg{width:24px;height:24px} }
 .ord-sumline b{color:var(--ink)}
+/* Ozet satirinda tutar farki toplami: amber, cunku bir uyaridir - "gosteriliyor"
+   ve "odenecek" gibi notr sayilarla ayni renkte olsa gozden kacardi. */
+.ord-sumline .fark{color:var(--amber);font-weight:700}
 @media(max-width:720px){ .ord-f{min-width:calc(50% - 14px)} }
 /* kutuphane sayfalama cubugu: kayit sayisi solda, sayfa boyutu + onceki/sonraki sagda */
 .matlib-pgbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
@@ -805,6 +808,23 @@ tbody tr:hover{background:var(--hover)}
    olur ve ortalanan islem tuslari fatura numarasindan cok asagida kalirdi -
    tuslar satirin UST cizgisinde, numarayla ayni hizada durur. */
 .fat-liste tbody td.ust{vertical-align:top}
+/* LISTEDEKI FATURA NOTU: serbest metin, kimi belgede on satiri buluyor ve o
+   faturanin satirini tek basina ekran boyu uzatiyordu. Not artik IKI SATIRA
+   kirpik durur; uzerine basilinca fatura numarasinin satiri onunla birlikte
+   genisler ve notun tamami gorunur (ikinci tik kapatir).
+   Ok her notta durur: kirpilmis mi degil mi CSS'ten okunamaz, kisa notta
+   tiklamanin sonucsuz kalmasi uzun notta okun hic gorunmemesinden iyidir. */
+.fat-not{display:flex;align-items:flex-end;gap:5px;width:100%;max-width:340px;margin-top:3px;
+  padding:0;background:none;border:0;text-align:left;cursor:pointer;
+  font-family:var(--mono);font-size:11px;line-height:1.45;color:var(--mute);transition:color .15s}
+.fat-not .mt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}
+.fat-not.acik .mt{display:block}
+.fat-not .ok{flex:0 0 auto;margin-bottom:2px;color:var(--dim);transition:transform .15s,color .15s}
+.fat-not:hover{color:var(--ink)}
+.fat-not:hover .ok{color:var(--amber)}
+.fat-not.acik{color:var(--ink)}
+.fat-not.acik .ok{transform:rotate(180deg);color:var(--amber)}
 .cat-tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:600;font-family:var(--mono);white-space:nowrap}
 .brand-tags{display:flex;flex-direction:column;align-items:flex-start;gap:3px;max-width:230px}
 .brand-tags .cat-tag{white-space:normal;word-break:break-word;line-height:1.4;text-align:left}
@@ -1907,14 +1927,65 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
    kiriliyordu). Genis govde + ikili satirlar modali hem kisaltir hem okunakli birakir. */
 .modal.spec-modal{max-width:680px}
 /* -- dashboard widget'lari (bina secim ekrani) -- */
-/* GIRIS SAYFASI - dort kart TEK izgarada 2x2: iki sutun esit genislikte, ayni satirdaki
-   kartlar esit yuksekte (grid stretch) ve dikey ayrim cizgisi iki satirda AYNI yerde durur.
-   Eskiden ust satir ayri bir izgaraydi (.dash-hero, 1fr / 1.35fr): seam alt satirla
-   ortusmuyor, sayfa asimetrik gorunuyordu. grid-auto-rows minimumu kisa kartlarin
-   basik kalmasini engeller, icerik buyudukce satir birlikte uzar. */
-.dash-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:272px;grid-auto-rows:minmax(210px,auto);gap:14px;margin-top:20px}
+/* GIRIS SAYFASI IZGARASI - iki sutun, ayni satirdaki kartlar esit yukseklikte.
+   SATIR YUKSEKLIGI ARTIK SATIRIN DEGIL WIDGET'IN OZELLIGI. Eskiden ilk izgara
+   satiri sabit 272px'ti (grid-template-rows) ve Binalar karti hep o satirdaydi;
+   kartlar yer degistirebildigi icin artik sabit yukseklik kartla birlikte tasinir
+   (.dash-w.sabit). Boylece Binalar hangi sirada olursa olsun ayni anda uc bina
+   gosterip icinde kayar. grid-auto-rows minimumu kisa kartlarin basik kalmasini
+   engeller, icerik buyudukce satir birlikte uzar. */
+.dash-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(210px,auto);gap:14px;margin-top:10px}
 .dash-grid>*{min-width:0}
-@media(max-width:900px){.dash-grid{grid-template-columns:minmax(0,1fr);grid-template-rows:auto;grid-auto-rows:auto}}
+@media(max-width:900px){.dash-grid{grid-template-columns:minmax(0,1fr);grid-auto-rows:auto}}
+/* ══ PANO WIDGET KUTUSU ═════════════════════════════════════════════════════
+   Her kart artik bir KUTUNUN icinde durur. Kutu izgaranin ogesidir; kart onu
+   doldurur. Bu ara katman sart: surukleme tutamagi, genislik/gizleme seridi ve
+   grid-column'u karta degil kutuya vermek gerekiyor - karta verilseydi
+   duzenleme seridi kartin ic kenar boslugunun icinde kalir, .dash-card'in
+   arka plani/golgesi seridi de yutardi. */
+.dash-w{display:flex;flex-direction:column;min-width:0;min-height:0}
+.dash-w>.dash-card{flex:1;min-width:0;min-height:0}
+.dash-w.genis{grid-column:1/-1}
+.dash-w.sabit{height:272px}
+/* Binalar tam genislige yayilinca uc sabit sutun kartlari gereksiz genisletirdi -
+   genislige gore sutun sayisi kendiliginden artar. */
+.dash-w.genis .bina-card .sel-grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
+/* Dar ekranda izgara zaten tek sutun: sabit yukseklik de tam genislik de anlamini
+   yitirir (kart icinde kaydirmak yerine sayfa kaysin - dokunmatikte ic ice iki
+   kaydirma alani kullanilamiyor). */
+@media(max-width:900px){ .dash-w.sabit{height:auto} .dash-w.genis{grid-column:auto} }
+/* ── duzenleme modu ─────────────────────────────────────────────────────────
+   Kartin ustunde tutamak + ad + genislik/gizle dugmeleri belirir; kartin KENDI
+   icerigi tiklanamaz hale gelir, yoksa kart siralarken bina secilir ya da
+   sartname detayina atlanirdi. */
+.pano-wrap{margin-top:20px}
+.pano-bar{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.pano-bar .pano-ipucu{margin-right:auto;font-size:11px;color:var(--dim);line-height:1.5}
+.pano-btn{display:inline-flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);color:var(--mute);
+  border-radius:8px;padding:6px 11px;font-size:11px;font-weight:700;font-family:var(--mono);letter-spacing:.2px;cursor:pointer;transition:color .13s,border-color .13s,background .13s}
+.pano-btn:hover{color:var(--ink);border-color:var(--dim)}
+.pano-btn.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.pano-btn.on:hover{filter:brightness(1.12);color:#fff}
+.pano-link{background:none;border:none;padding:0;color:var(--amber);font-size:inherit;cursor:pointer;text-decoration:underline}
+.pw-bar{display:flex;align-items:center;gap:8px;flex:0 0 auto;margin-bottom:6px;padding:4px 6px;
+  background:var(--panel2);border:1px solid var(--line);border-radius:8px}
+.pw-bar b{flex:1;min-width:0;font-size:10.5px;font-weight:700;font-family:var(--mono);letter-spacing:.3px;color:var(--ink);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pw-grip{display:flex;align-items:center;justify-content:center;flex:0 0 auto;width:20px;cursor:grab;color:var(--dim);border-radius:5px;padding:3px 0;transition:color .12s,background .12s;-webkit-user-select:none;user-select:none}
+.pw-grip:hover{color:var(--mute);background:color-mix(in srgb,var(--dim) 22%,transparent)}
+.pw-grip:active{cursor:grabbing}
+.pw-grip svg{width:13px;height:13px;pointer-events:none}
+.pw-btn{flex:0 0 auto;background:var(--panel);border:1px solid var(--line);color:var(--mute);border-radius:6px;padding:2px 8px;
+  font-size:9.5px;font-weight:700;font-family:var(--mono);letter-spacing:.2px;cursor:pointer;transition:color .12s,border-color .12s,background .12s}
+.pw-btn:hover{color:var(--ink);border-color:var(--dim)}
+.pw-btn.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.pw-btn.kapali{background:color-mix(in srgb,var(--warning) 16%,transparent);border-color:color-mix(in srgb,var(--warning) 40%,transparent);color:var(--warning)}
+.dash-grid.duzen .dash-w{outline:1px dashed color-mix(in srgb,var(--dim) 50%,transparent);outline-offset:3px;border-radius:var(--radius)}
+.dash-grid.duzen .dash-card{pointer-events:none}
+.dash-grid.duzen .dash-w.kapali>.dash-card{opacity:.35;filter:grayscale(1)}
+.dash-w.drag{opacity:.4}
+.dash-w.drop-sol{box-shadow:inset 3px 0 0 var(--amber)}
+.dash-w.drop-sag{box-shadow:inset -3px 0 0 var(--amber)}
 /* -- dashboard ust blok: donut grafikler + bina bazli ilerleme tablosu -- */
 .dash-donuts{display:flex;align-items:center;justify-content:space-around;gap:12px;flex-wrap:wrap}
 .donut{text-align:center;padding:4px 2px}
@@ -1950,13 +2021,15 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .dash-row .dr-qty{min-width:0;font-family:var(--mono);font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:right}
 .dash-empty{padding:18px 0;text-align:center;color:var(--dim);font-size:12px}
 /* ══ GIRIS PANOSU - BINALAR KARTI ═══════════════════════════════════════════
-   Binalar artik panonun SOL UST hucresinde bir kart icinde yasiyor. Eskiden
-   panonun USTUNDE serbest bir izgaraydi: bina sayisi arttikca sayfayi asagi
-   ittiriyor, ozet kartlari ekranin disinda kaliyordu.
+   Binalar artik panonun bir HUCRESINDE, kart icinde yasiyor. Eskiden panonun
+   USTUNDE serbest bir izgaraydi: bina sayisi arttikca sayfayi asagi ittiriyor,
+   ozet kartlari ekranin disinda kaliyordu.
    AYNI ANDA EN FAZLA UC BINA gorunur (uc sutun x tek satir); dordunculer kart
-   icinde dikey kayar. Bunun calismasi icin ilk izgara satiri SABIT yukseklikte
-   olmak zorunda (bkz. .dash-grid grid-template-rows) - satir esnek olsaydi
-   yanindaki takvim karti onu uzatir, binalar ikinci sirayi gostermeye baslardi. */
+   icinde dikey kayar. Bunun calismasi icin kutunun SABIT yukseklikte olmasi
+   sart (bkz. .dash-w.sabit) - esnek olsaydi ayni satirdaki uzun bir kart onu
+   da uzatir, binalar ikinci sirayi gostermeye baslardi. Yukseklik SATIRA degil
+   KUTUYA baglidir: kart panoda yer degistirebiliyor, olcusu de onunla tasinir.
+   Kart tam genislige alinirsa sutun sayisi kendiliginden artar. */
 .dash-card.flexcard{display:flex;flex-direction:column;min-height:0}
 .dash-card.flexcard>.dash-title{flex:0 0 auto}
 /* negatif margin: kaydirma cubugu kartin ic kenarina yaslansin, kartlar kaymasin */
@@ -1975,14 +2048,51 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 /* kart basliginin sagindaki sayac / kaydirma ipucu */
 .dash-title .dt-note{margin-left:auto;font-weight:600;font-size:9.5px;color:var(--dim);text-transform:none;letter-spacing:0;white-space:nowrap}
 
+/* ══ ARACLAR (AYARLAR) SAYFASI ══════════════════════════════════════════════
+   Her arac kendi kartinda: baslik seridi + govde. Kartlar alt alta, sayfa
+   900px'te sinirli - ayar sayfasi genisledikce okunmaz oluyor. */
+.arac-kart{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm);margin-bottom:16px;overflow:hidden}
+.arac-kart-bas{display:flex;align-items:center;gap:11px;padding:14px 16px;border-bottom:1px solid var(--line);background:var(--panel2)}
+.arac-kart-bas>svg{flex:0 0 auto;color:var(--dim)}
+.arac-kart-bas>div{flex:1;min-width:0}
+.arac-kart-bas b{display:block;font-size:13px;font-weight:700;color:var(--ink)}
+.arac-kart-bas span{display:block;font-size:11px;color:var(--dim);margin-top:2px;line-height:1.45}
+/* pano widget listesi: sira numarasi + ad/aciklama + tuslar. Dar ekranda tuslar
+   alt satira iner (wrap), sira numarasi ile ad yan yana kalir. */
+.arac-satir{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:11px 16px;border-bottom:1px solid var(--line)}
+.arac-satir:last-child{border-bottom:none}
+.arac-satir.kapali .arac-ad b{color:var(--mute);text-decoration:line-through}
+.arac-sira{flex:0 0 auto;width:22px;height:22px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10.5px;font-weight:700;color:var(--mute)}
+.arac-ad{flex:1;min-width:150px}
+.arac-ad b{display:block;font-size:12.5px;font-weight:600;color:var(--ink)}
+.arac-ad span{display:block;font-size:10.5px;color:var(--dim);margin-top:2px;line-height:1.45}
+.arac-tus{display:flex;align-items:center;gap:6px;flex:0 0 auto;margin-left:auto}
+.mini-btn:disabled{opacity:.3;cursor:default}
+.mini-btn:disabled:hover{color:var(--mute);border-color:var(--line)}
+.arac-not{padding:11px 16px;font-size:11px;line-height:1.55;color:var(--dim);background:var(--panel2);border-top:1px solid var(--line)}
+.arac-not b{color:var(--mute)}
+/* bakim araclari: dokunulabilir buyuklukte kutucuklar - telefonda ust cubuktan
+   gizlenen dugmelerin tek erisim noktasi bu kart */
+.arac-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;padding:14px 16px}
+.arac-tile{display:flex;align-items:flex-start;gap:10px;text-align:left;padding:11px 12px;border-radius:10px;
+  background:var(--bg);border:1px solid var(--line);color:var(--mute);cursor:pointer;transition:color .13s,border-color .13s,background .13s}
+.arac-tile:hover{color:var(--ink);border-color:var(--dim);background:var(--hover)}
+.arac-tile>svg{flex:0 0 auto;margin-top:1px;color:var(--dim)}
+.arac-tile:hover>svg{color:var(--primary)}
+.arac-tile span{min-width:0}
+.arac-tile b{display:block;font-size:12px;font-weight:700;color:var(--ink)}
+.arac-tile i{display:block;font-style:normal;font-size:10.5px;color:var(--dim);margin-top:2px;line-height:1.45}
+/* geri donusu olmayan / butun veriyi degistiren islemler amber cerceveyle ayrilir */
+.arac-tile.uyari:hover{border-color:color-mix(in srgb,var(--amber) 55%,transparent)}
+.arac-tile.uyari:hover>svg{color:var(--amber)}
 /* ══ GUNLUK ISLER (TAKVIMLI GOREV TAKIBI) ═══════════════════════════════════
    Sol: ay takvimi (gun hucrelerinde durum noktalari). Sag: secili gunun -
    ya da "Onay Bekleyen" / "Geciken" suzgecinin - gorev listesi.
    Iki sutun da kendi icinde kayar; kart yuksekligi sabit satirdan gelir. */
 /* hic bina yokken pano tek kart tasir: takvim iki sutunu birden kaplar,
    yoksa sag yari bos kalir ve sayfa yamuk gorunur */
-.dash-grid.gi-solo{grid-template-rows:300px}
-.dash-grid.gi-solo>.gi-card{grid-column:1/-1}
+.dash-grid.gi-solo>.dash-w{grid-column:1/-1;height:300px}
 .gi-panel{flex:1;min-height:0;display:flex;flex-direction:column}
 .gi-body{flex:1;min-height:0;display:grid;grid-template-columns:212px minmax(0,1fr);gap:12px}
 .gi-cal{display:flex;flex-direction:column;min-width:0;min-height:0}
@@ -3146,6 +3256,12 @@ datalist{display:none}
   border:1px dashed color-mix(in srgb,var(--mute) 45%,transparent)}
 .fat-rozet.kesin{color:var(--blue);background:color-mix(in srgb,var(--blue) 14%,transparent)}
 .fat-rozet.kilitli{color:#a855f7;background:color-mix(in srgb,#a855f7 15%,transparent)}
+/* TUTAR FARKI rozeti etiketin yaninda SAYIYI da tasir: "fark var" demek
+   "ne kadar?" sorusunu aciktaki birakiyordu - tutari gormek icin faturayi
+   acmak ya da ipucu balonunu beklemek gerekiyordu. Isaretin yonu de bilgidir:
+   + belgede yazan tutar hesaplanandan yuksek, - hesaplanan belgeden yuksek. */
+.fat-rozet.fark b{font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:-.2px}
+.fat-rozet.fark em{font-style:normal;font-size:9px;font-weight:700;opacity:.7;margin-left:-3px}
 /* DOLULUK SERIDI: faturalanan / net alinan. Tavani asan kisim ayri renkte -
    yuzde 100'de duran bir cubuk, fazla faturayi gizlerdi. */
 .fat-bar{height:5px;border-radius:4px;background:color-mix(in srgb,var(--dim) 18%,transparent);
@@ -3890,7 +4006,7 @@ function migrate(){
 }
 
 let SEC="proje", TAB="spec", SEARCH="", GFILTER="", LOGVIEW="akis";
-let PBINA="", PCAT="", PSPEC="", PLIB=false, PDEF=false, PORD=false, PCOMP=false, PEKIP=false, PNEWORD=false, PBINAY=false, PKATA=false, PODM=false, PSPECF=false, PRIMP=false, PINV=false, PTUT=false, PKODD=false, PIHT=false, PFAT=false, PTOPM=false, PTOPG=false, ORDBINA="";  // proje filtreleri + kutuphane + tanimlar + tum siparisler + sirketler + ekipler + siparis ekleme sayfasi + bina yonetimi + kat ata sayfasi + oda metraji sayfasi + sartname kalemi detay sayfasi + rapor excel ice aktarma sayfasi + tutanak sayfasi + ihtiyac listesi sayfasi + fatura kontrol sayfasi + toplu urun ekleme sayfasi + mobilizasyon toplu malzeme ekleme sayfasi
+let PBINA="", PCAT="", PSPEC="", PLIB=false, PDEF=false, PORD=false, PCOMP=false, PEKIP=false, PNEWORD=false, PBINAY=false, PKATA=false, PODM=false, PSPECF=false, PRIMP=false, PINV=false, PTUT=false, PKODD=false, PIHT=false, PFAT=false, PTOPM=false, PTOPG=false, PARAC=false, ORDBINA="";  // proje filtreleri + kutuphane + tanimlar + tum siparisler + sirketler + ekipler + siparis ekleme sayfasi + bina yonetimi + kat ata sayfasi + oda metraji sayfasi + sartname kalemi detay sayfasi + rapor excel ice aktarma sayfasi + tutanak sayfasi + ihtiyac listesi sayfasi + fatura kontrol sayfasi + toplu urun ekleme sayfasi + mobilizasyon toplu malzeme ekleme sayfasi
 let ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:'',tur:''}; // Tum Siparisler yapisal filtreleri (bolum/sartname/malzeme/kod/sirket/tarih/pdf/siparis turu) - ORDBINA ile birlikte calisir
 let ORDVIEW='orders'; // Tum Siparisler alt gorunumu: 'orders' (kesinlesmis) | 'drafts' (taslaklar)
 let SPECVIEW=localStorage.getItem('specview')==='list'?'list':'grid';     // sartname kalemleri gorunumu: 'grid' (kart) | 'list' (satir) - kullanicinin son secimi hatirlanir
@@ -4584,7 +4700,7 @@ function startClock(){
 function switchSection(s){ if(!canSee(s)){ toast('Bu bolume erisim yetkiniz yok','err'); return; }
   // acik fatura formunda kaydedilmemis is varsa once sorulur (bkz. fatAyrilmaOnayi)
   if(typeof fatAyrilmaOnayi==='function' && !fatAyrilmaOnayi()) return; SEC=s; TAB=(s==='proje'?'spec':'stok'); SEARCH=""; GFILTER="";
-  PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PNEWORD=false; PBINAY=false; PKATA=false; PODM=false; PSPECF=false; PRIMP=false; PINV=false; PTUT=false; PKODD=false; PIHT=false; PFAT=false; PTOPM=false; PTOPG=false; _KODD=null; _RIMP=null; _TOPM=null; _TOPG=null; // acik panelleri kapat
+  PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PNEWORD=false; PBINAY=false; PKATA=false; PODM=false; PSPECF=false; PRIMP=false; PINV=false; PTUT=false; PKODD=false; PIHT=false; PFAT=false; PTOPM=false; PTOPG=false; PARAC=false; _KODD=null; _RIMP=null; _TOPM=null; _TOPG=null; // acik panelleri kapat
   RV.silMod=false; RV.silGun=new Set(); _RSIL=null; // silme modu bolum degisince kapanir
   if(s==='saha'){ render(); initSaha(); } else render();
   playSectionTransition(); }
@@ -4680,6 +4796,14 @@ function exportBinaSpecExcel(){
    dusulur: davranis bugunkunun birebir aynisi olur. Odakta arama kutusu
    YOKKEN de - yani cizimlerin neredeyse tamaminda - duz innerHTML calisir. */
 function mainYaz(m,html){
+  /* YUZEN NOTU KAPAT: bilgi topunun notu, tuttugu dugmenin yaninda degil
+     GOVDEYE (body) eklenir - cizilen ekranin disindadir, dolayisiyla ekran
+     degisince kendiliginden kaybolmaz. Dugme birazdan silinecegi icin not
+     sahipsiz kalir ve yeni sayfanin ustunde asili durur (Fatura Kontrol'den
+     Binalar'a gecince ekranda kalmasinin sebebi buydu). Cizimden ONCE, tek
+     yerden kapatilir: butun ekran degisimleri buradan gectigi icin her modul
+     icin ayri ayri dusunmek gerekmez. */
+  btopKapat();
   const ara=document.activeElement;
   /* Yalnizca ODAKTAKI bir INPUT korunur (arama kutulari, form alanlari).
      Kimligi olmayan ya da input olmayan odaklar icin duz innerHTML - yani
@@ -4724,7 +4848,7 @@ function mainNitelik(kaynak,hedef,atla){
 
 function render(){
   const m=document.getElementById('mainArea');
-  const inPanel = (PUSERS&&isAdmin()) || (PAUDIT&&isAdmin()) || PLIB || PDEF || PORD || PCOMP || PEKIP || PNEWORD || PBINAY || PKATA || PODM || PSPECF || PRIMP || PINV || PTUT || PIHT || PFAT || PKODD || PTOPM || PTOPG;
+  const inPanel = (PUSERS&&isAdmin()) || (PAUDIT&&isAdmin()) || PLIB || PDEF || PORD || PCOMP || PEKIP || PNEWORD || PBINAY || PKATA || PODM || PSPECF || PRIMP || PINV || PTUT || PIHT || PFAT || PKODD || PTOPM || PTOPG || PARAC;
   renderSidebar();
   updateBinaExcelFab();
   /* FATURA tam sayfasi: bir LISTE sayfasindan (Tum Siparisler / kutuphane vb.) icine girilen
@@ -4801,6 +4925,10 @@ function render(){
   /* FATURA KONTROL sayfasi da ayni kusakta: acikken sidebar'dan baska bir panele
      gecilirse o panel kazansin. PIHT/PTUT ile ayni anda acik olamaz (acilis
      fonksiyonlari birbirinin bayragini dusurur), sira yine de sabitlendi. */
+  /* ARACLAR (ayarlar) sayfasi da bu kusakta: acikken sol menuden baska bir panele
+     gecilirse o panel kazansin, kullanici burada kilitli kalmasin. openAraclar oteki
+     bayraklari zaten dusurdugu icin ikisi ayni anda acik olamaz. */
+  if(PARAC){ mainYaz(m,renderAraclarPage()); wireToolbar(); return; }
   if(PFAT){ mainYaz(m,renderFaturaPage()); wireToolbar(); return; }
   if(PIHT){ mainYaz(m,renderIhtiyacPage()); wireToolbar(); return; }
   if(PTUT){ mainYaz(m,renderTutanakPage()); wireToolbar(); return; }
@@ -4935,16 +5063,219 @@ function renderBinaSecim(){
   </div>`;
 }
 /* ==================================================================
-   DASHBOARD WIDGET'LARI (bina secim ekraninin altinda)
-   - Genel tedarik/montaj yuzdesi, son hareketler, en cok eksik kalemler
-   - Yalnizca kullanicinin gorebildigi binalarin verisiyle hesaplanir
+   BASLANGIC PANOSU - WIDGET'LAR VE DUZEN
+   - Panodaki her baslik (Binalar, Gunluk Isler, Genel Ozet, Bina Bazli
+     Ilerleme, Son Hareketler, Eksik Malzemeler) artik bagimsiz bir WIDGET'tir:
+     sirasi surukle-birakla degisir, genisligi yarim/tam yapilir, gizlenebilir.
+   - Duzen KULLANICI BASINA localStorage'da durur; app_settings'e YAZILMAZ,
+     cunku orasi org genelinde ortaktir (bkz. sbSetSetting cagiranlari:
+     binaGiris, markalar, orderDrafts...) ve bir kisinin pano tercihi
+     otekilerin panosunu degistirirdi. Ayrica hicbir egress maliyeti yok.
+   - Hesaplama hep gorulebilen binalarin verisiyle yapilir (yetki suzgeci).
    ================================================================== */
+/* KAYIT DEFTERI. Panoya yeni bir baslik eklemek icin: buraya bir satir,
+   panoParcalar()'a ayni id ile HTML. Duzeni kayitli kullanicilarin panosu
+   panoDuzenBirlestir() sayesinde kendiliginden yeni basligi da alir.
+   sabit:true -> kart SABIT yukseklikte durur ve icinde kayar (Binalar kartinda
+   ayni anda en fazla uc bina gorunsun diye; takvim de ayni olcude). */
+const PANO_WIDGETLAR=[
+  {id:'binalar',  ad:'Binalar',             sabit:true, aciklama:'Gorebildiginiz binalar - kart icinde kayar'},
+  {id:'gunluk',   ad:'Gunluk Isler',        sabit:true, aciklama:'Takvim, gunun gorevleri ve gunluk yazi'},
+  {id:'ozet',     ad:'Genel Ozet',          aciklama:'Tedarik / montaj yuzdeleri ve sayaclar'},
+  {id:'ilerleme', ad:'Bina Bazli Ilerleme', aciklama:'Her binanin tedarik ve montaj cubugu'},
+  {id:'hareket',  ad:'Son Hareketler',      aciklama:'En yeni 6 malzeme giris / cikisi'},
+  {id:'eksik',    ad:'Eksik Malzemeler',    aciklama:'Kalani en yuksek 6 sartname kalemi'},
+];
+function panoTanim(id){ return PANO_WIDGETLAR.find(w=>w.id===id)||null; }
+
+let _PANO_DUZEN=null;        // okunan duzen bellekte tutulur (her cizimde JSON.parse etmeyelim)
+let _PANO_DUZEN_KEY='';      // onbellekteki duzen KIMIN - kullanici degisirse bayatlamasin
+let _PANO_CTX=null;          // son cizilen panonun verisi - izgarayi tek basina tazelemek icin
+let PANO_DUZEN_MOD=false;    // pano uzerinde duzenleme modu acik mi
+
+/* Anahtar KULLANICI ADINI tasir: ayni tarayicidan iki kisi girdiginde birinin
+   duzeni otekinin panosuna gecmesin. */
+function panoDuzenKey(){ return 'panoDuzen:'+((CURRENT_USER&&CURRENT_USER.username)||'-'); }
+/* KAYIT ile KAYIT DEFTERINI birlestirir. Kayit eski bir surumden gelmis olabilir:
+   bilinmeyen id'ler atilir, kayitta olmayan widget'lar VARSAYILAN sirasindaki
+   yerine geri konur. Boylece panoya yeni bir baslik eklendiginde duzeni kayitli
+   kullanicilar o basligi gormeden kalmaz. */
+function panoDuzenBirlestir(kayit){
+  const bilinen=new Set(PANO_WIDGETLAR.map(w=>w.id));
+  const list=Array.isArray(kayit)
+    ? kayit.filter(x=>x&&bilinen.has(x.id)).map(x=>({id:x.id,gizli:!!x.gizli,genis:!!x.genis}))
+    : [];
+  const varOlan=new Set(list.map(x=>x.id));
+  PANO_WIDGETLAR.forEach((w,i)=>{ if(!varOlan.has(w.id)) list.splice(Math.min(i,list.length),0,{id:w.id,gizli:false,genis:false}); });
+  return list;
+}
+function panoDuzen(){
+  const k=panoDuzenKey();
+  if(_PANO_DUZEN&&_PANO_DUZEN_KEY===k) return _PANO_DUZEN;
+  let kayit=null;
+  try{ kayit=JSON.parse(localStorage.getItem(k)||'null'); }catch(e){}
+  _PANO_DUZEN=panoDuzenBirlestir(kayit); _PANO_DUZEN_KEY=k;
+  return _PANO_DUZEN;
+}
+function panoDuzenYaz(list){
+  const k=panoDuzenKey();
+  _PANO_DUZEN=list; _PANO_DUZEN_KEY=k;
+  try{ localStorage.setItem(k,JSON.stringify(list)); }catch(e){ console.warn('Pano duzeni kaydedilemedi:',e); }
+}
+
+/* -- duzen degistiren islemler (hem panodan hem Araclar sayfasindan cagrilir) -- */
+function panoTasi(id,yon){
+  const list=panoDuzen().slice();
+  const i=list.findIndex(x=>x.id===id); if(i<0) return;
+  const j=i+(yon<0?-1:1); if(j<0||j>=list.length) return;
+  const t=list[i]; list[i]=list[j]; list[j]=t;
+  panoDuzenYaz(list); panoTazele();
+}
+function panoGenislik(id){
+  const list=panoDuzen().map(x=>x.id===id?{id:x.id,gizli:x.gizli,genis:!x.genis}:x);
+  panoDuzenYaz(list); panoTazele();
+}
+function panoGorunur(id){
+  const list=panoDuzen().map(x=>x.id===id?{id:x.id,gizli:!x.gizli,genis:x.genis}:x);
+  panoDuzenYaz(list); panoTazele();
+  const g=(list.find(x=>x.id===id)||{}).gizli;
+  const t=panoTanim(id);
+  if(t) toast(t.ad+(g?' gizlendi':' gosteriliyor'));
+}
+function panoVarsayilana(){
+  if(!confirm('Pano duzeni varsayilana donsun mu? Sira, genislik ve gizleme tercihleriniz silinir.')) return;
+  try{ localStorage.removeItem(panoDuzenKey()); }catch(e){}
+  _PANO_DUZEN=null; _PANO_DUZEN_KEY=''; panoTazele(); toast('Pano duzeni varsayilana dondu');
+}
+function panoDuzenBasla(){ PANO_DUZEN_MOD=true; panoTazele(); }
+function panoDuzenBitir(){ PANO_DUZEN_MOD=false; panoTazele(); toast('Pano duzeni kaydedildi'); }
+
+/* TAZELEME: hangi ekran acikse orayi gunceller. Panoda TUM sayfayi yeniden
+   cizmek (render()) bina kartlarinin kaydirma konumunu ve takvimin secili
+   gununu sifirlardi - bu yuzden yalnizca .pano-wrap dugumu degistirilir
+   (giRefresh ile ayni gerekce, bkz. renderGunlukIslerCard notu). */
+function panoTazele(){
+  let bulundu=false;
+  const wrap=document.querySelector('.pano-wrap');
+  if(wrap&&_PANO_CTX){
+    const kap=document.createElement('div'); kap.innerHTML=panoWrapHtml();
+    const yeni=kap.firstElementChild;
+    if(yeni){ wrap.replaceWith(yeni); bulundu=true; }
+  }
+  const liste=document.getElementById('aracPanoListe');
+  if(liste){ liste.innerHTML=panoAracListeHtml(); bulundu=true; }
+  if(!bulundu) render();
+}
+
+/* -- SURUKLE-BIRAK (nord-row deseninin panodaki karsiligi) -----------------
+   Kutunun TAMAMI draggable yapilmaz: icinde tiklanabilir kartlar var ve metin
+   secimi bozulur - yalnizca tutamaga basilinca kutu gecici olarak draggable
+   olur. Birakma noktasi hedef kutunun SOL/SAG yarisina gore belirlenir (izgara
+   iki sutunlu; ust/alt yari iki sutunlu bir dizide yanlis okunuyordu) ve o
+   kenarda amber cizgi olarak gosterilir. */
+let _PDRAG=null;
+function panoDragArm(el){ const w=el.closest('.dash-w'); if(w) w.draggable=true; }
+function panoDragDisarm(el){ const w=el.closest('.dash-w'); if(w) w.draggable=false; }
+function panoDragStart(ev,id){
+  if(!PANO_DUZEN_MOD){ ev.preventDefault(); return; }
+  _PDRAG=id;
+  try{ ev.dataTransfer.effectAllowed='move'; ev.dataTransfer.setData('text/plain',String(id)); }catch(e){}
+  const w=ev.currentTarget; setTimeout(function(){ if(w) w.classList.add('drag'); },0);
+}
+function _panoSolYari(ev,w){ const b=w.getBoundingClientRect(); return (ev.clientX-b.left)<b.width/2; }
+function panoDragOver(ev,id){
+  if(_PDRAG==null||_PDRAG===id) return;
+  ev.preventDefault();
+  try{ ev.dataTransfer.dropEffect='move'; }catch(e){}
+  const w=ev.currentTarget, sol=_panoSolYari(ev,w);
+  w.classList.toggle('drop-sol',sol); w.classList.toggle('drop-sag',!sol);
+}
+function panoDragLeave(ev){ ev.currentTarget.classList.remove('drop-sol','drop-sag'); }
+function panoDrop(ev,id){
+  ev.preventDefault();
+  const w=ev.currentTarget, sol=_panoSolYari(ev,w), from=_PDRAG;
+  w.classList.remove('drop-sol','drop-sag'); _PDRAG=null;
+  if(from==null||from===id) return;
+  const list=panoDuzen().slice();
+  const fi=list.findIndex(x=>x.id===from); if(fi<0) return;
+  const tasinan=list.splice(fi,1)[0];
+  let ti=list.findIndex(x=>x.id===id); if(ti<0) ti=list.length;
+  if(!sol) ti++;
+  list.splice(ti,0,tasinan);
+  panoDuzenYaz(list); panoTazele();
+  const t=panoTanim(from); if(t) toast(t.ad+' -> '+(ti+1)+'. sira');
+}
+function panoDragEnd(){
+  _PDRAG=null;
+  document.querySelectorAll('.dash-grid .dash-w').forEach(function(w){
+    w.classList.remove('drag','drop-sol','drop-sag'); w.draggable=false; });
+}
+
+/* -- panonun cizimi ------------------------------------------------------- */
 function renderDashWidgets(bins,binaCards){
+  _PANO_CTX={bins:bins||[],binaCards:binaCards||''};
+  return panoWrapHtml();
+}
+/* Butun pano (arac cubugu + izgara) TEK dugumde durur: panoTazele bu dugumu
+   bir butun olarak degistirir, iki ayri yeri esitlemek zorunda kalmaz. */
+function panoWrapHtml(){
+  const ctx=_PANO_CTX||{bins:[],binaCards:''};
+  const bins=ctx.bins||[];
+  /* Hic bina yoksa ozet kartlarinin hepsi bos cikar - onlari basmak yerine
+     yalnizca Gunluk Isler gosterilir (takvim binadan bagimsizdir, yeni
+     kurulumda da calisir). Duzenleme de anlamsiz: tek kart var. */
+  if(!bins.length) return `<div class="pano-wrap"><div class="dash-grid gi-solo"><div class="dash-w sabit" data-w="gunluk">${renderGunlukIslerCard()}</div></div></div>`;
+  const parcalar=panoParcalar(ctx);
+  const duzen=panoDuzen();
+  const kutular=duzen.map(function(d){
+    const t=panoTanim(d.id); if(!t) return '';
+    const govde=parcalar[d.id]; if(!govde) return '';
+    // gizli widget normalde hic basilmaz; duzenleme modunda sonuk durur ki geri acilabilsin
+    if(d.gizli&&!PANO_DUZEN_MOD) return '';
+    const cls=['dash-w'];
+    if(t.sabit) cls.push('sabit');
+    if(d.genis) cls.push('genis');
+    if(d.gizli) cls.push('kapali');
+    const dnd=PANO_DUZEN_MOD
+      ? ` ondragstart="panoDragStart(event,'${t.id}')" ondragover="panoDragOver(event,'${t.id}')" ondragleave="panoDragLeave(event)" ondrop="panoDrop(event,'${t.id}')" ondragend="panoDragEnd()"`
+      : '';
+    return `<div class="${cls.join(' ')}" data-w="${t.id}"${dnd}>${PANO_DUZEN_MOD?panoKutuBar(t,d):''}${govde}</div>`;
+  }).join('');
+  const bos=!kutular
+    ? `<div class="dash-card"><div class="dash-empty">Panodaki tum kartlar gizlenmis - <button class="pano-link" onclick="panoDuzenBasla()">Panoyu Duzenle</button> ile geri acabilirsiniz</div></div>`
+    : '';
+  return `<div class="pano-wrap">${panoBarHtml()}<div class="dash-grid${PANO_DUZEN_MOD?' duzen':''}">${kutular||bos}</div></div>`;
+}
+// duzenleme modunda her kutunun basindaki serit: tutamak + ad + genislik + gizle
+function panoKutuBar(t,d){
+  return `<div class="pw-bar">
+    <span class="pw-grip" title="Suruklemek icin basili tutun" onmousedown="panoDragArm(this)" onmouseup="panoDragDisarm(this)" onmouseleave="panoDragDisarm(this)">${icoGrip()}</span>
+    <b>${esc(t.ad)}</b>
+    <button class="pw-btn${d.genis?' on':''}" title="${d.genis?'Yarim genislige al':'Tam genislige yay'}" onclick="panoGenislik('${t.id}')">${d.genis?'Tam':'Yarim'}</button>
+    <button class="pw-btn${d.gizli?' kapali':''}" title="${d.gizli?'Panoda goster':'Panodan gizle'}" onclick="panoGorunur('${t.id}')">${d.gizli?'Gizli':'Acik'}</button>
+  </div>`;
+}
+function panoBarHtml(){
+  if(PANO_DUZEN_MOD) return `<div class="pano-bar duzen">
+    <span class="pano-ipucu">Kartlari tutamaktan surukleyerek siralayin; genislik ve gorunurluk her kartin ustunde. Degisiklikler aninda kaydedilir.</span>
+    <button class="pano-btn" onclick="panoVarsayilana()">Varsayilana Don</button>
+    <button class="pano-btn on" onclick="panoDuzenBitir()">Bitti</button>
+  </div>`;
+  const gizli=panoDuzen().filter(function(x){ return x.gizli; }).length;
+  return `<div class="pano-bar">
+    ${gizli?`<span class="pano-ipucu">${gizli} kart gizli</span>`:''}
+    <button class="pano-btn" title="Panodaki kartlarin sirasini, genisligini ve gorunurlugunu degistirin" onclick="panoDuzenBasla()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 013 3L7 19l-4 1 1-4z"/></svg>Panoyu Duzenle</button>
+  </div>`;
+}
+
+/* WIDGET GOVDELERI. Her id icin kartin HTML'i - sira/genislik/gorunurluk
+   burayla ilgilenmez, onu panoWrapHtml uygular. Bos donen bir widget hic
+   basilmaz (orn. sartname yokken ozet kartlari). */
+function panoParcalar(ctx){
+  const bins=ctx.bins||[], binaCards=ctx.binaCards||'';
   const vis=new Set(bins);
   const specs=DB.proje.specs.filter(s=>!s.is_deleted && vis.has(s.bina) && !s.exclude);
-  /* SARTNAME YOKKEN DE PANO KURULUR. Eskiden burada bos string donuluyordu; artik
-     panonun ilk satirinda binalar ve Gunluk Isler var, ikisi de sartnameden
-     bagimsiz calisir. Ozet kartlari bos durumlarini kendileri gosterir. */
   let tt=0,gg=0,mm=0; const eksik=[];
   specs.forEach(s=>{ const t=Number(s.target)||0; const{got}=specProgress(s); const{installed}=specMontajProgress(s);
     tt+=t; gg+=got; mm+=installed;
@@ -4969,18 +5300,6 @@ function renderDashWidgets(bins,binaCards){
       <div class="bp-line"><span class="bp-lbl">Tedarik</span><div class="scb-track"><i style="width:${tp}%;background:var(--primary)"></i></div><span class="bp-pct" style="color:var(--primary)">${tp.toFixed(0)}%</span></div>
       <div class="bp-line"><span class="bp-lbl">Montaj</span><div class="scb-track"><i style="width:${mp}%;background:${mp>=100?'var(--success)':'var(--warning)'}"></i></div><span class="bp-pct" style="color:${mp>=100?'var(--success)':'var(--warning)'}">${mp.toFixed(0)}%</span></div>
     </div>`; }).join('');
-  const hero=`<div class="dash-card dash-donuts">
-      ${donut(tedPct,'var(--primary)','Genel Tedarik',fmtNum(gg)+' / '+fmtNum(tt))}
-      ${donut(monPct,monPct>=100?'var(--success)':'var(--warning)','Genel Montaj',fmtNum(mm)+' / '+fmtNum(tt))}
-      <div class="dash-counts">
-        <div><b>${specs.length}</b><span>Sartname Kalemi</span></div>
-        <div><b>${orders.length}</b><span>Siparis / Fatura</span></div>
-      </div>
-    </div>
-    <div class="dash-card">
-      <div class="dash-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/></svg>Bina Bazli Ilerleme</div>
-      ${binaRows?`<div class="bina-prog-list">${binaRows}</div>`:'<div class="dash-empty">Sartnamesi olan bina yok</div>'}
-    </div>`;
   // son hareketler: en yeni 6 malzeme giris/cikisi
   const sonHareket=DB.proje.items.filter(i=>!i.is_deleted && vis.has(i.bina)).sort((a,b)=>b.date-a.date).slice(0,6);
   const hareketHtml=sonHareket.length?sonHareket.map(e=>{ const out=e.type==='out', iade=e.type==='iade';
@@ -4999,23 +5318,121 @@ function renderDashWidgets(bins,binaCards){
       <span class="dr-name" title="${esc(x.sp.name)}">${esc(x.sp.name)}</span>
       <span class="dr-meta" title="${esc(x.sp.bina||'')} · ${esc(x.sp.cat||'')}">${esc(x.sp.bina||'')} · ${esc(x.sp.cat||'')}</span></div>`; }).join('')
     :'<div class="dash-empty">Eksik kalem yok - tum hedefler karsilandi</div>';
-  /* PANO IZGARASI (2 sutun x 3 satir - fotograftaki simetrik duzen):
-       1. satir: Binalar            | Gunluk Isler (takvim)
-       2. satir: Donut ozet         | Bina Bazli Ilerleme
-       3. satir: Son Hareketler     | Eksik Malzemeler
-     Ilk satirin yuksekligi CSS'te sabit (.dash-grid grid-template-rows): binalar
-     kartinda ayni anda en fazla UC bina gorunsun diye. */
-  const binaKart=`<div class="dash-card flexcard bina-card">
+  return {
+    binalar:`<div class="dash-card flexcard bina-card">
       <div class="dash-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/><path d="M9 9v.01M9 12v.01M9 15v.01"/></svg>Binalar<span class="dt-note">${bins.length} bina${bins.length>3?' &middot; kaydirin':''}</span></div>
-      <div class="bina-scroll"><div class="sel-grid">${binaCards||''}</div></div>
+      <div class="bina-scroll"><div class="sel-grid">${binaCards}</div></div>
+    </div>`,
+    gunluk:renderGunlukIslerCard(),
+    ozet:`<div class="dash-card dash-donuts">
+      ${donut(tedPct,'var(--primary)','Genel Tedarik',fmtNum(gg)+' / '+fmtNum(tt))}
+      ${donut(monPct,monPct>=100?'var(--success)':'var(--warning)','Genel Montaj',fmtNum(mm)+' / '+fmtNum(tt))}
+      <div class="dash-counts">
+        <div><b>${specs.length}</b><span>Sartname Kalemi</span></div>
+        <div><b>${orders.length}</b><span>Siparis / Fatura</span></div>
+      </div>
+    </div>`,
+    ilerleme:`<div class="dash-card">
+      <div class="dash-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/></svg>Bina Bazli Ilerleme</div>
+      ${binaRows?`<div class="bina-prog-list">${binaRows}</div>`:'<div class="dash-empty">Sartnamesi olan bina yok</div>'}
+    </div>`,
+    hareket:`<div class="dash-card"><div class="dash-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>Son Hareketler</div>${hareketHtml}</div>`,
+    eksik:`<div class="dash-card"><div class="dash-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>Eksik Malzemeler <span style="text-transform:none;letter-spacing:0;font-weight:500">(en cok kalan)</span></div>${eksikHtml}</div>`,
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ARACLAR (AYARLAR SAYFASI)  -  sol menunun EN ALTINDA
+
+   NE ISE YARAR: uygulamanin ekranlara dagilmis ayar ve bakim islerini tek
+   sayfada toplar. Ilk sakini "Baslangic Panosu": panodaki kartlarin sirasi,
+   genisligi ve gorunurlugu buradan da degistirilebilir.
+
+   NEDEN PANONUN UZERINDEKI DUZENLEME MODU YETMIYOR: surukle-birak HTML5 DnD
+   ile calisiyor, dokunmatikte (telefon/tablet) tetiklenmiyor. Buradaki liste
+   ayni duzeni yukari/asagi dugmeleriyle degistirir - klavye ve dokunmatik icin
+   calisan yol budur. Iki ekran AYNI kaydi (panoDuzen) yazar, biri otekinin
+   kopyasi degildir.
+
+   YETKI: pano duzeni kisisel bir tercihtir (localStorage), herkes gorur.
+   Bakim araclari ise tek tek kendi yetkisine baglidir; hicbiri yoksa o kart
+   hic basilmaz. Ozellikle telefonda bu sayfa TEK yoldur - Yedek Al / Yedek
+   Yukle / Denetim Kaydi dugmeleri dar ekranda header'dan gizleniyor
+   (bkz. "#auditBtn,#backupBtn,#restoreBtn{display:none}" medya sorgusu).
+   ══════════════════════════════════════════════════════════════════════════ */
+function openAraclar(){
+  // acik fatura formunda kaydedilmemis is varsa once sorulur (diger sayfa gecisleriyle ayni kural)
+  if(typeof fatAyrilmaOnayi==='function' && !fatAyrilmaOnayi()) return;
+  PARAC=true;
+  PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false;
+  PNEWORD=false; PBINAY=false; PKATA=false; PODM=false; PSPECF=false; PRIMP=false; PINV=false;
+  PTUT=false; PKODD=false; PIHT=false; PFAT=false; PTOPM=false; PTOPG=false;
+  _KODD=null; _INV=null; _TOPM=null; _TOPG=null;
+  SEARCH=""; render();
+}
+function closeAraclar(){ PARAC=false; render(); }
+
+function renderAraclarPage(){
+  return `<div class="sel-wrap" style="max-width:900px">
+    <div class="sel-bc"><button onclick="closeAraclar()">${icoArr('left')} Geri Don</button></div>
+    <div class="sel-head"><h2>Araclar</h2><p>Kisisel gorunum tercihleri ve bakim islemleri. Buradaki ayarlar yalnizca sizin kullanicinizi etkiler, baskasinin ekranini degistirmez.</p></div>
+    ${aracPanoKart()}
+    ${aracBakimKart()}
+  </div>`;
+}
+
+/* ── ARAC 1: BASLANGIC PANOSU ─────────────────────────────────────────────── */
+function aracPanoKart(){
+  return `<div class="arac-kart">
+    <div class="arac-kart-bas">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+      <div><b>Baslangic Panosu</b><span>Panodaki kartlarin sirasi, genisligi ve gorunurlugu</span></div>
+      <button class="pano-btn" onclick="panoVarsayilana()">Varsayilana Don</button>
+    </div>
+    <div class="arac-liste" id="aracPanoListe">${panoAracListeHtml()}</div>
+    <div class="arac-not">Ayni ayarlari panonun sag ustundeki <b>Panoyu Duzenle</b> dugmesiyle kartlari surukleyerek de yapabilirsiniz. Degisiklikler aninda kaydedilir.</div>
+  </div>`;
+}
+function panoAracListeHtml(){
+  const duzen=panoDuzen();
+  return duzen.map(function(d,i){
+    const t=panoTanim(d.id); if(!t) return '';
+    return `<div class="arac-satir${d.gizli?' kapali':''}">
+      <span class="arac-sira">${i+1}</span>
+      <div class="arac-ad"><b>${esc(t.ad)}</b><span>${esc(t.aciklama||'')}</span></div>
+      <div class="arac-tus">
+        <button class="pw-btn${d.genis?' on':''}" title="${d.genis?'Yarim genislige al':'Tam genislige yay'}" onclick="panoGenislik('${t.id}')">${d.genis?'Tam':'Yarim'}</button>
+        <button class="pw-btn${d.gizli?' kapali':''}" title="${d.gizli?'Panoda goster':'Panodan gizle'}" onclick="panoGorunur('${t.id}')">${d.gizli?'Gizli':'Acik'}</button>
+        <button class="mini-btn" title="Yukari tasi" ${i===0?'disabled':''} onclick="panoTasi('${t.id}',-1)">${icoArr('up')}</button>
+        <button class="mini-btn" title="Asagi tasi" ${i===duzen.length-1?'disabled':''} onclick="panoTasi('${t.id}',1)">${icoArr('down')}</button>
+      </div>
     </div>`;
-  /* Hic bina yoksa ozet kartlarinin hepsi bos cikar - onlari basmak yerine yalnizca
-     Gunluk Isler gosterilir (takvim binadan bagimsizdir, yeni kurulumda da calisir).
-     Bina listesi bos oldugunu soyleyen mesaj zaten panonun ustunde duruyor. */
-  if(!bins.length) return `<div class="dash-grid gi-solo">${renderGunlukIslerCard()}</div>`;
-  return `<div class="dash-grid">${binaKart}${renderGunlukIslerCard()}${hero}
-    <div class="dash-card"><div class="dash-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>Son Hareketler</div>${hareketHtml}</div>
-    <div class="dash-card"><div class="dash-title"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>Eksik Malzemeler <span style="text-transform:none;letter-spacing:0;font-weight:500">(en cok kalan)</span></div>${eksikHtml}</div>
+  }).join('');
+}
+
+/* ── ARAC 2: BAKIM ─────────────────────────────────────────────────────────
+   Her dugme header'daki ya da menudeki karsiliginin AYNI fonksiyonunu cagirir -
+   ikinci bir uygulama yazilmadi, yalnizca ikinci bir kapi acildi. */
+function aracBakimKart(){
+  const t=[];
+  if(can('backup'))  t.push(['Yedek Al','Butun verinin JSON kopyasini indirir','exportBackup()','<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>','']);
+  if(can('restore')) t.push(['Yedek Yukle','Daha once alinmis bir yedegi geri yukler',"document.getElementById('restoreInput').click()",'<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>','uyari']);
+  if(can('sync'))    t.push(['Full Sync (Excel)','Excel ile tam senkronizasyon (tek kaynak)',"document.getElementById('syncXlsx').click()",'<path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16"/>','uyari']);
+  if(isAdmin())      t.push(['Kayit Temizligi','Mukerrer, sahipsiz ve sikismis kayitlari listeler - onayladiklariniz silinir','dedupeProjeSpecs()','<path d="M20 6L9 17l-5-5"/>','']);
+  if(canAudit())     t.push(['Denetim Kaydi','Kim ne zaman ne yapti - giris/cikis ve silmeler dahil','openAudit()','<path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>','']);
+  if(isAdmin())      t.push(['Kullanicilar','Kullanici, yetki ve davet yonetimi','openUsers()','<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>','']);
+  if(!t.length) return '';
+  const tuslar=t.map(function(x){
+    return `<button class="arac-tile${x[4]?' '+x[4]:''}" onclick="${x[2]}">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${x[3]}</svg>
+      <span><b>${x[0]}</b><i>${x[1]}</i></span></button>`;
+  }).join('');
+  return `<div class="arac-kart">
+    <div class="arac-kart-bas">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a4 4 0 00-5.6 5.6l-6.4 6.4 2 2 6.4-6.4a4 4 0 005.6-5.6l-2.8 2.8-2-2 2.8-2.8z"/></svg>
+      <div><b>Bakim Araclari</b><span>Yetkinizin actigi islemler - dar ekranda ust cubuktan gizlenenler de burada</span></div>
+    </div>
+    <div class="arac-tiles">${tuslar}</div>
   </div>`;
 }
 /* ══════════════════════════════════════════════════════════════════════════
@@ -6576,7 +6993,7 @@ function renderSidebar(){
   const el=document.getElementById('appSidebar'); if(!el) return;
   if(!CURRENT_USER){ el.innerHTML=''; return; }
   const it=(label,ico,on,act,cls,title)=>`<button class="sb-item${act?' on':''}${cls?' '+cls:''}" onclick="closeSidebar();${on}"${title?` title="${title}"`:''}>${ico}<span>${label}</span></button>`;
-  const inPanel=(PUSERS&&isAdmin())||(PAUDIT&&isAdmin())||PLIB||PDEF||PORD||PCOMP||PEKIP||PNEWORD||PBINAY||PTUT||PIHT||PFAT;
+  const inPanel=(PUSERS&&isAdmin())||(PAUDIT&&isAdmin())||PLIB||PDEF||PORD||PCOMP||PEKIP||PNEWORD||PBINAY||PTUT||PIHT||PFAT||PARAC;
   // bolum basliklari: sidebar'da "Bolum & Sartname"nin hemen altinda listelenir
   // ("proje" ve "rapor" bolumleri burada DEGIL - "Baslangic" ve "Rapor" adiyla en ustte, Siparis Ekle'nin yaninda durur)
   const SEC_DEFS=[
@@ -6622,12 +7039,18 @@ function renderSidebar(){
   if(can('sync')) ops+=it('Full Sync (Excel)','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16"/></svg>',"document.getElementById('syncXlsx').click()",false,'','Excel ile tam senkronizasyon (tek kaynak)');
   if(isAdmin()) ops+=it('Kayıt Temizliği','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>','dedupeProjeSpecs()',false,'','Mukerrer kayitlari, binasiz (sahipsiz) kalemleri ve kutuphanede sikismis eski ozel-kodlu malzemeleri gosterir - onayladiklariniz silinir');
   if(can('wipe')) danger+=it('Temizle','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg>','wipeAllData()',false,'danger','Girilen tum verileri sil');
+  /* ARACLAR: menunun EN ALTI. Yetkiye bagli DEGIL - icindeki pano duzeni kisisel
+     bir gorunum tercihi, herkes kendi panosunu duzenleyebilmeli. Karttaki bakim
+     araclari ise tek tek kendi yetkisine bakar (bkz. aracBakimKart). */
+  const arac=it('Araçlar','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>','openAraclar()',PARAC,'','Ayarlar - baslangic panosunun duzeni ve bakim araclari');
   const groups=[top,mid,ops,danger].filter(Boolean).join('<div class="sb-sep"></div>');
   /* sb-none: ya gosterilecek menu yok, ya da fatura formu genis alan modunda.
-     Ikinci durumda menu KAYBOLMAZ - form kapaninca kendiliginden geri gelir. */
+     Ikinci durumda menu KAYBOLMAZ - form kapaninca kendiliginden geri gelir.
+     OLCU YINE 'groups': Araclar herkeste ciktigi icin ona bakilsaydi bayrak bir daha
+     hic kalkmazdi - hicbir modul gormeyen kullanicida menu yine gizli kalmali. */
   const app=document.getElementById('app'); if(app) app.classList.toggle('sb-none',!groups||fatGenisAlanAcik());
   el.innerHTML=`<div class="sb-head"><b>Menü</b><button class="mini-btn" onclick="closeSidebar()">x</button></div>`
-    +groups;
+    +groups+'<div class="sb-sep"></div>'+arac;
 }
 function openMaterialLib(){ PLIB=true; PUSERS=false; PAUDIT=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PNEWORD=false; PBINAY=false; SEARCH=""; render(); }
 function closeMaterialLib(){ PLIB=false; _matSel.clear(); _markaSel.clear(); render(); }
@@ -27635,6 +28058,16 @@ function btopYerlestir(){
   // ok, topun ortasini gosterir (kutunun kendi duzleminde)
   k.style.setProperty('--ok',Math.round(Math.max(12,Math.min(r.left+r.width/2-x,kw-14))/oz)+'px');
 }
+/* Liste satirindaki NOT acilir/kapanir. Durum DOM'da (sinif) tutulur, ayri bir
+   degiskene yazilmaz: liste her filtre degisiminde bastan cizildigi icin boyle
+   bir degisken saklansa acik notlar baska bir faturanin satirinda acilirdi.
+   Notlar birbirinden bagimsiz: ikisini yan yana okumak isteyen biri, birini
+   acinca otekinin kapanmasini beklemez. */
+function fatNotAc(el){
+  const ac=!el.classList.contains('acik');
+  el.classList.toggle('acik',ac);
+  el.setAttribute('aria-expanded',ac?'true':'false');
+}
 function renderFaturaListe(){
   const yuklendi=_FAT_YUKLENDI;
   const list=fatListeFiltreli();
@@ -27644,6 +28077,11 @@ function renderFaturaListe(){
   const urunler=yuklendi?fatUrunListesiGenel(''):[];
   const durumMap=new Map(urunler.map(u=>[u.key,u]));
   const filtreVar=fatFiltreVar();
+  /* TUTAR FARKI TOPLAMI satirlar cizilirken biriktirilir - ozet satiri icin
+     butun kayitlarin toplamini ikinci kez hesaplamaya gerek kalmasin.
+     Para birimi basina AYRI tutulur: farkli kurlardaki sapmalari tek sayida
+     toplamak, odenecek toplaminda oldugu gibi anlamsiz bir sayi uretirdi. */
+  const farkOzet=new Map();
   let rows='';
   if(!yuklendi) rows=window.__faturaTableMissing
     ? emptyRow(7,'Fatura tablosu henuz kurulmamis','Yukaridaki uyaridaki SQL dosyasini bir kez calistirin')
@@ -27656,6 +28094,9 @@ function renderFaturaListe(){
     const top=fatKayitToplam(f);
     const tutarFarki=fatTutarFarki(f.beyanTutar,top.toplam);
     const belge=fatBelgeTutari(f);
+    if(tutarFarki){ const fpb=f.paraBirimi||'TRY';
+      const g=farkOzet.get(fpb)||{pb:fpb,net:0,mutlak:0,adet:0};
+      g.net+=tutarFarki; g.mutlak+=Math.abs(tutarFarki); g.adet++; farkOzet.set(fpb,g); }
     /* ICERIK artik satirda metin olarak DEGIL, bilgi topunda durur: uc urun
        adi hucreyi uc satira sisiriyor, faturanin tamamini yine gostermiyordu.
        Notta TUM satirlar miktarlariyla listelenir. */
@@ -27670,7 +28111,8 @@ function renderFaturaListe(){
         <div style="margin-top:4px">${fatKayitRozeti(f)}${fatKilitSonrasiDegisti(f)
           ?`<span class="fat-rozet fazla" style="margin-left:4px" title="Bu fatura kilitlendikten sonra acilmis ve degistirilmis - ne degistigi detaydaki gecmiste satir satir duruyor">KILIT SONRASI DEGISTI</span>`:''}</div>
         ${uy.fazla?`<div class="fat-rozet fazla" style="margin-top:4px" title="Bu faturadaki ${uy.fazla} urun, alinan miktardan fazla faturalanmis">${fmtNum(uy.fazla)} URUNDE FAZLA</div>`:''}
-        ${f.not?`<div class="t-meta" style="font-size:11px;margin-top:3px">${esc(f.not)}</div>`:''}</td>
+        ${f.not?`<button class="fat-not" onclick="fatNotAc(this)" aria-expanded="false"
+          title="Belgeyle ilgili not - tiklayin, bu faturanin satiri genisler ve notun tamami gorunur; ikinci tik kapatir"><span class="mt">${esc(f.not)}</span><svg class="ok" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button>`:''}</td>
       <td class="t-meta">${esc(fmtDate(f.tarih))}${fatSaatGoster(f)
         ?`<div style="font-family:var(--mono);font-size:11px;color:var(--dim)" title="Belgedeki saat - ayni gunun faturalari saate gore siralanir">${esc(fatSaatGoster(f))}</div>`:''}</td>
       <td class="t-meta">${esc(fatCompany(f)||'-')}</td>
@@ -27692,7 +28134,8 @@ function renderFaturaListe(){
           ${(pb!=='TRY'&&kur>0)?`<div class="sat kur" title="Kur ${fmtNum(kur)} - ${esc(fatPara(od,pb))} karsiligi">
             <i>&asymp; TL</i><span>${esc(fatPara(od*kur,''))}</span></div>`:''}
         </div>`; })():'<span style="color:var(--dim)">-</span>'}
-        ${tutarFarki?`<div class="fat-rozet kismi" style="margin-top:4px" title="Belgede yazan ${esc(fatPara(f.beyanTutar,f.paraBirimi||'TRY'))}, satirlardan hesaplanan ${esc(fatPara(top.toplam,f.paraBirimi||'TRY'))}">TUTAR FARKI</div>`:''}</td>
+        ${tutarFarki?(()=>{ const fpb=f.paraBirimi||'TRY';
+          return `<div class="fat-rozet kismi fark" style="margin-top:4px" title="Belgede yazan ${esc(fatPara(f.beyanTutar,fpb))}, satirlardan hesaplanan ${esc(fatPara(top.toplam,fpb))} - ${tutarFarki>0?'belge daha yuksek':'hesap daha yuksek'}">TUTAR FARKI<b>${tutarFarki>0?'+':'&minus;'}${esc(fatPara(Math.abs(tutarFarki),''))}</b><em>${esc(fpb)}</em></div>`; })():''}</td>
       <td class="ust"><div class="row-actions">
         <button class="mini-btn" title="Faturanin icerigini gor" onclick="openFaturaDetay('${f.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
         ${FAT_BELGELER.filter(bl=>f[bl.k]).map(bl=>`<button class="mini-btn bel"
@@ -27710,6 +28153,15 @@ function renderFaturaListe(){
      TL'ye cevirmek de her zaman mumkun degil). */
   const paralar=[...new Set(list.map(f=>f.paraBirimi||'TRY'))];
   const toplamPara=paralar.length===1?list.reduce((s,f)=>s+fatOdenecek(f),0):null;
+  /* TUTAR FARKI OZETI: kac belgede fark var ve o farklarin toplami ne kadar.
+     NET toplam yazilir (+ ve - birbirini goturur). Isaretler birbirini
+     goturuyorsa TOPLAM SAPMA da ayrica yazilir: net sifira inen iki hatali
+     belge, "her sey tutuyor" diye okunmasin. */
+  const farkListe=[...farkOzet.values()];
+  const farkAdet=farkListe.reduce((s,g)=>s+g.adet,0);
+  const farkNet=farkListe.map(g=>(g.net>0?'+':'−')+fatPara(Math.abs(g.net),g.pb)).join(' · ');
+  const farkKarma=farkListe.some(g=>g.mutlak-Math.abs(g.net)>0.005);
+  const farkSapma=farkListe.map(g=>fatPara(g.mutlak,g.pb)).join(' · ');
   return `<div class="tut-wrap">
     <div class="sel-bc"><button onclick="closeFatura()">${icoArr('left')} Geri Don</button></div>
     <div class="sel-head"><h2>Fatura Kontrol</h2><p>Tedarikciden gelen faturadaki <b>urunler ve miktarlar</b> girilir; miktar o urunun
@@ -27745,6 +28197,7 @@ function renderFaturaListe(){
     </div>
     <div class="ord-sumline"><b>${fmtNum(list.length)}</b> fatura gosteriliyor · toplam <b>${fmtNum(toplamMiktar)}</b> miktar${
       toplamPara!=null&&toplamPara>0?` · odenecek <b>${esc(fatPara(toplamPara,paralar[0]))}</b>`:''}${
+      farkAdet?` · <span class="fark" title="${esc(fmtNum(farkAdet)+' belgede, belgede yazan odenecek tutar ile satirlardan hesaplanan tutar tutmuyor. Yazan sayi NET toplamdir: + belgenin, − hesabin daha yuksek oldugu anlamina gelir.'+(farkKarma?' Artilarla eksiler birbirini goturdugu icin toplam sapma ayrica yazildi.':''))}">${fmtNum(farkAdet)} belgede tutar farki · net ${esc(farkNet)}${farkKarma?` · toplam sapma ${esc(farkSapma)}`:''}</span>`:''}${
       filtreVar?` <span class="t-meta">· ${fmtNum(tumu.length)} kayit icinden suzuldu</span>`:''}</div>
     <div class="tablewrap"><table class="fat-liste"><thead><tr>
       <th>Fatura No</th><th>Tarih</th><th>Firma</th><th class="ic" title="Faturadaki urunler - bilgi topuna tiklayin">Icerik</th><th>Miktar</th><th>Odenecek Tutar</th><th></th>
