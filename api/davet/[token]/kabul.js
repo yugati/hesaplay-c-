@@ -3,6 +3,7 @@ import { tokenHash } from '../../../lib/invites.js'
 import { hashPassword, sifreKurallari } from '../../../lib/password.js'
 import { signSession, SESSION_TTL_DEFAULT } from '../../../lib/auth.js'
 import { girisKilitli, hataliDeneme, basariliGiris, istekIp } from '../../../lib/girisKoruma.js'
+import { denetimYaz } from '../../../lib/denetim.js'
 
 function kalanMetin(sn) {
   if (sn >= 60) { const d = Math.ceil(sn / 60); return d + ' dakika' }
@@ -45,12 +46,21 @@ export default async function handler(req, res) {
     const kuralHatasi = sifreKurallari(password, username)
     if (kuralHatasi) { res.status(400).json({ error: kuralHatasi }); return }
 
+    /* Davetle acilan YONETICI hesabinda da denetim yetkisi kapali baslar.
+       Davet kaydindaki permissions bos bir nesne oldugu icin (index.html
+       sendInvite admin rolunde izin gondermez), lib/yetki.js'teki "alan yoksa
+       acik" geriye uyum kurali burada devreye girer ve davet edilen her
+       yonetici kendiliginden denetim okuyucusu olurdu. Deger acikca yazilir. */
+    const izinler = { ...(davet.permissions || {}) }
+    if (davet.role === 'admin') izinler.denetim = { read: !!(izinler.denetim && izinler.denetim.read) }
+    else delete izinler.denetim
+
     const hashed = await hashPassword(password)
     const { data: user, error: insErr } = await supabaseAdmin
       .from('users')
       .insert([{
         username, password: hashed, role: davet.role, sections: davet.sections || [],
-        buildings: davet.buildings || [], permissions: davet.permissions || {},
+        buildings: davet.buildings || [], permissions: izinler,
         email: davet.email, org_id: davet.org_id, is_super: false,
       }])
       .select().single()
@@ -68,6 +78,12 @@ export default async function handler(req, res) {
 
     const safeUser = { ...user }; delete safeUser.password
     const sessionToken = signSession(safeUser, SESSION_TTL_DEFAULT)
+    // Davetle hesap acmak ayni zamanda ILK GIRISTIR - /api/login'den gecmedigi
+    // icin kaydi burada yazilir, yoksa bu yoldan gelen kullanici loga hic dusmez.
+    await denetimYaz(user.org_id, {
+      user: user.username, role: user.role, action: 'login', ip,
+      detail: 'Davetle hesap acildi (' + davet.email + ')',
+    })
     res.status(201).json({ user: safeUser, token: sessionToken })
   } catch (e) {
     console.error('davet kabul basarisiz', e)

@@ -60,6 +60,20 @@ export async function sbLoginUser(username, password, rememberMe) {
   }
 }
 
+/* CIKIS KAYDI. Oturum tokeni JWT oldugu icin cikis aslinda tarayicida tokeni
+   atmaktan ibaret - bu cagri bir GUVENLIK adimi degil, denetim kaydina "ne zaman
+   cikildi" satirini yazdirmak icin. Bu yuzden hata YUTULUR ve cagiran beklemek
+   zorunda degil: log yazilamadi diye kullanici oturumda tutulamaz. */
+export async function sbCikis(sebep) {
+  try {
+    await authFetch('/api/cikis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sebep: sebep || '' }),
+    })
+  } catch (e) { /* cikis her halukarda yapilir */ }
+}
+
 // Aktif oturum tokeniyle (window.AUTH_TOKEN) kendi kaydini tazeler (arka plan
 // yenileme icin - cagirandan once token atanmis olmali).
 // Kullaniciyi tazeler ve YENI bir oturum tokeni getirir: {user, token, ttl}
@@ -1162,9 +1176,13 @@ export async function sbMigrateLocalDB(localDB) {
     push('Sirketler', sbInsertEntities('companies', localDB.companies))
   if (localDB.meta?.audit?.length)
     push('Denetim Kaydi', (async () => {
-      // audit girdileri id tasimaz; bayt/satir sinirina gore parcalanarak yazilir
+      /* audit girdileri id tasimaz; bayt/satir sinirina gore parcalanarak yazilir.
+         yedek:true - sunucu bu satirlarin kullanici/rol/zaman alanlarini EZMESIN
+         (bkz. api/veri.js damgala): yedekteki kayit gecmisi oldugu gibi geri
+         gelmeli, "bugun ben yazdim" diye degil. Sunucu bunun icin denetim kaydi
+         yetkisi arar; yetkisiz kullanici 403 alir. */
       for (const chunk of bayaGoreParcala(localDB.meta.audit)) {
-        await veri({ op: 'insert', table: 'audit_log', rows: chunk.map(entry => ({ data: entry })) })
+        await veri({ op: 'insert', table: 'audit_log', yedek: true, rows: chunk.map(entry => ({ data: entry })) })
       }
     })())
 

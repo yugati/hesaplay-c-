@@ -47,6 +47,7 @@ import {
   sbSetSetting,
   sbInsertAuditLog,
   sbGetAuditLog,
+  sbCikis,
   // Alet
   sbGetAletItems,
   sbInsertAletItem,
@@ -285,6 +286,7 @@ window.sbGetSetting        = sbGetSetting
 window.sbSetSetting        = sbSetSetting
 window.sbInsertAuditLog    = sbInsertAuditLog
 window.sbGetAuditLog       = sbGetAuditLog
+window.sbCikis             = sbCikis
 
 // ─── Alet ────────────────────────────────────────────────────────────────────
 window.sbGetAletItems      = sbGetAletItems

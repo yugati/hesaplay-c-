@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../../lib/supabaseAdmin.js'
 import { requireAdmin } from '../../lib/auth.js'
 import { hashPassword, sifreKurallari } from '../../lib/password.js'
 import { aktifOrg, VARSAYILAN_ORG } from '../../lib/org.js'
+import { denetimGorebilir, tokenKullanici } from '../../lib/yetki.js'
 
 // PUT    /api/users/:id - kullanici guncelle (sifre bos birakilirsa degismez)
 // DELETE /api/users/:id - kullanici sil
@@ -20,7 +21,7 @@ export default async function handler(req, res) {
 
   const org = await aktifOrg(claims)
   const { data: hedef } = await supabaseAdmin
-    .from('users').select('id, username, org_id, is_super').eq('id', id).maybeSingle()
+    .from('users').select('id, username, org_id, is_super, role, permissions').eq('id', id).maybeSingle()
   /* Baska organizasyonun kullanicisi icin de "bulunamadi" denir, "yetkiniz yok"
      denmez: ikinci mesaj o id'nin baska bir sirkette var oldugunu ele verirdi. */
   if (!hedef || (hedef.org_id || VARSAYILAN_ORG) !== org) {
@@ -37,6 +38,44 @@ export default async function handler(req, res) {
     const { password, role, sections, buildings, permissions, tel, email, meslek } = req.body || {}
     const update = { role, sections, buildings }
     if (permissions !== undefined) update.permissions = permissions
+
+    /* ─── DENETIM KAYDI YETKISI ────────────────────────────────────────────
+       Yetki users.permissions.denetim icinde durur ve UC kurala baglidir:
+
+       1. YALNIZCA YONETICI tasiyabilir. Rol admin degilse alan silinir - aksi
+          halde bir kullanici once yonetici yapilip yetki verilip sonra saha
+          personeline dusurulerek gizli bir denetim okuyucusu birakilabilirdi.
+       2. Yetkiyi ancak YETKISI OLAN degistirir. Bu kontrol olmadan atama kagit
+          uzerinde kalirdi: her yonetici Kullanici Yonetimi'ni acabildigi icin,
+          yetkisi alinan yonetici saniyeler icinde kendine geri verebilirdi.
+       3. SON YETKILI DUSURULEMEZ. Organizasyonda denetim kaydini gorebilen
+          kimse kalmazsa yetkiyi geri acabilecek kimse de kalmaz - kayit
+          kimsenin ulasamadigi bir tabloya donerdi.
+       Deger her kaydetmede ACIKCA yazilir (bkz. lib/yetki.js geriye uyum notu). */
+    const rolSon = role || hedef.role
+    const eskiVar = denetimGorebilir({ role: hedef.role, permissions: hedef.permissions || {} })
+    let yeniVar = eskiVar
+    if (rolSon !== 'admin') {
+      yeniVar = false
+      if (update.permissions) { const k = { ...update.permissions }; delete k.denetim; update.permissions = k }
+    } else if (permissions !== undefined) {
+      const d = permissions.denetim
+      yeniVar = d ? !!d.read : true          // alan yoksa eski istemci: bugunku durumu korur
+      if (yeniVar !== eskiVar && !denetimGorebilir(tokenKullanici(claims))) {
+        res.status(403).json({ error: 'Denetim kaydi yetkisini yalnizca bu yetkiye sahip bir yonetici degistirebilir' })
+        return
+      }
+      update.permissions = { ...permissions, denetim: { read: yeniVar } }
+    }
+    if (eskiVar && !yeniVar) {
+      const { data: yoneticiler } = await supabaseAdmin
+        .from('users').select('id, role, permissions').eq('org_id', org).eq('role', 'admin')
+      const kalan = (yoneticiler || []).filter(u => u.id !== id && denetimGorebilir({ role: u.role, permissions: u.permissions || {} }))
+      if (!kalan.length) {
+        res.status(400).json({ error: 'Denetim kaydini gorebilen son yonetici bu kullanici - once baska bir yoneticiye yetki verin' })
+        return
+      }
+    }
     if (tel !== undefined) update.tel = tel
     if (email !== undefined) update.email = email
     if (meslek !== undefined) update.meslek = meslek

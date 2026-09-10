@@ -3752,7 +3752,10 @@ function migrate(){
   if(!DB.meta._partial && !DB.meta.sectionsBackfillV){
     if(!DB.proje.sections.length){
       const usedSections=[...new Set([...(DB.proje.sartnames||[]).map(x=>x.section),...(DB.proje.specs||[]).map(s=>s.cat)])].filter(Boolean);
-      if(usedSections.length){ DB.proje.sections=usedSections; sbInsertProjeSections(usedSections).catch(e=>console.warn('Bolum onarimi kaydedilemedi:',e)); }
+      if(usedSections.length){ DB.proje.sections=usedSections; sbInsertProjeSections(usedSections).catch(e=>console.warn('Bolum onarimi kaydedilemedi:',e));
+        // Bir kez calisan onarim ama VERI yaziyor: bolum listesi sonradan
+        // "kim ekledi?" diye sorulunca cevabi gorunur olsun.
+        logAction('define','Bolum listesi onarildi (surum gecisi): '+usedSections.join(', ')); }
     }
     DB.meta.sectionsBackfillV=1;
     sbSetSetting('sectionsBackfillV',1).catch(()=>{});
@@ -3904,6 +3907,18 @@ const ROLES={ admin:'Yonetici', izleyici:'Izleyici', saha_personeli:'Saha Person
 const ROLE_MAP={ editor:'izleyici', viewer:'izleyici', sef:'izleyici', saha:'izleyici' };
 // yetki yardimcilari
 function isAdmin(){ return CURRENT_USER && CURRENT_USER.role==='admin'; }
+/* DENETIM KAYDINI KIM GOREBILIR? Yonetici OLMAK sart ama yetmez - yetkinin ayrica
+   ATANMIS olmasi gerekir (bir yonetici digerine verir/alir). Kuralin sunucudaki
+   birebir esi lib/yetki.js denetimGorebilir; ikisi birlikte degisir. Buradaki
+   kontrol hiz/UX icindir (dugme gorunmesin, bosuna istek atilmasin), son soz
+   sunucunundur - orada da admin gecisinin ONUNDE duruyor.
+   GERIYE UYUM: alan hic yoksa ACIK sayilir; ozellik gelmeden once denetim kaydini
+   butun yoneticiler goruyordu, alan yoklugunu "kapali" saymak onlari hicbir sey
+   yapmadan ekrandan dusururdu. Yeni/duzenlenen her kullaniciya deger acikca yazilir. */
+function canAudit(u){ u=u||CURRENT_USER;
+  if(!u||u.role!=='admin') return false;
+  const p=u.permissions&&u.permissions.denetim;
+  return p?!!p.read:true; }
 function isIzleyici(){ return CURRENT_USER && !isAdmin() && CURRENT_USER.role!=='saha_personeli'; }
 function isSahaPersoneli(){ return CURRENT_USER && CURRENT_USER.role==='saha_personeli'; }
 
@@ -3974,7 +3989,9 @@ function logAction(action, detail){
     sbInsertAuditLog(entry).catch(e=>console.warn('Audit log hatası:',e));
   }catch(e){}
 }
-const AUDIT_LABELS={ stock:'Stok hareketi', order:'Siparis', editSpec:'Spesifikasyon', editMaterial:'Malzeme', delete:'Silme', define:'Tanim', import:'Excel import', sync:'Full sync', wipe:'Veri temizleme', backup:'Yedek alma', restore:'Yedek yukleme', user:'Kullanici', login:'Giris' };
+const AUDIT_LABELS={ stock:'Stok hareketi', order:'Siparis', editSpec:'Spesifikasyon', editMaterial:'Malzeme', delete:'Silme', define:'Tanim', import:'Excel import', sync:'Full sync', wipe:'Veri temizleme', backup:'Yedek alma', restore:'Yedek yukleme', user:'Kullanici', login:'Giris',
+  // sunucunun yazdigi islemler (api/login.js, api/cikis.js) - tarayici bunlari uretmez
+  logout:'Cikis', girisHata:'Basarisiz giris', kilit:'Hesap kilidi', sistem:'Sistem' };
 function firstAllowedSection(){ if(isAdmin())return 'proje'; for(const k of ['proje','gecici','alet','saha','hakedis','rapor','tanimlar','kutuphane']){ if(canSee(k))return k; } return 'proje'; }
 // ACILIS PANELI: 'siparis' bir SEC gorunumu degil, bir panel (PORD). Gorunur bir SEC'i olmayan ama
 // Tum Siparisler yetkisi olan kullanici (orn. yalnizca siparis) dogrudan siparis paneline iner.
@@ -3993,7 +4010,7 @@ function applyUserChrome(){
   const ow=document.getElementById('orgWrap'); if(ow) ow.classList.toggle('acik', !!(CURRENT_USER&&CURRENT_USER.is_super));
   // admin-only header butonlari (kullanicilar + yedek al/yukle)
   const ub=document.getElementById('usersBtn'); if(ub)ub.style.display=isAdmin()?'':'none';
-  const aub=document.getElementById('auditBtn'); if(aub)aub.style.display=isAdmin()?'':'none';
+  const aub=document.getElementById('auditBtn'); if(aub)aub.style.display=canAudit()?'':'none';
   const bb=document.getElementById('backupBtn'); if(bb)bb.style.display=can('backup')?'':'none';
   const rb=document.getElementById('restoreBtn'); if(rb)rb.style.display=can('restore')?'':'none';
   updateBackupBadge();
@@ -4250,7 +4267,11 @@ async function afterLogin(user, token, remember, opts){
   try{
     if(!DB){ DB=await loadDB(); if(btn) btn.textContent='Veriler hazırlanıyor...'; migrate(); }
   } finally { window.__sbLoadProgress=_oncekiIlerleme; }
-  logAction('login',logMsg); await saveDB();
+  /* GIRIS KAYDINI ARTIK SUNUCU YAZIYOR (api/login.js, api/davet/[token]/kabul.js).
+     Buradaki logAction kaldirildi: veri yuklendikten SONRA calistigi icin yukleme
+     hata verdiginde giris hic kaydedilmiyordu, ustelik tarayicidan atilan her kayit
+     gibi atlanabiliyordu. logMsg yalnizca cagiranin niyetini belgeliyor. */
+  void logMsg; await saveDB();
   SEC=firstAllowedSection(); applyLandingPanels();
   // "Beni Hatirla" isaretliyse oturum 30 gun, degilse 1 saat yasar; ttl oturumla
   // birlikte saklanir ki sayfa yenilemede uzatma ayni sureyle yapilsin
@@ -4292,7 +4313,14 @@ async function doLogin(){
 function loginFail(msg){ document.getElementById('loginErr').textContent=msg; pwInput.value=''; (userInput.value?pwInput:userInput).focus(); }
 // Sifre sifirlama backend akisi olmadigi icin kullaniciyi dogru kanala yonlendiririz
 function forgotPw(){ toast('Şifre sıfırlama için yöneticinizle iletişime geçin'); }
-function logout(){ localStorage.removeItem('authSession'); window.AUTH_TOKEN=null; window.AKTIF_ORG=null; window.AKTIF_ORG_AD=''; CURRENT_USER=null; window.CURRENT_USER=null; location.reload(); }
+function logout(sebep){
+  /* Cikis kaydi sunucuya BEKLENEREK gonderilir: hemen ardindan location.reload()
+     var ve bekleme olmadan istek yarida kesilirdi. Hata yutulur (bkz. sbCikis) -
+     log yazilamadi diye kullanici oturumda birakilmaz. */
+  const bitir=()=>{ localStorage.removeItem('authSession'); window.AUTH_TOKEN=null; window.AKTIF_ORG=null; window.AKTIF_ORG_AD=''; CURRENT_USER=null; window.CURRENT_USER=null; location.reload(); };
+  if(window.AUTH_TOKEN&&window.sbCikis){ window.sbCikis(sebep).then(bitir,bitir); return; }
+  bitir();
+}
 
 /* ─── OTURUM TOKENI TAZELEME ────────────────────────────────────────────────
    Asama 1'den beri TUM veri islemleri oturum tokenine bagli (/api/veri). Token
@@ -6617,34 +6645,43 @@ async function openUsers(){
 // Tamamlaninca DB.meta.siparisSectionV=1 olur ve canSeeOrders() bagimsiz calismaya baslar.
 async function migrateSiparisSection(){
   if(!DB||!DB.meta||DB.meta.siparisSectionV||!isAdmin()) return;
+  const _tasinan=[];
   try{
     for(const u of (SB_USERS||[])){
       if(u.role==='izleyici'){
         const secs=u.sections||[];
-        if(secs.includes('proje') && !secs.includes('siparis'))
+        if(secs.includes('proje') && !secs.includes('siparis')){
           await sbUpdateUser(u.id,{role:u.role,sections:[...secs,'siparis'],buildings:u.buildings||[],permissions:u.permissions||{}});
+          _tasinan.push(u.username);
+        }
       } else if(u.role==='saha_personeli'){
         const perms=u.permissions||{};
         if(perms.proje && perms.proje.read && !perms.siparis){
           const permissions={...perms, siparis:{...perms.proje}};
           const sections=ALL_SECTIONS.filter(s=>permissions[s]&&permissions[s].read);
           await sbUpdateUser(u.id,{role:u.role,sections,buildings:u.buildings||[],permissions});
+          _tasinan.push(u.username);
         }
       }
     }
     DB.meta.siparisSectionV=1; await sbSetSetting('siparisSectionV',1);
+    /* Bu tasima KULLANICI YETKILERINI degistiriyor (proje yetkisi olanlara siparis
+       yetkisi acar) ve kullaniciya hicbir sey sormadan calisiyor. Denetim kaydinin
+       gorevi tam olarak bu: sonradan "bu yetkiyi kim verdi?" diye bakildiginda
+       cevabin "surum gecisi" oldugu gorunsun. */
+    if(_tasinan.length) logAction('user','Siparis modulu tasimasi: '+_tasinan.length+' kullaniciya siparis yetkisi acildi ('+_tasinan.join(', ')+')');
     SB_USERS=await sbGetAllUsers();
   }catch(e){ console.warn('siparis modul tasimasi:',e); }
 }
 function closeUsers(){ PUSERS=false; render(); }
-let AUDIT_FU="", AUDIT_FA="";  // filtre: kullanici, islem
+let AUDIT_FU="", AUDIT_FA="", AUDIT_FK="";  // filtre: kullanici, islem, kaynak
 /* DENETIM KAYDI GEC YUKLENIR (kota). Acilista inmiyordu-inmiyor: olculen 347 KB'lik
    yuk yalnizca bu ekrana girilince ya da yedek alinirken bir kez cekilir ve oturum
    boyunca bellekte kalir (bkz. src/supabase.js sbLoadAllData notu). */
 let _AUDIT_YUKLENDI=false;
 async function auditYukle(){
   if(_AUDIT_YUKLENDI) return;
-  if(!isAdmin()){ _AUDIT_YUKLENDI=true; return; }   // yonetici olmayan zaten okuyamaz (403)
+  if(!canAudit()){ _AUDIT_YUKLENDI=true; return; }  // yetkisi olmayan zaten okuyamaz (403)
   try{
     const kayitlar=await sbGetAuditLog();           // en yeniden eskiye, en fazla 2000
     /* DB.meta.audit ARTAN sirada tutulur: renderAudit/exportAudit .reverse() ile en
@@ -6683,11 +6720,17 @@ async function faturaYukle(){
     toast('Fatura kayitlari yuklenemedi - tekrar deneyin','err');
   }
 }
-async function openAudit(){ if(!isAdmin()){toast('Yetkiniz yok','err');return;} PAUDIT=true; PUSERS=false; PLIB=false; PDEF=false; PCOMP=false; PEKIP=false; PBINAY=false; AUDIT_FU=""; AUDIT_FA=""; SEARCH=""; render();
+async function openAudit(){ if(!canAudit()){toast('Denetim kaydini goruntuleme yetkiniz yok','err');return;} PAUDIT=true; PUSERS=false; PLIB=false; PDEF=false; PCOMP=false; PEKIP=false; PBINAY=false; AUDIT_FU=""; AUDIT_FA=""; SEARCH=""; render();
   await auditYukle(); if(PAUDIT) render(); }
 function closeAudit(){ PAUDIT=false; render(); }
 function setAuditFU(v){ AUDIT_FU=v; render(); }
 function setAuditFA(v){ AUDIT_FA=v; render(); }
+/* KAYNAK SUZGECI. Kayitlar iki yerden geliyor: uygulama (index.html logAction -
+   "Siparis 12 kalem eklendi" gibi okunur cumleler) ve sunucu (api/login.js,
+   api/cikis.js, api/veri.js - giris/cikis ve silmeler; atlanamaz ama daha teknik
+   yazilir). Ayni silme iki kayda dusebilir: biri uygulamanin okunur cumlesi,
+   digeri sunucunun garantili teknik satiri. Suzgec ikisini ayirmak icin. */
+function setAuditFK(v){ AUDIT_FK=v; render(); }
 function _auditTime(ts){ const d=new Date(ts); const p=n=>String(n).padStart(2,'0'); return `${p(d.getDate())}.${p(d.getMonth()+1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 function renderAudit(){
   const all=(DB.meta.audit||[]).slice().reverse();  // en yeni ustte
@@ -6696,27 +6739,33 @@ function renderAudit(){
   let list=all;
   if(AUDIT_FU) list=list.filter(a=>a.user===AUDIT_FU);
   if(AUDIT_FA) list=list.filter(a=>a.action===AUDIT_FA);
+  if(AUDIT_FK) list=list.filter(a=>(a.kaynak==='sunucu'?'sunucu':'uygulama')===AUDIT_FK);
   const q=norm(SEARCH||'');
   if(q) list=list.filter(a=>norm(a.detail+' '+a.user+' '+(AUDIT_LABELS[a.action]||a.action)).includes(q));
   const shown=list.slice(0,500);
   const rows=shown.map(a=>{
-    const col={delete:'var(--red)',wipe:'var(--red)',sync:'#a855f7',import:'#a855f7',user:'#f59e0b',login:'var(--dim)',stock:'var(--blue)',order:'var(--blue)',editSpec:'var(--green)',editMaterial:'var(--green)',define:'var(--amber)',backup:'var(--dim)',restore:'var(--red)'}[a.action]||'var(--dim)';
+    const col={delete:'var(--red)',wipe:'var(--red)',sync:'#a855f7',import:'#a855f7',user:'#f59e0b',login:'var(--dim)',stock:'var(--blue)',order:'var(--blue)',editSpec:'var(--green)',editMaterial:'var(--green)',define:'var(--amber)',backup:'var(--dim)',restore:'var(--red)',
+      logout:'var(--dim)',girisHata:'var(--red)',kilit:'var(--red)',sistem:'var(--dim)'}[a.action]||'var(--dim)';
+    // Sunucunun yazdigi kayitlar isaretlenir: bunlar atlanamaz/sahtelenemez kayitlardir
+    const kaynak=a.kaynak==='sunucu'?' <span class="t-meta" title="Sunucuda kaydedildi - atlanamaz" style="font-size:10px;opacity:.7">SUNUCU</span>':'';
     return `<tr>
       <td class="t-meta" style="font-family:var(--mono);font-size:11px;white-space:nowrap">${_auditTime(a.ts)}</td>
       <td class="t-name" style="font-size:12px">${esc(a.user)} <span class="t-meta">${esc(ROLES[a.role]||a.role)}</span></td>
-      <td><span class="cat-tag" style="background:${col}22;color:${col}">${esc(AUDIT_LABELS[a.action]||a.action)}</span></td>
-      <td class="t-meta" style="font-size:12px">${esc(a.detail||'')}</td>
+      <td><span class="cat-tag" style="background:${col}22;color:${col}">${esc(AUDIT_LABELS[a.action]||a.action)}</span>${kaynak}</td>
+      <td class="t-meta" style="font-size:12px">${esc(a.detail||'')}${a.ip?' <span style="opacity:.6;font-family:var(--mono);font-size:10px">'+esc(a.ip)+'</span>':''}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="4" style="text-align:center;color:var(--mute);padding:30px">${_AUDIT_YUKLENDI?'Kayit bulunamadi':'Denetim kaydi yukleniyor...'}</td></tr>`;
   const uOpts=`<option value="">Tum kullanicilar</option>`+users.map(u=>`<option value="${esc(u)}" ${AUDIT_FU===u?'selected':''}>${esc(u)}</option>`).join('');
   const aOpts=`<option value="">Tum islemler</option>`+actions.map(a=>`<option value="${esc(a)}" ${AUDIT_FA===a?'selected':''}>${esc(AUDIT_LABELS[a]||a)}</option>`).join('');
+  const kOpts=[['','Tum kaynaklar'],['sunucu','Yalniz sunucu kaydi'],['uygulama','Yalniz uygulama kaydi']].map(([v,l])=>`<option value="${v}" ${AUDIT_FK===v?'selected':''}>${esc(l)}</option>`).join('');
   return `<div class="sel-wrap" style="max-width:1300px">
     <div class="sel-bc"><button onclick="closeAudit()">${icoArr('left')} Geri Don</button></div>
-    <div class="sel-head"><h2>Denetim Kaydi</h2><p>Sistemde yapilan tum islemlerin kim-ne-zaman kaydi. Yalnizca yonetici gorebilir.</p></div>
+    <div class="sel-head"><h2>Denetim Kaydi</h2><p>Sistemde yapilan islemlerin kim-ne-zaman kaydi. Giris, cikis, basarisiz giris denemeleri ve silmeler SUNUCUDA kaydedilir - bunlar atlanamaz. Bu kaydi yalnizca yetkisi verilmis yoneticiler gorebilir (Kullanici Yonetimi'nden atanir).</p></div>
     <div class="stats">${statRow([['Toplam Islem',all.length,'kayit','var(--blue)'],['Filtrelenmis',list.length,'gosteriliyor','var(--green)'],['Kullanici',users.length,'farkli','#f59e0b'],['Son Islem',all.length?_auditTime(all[0].ts).split(' ')[0]:'-','tarih','var(--dim)']])}</div>
     <div class="toolbar">${searchBox('Denetim kaydinda ara...')}
       <select class="btn btn-ghost" style="cursor:pointer" onchange="setAuditFU(this.value)">${uOpts}</select>
       <select class="btn btn-ghost" style="cursor:pointer" onchange="setAuditFA(this.value)">${aOpts}</select>
+      <select class="btn btn-ghost" style="cursor:pointer" onchange="setAuditFK(this.value)">${kOpts}</select>
       <button class="btn btn-grid" onclick="exportAudit()">${icoXls()} CSV</button>
       <button class="btn btn-ghost" style="border-color:var(--red)55;color:var(--red)" onclick="clearAudit()">${icoTrash()} Temizle</button>
     </div>
@@ -6726,13 +6775,13 @@ function renderAudit(){
 }
 function exportAudit(){
   const all=(DB.meta.audit||[]).slice().reverse();
-  const rows=[["Tarih","Saat","Kullanici","Rol","Islem","Detay"]];
-  all.forEach(a=>{ const d=new Date(a.ts); const p=n=>String(n).padStart(2,'0'); rows.push([`${p(d.getDate())}.${p(d.getMonth()+1)}.${d.getFullYear()}`,`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`,a.user,ROLES[a.role]||a.role,AUDIT_LABELS[a.action]||a.action,a.detail||'']); });
-  const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:12},{wch:10},{wch:16},{wch:12},{wch:18},{wch:50}];
+  const rows=[["Tarih","Saat","Kullanici","Rol","Islem","Detay","Kaynak","IP"]];
+  all.forEach(a=>{ const d=new Date(a.ts); const p=n=>String(n).padStart(2,'0'); rows.push([`${p(d.getDate())}.${p(d.getMonth()+1)}.${d.getFullYear()}`,`${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`,a.user,ROLES[a.role]||a.role,AUDIT_LABELS[a.action]||a.action,a.detail||'',a.kaynak==='sunucu'?'Sunucu':'Uygulama',a.ip||'']); });
+  const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:12},{wch:10},{wch:16},{wch:12},{wch:18},{wch:50},{wch:10},{wch:14}];
   XLSX.utils.book_append_sheet(wb,ws,"Denetim Kaydi"); XLSX.writeFile(wb,`Denetim_Kaydi_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Denetim kaydi indirildi");
 }
 async function clearAudit(){
-  if(!isAdmin()){toast('Yetkiniz yok','err');return;}
+  if(!canAudit()){toast('Yetkiniz yok','err');return;}
   if(!confirm("Tum denetim kaydi silinecek. Bu islem geri alinamaz. Devam?"))return;
   DB.meta.audit=[]; logAction('wipe','Denetim kaydi temizlendi'); await saveDB(); render(); toast("Denetim kaydi temizlendi");
 }
@@ -6750,7 +6799,7 @@ function renderUsers(){
     const iletisim=[u.tel?esc(u.tel):'',u.email?esc(u.email):''].filter(Boolean).join('<br>');
     return `<tr>
       <td class="t-name">${esc(u.username)}${isMe?' <span class="t-meta">(siz)</span>':''}${u.meslek?'<div class="t-meta" style="font-size:11px">'+esc(u.meslek)+'</div>':''}</td>
-      <td>${roleBadge(u.role)}</td>
+      <td>${roleBadge(u.role)}${canAudit(u)?' <span class="cat-tag" title="Denetim kaydini goruntuleyebilir" style="background:#a855f722;color:#a855f7">Denetim</span>':''}</td>
       <td class="t-meta" style="font-size:11px">${uEkip?esc(shortEkip(uEkip))+' '+ekipBolumBadge(uEkip):'-'}</td>
       <td class="t-meta" style="font-size:11px">${iletisim||'-'}</td>
       <td class="t-meta" style="font-size:11px">${esc(secLabels)}</td>
@@ -6826,7 +6875,7 @@ function _inviteRoleChange(){
   const divIzl=document.getElementById('iv_perms_izleyici');
   const divSaha=document.getElementById('iv_perms_saha');
   const hints={
-    admin:'Tam yetki: tum binalar, tum moduller, silme / Excel import / sync / yedek / kullanici yonetimi dahil her sey.',
+    admin:'Tam yetki: tum binalar, tum moduller, silme / Excel import / sync / yedek / kullanici yonetimi dahil her sey. Denetim kaydi (kullanici hareketleri) bunun DISINDADIR - ayrica atanir.',
     izleyici:'Secilen modulleri yalnizca goruntuleyebilir. Hicbir yazma islemi yapamaz.',
     saha_personeli:'Modul bazinda ozellestirilebilir izinler. Her modul icin Goruntule / Ekle / Duzenle / Sil izinleri ayri tanimlanabilir.'
   };
@@ -6886,6 +6935,14 @@ async function revokeInvite(id){
 function openUserModal(id){
   const u=id?SB_USERS.find(x=>x.id===id):null;
   const existingPerms=(u&&u.permissions)||{};
+  /* DENETIM KAYDI YETKISI. Mevcut kullanicida canAudit ile okunur (geriye uyum
+     kurali orada); YENI kullanicida varsayilan KAPALI - "istedigim yoneticiye
+     atarim" kuralinin karsiligi budur, yeni yonetici kendiliginden denetim
+     okuyucusu olmaz (sunucu tarafi ayni sekilde davranir: api/users.js).
+     Kutu, yetkisi olmayan bir yonetici icin KILITLI gosterilir: sunucu zaten
+     reddediyor (api/users/[id].js), burada da sebebi gorunsun. */
+  const denetimAcik=u?canAudit(u):false;
+  const denetimVerebilir=canAudit();
   const secOpts=ALL_SECTIONS.map(s=>{ const on=u&&u.sections&&u.sections.includes(s); return `<label class="chk"><input type="checkbox" class="usec" value="${s}" ${on?'checked':''}> ${esc(SECTION_LABELS[s]||s)}</label>`; }).join('');
   const binOptsIzl=(DB.proje.buildings||[]).map(b=>{ const on=u&&u.buildings&&u.buildings.includes(b); return `<label class="chk"><input type="checkbox" class="ubin-izl" value="${esc(b)}" ${on?'checked':''}> ${esc(b)}</label>`; }).join('')||'<span class="t-meta">Bina tanimli degil</span>';
   const binOptsSaha=(DB.proje.buildings||[]).map(b=>{ const on=u&&u.buildings&&u.buildings.includes(b); return `<label class="chk"><input type="checkbox" class="ubin-saha" value="${esc(b)}" ${on?'checked':''}> ${esc(b)}</label>`; }).join('')||'<span class="t-meta">Bina tanimli degil</span>';
@@ -6899,6 +6956,11 @@ function openUserModal(id){
       <p class="t-meta" id="u_roleHint" style="font-size:11px;margin-top:6px"></p></div>
     <div class="frow" id="u_ekipRow"><label>Bagli Ekip  <span class="t-meta">(opsiyonel - atanirsa raporda YALNIZ kendi ekibinin kaydini girer/duzenler)</span></label>
       <select id="u_ekip"><option value="">- ekip atanmadi (tum ekipler) -</option>${(DB.rapor.ekipler||[]).slice().sort((a,b)=>a.localeCompare(b,'tr')).map(ek=>`<option value="${esc(ek)}" ${u&&userEkipOf(u.username)===ek?'selected':''}>${esc(ek)}${ekipBolumOf(ek)?' ('+ekipBolumLabel(ekipBolumOf(ek))+')':''}</option>`).join('')}</select></div>
+    <div class="frow" id="u_denetimRow" style="display:none"><label>Denetim Kaydi</label>
+      <label class="chk" style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--text)"><input type="checkbox" id="u_denetim" ${denetimAcik?'checked':''} ${denetimVerebilir?'':'disabled'} style="width:auto"> Kullanici hareketlerini (giris, cikis, silme, degisiklik) gorebilir</label>
+      <p class="t-meta" style="font-size:11px;margin-top:6px">${denetimVerebilir
+        ?'Yonetici olmak tek basina yetmez - bu kutu isaretli degilse denetim kaydi ekranini acamaz. Yetkiyi yalnizca bu yetkiye sahip yoneticiler verip alabilir.'
+        :'Bu yetkiyi degistirebilmek icin sizin de denetim kaydi yetkiniz olmali.'}</p></div>
     <div id="u_perms_izleyici" style="display:none">
       <div class="frow"><label>Gorebilecegi Moduller <span class="t-meta">(salt goruntuleme)</span></label><div class="chk-grid">${secOpts}</div></div>
       <div class="frow"><label>Bina Erisimi <span class="t-meta">(bos = tum binalar)</span></label><div class="chk-grid">${binOptsIzl}</div></div>
@@ -6922,7 +6984,7 @@ function _userRoleChange(){
   const divIzl=document.getElementById('u_perms_izleyici');
   const divSaha=document.getElementById('u_perms_saha');
   const hints={
-    admin:'Tam yetki: tum binalar, tum moduller, silme / Excel import / sync / yedek / kullanici yonetimi dahil her sey.',
+    admin:'Tam yetki: tum binalar, tum moduller, silme / Excel import / sync / yedek / kullanici yonetimi dahil her sey. Denetim kaydi (kullanici hareketleri) bunun DISINDADIR - ayrica atanir.',
     izleyici:'Secilen modulleri yalnizca goruntuleye bilir. Hicbir yazma islemi yapamaz.',
     saha_personeli:'Modul bazinda ozellestirilebilir izinler. Her modul icin Goruntule / Ekle / Duzenle / Sil izinleri ayri tanimlanabilir.'
   };
@@ -6932,6 +6994,10 @@ function _userRoleChange(){
   // ekip atamasi yalniz kisitlanabilir roller icin anlamli (yonetici zaten her seye erisir)
   const divEkip=document.getElementById('u_ekipRow');
   if(divEkip)divEkip.style.display=(role==='admin')?'none':'';
+  // Denetim kaydi yetkisini YALNIZCA Yonetici tasiyabilir (bkz. lib/yetki.js
+  // denetimGorebilir): rol dusurulunce kutu gizlenir, sunucu da alani siler.
+  const divDen=document.getElementById('u_denetimRow');
+  if(divDen)divDen.style.display=(role==='admin')?'':'none';
 }
 async function saveUser(id){
   const name=(document.getElementById('u_name').value||'').trim();
@@ -6945,6 +7011,13 @@ async function saveUser(id){
   let sections=[], buildings=[], permissions={};
   if(role==='admin'){
     sections=ALL_SECTIONS.slice(); buildings=[];
+    /* DENETIM KAYDI YETKISI HER KAYDETMEDE ACIKCA YAZILIR. Yazilmasaydi
+       lib/yetki.js'teki "alan yoksa acik" geriye uyum kurali surer ve kutuyu
+       kaldirmak hicbir sey yapmazdi. Kutu kilitliyse (yetkisi olmayan yonetici
+       duzenliyorsa) mevcut durum aynen geri gonderilir - sunucu da degisiklik
+       gormedigi icin kaydi reddetmez, kullanici telefon/e-posta duzenleyebilir. */
+    const dcb=document.getElementById('u_denetim');
+    permissions={ denetim:{ read: dcb?!!dcb.checked:false } };
   } else if(role==='izleyici'){
     sections=[...document.querySelectorAll('.usec:checked')].map(c=>c.value);
     buildings=[...document.querySelectorAll('.ubin-izl:checked')].map(c=>c.value);
@@ -6964,6 +7037,15 @@ async function saveUser(id){
   if(id){
     const u=SB_USERS.find(x=>x.id===id);
     if(u&&u.role==='admin'&&role!=='admin'&&SB_USERS.filter(x=>x.role==='admin').length<=1){toast('Son yonetici rolu degistirilemez','err');return;}
+    /* DENETIM KAYDINI GOREBILEN SON YONETICI DUSURULEMEZ. Dusurulseydi yetkiyi
+       geri acabilecek kimse kalmaz, kayit kimsenin ulasamadigi bir tabloya
+       donerdi. Ayni kontrol sunucuda da var (api/users/[id].js) - burasi hizli
+       ve anlasilir uyari icin. */
+    const eskiVar=u?canAudit(u):false;
+    const yeniVar=(role==='admin')&&!!(permissions.denetim&&permissions.denetim.read);
+    if(eskiVar&&!yeniVar&&!SB_USERS.some(x=>x.id!==id&&canAudit(x))){
+      toast('Denetim kaydini gorebilen son yonetici bu kullanici - once baska bir yoneticiye yetki verin','err');return;
+    }
   }
   try {
     let updated;
@@ -7152,6 +7234,7 @@ async function saveCompany(id){ if(!guard('define'))return;
     if(!DB.companies)DB.companies=[];
     DB.companies.push(entity);
   }
+  logAction('define',(id?'Sirket guncellendi: ':'Sirket eklendi: ')+ad);
   closeModal(); render(); toast(id?"Sirket guncellendi":"Sirket eklendi");
 }
 /* Sirketin FIILEN kullanildigi yerler. Siparis disinda tutanaklarin taraf kaydi ve
@@ -7498,6 +7581,7 @@ async function addEkipPrompt(){ if(!guard('define'))return;
   if((DB.rapor.ekipler||[]).some(e=>norm(e)===norm(name))){ toast("Bu ekip zaten var","err"); return; }
   await sbInsertRaporEkip(name);
   if(!DB.rapor.ekipler)DB.rapor.ekipler=[];
+  logAction('define','Ekip eklendi: '+name);
   DB.rapor.ekipler.push(name);
   render(); toast("Ekip eklendi");
 }
@@ -7865,6 +7949,7 @@ async function addSection(){ if(!guard('define'))return; const v=prompt("Yeni bo
   if(!DB.proje.sections)DB.proje.sections=[];
   if(DB.proje.sections.some(x=>norm(x)===norm(s))){ toast("Bu bolum zaten var","err"); return; }
   await sbInsertProjeSection(s);
+  logAction('define','Bolum eklendi: '+s);
   DB.proje.sections.push(s); DEF_SEC=s; render(); toast("Bolum eklendi");
 }
 async function delSection(s){ if(!guard('define'))return;
@@ -7891,6 +7976,7 @@ async function addSartname(bina,section){ if(!guard('define'))return;
   if(!DB.proje.sartnames)DB.proje.sartnames=[];
   const sartEntity={id:uid(),bina,section,code:c,name:name.trim()||c};
   await sbInsertProjeSartname(sartEntity);
+  logAction('define','Sartname eklendi: '+c+' ('+bina+' / '+section+')');
   DB.proje.sartnames.push(sartEntity);
   render(); toast("Sartname eklendi");
 }
@@ -7935,6 +8021,7 @@ async function saveSartname(id){
     sbUpdateProjeSartname(id,{...sr}),
     ...affectedSpecs.map(sp=>sbUpdateProjeSpec(sp.id,{...sp}))
   ]);
+  logAction('define','Sartname guncellendi: '+(oldCode!==code?oldCode+' -> '+code:code)+(affectedSpecs.length?' ('+affectedSpecs.length+' kalem grubu guncellendi)':''));
   closeModal(); render(); toast("Sartname guncellendi");
 }
 async function delSartname(id){ if(!guard('define'))return;
@@ -10584,6 +10671,7 @@ async function addSartnameForSel(){
   const sartnameEntity={id:uid(),bina:PBINA,section:PCAT,code:c,name:(name||'').trim()||c};
   await sbInsertProjeSartname(sartnameEntity);
   DB.proje.sartnames.push(sartnameEntity);
+  logAction('define','Sartname eklendi: '+c+' ('+PBINA+' / '+PCAT+')');
   setPSpec(c); TAB="spec"; render(); toast("Sartname eklendi - Kalem Ekle ile urun girin");
 }
 async function addSpekPrompt(){
@@ -10800,12 +10888,16 @@ async function lokAdd(bina,parentId,level){
   if(dup){toast('Bu ad ayni seviyede zaten var','err');return;}
   const node={id:uid(),bina,parentId:parentId||null,level,name};
   await sbInsertProjeLokasyon(node); DB.proje.lokasyonlar.push(node);
+  // Yol, dugum listeye GIRDIKTEN sonra uretilir - lokPath(node.id) once bos donerdi
+  logAction('define','Lokasyon eklendi: '+bina+' / '+lokPath(node.id));
   renderLokTree(bina);
 }
 async function lokRename(bina,id){
   const l=getLok(id); if(!l)return;
   const v=prompt('Yeni ad:',l.name); if(!v||!v.trim()||v.trim()===l.name)return;
+  const eskiAd=l.name;
   l.name=v.trim(); await sbUpdateProjeLokasyon(id,{...l});
+  logAction('define','Lokasyon adi degisti: '+bina+' / '+eskiAd+' -> '+l.name);
   renderLokTree(bina);
 }
 // kat dugumune kot degeri bagla/duzenle: gunluk rapor girisinde lokasyon secilince bu deger otomatik dolar
@@ -10816,6 +10908,7 @@ async function lokSetKot(bina,id){
   const t=v.trim();
   if(t===''){ delete l.kot; }
   else { const n=Number(t); if(isNaN(n)){ toast('Gecersiz kot degeri - sayi girin','err'); return; } l.kot=n; }
+  logAction('define','Kat kotu: '+lokPath(id)+' -> '+(l.kot!=null?l.kot:'(silindi)'));
   await sbUpdateProjeLokasyon(id,{...l});
   renderLokTree(bina);
 }
@@ -10841,6 +10934,7 @@ async function lokDelete(bina,id){
   const usedEntry=(DB.rapor.entries||[]).some(e=>e.lokId&&ids.has(e.lokId));
   if(usedSpec||usedItem||usedEntry){ toast('Bu lokasyona bagli '+[usedSpec?'metraj':'',usedItem?'alim':'',usedEntry?'montaj':''].filter(Boolean).join('/')+' kaydi var - once onlari tasiyin/silin','err'); return; }
   const sub=ids.size-1;
+  const _silinenYol=lokPath(id);   // dugum silindikten sonra yol uretilemez
   if(!confirm('"'+lokPath(id)+'" silinsin mi?'+(sub?' (altindaki '+sub+' lokasyon da silinir)':'')+(kalan.size?'\n\nBaska parcaya da bagli '+kalan.size+' oda silinmez, sadece bu parcayla bagi kopar.':'')))return;
   // once korunan paylasimli dugumlerin bu dala bakan baglari kaldirilir
   for(const k of kalan){ const n=getLok(k); if(!n)continue;
@@ -10849,6 +10943,7 @@ async function lokDelete(bina,id){
     await sbUpdateProjeLokasyon(k,{...n});
   }
   await sbDeleteProjeLokasyonlar([...ids]);
+  logAction('delete','Lokasyon silindi: '+bina+' / '+_silinenYol+(sub?' (+'+sub+' alt lokasyon)':''));
   DB.proje.lokasyonlar=DB.proje.lokasyonlar.filter(l=>!ids.has(l.id));
   // silinen katlar sartname kat atamalarindan da dusulur (gosterim eski id'leri zaten ayiklar; bu kalici temizlik)
   const affSarts=(DB.proje.sartnames||[]).filter(x=>x.bina===bina&&(x.katIds||[]).some(k=>ids.has(k)));
@@ -11054,6 +11149,7 @@ async function lokwSetKot(id,val){
   const t=String(val==null?'':val).trim();
   if(t===''){ if(l.kot==null)return; delete l.kot; }
   else{ const n=Number(t); if(isNaN(n)){ toast('Gecersiz kot degeri - sayi girin','err'); render(); return; } if(l.kot===n)return; l.kot=n; }
+  logAction('define','Kat kotu: '+lokPath(id)+' -> '+(l.kot!=null?l.kot:'(silindi)'));
   await sbUpdateProjeLokasyon(id,{...l});
   toast('Kot kaydedildi');
 }
@@ -12246,9 +12342,11 @@ async function flowLinkParent(id){
 async function flowUnlinkParent(id,pid){
   const l=getLok(id); if(!l)return;
   if(!guard('define',{bina:l.bina}))return;
-  const p=getLok(pid);
+  const p=getLok(pid); const _pAd=p?p.name:'';
   if(!confirm(`"${l.name}" odasinin "${p?p.name:''}" baglantisi kaldirilsin mi?\n\nOda silinmez, sadece bu parcayla bagi kopar.`))return;
-  if(await lokUnlinkParent(id,pid)){ render(); toast('Baglanti kaldirildi'); }
+  if(await lokUnlinkParent(id,pid)){
+    logAction('define','Lokasyon baglantisi kaldirildi: '+l.bina+' / '+l.name+' <- '+_pAd);
+    render(); toast('Baglanti kaldirildi'); }
   else toast('Son baglanti kaldirilamaz - oda ebeveynsiz kalamaz','err');
 }
 // BINA SILME: bina + o binaya ait TUM veriler (sartname, sartname kalemi, alternatif, alim/hareket, siparis, 3D model) kalici silinir
@@ -13365,6 +13463,7 @@ async function saveAlt(specId, altId){
     await sbInsertProjeAlternative(alt);
     toast('Alternatif eklendi');
   }
+  logAction('define',(altId?'Alternatif guncellendi: ':'Alternatif eklendi: ')+_altMat.name+(_sp?' ('+_sp.bina+' / '+_sp.name+')':''));
   closeAltModal(); refreshSpecDetailAlts(specId);
 }
 async function delAlt(id, specId){
@@ -13380,6 +13479,7 @@ async function changeAltStatus(id, newStatus, specId){
   alt.status=newStatus;
   if(newStatus==='onaylandi'||newStatus==='kullanımda'){ alt.approvedBy=CURRENT_USER.username; alt.approvedAt=Date.now(); }
   await sbUpdateProjeAlternative(id,alt);
+  logAction('define','Alternatif durumu: '+alt.name+' -> '+altStatusLabel(newStatus));
   refreshSpecDetailAlts(specId); toast('Durum: '+altStatusLabel(newStatus));
 }
 function closeAltModal(){ document.querySelectorAll('.alt-modal-bg').forEach(m=>m.remove()); }
@@ -15859,6 +15959,7 @@ async function renameSpecGroup(oldName){
   if(nn===null) return; const v=nn.trim(); if(!v){toast("Bos olamaz","err");return;}
   const affected=DB.proje.specs.filter(s=>specGroupKey(s)===oldName);
   affected.forEach(s=>{ s.grup=v; });
+  logAction('editSpec','Sartname grup adi: '+oldName+' -> '+v+' ('+affected.length+' kalem)');
   await Promise.all(affected.map(s=>sbUpdateProjeSpec(s.id,{...s})));
   render(); toast("Grup adi guncellendi");
 }
@@ -16991,6 +17092,7 @@ async function saveProjeItem(){
   const newItem={id:uid(),name:sp.ad,qty:Number(qty),unit:sp.unit||'',date:new Date(document.getElementById('f_date').value||Date.now()).getTime(),order:document.getElementById('f_order').value.trim(),note:document.getElementById('f_note').value.trim(),cat:sp.cat||'',code:sp.code||'',specId:sp.specId,bina,img:modalImg,pdf:modalPdf};
   await sbInsertProjeItem(newItem);
   DB.proje.items.push(newItem);
+  logAction('stock','Alim kaydi: '+newItem.name+' '+fmtNum(newItem.qty)+' '+(newItem.unit||'')+' ('+bina+')');
   closeModal(); render(); toast("Malzeme kaydedildi ("+bina+")");
 }
 function openProjeOut(name,unit,cat){
@@ -17067,6 +17169,7 @@ async function saveProjeItemEdit(id){
   it.note=document.getElementById('ei_note').value.trim();
   it.img=modalImg; it.pdf=modalPdf;
   await sbUpdateProjeItem(id,{...it});
+  logAction('stock','Alim kaydi guncellendi: '+it.name+' -> '+fmtNum(it.qty)+' '+(it.unit||'')+' ('+it.bina+')');
   closeModal(); render(); toast("Alim kaydi guncellendi");
 }
 // Bir hareketin PDF'i: kayittaki kopya YOKSA bagli siparisin PDF'i kullanilir.
@@ -17794,6 +17897,7 @@ async function saveSpec(id){ if(!guard('editSpec'))return;
 async function delSpec(id){ if(!guard('delete'))return; if(!confirm("Bu kalemi silmek istiyor musunuz?"))return; const _s=DB.proje.specs.find(s=>s.id===id); await sbDeleteProjeSpec(id); DB.proje.specs=DB.proje.specs.filter(s=>s.id!==id); logAction('delete','Spesifikasyon: '+((_s&&(_s.code||_s.name))||id)); render(); toast("Kalem silindi"); }
 async function toggleSpecExclude(id){ if(!guard('editSpec'))return; const sp=DB.proje.specs.find(s=>s.id===id); if(!sp)return;
   if(sp.openQty){ toast("Acik kalem zaten yuzde disinda - hedef miktar girilince otomatik dahil olur","err"); return; }
+  logAction('editSpec','Kalem ilerleme yuzdesi: '+sp.name+' -> '+(sp.exclude?'HARIC':'dahil'));
   sp.exclude=!sp.exclude; await sbUpdateProjeSpec(id,{...sp}); render();
   toast(sp.exclude?"Kalem ilerleme yuzdesinden cikarildi":"Kalem ilerleme yuzdesine dahil edildi");
 }
@@ -17968,6 +18072,7 @@ async function saveLib(id){ const ad=document.getElementById('l_ad').value.trim(
     await sbInsertGeciciLibItem(entity);
     DB.gecici.lib.push(entity);
   }
+  logAction('define',(id?'Mobilizasyon malzemesi guncellendi: ':'Mobilizasyon malzemesi eklendi: ')+ad);
   closeModal(); render(); toast(id?"Malzeme guncellendi":"Malzeme eklendi");
 }
 
@@ -17989,6 +18094,7 @@ async function doMove(id,type){ const x=DB.gecici.lib.find(i=>i.id===id); const 
   const move={id:uid(),libId:id,type,qty:q,date:new Date(document.getElementById('mv_date').value||Date.now()).getTime(),order:document.getElementById('mv_ord').value.trim()};
   DB.gecici.moves.push(move);
   await Promise.all([sbUpdateGeciciLibItem(id,{...x}),sbInsertGeciciMove(move)]);
+  logAction('stock','Mobilizasyon '+(type==='in'?'stok girisi: +':'stok cikisi: -')+fmtNum(q)+' '+(x.unit||'')+' - '+x.ad+' (yeni bakiye '+fmtNum(x.bakiye)+')');
   closeModal(); render(); toast(type==='in'?"Stok girisi yapildi":"Stok cikisi yapildi");
 }
 function libDetail(id){ const x=DB.gecici.lib.find(i=>i.id===id); if(!x)return;
@@ -18082,6 +18188,7 @@ async function saveOrder(){
     sbInsertGeciciMoves(newMoves),
     sbInsertGeciciOrder(order)
   ]);
+  logAction('order','Mobilizasyon siparisi: '+no+(ted?' / '+ted:'')+' - '+valid.length+' kalem ('+added+' yeni, '+updated+' guncellenen malzeme)');
   closeModal(); render();
   toast(`Siparis kaydedildi - ${added} yeni, ${updated} guncellenen malzeme`);
 }
@@ -18107,6 +18214,7 @@ async function delOrder(id){ const o=DB.gecici.orders.find(x=>x.id===id); if(!o)
   ]);
   DB.gecici.moves=DB.gecici.moves.filter(m=>!(m.order===o.no));
   DB.gecici.orders=DB.gecici.orders.filter(x=>x.id!==id);
+  logAction('delete','Mobilizasyon siparisi silindi: '+o.no+' - '+o.lines.length+' kalemin stogu geri alindi');
   render(); toast("Siparis silindi, stok geri alindi");
 }
 
@@ -18373,6 +18481,7 @@ async function saveAlet(id){ if(!guard('define',{bina:PBINA}))return;
     const items=list.map(b=>Object.assign({id:uid(),adet:1,seri:b.seri,zimkod:b.zimkod},libId?{libId}:{},ortak));
     await sbInsertAletItems(items);
     items.forEach(e=>DB.alet.items.push(e));
+    logAction('define','Alet eklendi (toplu): '+items.length+' adet'+(libId?' - '+((aletLib().find(k=>k.id===libId)||{}).ad||''):''));
     closeModal(); render(); toast(`${items.length} alet eklendi`); return;
   }
   // seri no TEK adette zorunlu: adet kutusu 1 iken kayit tek fiziksel alettir
@@ -18388,6 +18497,7 @@ async function saveAlet(id){ if(!guard('define',{bina:PBINA}))return;
     await sbInsertAletItem(entity);
     DB.alet.items.push(entity);
   }
+  logAction('define',(id?'Alet guncellendi: ':'Alet eklendi: ')+((libId?(aletLib().find(k=>k.id===libId)||{}).ad:(x&&x.ad))||'')+(seri?' / seri '+seri:''));
   closeModal(); render(); toast(id?"Alet guncellendi":"Alet eklendi");
 }
 async function delAlet(id){ if(!guard('delete'))return; if(!confirm("Bu aleti silmek istiyor musunuz?"))return; await sbDeleteAletItem(id); DB.alet.items=DB.alet.items.filter(i=>i.id!==id); render(); toast("Alet silindi"); }
@@ -18454,6 +18564,7 @@ async function saveAletLib(id){ if(!guard('define',{bina:PBINA}))return;
   closeModal();
   if(cb) cb(entity);
   if(ret) ret(); else render();
+  logAction('define',(id?'Alet kunyesi guncellendi: ':'Alet kunyesi eklendi: ')+ad);
   toast(id?"Kunye guncellendi":"Kutuphaneye eklendi");
 }
 async function delAletLib(id){ if(!guard('delete'))return;
@@ -18662,6 +18773,7 @@ async function saveSocket(id,nx,ny){
     await sbInsertSahaSocket(entity);
     DB.saha.sockets.push(entity);
   }
+  logAction('define',(id?'Seyyar priz guncellendi: ':'Seyyar priz eklendi: ')+(data.ad||data.grup||''));
   closeModal(); setSahaMode('socket'); drawSaha(); toast(id?"Priz guncellendi":"Seyyar priz eklendi");
 }
 async function delSocket(id){ if(!guard('delete'))return; if(!confirm("Bu seyyar prizi silmek istiyor musunuz?"))return;
@@ -18736,6 +18848,7 @@ async function savePanel(id,nx,ny){ const ad=document.getElementById('p_ad').val
     await sbInsertSahaPanel(entity);
     DB.saha.panels.push(entity);
   }
+  logAction('define',(id?'Saha panosu guncellendi: ':'Saha panosu eklendi: ')+ad);
   closeModal(); setSahaMode('pan'); drawSaha(); buildLegend(); toast(id?"Pano guncellendi":"Pano eklendi");
 }
 async function delPanel(id){ if(!guard('delete'))return; if(!confirm("Bu panoyu ve bagli cizgileri silmek istiyor musunuz?"))return;
@@ -18760,6 +18873,7 @@ async function saveLine(from,to){ const kablo=document.getElementById('ln_kablo'
   const entity={id:uid(),from,to,kablo,uzun:document.getElementById('ln_uzun').value.trim(),color:SV.tmpColor};
   await sbInsertSahaLine(entity);
   DB.saha.lines.push(entity);
+  logAction('define','Saha kablo baglantisi eklendi: '+kablo);
   closeModal(); drawSaha(); toast("Kablo cizgisi eklendi");
 }
 function buildLegend(){ const el=document.getElementById('sahaLegend'); if(!el)return;
@@ -19939,7 +20053,10 @@ async function rSetBlockEkip(bi,v,sel){
     const n=prompt('Yeni ekip adi:');
     if(n&&n.trim()){ const nm=n.trim();
       if(!DB.rapor.ekipler)DB.rapor.ekipler=[];
-      if(!DB.rapor.ekipler.some(x=>norm(x)===norm(nm))){ await sbInsertRaporEkip(nm); DB.rapor.ekipler.push(nm); }
+      if(!DB.rapor.ekipler.some(x=>norm(x)===norm(nm))){
+        await sbInsertRaporEkip(nm); DB.rapor.ekipler.push(nm);
+        logAction('define','Ekip eklendi (rapor girisinden): '+nm);
+      }
       bk.ekip=nm;
     } else { if(sel)sel.value=bk.ekip||''; return; }
     rRenderBlocks(); return;
@@ -20291,6 +20408,7 @@ async function doLinkRapor(entryId, specId, altId){
     if(it){ it.specId=spec.id; it.altId=e.altId; it.code=e.code; it.cat=spec.cat||''; it.matId=e.matId; ops.push(sbUpdateProjeItem(it.id,{...it})); }
   }
   await Promise.all(ops);
+  logAction('define','Saha kaydi '+(al?'alternatif urune':'sartnameye')+' baglandi: '+(spec.code||spec.name)+' ('+spec.bina+')');
   closeModal(); render(); rDayReopen(_day); toast((al?'Alternatif urun olarak baglandi: ':'Sartnameye baglandi: ')+(spec.code||spec.name));
 }
 // Yeni sartname kaydedildiginde, ayni malzemeye (matId) bagli, ayni binadaki
@@ -20300,6 +20418,7 @@ async function autoLinkPendingRapor(spec){
   const pending=(DB.rapor.entries||[]).filter(e=>!e.specId && e.matId===spec.matId && e.bina===spec.bina);
   if(!pending.length)return;
   await Promise.all(pending.map(e=>doLinkRaporSilent(e,spec)));
+  logAction('define','Bekleyen saha kayitlari otomatik baglandi: '+pending.length+' kayit -> '+(spec.code||spec.name)+' ('+spec.bina+')');
   toast(pending.length+' bekleyen saha kaydi otomatik baglandi: '+(spec.code||spec.name));
 }
 async function doLinkRaporSilent(e,spec){
@@ -23881,6 +24000,7 @@ async function saveAletOrder(){
   await sbInsertAletItems(newItems);
   newItems.forEach(e=>DB.alet.items.push(e));
   closeModal(); render();
+  logAction('order','Alet faturasi: '+no+' - '+newItems.length+' alet'+(yeniKunyeler.length?' ('+yeniKunyeler.length+' yeni kunye)':''));
   toast(`Fatura kaydedildi - ${newItems.length} alet eklendi${yeniKunyeler.length?` (${yeniKunyeler.length} yeni kunye)`:''}`);
 }
 

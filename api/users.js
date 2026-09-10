@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { requireAdmin } from '../lib/auth.js'
 import { hashPassword, sifreKurallari } from '../lib/password.js'
 import { aktifOrg } from '../lib/org.js'
+import { denetimGorebilir, tokenKullanici } from '../lib/yetki.js'
 
 // GET  /api/users  - AKTIF ORGANIZASYONUN kullanicilarini listeler (sifresiz)
 // POST /api/users  - aktif organizasyonda yeni kullanici olusturur
@@ -35,6 +36,24 @@ export default async function handler(req, res) {
     // Asama 4: yeni sifreler asgari kuraldan gecer (bkz. lib/password.js sifreKurallari)
     const kuralHatasi = sifreKurallari(password, username)
     if (kuralHatasi) { res.status(400).json({ error: kuralHatasi }); return }
+    /* DENETIM KAYDI YETKISI YENI HESAPTA VARSAYILAN OLARAK KAPALIDIR.
+       lib/yetki.js'teki "alan yoksa acik" kurali yalnizca GERIYE UYUM icindir -
+       ozellik gelmeden once var olan yoneticiler ekrandan dusmesin diye. Yeni
+       acilan bir yoneticiye ayni kural uygulansaydi, "istedigim yoneticiye
+       atarim" kurali daha ilk hesapta delinirdi: her yeni yonetici kendiliginden
+       denetim okuyucusu olurdu. O yuzden deger burada ACIKCA yazilir. */
+    const izinler = { ...(permissions || {}) }
+    if (role === 'admin') {
+      const istenen = izinler.denetim ? !!izinler.denetim.read : false
+      if (istenen && !denetimGorebilir(tokenKullanici(claims))) {
+        res.status(403).json({ error: 'Denetim kaydi yetkisini yalnizca bu yetkiye sahip bir yonetici verebilir' })
+        return
+      }
+      izinler.denetim = { read: istenen }
+    } else {
+      delete izinler.denetim   // yetkiyi yalnizca Yonetici tasiyabilir
+    }
+
     try {
       const hashed = await hashPassword(password)
       /* org_id ZORLA aktif organizasyon; is_super ZORLA false. Super yoneticilik
@@ -43,7 +62,7 @@ export default async function handler(req, res) {
          veritabanindan elle konur (bkz. migration_org_1.sql). */
       const { data, error } = await supabaseAdmin
         .from('users')
-        .insert([{ username, password: hashed, role, sections, buildings, permissions: permissions || {}, tel: tel || '', email: email || '', meslek: meslek || '', org_id: org, is_super: false }])
+        .insert([{ username, password: hashed, role, sections, buildings, permissions: izinler, tel: tel || '', email: email || '', meslek: meslek || '', org_id: org, is_super: false }])
         .select().single()
       if (error) throw error
       const safe = { ...data }; delete safe.password

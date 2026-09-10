@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { requireAuth } from '../lib/auth.js'
-import { yetkiKontrol } from '../lib/yetki.js'
+import { yetkiKontrol, denetimGorebilir } from '../lib/yetki.js'
+import { denetimYaz } from '../lib/denetim.js'
 import { VARSAYILAN_ORG } from '../lib/org.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,6 +66,35 @@ const CAKISMA = {
   rapor_ekipler: 'org_id,name',
   proje_buildings: 'org_id,code',
   proje_sections: 'org_id,name',
+}
+
+/* SILME KAYDINDA gorunecek insan okunur tablo adlari. Denetim kaydini okuyan
+   kisi 'proje_items' degil 'Siparis satiri' gormeli - listede bilmedigi bir tablo
+   adi gorurse kaydi okumaz. Listede olmayan tablo kendi adiyla yazilir. */
+const TABLO_ADI = {
+  companies: 'Sirket', tutanaklar: 'Tutanak', alet_items: 'El aleti', alet_lib: 'Alet kunyesi',
+  saha_panels: 'Saha panosu', saha_lines: 'Saha hatti', saha_sockets: 'Saha prizi',
+  rapor_entries: 'Rapor kaydi', gecici_lib: 'Gecici elektrik kunyesi',
+  gecici_moves: 'Gecici elektrik hareketi', gecici_orders: 'Gecici elektrik siparisi',
+  proje_sartnames: 'Sartname', proje_materials: 'Malzeme', proje_specs: 'Spesifikasyon',
+  proje_items: 'Siparis satiri', proje_orders: 'Siparis', proje_alternatives: 'Alternatif',
+  proje_bina_modelleri: 'Bina modeli', proje_lokasyonlar: 'Lokasyon',
+  gunluk_isler: 'Gunluk is', ihtiyac_listeleri: 'Ihtiyac listesi', faturalar: 'Fatura',
+  app_settings: 'Ayar', saha_settings: 'Saha ayari', rapor_ekipler: 'Ekip',
+  proje_buildings: 'Bina', proje_sections: 'Bolum',
+}
+
+/* TARAYICIDAN GELEN DENETIM KAYDININ KIMLIGI SUNUCUDA DAMGALANIR.
+   audit_log'a yazma herkese aciktir (her kullanici kendi eylemini kaydeder) ve
+   bu, istegi elle kuran birinin BASKASININ adina kayit girmesine acikti - denetim
+   kaydinin tek isi kimin ne yaptigini soylemek oldugu icin bu, ozelligi bastan
+   anlamsiz kilardi. Kullanici/rol/zaman artik istekten DEGIL tokenden yazilir;
+   istemcinin gonderdigi degerler ezilir. Serbest metin olan 'detail' kalir. */
+function damgala(rows, claims) {
+  return rows.map(r => ({
+    ...r,
+    data: { ...(r && r.data), user: claims.username || '?', role: claims.role || '?', ts: Date.now() },
+  }))
 }
 
 const MAX_SATIR = 3000   // tek istekte islenebilecek satir sayisi ust siniri
@@ -188,8 +218,19 @@ export default async function handler(req, res) {
       const rows = g.rows
       if (!Array.isArray(rows) || !rows.length) return hata(res, 400, 'Satir yok')
       if (rows.length > MAX_SATIR) return hata(res, 400, 'Tek istekte en fazla ' + MAX_SATIR + ' satir')
+      /* YEDEKTEN GERI YUKLEME denetim kaydinda DAMGALANMAZ. Damgalansaydi geri
+         yuklenen her tarihi kayit "bugun, geri yukleyen kisi" olarak yazilir,
+         yani yedegin tasidigi gecmis yok olurdu. Bu kapi dar tutulur: yalnizca
+         denetim kaydi yetkisi OLAN bir yonetici acabilir - o kisi zaten kaydin
+         tamamini gorebiliyor ve silebiliyor, tarihli satir yazabilmesi yeni bir
+         yetki vermez. Yetkisi olmayan icin istek reddedilir; sessizce damgalanip
+         gecilseydi yedek bozuk geri yuklenirdi. */
+      if (table === 'audit_log' && g.yedek && !denetimGorebilir(kullanici)) {
+        return hata(res, 403, 'Denetim kaydini geri yuklemek icin denetim yetkisi gerekir')
+      }
       // org_id her satira ZORLA yazilir: istemci gondermis olsa bile ezilir.
-      const satirlar = rows.map(r => ({ ...r, org_id: org }))
+      const govde = (table === 'audit_log' && !g.yedek) ? damgala(rows, claims) : rows
+      const satirlar = govde.map(r => ({ ...r, org_id: org }))
       const { error } = op === 'insert'
         ? await q.insert(satirlar)
         : await q.upsert(satirlar, { onConflict: CAKISMA[table] || 'org_id,id' })
@@ -234,6 +275,21 @@ export default async function handler(req, res) {
       }
       const { error } = await d
       if (error) throw error
+      /* SILME KAYDI SUNUCUDA TUTULUR. Tarayicidaki logAction atlanabilir (konsol)
+         ve zaten yalnizca bir kisim silmenin yaninda cagriliyor; en yikici islemin
+         izi gonulluluge birakilamaz. Kayit sonuca YAZILIR, denemeye degil: hata
+         alan silme loga dusmez. audit_log'un kendi silinmesi disarida - o zaten
+         'Denetim kaydi temizlendi' olarak ayrica kaydediliyor, cift yazilmasin. */
+      if (table !== 'audit_log') {
+        const ad = TABLO_ADI[table] || table
+        const kac = g.all ? 'TUMU' : (g.in ? g.in.vals.length + ' kayit' : '1 kayit')
+        const hedef = g.all ? '' : (g.in ? '' : ' (' + g.eq.col + ': ' + g.eq.val + ')')
+        await denetimYaz(org, {
+          user: claims.username, role: claims.role,
+          action: g.all ? 'wipe' : 'delete',
+          detail: ad + ' silindi - ' + kac + hedef,
+        })
+      }
       res.status(200).json({ ok: true })
       return
     }
