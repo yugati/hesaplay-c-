@@ -2691,6 +2691,7 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .oline .lib-match{font-size:10px;font-family:var(--mono);grid-column:1/-1;margin-top:-4px;padding-left:4px}
 .match-found{color:var(--green)}
 .match-new{color:var(--mute)}
+.match-warn{color:var(--amber-d);font-weight:600}
 .add-line{width:100%;padding:9px;border:1.5px dashed var(--line);border-radius:9px;background:transparent;color:var(--mute);font-weight:600;font-size:13px;margin-top:4px}
 .add-line:hover{border-color:var(--amber);color:var(--ink)}
 
@@ -10348,13 +10349,15 @@ function topmAfterRender(){
    icerigi kendi modaliyla birebir tutuldu; CSS (.topm-*) ortak.
 
    EKLEME-ONLY, BILEREK: bu sayfa mevcut kaydi GUNCELLEMEZ. Kutuphanede
-   ayni ad (ya da ayni stok kodu / barkod) varsa kutu hata verir, ustune
-   yazmaz. Mevcut kalemin bakiyesini degistirmek Stok Gir/Cikar isidir.
+   ayni STOK KODU varsa kutu hata verir, ustune yazmaz. Mevcut kalemin
+   bakiyesini degistirmek Stok Gir/Cikar isidir.
 
-   AD = KIMLIK: siparis satirlari kutuphaneye ADA gore baglanir (bkz.
-   orderConvert -> lib.find(i=>i.ad.trim().toLowerCase()===...)), bu
-   yuzden ayni adin iki kez kaydedilmesi engellenir - yoksa siparis hangi
-   kaleme dusecegini bilemez, biri sessizce hep bosta kalirdi.
+   KIMLIK = STOK KODU: ad / marka / model / renk / olcu / teknik ozellik
+   birebir ayni olsa bile kod farkliysa AYRI urundur (bkz. _topgImza) -
+   ayni ad ikinci kez kaydedilebilir, ayni kod kaydedilemez. Kodu olmayan
+   kalemde ad + marka birlikte kimliktir. Siparis satirlari kutuphaneye
+   libId ile baglanir (bkz. orderLibCoz); ada gore cozmek ayni adli iki
+   kalemde hep ilkini secer, ikincisi sessizce bosta kalirdi.
 
    BASLANGIC BAKIYESI HAREKET URETMEZ: tek malzeme eklemedeki davranisin
    aynisi (bkz. saveLib yeni kayit dali). Hareket kaydi yalnizca Stok
@@ -10521,7 +10524,7 @@ function topgYapistirUygula(){
   // yapistirmadan once duran bos kutu(lar) gereksiz - temizle
   f.rows=f.rows.filter(topgSatirDolu);
   if(!f.rows.length) f.rows.push(_topgBosSatir());
-  topgAdCakismaCoz(); topgOnDenetim();
+  topgOnDenetim();
   closeModal(); topgDraw();
   toast(satirlar.length+' malzeme kutusu olusturuldu');
 }
@@ -10557,10 +10560,10 @@ function topgSablonIndir(){
     ['MOBILIZASYON (GECICI ELEKTRIK) - TOPLU MALZEME EKLEME SABLONU'],
     [''],
     ['0) BU DOSYA YALNIZCA YENI MALZEME EKLER. Mevcut bir kalemi guncellemez,'],
-    ['   silmez, bakiyesini degistirmez. Kutuphanede zaten olan bir AD (ya da'],
-    ['   ayni stok kodu / barkod) yuklemeden sonra kutusunda hata olarak'],
-    ['   isaretlenir ve eklenmez; diger satirlar eklenir. Mevcut kalemin'],
-    ['   bakiyesini degistirmek icin Stok Gir / Stok Cikar dugmelerini kullanin.'],
+    ['   silmez, bakiyesini degistirmez. Kutuphanede zaten olan bir STOK KODU'],
+    ['   yuklemeden sonra kutusunda hata olarak isaretlenir ve eklenmez; diger'],
+    ['   satirlar eklenir. Mevcut kalemin bakiyesini degistirmek icin Stok Gir /'],
+    ['   Stok Cikar dugmelerini kullanin.'],
     [''],
     ['1) Sadece "Yeni Malzemeler" sayfasini doldurun. Her satir bir yeni malzeme'],
     ['   olur. Baslik satirini silmeyin, sutun adlarini degistirmeyin. Sutun'],
@@ -10582,10 +10585,15 @@ function topgSablonIndir(){
     ['    adresi. Excel icine GOMULU fotograflar okunamaz - bilgisayardaki'],
     ['    dosyalari yukleme sonrasi kutunun icinden secebilirsiniz.'],
     [''],
-    ['3) AD = KIMLIK. Siparis/fatura satirlari kutuphaneye ADA gore baglanir,'],
-    ['   bu yuzden ayni ad iki kez kaydedilemez. Ayni urunun farkli olculeri'],
-    ['   icin adi ayirt edici yazin (orn. "3X2,5 TTR KABLO" / "3X4 TTR KABLO").'],
-    ['   Ayni stok kodu ve ayni barkod da iki ayri kaleme verilemez.'],
+    ['3) KIMLIK = STOK KODU. Ad, marka, model, renk, olcu, teknik ozellik'],
+    ['   birebir ayni olsa bile STOK KODU farkliysa bunlar AYRI urunlerdir ve'],
+    ['   ikisi de eklenir - adlari degistirilmez (orn. 3X63A C 3 LU OTOMATIK'],
+    ['   SIGORTA: Sigma 6SM363C ve Siemens 5SL6363-7 iki ayri kalemdir).'],
+    ['   AYNI STOK KODU iki ayri kaleme verilemez - kutu hata verir.'],
+    ['   Stok kodu BOS birakilan kalemde ayirt edici kalmadigi icin AD + MARKA'],
+    ['   birlikte kimlik sayilir; ayni ad + ayni marka ikinci kez eklenemez.'],
+    ['   Barkod kimlik degildir (ayni barkod birden fazla kaleme yapistirilmis'],
+    ['   olabiliyor) - tekrari yalnizca sari serit olarak uyarir, kaydi durdurmaz.'],
     [''],
     ['4) Bakiye: sayi olmali (orn. 86 ya da 12,5). Bos birakilirsa 0 kabul'],
     ['   edilir. BASLANGIC BAKIYESI HAREKET KAYDI URETMEZ - tek malzeme'],
@@ -10742,10 +10750,9 @@ function topgExcelDosya(e){
     if(!eklenen){ toast('Okunabilir malzeme satiri bulunamadi','err'); return; }
     f.rows=f.rows.filter(topgSatirDolu);            // yuklemeden onceki bos kutular gereksiz
     if(!f.rows.length) f.rows.push(_topgBosSatir());
-    const ayristirilan=topgAdCakismaCoz();          // ayni adli kalemleri marka/kod ile ayir
     const hata=topgOnDenetim();                     // hatayi kaydede basmadan gorsun
     topgDraw();
-    const ek=(atlanan?', '+atlanan+' satir atlandi':'')+(ayristirilan?', '+ayristirilan+' ad ayristirildi':'');
+    const ek=(atlanan?', '+atlanan+' satir atlandi':'');
     if(hata) toast(eklenen+' malzeme kutusu olusturuldu'+ek+' - '+hata+' kutuda hata var','err');
     else toast(eklenen+' malzeme kutusu olusturuldu'+ek);
   }catch(err){ console.error(err); toast('Excel okunamadi: '+((err&&err.message)||err),'err'); } };
@@ -10768,59 +10775,26 @@ function topgOnDenetim(){
   });
   return hata;
 }
-function _topgBosGorulen(){ return {adlar:new Map(),kodlar:new Map(),barkodlar:new Map()}; }
+function _topgBosGorulen(){ return {kimlikler:new Map(),adlar:new Map(),barkodlar:new Map()}; }
 const _topgKk=v=>String(v||'').trim().toLowerCase();
-/* AYNI AD, FARKLI URUN: gercek ambar listelerinde ayni isim birden fazla markadan
-   gelir ("3X40A C 3 LU OTOMATIK SIGORTA" SIMENS + CHINT + SCHNEIDER, her biri kendi
-   uretici koduyla). Ad kimlik oldugu icin (siparis satirlari kutuphaneye ADA baglanir,
-   bkz. orderConvert) bunlarin ayni adla durmasi kalemleri birbirine karistirirdi.
-   Cozum: adin sonuna EN AZ ayirt edici eklenir - markalar birbirinden farkliysa
-   (MARKA), degilse [KOD], ikisi de ayirt etmiyorsa sira numarasi.
-   KUTUPHANEDEKI kayitlara DOKUNULMAZ; yalnizca sayfadaki yeni kutular degisir. */
-/* KALEM IMZASI: "bu iki satir ayni urun mu?" sorusunun cevabi. Stok kodu varsa
-   kimlik odur; yoksa marka ayirt eder. Ad zaten grup anahtari oldugu icin imzaya
-   girmez. */
+/* KIMLIK = STOK KODU. Ad, marka, model, renk, olcu, teknik ozellik, aciklama
+   birebir ayni olsa bile STOK KODU farkliysa bunlar AYRI urunlerdir. Gercek ambar
+   listelerinde ayni isim birden fazla ureticiden gelir ("3X63A C 3 LU OTOMATIK
+   SIGORTA" Sigma 6SM363C + Siemens 5SL6363-7); ikisini tek kaleme cokertmek iki
+   ayri stogu birbirine karistirir.
+   Bu yuzden: ayni STOK KODU ikinci kez kaydedilemez (kirmizi serit, kayit durur),
+   ayni AD kaydedilebilir (yalnizca sari serit uyarir). Kutu adlari artik
+   kendiliginden "(Sigma)" / "[KOD]" ile degistirilmez - ad ayirt edici olmak
+   zorunda degil.
+   KODU OLMAYAN kalemde ayirt edici kalmadigi icin AD + MARKA birlikte kimliktir.
+   Barkod hicbir durumda kimlik degildir: gercek listelerde ayni barkod birden
+   fazla kaleme yapistirilmis oluyor, engellemek dogru veriyi disarida birakirdi.
+   Siparis satirlari da artik ada degil libId'ye baglanir (bkz. orderLibCoz) -
+   yoksa ayni adli iki kalemden hep ilki stok alir, ikincisi sessizce bosta
+   kalirdi. */
 function _topgImza(x){ const kod=String((x&&x.kod)||'').trim();
-  return kod?('k:'+_topgKk(kod)):('m:'+_topgKk((x&&x.marka)||'')); }
-function topgAdCakismaCoz(){
-  const f=_TOPG; if(!f) return 0;
-  const lib=(DB.gecici&&DB.gecici.lib)||[];
-  const libAd=new Map(); lib.forEach(x=>{ const k=_topgKk(x.ad); if(k&&!libAd.has(k)) libAd.set(k,x); });
-  const gruplar=new Map();
-  f.rows.forEach((r,i)=>{ if(!topgSatirDolu(r))return; const k=_topgKk(r.ad); if(!k)return;
-    if(!gruplar.has(k)) gruplar.set(k,[]); gruplar.get(k).push(i); });
-  // UYARI EKLENIR, USTUNE YAZILMAZ: satir baska bir nedenle de (orn. "1(250)" paket
-  // bakiyesinin ayrilmasi) not tasiyor olabilir - ikisi de gorunmeli.
-  const ekle=(r,ek)=>{ r.ad=(r.ad+' '+ek).trim(); if(r.adRu) r.adRu=(r.adRu+' '+ek).trim();
-    const not='Ayni adli baska kalem oldugu icin adin sonuna '+ek+' eklendi - istemiyorsaniz elle degistirin';
-    r.not=r.not?(r.not+' · '+not):not; };
-  let degisen=0;
-  gruplar.forEach((ix,k)=>{
-    const libKayit=libAd.get(k);
-    if(ix.length<2 && !libKayit) return;                 // catisma yok
-    const kutular=ix.map(i=>f.rows[i]);
-    const hepsi=libKayit?[libKayit,...kutular]:kutular;
-    /* AYNI IMZALILAR AYNI KALEMDIR - yeniden adlandirilmaz. Boylece ayni dosyanin
-       ikinci yuklemesi "kutuphanede zaten var" hatasi almaya devam eder (sessizce
-       ikinci kopya olusmaz); dosya icindeki gercek tekrar da denetime takilir. */
-    const imzalar=new Map();
-    hepsi.forEach(x=>{ const im=_topgImza(x); if(!imzalar.has(im)) imzalar.set(im,x); });
-    if(imzalar.size<2) return;                           // hepsi ayni kalem
-    const temsilciler=[...imzalar.values()];
-    const ayirtEder=oku=>temsilciler.every(x=>String(oku(x)||'').trim())
-      && new Set(temsilciler.map(x=>_topgKk(oku(x)))).size===temsilciler.length;
-    let ekVer=null;
-    if(ayirtEder(x=>x.marka)) ekVer=x=>'('+String(x.marka).trim()+')';
-    else if(ayirtEder(x=>x.kod)) ekVer=x=>'['+String(x.kod).trim()+']';
-    else ekVer=x=>x.marka?'('+String(x.marka).trim()+')':(x.kod?'['+String(x.kod).trim()+']':'');
-    const libImza=libKayit?_topgImza(libKayit):null;
-    kutular.forEach(r=>{
-      if(libImza && _topgImza(r)===libImza) return;      // kutuphanedeki kaydin AYNISI - dokunma
-      const ek=ekVer(r); if(ek){ ekle(r,ek); degisen++; }
-    });
-  });
-  return degisen;
-}
+  return kod?('k:'+_topgKk(kod))
+    :('am:'+_topgKk((x&&x.ad)||'')+'|'+_topgKk((x&&x.marka)||'')); }
 /* Bir kutuyu kayda cevirir; sorun varsa {err} doner.
    KARSILASTIRMA trim + toLowerCase ile yapilir: programin kendisi kutuphaneyi bu
    kuralla eslestiriyor (bkz. orderConvert), dolayisiyla "ayni kayit" tanimi da bu
@@ -10839,25 +10813,30 @@ function _topgSatirCoz(r,i,gorulen){
   const lib=(DB.gecici&&DB.gecici.lib)||[];
   const kk=s=>String(s||'').trim().toLowerCase();
   const aAd=kk(ad);
-  /* AD = KIMLIK -> ENGEL. Kod ve barkod ise programda kimlik DEGIL (yalnizca arama ve
-     gosterim): gercek ambar listelerinde ayni barkod birden fazla kaleme yapistirilmis
-     oluyor. Bunlari engellemek dogru veriyi disarida birakirdi - UYARI verilir, kayit
-     yapilir. Uyari kutuda sari serit olarak durur. */
+  const imza=_topgImza(r);
+  /* STOK KODU = KIMLIK -> ENGEL (bkz. _topgImza). Ayni kod iki ayri kaleme verilemez;
+     ayni ad farkli kodla serbesttir, yalnizca sari serit uyarir. Kodsuz kalemde ad +
+     marka kimliktir. Barkod kimlik DEGIL - uyari verilir, kayit yapilir. */
   const uyarilar=[];
+  const kodMet=x=>String((x&&x.kod)||'').trim()||'kodsuz';
   // 1) KUTUPHANEYE karsi
-  const dupAd=lib.find(x=>kk(x.ad)===aAd);
-  if(dupAd) return {err:'Kutuphanede zaten var: '+dupAd.ad+' - bakiyesini degistirmek icin kutuphane satirindaki Stok Gir / Stok Cikar dugmesini kullanin'};
-  if(kod){ const d=lib.find(x=>kk(x.kod)===kk(kod));
-    if(d) uyarilar.push('"'+kod+'" stok kodu kutuphanedeki "'+d.ad+'" kaleminde de yazili'); }
+  const dup=lib.find(x=>_topgImza(x)===imza);
+  if(dup) return {err: kod
+    ? 'Kutuphanede zaten var: "'+dup.ad+'" ayni "'+kod+'" stok kodunu tasiyor - ayni stok kodu iki ayri kaleme verilemez. Bakiyesini degistirmek icin kutuphane satirindaki Stok Gir / Stok Cikar dugmesini kullanin'
+    : 'Kutuphanede zaten var: '+dup.ad+(dup.marka?' ('+dup.marka+')':'')+' - stok kodu bos oldugu icin ad ve marka kimlik sayildi. Ayri bir urunse stok kodunu yazin'};
+  const libAdAyni=lib.find(x=>kk(x.ad)===aAd);
+  if(libAdAyni) uyarilar.push('Kutuphanedeki "'+libAdAyni.ad+'" ile ayni adli, stok kodu farkli ('+kodMet(libAdAyni)+' / '+kodMet(r)+') - ayri kalem olarak eklenecek');
   if(barkod){ const d=lib.find(x=>kk(x.barkod)===kk(barkod));
     if(d) uyarilar.push('"'+barkod+'" barkodu kutuphanedeki "'+d.ad+'" kaleminde de yazili'); }
   // 2) BU SAYFADAKI onceki kutulara karsi
-  if(gorulen.adlar.has(aAd)) return {err:(gorulen.adlar.get(aAd)+1)+'. kutudaki malzemenin ayni - ad kimliktir, siparis satirlari ada gore baglanir. Ayirt etmek icin adin sonuna markayi ya da kodu ekleyin'};
-  if(kod && gorulen.kodlar.has(kk(kod))) uyarilar.push('"'+kod+'" stok kodu '+(gorulen.kodlar.get(kk(kod))+1)+'. kutuda da geciyor');
+  if(gorulen.kimlikler.has(imza)) return {err: kod
+    ? (gorulen.kimlikler.get(imza)+1)+'. kutu ayni "'+kod+'" stok kodunu tasiyor - ayni stok kodu iki ayri kaleme verilemez'
+    : (gorulen.kimlikler.get(imza)+1)+'. kutudaki malzemenin ayni - stok kodu bos oldugu icin ad ve marka kimlik sayildi. Ayri bir urunse stok kodunu yazin'};
+  if(gorulen.adlar.has(aAd)) uyarilar.push((gorulen.adlar.get(aAd)+1)+'. kutu ile ayni adli, stok kodu farkli - ayri kalem olarak eklenecek');
   if(barkod && gorulen.barkodlar.has(kk(barkod))) uyarilar.push('"'+barkod+'" barkodu '+(gorulen.barkodlar.get(kk(barkod))+1)+'. kutuda da geciyor');
-  gorulen.adlar.set(aAd,i);
-  if(kod) gorulen.kodlar.set(kk(kod),i);
-  if(barkod) gorulen.barkodlar.set(kk(barkod),i);
+  gorulen.kimlikler.set(imza,i);
+  if(!gorulen.adlar.has(aAd)) gorulen.adlar.set(aAd,i);
+  if(barkod && !gorulen.barkodlar.has(kk(barkod))) gorulen.barkodlar.set(kk(barkod),i);
   const lnk=v=>{ const t=String(v||'').trim(); return /^https?:\/\//i.test(t)?t:(t&&t.startsWith('data:')?t:null); };
   return {uyari:[r.not,...uyarilar].filter(Boolean).join(' · '),
     mal:{id:uid(),ad,adRu:String(r.adRu||'').trim(),kod,grup:String(r.grup||'').trim(),marka:String(r.marka||'').trim(),
@@ -10959,7 +10938,7 @@ function renderTopluGeciciPage(){
     <div class="sel-bc"><button onclick="closeTopluGeciciPage()">${icoArr('left')} ${geriYazi}</button> ${icoChevron()} <b>Toplu Malzeme Ekleme</b></div>
     <div class="page-head"><h1>Toplu Malzeme Ekleme</h1>
       <p class="page-sub">Mobilizasyon (Gecici Elektrik) - her kutu bir yeni ambar malzemesi, "Kutuphaneye Malzeme Ekle" formunun tamami</p></div>
-    <div class="kata-intro">Kutulari doldurun, <b>Tumunu Ekle</b> hepsini tek seferde kutuphaneye yazar. <b>+ Malzeme Kutusu Ekle</b> ile yeni kutu acilir; <b>Excel'den Yapistir</b> ile kopyaladiginiz satirlardan, <b>Excel'den Yukle</b> ile doldurdugunuz .xlsx dosyasindan toplu kutu uretilir (<b>Sablon Indir</b> ile bos dosyayi alabilirsiniz). Ambar programindan cikan listeler de dogrudan yuklenebilir: <b>stokOzelKod1</b> renk, <b>stokOzelKod2</b> malzeme cinsi olarak okunur, ayni hucrede alt alta yazilmis <b>iki dilli adlar</b> TR/RU olarak ayrilir, ayni ada sahip kalemler <b>marka ya da kod</b> eklenerek ayristirilir. Kirmizi serit kaydi engeller, sari serit yalnizca uyaridir</div>
+    <div class="kata-intro">Kutulari doldurun, <b>Tumunu Ekle</b> hepsini tek seferde kutuphaneye yazar. <b>+ Malzeme Kutusu Ekle</b> ile yeni kutu acilir; <b>Excel'den Yapistir</b> ile kopyaladiginiz satirlardan, <b>Excel'den Yukle</b> ile doldurdugunuz .xlsx dosyasindan toplu kutu uretilir (<b>Sablon Indir</b> ile bos dosyayi alabilirsiniz). Ambar programindan cikan listeler de dogrudan yuklenebilir: <b>stokOzelKod1</b> renk, <b>stokOzelKod2</b> malzeme cinsi olarak okunur, ayni hucrede alt alta yazilmis <b>iki dilli adlar</b> TR/RU olarak ayrilir. <b>Ayirt edici stok kodudur:</b> ad birebir ayni olsa bile stok kodu farkliysa ayri kalem olarak eklenir, adlar degistirilmez - ayni stok kodu ise ikinci kez kaydedilemez. Kirmizi serit kaydi engeller, sari serit yalnizca uyaridir</div>
     <datalist id="topgGrupList">${libGroups().map(g=>`<option value="${esc(g)}">`).join('')}</datalist>
     <datalist id="topgRenkList">${topgRenkler().map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
     <datalist id="topgCinsList">${libCinsler().map(c=>`<option value="${esc(c)}">`).join('')}</datalist>
@@ -10973,7 +10952,7 @@ function renderTopluGeciciPage(){
     </div>
     <div class="topm-cards topg-cards" id="topgCards">${f.rows.map((r,i)=>topgCardHtml(i)).join('')}</div>
     ${savedHtml}
-    <p class="specf-note">Bu sayfa yalnizca YENI malzeme ekler: kutuphanede zaten olan bir ad, stok kodu ya da barkod kutuda hata verir, uzerine yazmaz - mevcut kalemin bakiyesini degistirmek icin kutuphane satirindaki <b>Stok Gir / Stok Cikar</b>, kunyesini degistirmek icin <b>Gecmis &amp; Duzenle</b> dugmesini kullanin. Yuklenen Excel dosyasi da dogrudan kutuphaneye yazilmaz; once kutulara donusur, kayit yalnizca <b>Tumunu Ekle</b> ile yapilir. Baslangic bakiyesi stok hareketi olusturmaz.</p>
+    <p class="specf-note">Bu sayfa yalnizca YENI malzeme ekler: kutuphanede zaten olan bir <b>stok kodu</b> kutuda hata verir, uzerine yazmaz (ayni ad farkli stok koduyla serbesttir, barkod tekrari yalnizca uyarir) - mevcut kalemin bakiyesini degistirmek icin kutuphane satirindaki <b>Stok Gir / Stok Cikar</b>, kunyesini degistirmek icin <b>Gecmis &amp; Duzenle</b> dugmesini kullanin. Yuklenen Excel dosyasi da dogrudan kutuphaneye yazilmaz; once kutulara donusur, kayit yalnizca <b>Tumunu Ekle</b> ile yapilir. Baslangic bakiyesi stok hareketi olusturmaz.</p>
     <div class="kata-page-foot">
       <button class="btn btn-ghost" style="margin-right:auto" onclick="closeTopluGeciciPage()">${icoArr('left')} Geri Don</button>
       <button class="btn btn-ghost" onclick="topgAddRow()">${icoPlus()} Kutu Ekle</button>
@@ -18549,7 +18528,7 @@ async function delLib(id){ if(!guard('delete'))return; if(!confirm("Bu malzemeyi
 
 /* ---------- ORDER modal (siparis/fatura -> kutuphaneye ekle) ---------- */
 let orderLines=[];
-function openOrderModal(){ if(!canCreate('gecici')) return; modalPdf=null; orderLines=[{ad:'',kod:'',qty:'',unit:''}];
+function openOrderModal(){ if(!canCreate('gecici')) return; modalPdf=null; orderLines=[{ad:'',kod:'',qty:'',unit:'',libId:''}];
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal wide"><div class="modal-head"><h3>Siparis / Fatura Girisi</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow three"><div><label>Siparis / Fatura No *</label><input id="o_no" placeholder="orn. FTR-2026-0145"></div><div><label>Tarih</label><input id="o_date" type="date"></div><div><label>Tedarikci</label><input id="o_ted" placeholder="orn. Bemis"></div></div>
     <div class="frow"><label>Malzeme Satirlari (kutuphanede ara veya yeni ekle)</label>
@@ -18562,10 +18541,35 @@ function openOrderModal(){ if(!canCreate('gecici')) return; modalPdf=null; order
   document.getElementById('o_date').value=new Date().toISOString().slice(0,10);
   renderOrderLines();
 }
+/* SATIR -> KUTUPHANE KAYDI. Once libId (arama kutusundan secilen kalem), sonra ad.
+   ADA GORE COZMEK ARTIK TEK BASINA YETMEZ: stok kodlari farkli oldugu surece ayni adi
+   tasiyan birden fazla kalem bulunabilir (bkz. _topgImza) - boyle bir durumda eskiden
+   siparis hep listedeki ILK kaleme duser, ikincisi sessizce hic stok almazdi. Simdi
+   belirsizlik isaretlenir ve kullanicidan hangisi oldugunu secmesi istenir. */
+function orderLibCoz(l){
+  const bos={x:null,belirsiz:false,aday:0};
+  if(!l) return bos;
+  if(l.libId){ const x=DB.gecici.lib.find(i=>i.id===l.libId); if(x) return {x,belirsiz:false,aday:1}; }
+  const ad=String(l.ad||'').trim().toLowerCase(); if(!ad) return bos;
+  const ayni=DB.gecici.lib.filter(x=>String(x.ad||'').trim().toLowerCase()===ad);
+  if(ayni.length===1) return {x:ayni[0],belirsiz:false,aday:1};
+  if(ayni.length>1)  return {x:null,belirsiz:true,aday:ayni.length};
+  return bos;
+}
+// ad elle degistirilirse secilen kalemle baglanti duser: yazilan ad ile bagli kunye
+// ayrismasin (alet tarafindaki ayni onlem, bkz. updALine)
+function orderBagiKontrol(l){
+  if(!l||!l.libId) return;
+  const bagli=DB.gecici.lib.find(x=>x.id===l.libId);
+  if(bagli && String(l.ad||'').trim().toLowerCase()!==String(bagli.ad||'').trim().toLowerCase()) l.libId='';
+}
 function renderOrderLines(){ const c=document.getElementById('olines'); if(!c)return;
   c.innerHTML=orderLines.map((l,i)=>{
-    const match=DB.gecici.lib.find(x=>x.ad.trim().toLowerCase()===(l.ad||'').trim().toLowerCase());
-    const info=l.ad?(match?`<div class="lib-match match-found">Kutuphanede var - bakiyeye eklenir (mevcut: ${fmtNum(match.bakiye)})</div>`:`<div class="lib-match match-new">Yeni malzeme - kutuphaneye eklenecek</div>`):'';
+    const coz=orderLibCoz(l);
+    const info=!l.ad?'':(coz.belirsiz
+      ? `<div class="lib-match match-warn">Bu adi tasiyan ${coz.aday} ayri kalem var (stok kodlari farkli) - hangisi oldugunu arama kutusundan secin</div>`
+      : (coz.x?`<div class="lib-match match-found">Kutuphanede var - bakiyeye eklenir (mevcut: ${fmtNum(coz.x.bakiye)}${coz.x.kod?' &middot; '+esc(coz.x.kod):''})</div>`
+              :`<div class="lib-match match-new">Yeni malzeme - kutuphaneye eklenecek</div>`));
     return `<div class="oline">
       <div class="ac-wrap"><input id="ol_ad_${i}" placeholder="Malzeme adi (ara...)" value="${esc(l.ad)}" autocomplete="off" onfocus="acGecici(${i})"></div>
       <input type="number" step="any" placeholder="Miktar" value="${esc(l.qty)}" oninput="updLine(${i},'qty',this.value)">
@@ -18576,13 +18580,17 @@ function renderOrderLines(){ const c=document.getElementById('olines'); if(!c)re
 }
 function geciciLibSrc(){ return DB.gecici.lib.map(x=>({ad:x.ad,alt:[x.adRu,x.kod,x.grup,x.marka,x.barkod,x.cins].filter(Boolean).join(' '),sub:[x.kod,x.grup,x.marka].filter(Boolean).join(' · ')+' · bakiye: '+fmtNum(x.bakiye),obj:x})); }
 function acGecici(i){ const el=document.getElementById('ol_ad_'+i);
-  acOpen(el, geciciLibSrc(), (it,isNew)=>{ orderLines[i].ad=it.ad; if(!isNew&&it.unit&&!orderLines[i].unit){orderLines[i].unit=it.unit;} renderOrderLines(); setTimeout(()=>{const n=document.getElementById('ol_ad_'+i);if(n)n.focus();},0); }, true);
+  acOpen(el, geciciLibSrc(), (it,isNew)=>{ orderLines[i].ad=it.ad;
+    orderLines[i].libId=(!isNew&&it.obj)?it.obj.id:'';        // ada degil, secilen kaleme baglanir
+    if(!isNew&&it.obj&&it.obj.unit&&!orderLines[i].unit){orderLines[i].unit=it.obj.unit;}
+    renderOrderLines(); setTimeout(()=>{const n=document.getElementById('ol_ad_'+i);if(n)n.focus();},0); }, true);
 }
-function addOrderLine(){ orderLines.push({ad:'',kod:'',qty:'',unit:''}); renderOrderLines(); }
-function rmOrderLine(i){ orderLines.splice(i,1); if(orderLines.length===0)orderLines.push({ad:'',kod:'',qty:'',unit:''}); renderOrderLines(); }
+function addOrderLine(){ orderLines.push({ad:'',kod:'',qty:'',unit:'',libId:''}); renderOrderLines(); }
+function rmOrderLine(i){ orderLines.splice(i,1); if(orderLines.length===0)orderLines.push({ad:'',kod:'',qty:'',unit:'',libId:''}); renderOrderLines(); }
 function updLine(i,k,v){ orderLines[i][k]=v;
-  if(k==='ad'){ const m=DB.gecici.lib.find(x=>x.ad.trim().toLowerCase()===v.trim().toLowerCase()); if(m&&!orderLines[i].unit){orderLines[i].unit=m.unit;} renderOrderLines();
-    const inp=document.querySelectorAll('.oline')[i].querySelector('input'); }
+  if(k==='ad'){ orderBagiKontrol(orderLines[i]);
+    const coz=orderLibCoz(orderLines[i]); if(coz.x&&!orderLines[i].unit){orderLines[i].unit=coz.x.unit;}
+    renderOrderLines(); }
 }
 async function saveOrder(){
   if(!guard('order',{bina:PBINA}))return;
@@ -18590,13 +18598,18 @@ async function saveOrder(){
   if(!no){toast("Siparis/fatura no zorunlu","err");return;}
   const date=new Date(document.getElementById('o_date').value||Date.now()).getTime();
   const ted=document.getElementById('o_ted').value.trim();
-  orderLines.forEach((l,i)=>{ const el=document.getElementById('ol_ad_'+i); if(el)l.ad=el.value; });
+  orderLines.forEach((l,i)=>{ const el=document.getElementById('ol_ad_'+i); if(el)l.ad=el.value; orderBagiKontrol(l); });
   const valid=orderLines.filter(l=>l.ad.trim()&&Number(l.qty)>0);
   if(valid.length===0){toast("En az bir gecerli satir girin","err");return;}
+  /* BELIRSIZ SATIR KAYDI DURDURUR: ayni adi tasiyan birden fazla kalem varsa hangisine
+     stok girecegimizi bilemeyiz - sessizce ilkine yazmak yanlis kalemin bakiyesini
+     sisirirdi. Kullanici arama kutusundan kalemi secince libId dolar ve belirsizlik biter. */
+  const belirsiz=valid.find(l=>orderLibCoz(l).belirsiz);
+  if(belirsiz){ toast('"'+belirsiz.ad+'" adini tasiyan birden fazla kalem var (stok kodlari farkli) - satirdaki arama kutusundan hangisi oldugunu secin','err'); return; }
   const savedLines=[], newLibItems=[], updatedLibItems=[], newMoves=[]; let added=0,updated=0;
   valid.forEach(l=>{
     const q=Number(l.qty);
-    let x=DB.gecici.lib.find(i=>i.ad.trim().toLowerCase()===l.ad.trim().toLowerCase());
+    let x=orderLibCoz(l).x;
     if(x){ x.bakiye=(Number(x.bakiye)||0)+q; updatedLibItems.push(x); updated++; }
     else { x={id:uid(),ad:l.ad.trim(),adRu:'',kod:'',grup:'',marka:ted,unit:l.unit.trim()||'ADET',renk:'',cins:'',barkod:'',bakiye:q,parca:0,img:null,img2:null}; DB.gecici.lib.push(x); newLibItems.push(x); added++; }
     const move={id:uid(),libId:x.id,type:'in',qty:q,date,order:no};
