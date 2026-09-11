@@ -2691,6 +2691,10 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .oline .lib-match{font-size:10px;font-family:var(--mono);grid-column:1/-1;margin-top:-4px;padding-left:4px}
 .match-found{color:var(--green)}
 .match-new{color:var(--mute)}
+/* malzeme formunda bolum ayraci: kunye / ozellikler / ambar */
+.lib-boluk{border-top:1px solid var(--line);margin:16px 0 10px;padding-top:11px}
+.lib-boluk b{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--ink)}
+.lib-boluk span{display:block;font-size:10.5px;color:var(--mute);font-family:var(--mono);margin-top:2px}
 .match-warn{color:var(--amber-d);font-weight:600}
 .add-line{width:100%;padding:9px;border:1.5px dashed var(--line);border-radius:9px;background:transparent;color:var(--mute);font-weight:600;font-size:13px;margin-top:4px}
 .add-line:hover{border-color:var(--amber);color:var(--ink)}
@@ -3232,6 +3236,11 @@ datalist{display:none}
   padding:7px 11px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
 .iht-reset:hover{color:var(--ink);border-color:var(--mute)}
 @media(max-width:760px){ .iht-sag{margin-left:0;width:100%} .iht-seg{width:100%} .iht-seg button{flex:1;justify-content:center} }
+/* Ambar Kutuphanesi bakiye segmenti: gorsel dili .iht-seg ile ayni, fark yalnizca
+   filtre panelinin ALTINDA tek basina durmasi - kendi alt boslugunu tasir ve dar
+   ekranda satiri tam kaplar ki dort sayac da tek dokunusla ulasilabilir kalsin. */
+.lib-seg{margin-bottom:10px;max-width:100%}
+@media(max-width:600px){ .lib-seg{display:flex;width:100%} .lib-seg button{flex:1;justify-content:center;padding:8px 6px} }
 /* ==================================================================
    FATURA KONTROL
    Gorsel dilini Ihtiyac/Tutanak ekranlariyla paylasir (.tut-wrap,
@@ -4700,7 +4709,8 @@ function startClock(){
 
 function switchSection(s){ if(!canSee(s)){ toast('Bu bolume erisim yetkiniz yok','err'); return; }
   // acik fatura formunda kaydedilmemis is varsa once sorulur (bkz. fatAyrilmaOnayi)
-  if(typeof fatAyrilmaOnayi==='function' && !fatAyrilmaOnayi()) return; SEC=s; TAB=(s==='proje'?'spec':'stok'); SEARCH=""; GFILTER="";
+  if(typeof fatAyrilmaOnayi==='function' && !fatAyrilmaOnayi()) return; SEC=s; TAB=(s==='proje'?'spec':'stok'); SEARCH=""; GFILTER=""; if(typeof LIBF!=='undefined') LIBF={marka:'',renk:'',cins:'',barkod:'',img:'',bak:''}; // ambar kutuphanesi sutun filtreleri
+  if(typeof GORDF!=='undefined') GORDF={ted:'',from:'',to:'',mat:'',pdf:''};                 // siparis/fatura sutun filtreleri
   PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PNEWORD=false; PBINAY=false; PKATA=false; PODM=false; PSPECF=false; PRIMP=false; PINV=false; PTUT=false; PKODD=false; PIHT=false; PFAT=false; PTOPM=false; PTOPG=false; PARAC=false; _KODD=null; _RIMP=null; _TOPM=null; _TOPG=null; // acik panelleri kapat
   RV.silMod=false; RV.silGun=new Set(); _RSIL=null; // silme modu bolum degisince kapanir
   if(s==='saha'){ render(); initSaha(); } else render();
@@ -8565,7 +8575,7 @@ function matMatchesLibSearch(m,q){
   // teknik satirlar da aranir; her satir AYRI alan olarak denenir (tek metne birlestirilirse
   // harf-sirasi eslesmesi alakasiz kayitlari da getirir - ustteki nota bakin)
   const tekAlan=matTek(m).map(r=>(r.k+' '+r.v).trim());
-  return [m.code,(m.altCodes||[]).join(' '),m.name,m.cat,m.brand,m.note,m.standart,(m.tags||[]).join(' '),usageCats,...tekAlan]
+  return [m.code,m.barkod,(m.altCodes||[]).join(' '),m.name,m.cat,m.brand,m.note,m.standart,(m.tags||[]).join(' '),usageCats,...tekAlan]
     .some(f=>f && matchText(f,q));
 }
 // bir malzemenin gorunur kategorileri: varsayilan kategorisi + fiilen kullanildigi bolumler.
@@ -8671,7 +8681,7 @@ async function confirmMergeMaterials(){
   if(!confirm(`"${drop.code||drop.name}" kaydi silinip "${keep.code||keep.name}" ile birlestirilecek. Bu islem geri alinamaz. Devam?`)) return;
 
   // ana kayittaki BOS alanlari diger kayittan doldur (dolu olanlarin ustune yazmaz)
-  const FIELDS=['img','unit','brand','note','standart','tags','cat','proje'];
+  const FIELDS=['img','unit','brand','note','standart','tags','cat','proje','barkod'];
   FIELDS.forEach(f=>{
     if(f==='tags'){ if((!keep.tags||!keep.tags.length)&&drop.tags&&drop.tags.length) keep.tags=drop.tags.slice(); }
     else if(!keep[f]&&drop[f]) keep[f]=drop[f];
@@ -9306,7 +9316,7 @@ function matScopeBar(){
 function matLibGeciciFiltered(){
   let lib=((DB.gecici&&DB.gecici.lib)||[]).slice();
   // arama IKINCI DILI de kapsar: kullanici Rusca adi ya da malzeme cinsini yazarak da bulabilsin
-  if(SEARCH) lib=lib.filter(x=>matchText([x.ad,x.adRu,x.kod,x.barkod,x.marka,x.grup,x.renk,x.cins].filter(Boolean).join(' '),SEARCH));
+  if(SEARCH) lib=lib.filter(x=>matchText([x.ad,x.adRu,x.kod,x.barkod,x.marka,x.grup,x.renk,x.cins,x.standart,(x.tags||[]).join(' '),(x.altCodes||[]).join(' ')].filter(Boolean).join(' '),SEARCH));
   lib=lib.filter(x=>{
     if(MATF.cat && (x.grup||'')!==MATF.cat) return false;
     if(MATF.brand && norm(x.marka||'')!==norm(MATF.brand)) return false;
@@ -9479,7 +9489,7 @@ function renderMaterialLibAlet(){
 // veri kaybini onlemek icin kullanici Iptal/X ile bilerek kapatmali
 function matModalBgClick(ev){ if(ev.target!==ev.currentTarget) return; modalKazaKapat(); }
 function matFormDolu(){
-  const ids=['mt_name','mt_code','mt_brand','mt_standart','mt_weight','mt_unit','mt_proje','mt_note','mt_note2','mt_imgUrl','mt_img2Url'];
+  const ids=['mt_name','mt_code','mt_barkod','mt_brand','mt_standart','mt_weight','mt_unit','mt_proje','mt_note','mt_note2','mt_imgUrl','mt_img2Url'];
   return formDoluMu(ids,(modalTags&&modalTags.length)||(modalVaryant&&modalVaryant.satirlar.length)||modalImg||modalImg2);
 }
 // matModalClose: malzeme modali kapanirken, eger spec kalemi duzenlemeden gelindiyse
@@ -9502,7 +9512,8 @@ function openMaterialModal(id,keepReturn){
   const cats=[...new Set([...(DB.proje.sections||PROJ_CATS),...(DB.proje.materials||[]).map(x=>x.cat).filter(Boolean),...useCats])];
   const html=`<div class="modal-bg" onclick="matModalBgClick(event)"><div class="modal" style="max-width:860px"><div class="modal-head"><h3>${m?'Malzeme Duzenle':'Yeni Malzeme'}</h3><button class="mini-btn" onclick="matModalClose()">x</button></div><div class="modal-body">
     <div class="frow"><label>Malzeme Adi *</label><input id="mt_name" value="${m?esc(m.name):''}" placeholder="orn. Galvaniz Kablo Tavasi 200mm"></div>
-    <div class="frow two"><div><label>Urun Kodu</label><input id="mt_code" value="${m?esc(m.code||''):''}" placeholder="orn. 121491"></div><div><label>Marka  <span class="t-meta">(listeden secin - birden fazla olabilir)</span></label>${markaAlaniHtml('mt_brand',m?m.brand:'',true)}</div></div>
+    <div class="frow two"><div><label>Urun Kodu</label><input id="mt_code" value="${m?esc(m.code||''):''}" placeholder="orn. 121491"></div><div><label>Barkod</label><input id="mt_barkod" value="${m?esc(m.barkod||''):''}" placeholder="orn. 8698523950838"></div></div>
+    <div class="frow"><label>Marka  <span class="t-meta">(listeden secin - birden fazla olabilir)</span></label>${markaAlaniHtml('mt_brand',m?m.brand:'',true)}</div>
     <div class="frow"><label>Varyantlar  <span class="t-meta">(ayni urunun olcu / renk / beden gibi farkli halleri - her biri kendi urun koduyla)</span></label>
       <div class="vr-bar">
         <button type="button" class="btn btn-ghost" onclick="varyantSatirEkle()">${icoPlus()} Varyant Ekle</button>
@@ -9608,6 +9619,7 @@ async function saveMaterial(id){ if(!guard('editMaterial'))return;
   const csel=document.getElementById('mt_cat').value;
   const cat=csel==='__new'?document.getElementById('mt_newcat').value.trim():csel;
   const code=document.getElementById('mt_code').value.trim();
+  const barkod=document.getElementById('mt_barkod').value.trim();
   const brand=document.getElementById('mt_brand').value.trim();
   const unit=document.getElementById('mt_unit').value.trim();
   const note=document.getElementById('mt_note').value.trim();
@@ -9657,7 +9669,7 @@ async function saveMaterial(id){ if(!guard('editMaterial'))return;
   if(!img2UrlNow && modalImg2 && /^https?:\/\//i.test(modalImg2)) modalImg2=null;
   let savedMt;
   if(id){ const m=getMaterial(id);
-    Object.assign(m,{name,code,brand,unit,cat,note,note2,standart,weight,tags,altCodes,varyant,proje,img:modalImg,img2:modalImg2,updatedAt:Date.now()});
+    Object.assign(m,{name,code,barkod,brand,unit,cat,note,note2,standart,weight,tags,altCodes,varyant,proje,img:modalImg,img2:modalImg2,updatedAt:Date.now()});
     const affectedSpecs=materialUsage(id);
     // sp.cat BILEREK guncellenmez: bolum kalemin ozelligidir (bkz. saveSpec), malzemenin kategorisi
     // sadece kutuphane varsayilanidir. Eskiden buradaki sp.cat=cat, varsayilan kategorisi bos bir
@@ -9670,7 +9682,7 @@ async function saveMaterial(id){ if(!guard('editMaterial'))return;
     savedMt=m;
   } else {
     const now=Date.now();
-    savedMt={id:uid(),name,code,brand,unit,cat,note,note2,standart,weight,tags,altCodes,varyant,proje,img:modalImg,img2:modalImg2,createdAt:now,updatedAt:now};
+    savedMt={id:uid(),name,code,barkod,brand,unit,cat,note,note2,standart,weight,tags,altCodes,varyant,proje,img:modalImg,img2:modalImg2,createdAt:now,updatedAt:now};
     await sbInsertProjeMaterial(savedMt);
     DB.proje.materials.push(savedMt);
   }
@@ -9715,11 +9727,11 @@ async function delMaterial(id){ if(!guard('delete'))return;
    TEK kayda gore yazilmis global'ler N kutuda calismazdi). Alan yazicilari yalniz
    state'e dokunur, kutu yeniden cizilmez - yoksa her tusta imlec kaybolurdu. */
 let _TOPM=null;
-function _topmBosSatir(){ return {name:'',code:'',brand:[],varyant:{alanlar:[],satirlar:[]},
+function _topmBosSatir(){ return {name:'',code:'',barkod:'',brand:[],varyant:{alanlar:[],satirlar:[]},
   standart:'',weight:'',unit:'',cat:'',tags:[],proje:'',note:'',note2:'',img:null,img2:null,err:''}; }
 function topmSatirDolu(r){
   if(!r) return false;
-  return !!(String(r.name||'').trim()||String(r.code||'').trim()||(r.brand||[]).length
+  return !!(String(r.name||'').trim()||String(r.code||'').trim()||String(r.barkod||'').trim()||(r.brand||[]).length
     ||String(r.standart||'').trim()||String(r.weight||'').trim()||String(r.unit||'').trim()
     ||String(r.cat||'').trim()||(r.tags||[]).length||String(r.proje||'').trim()
     ||String(r.note||'').trim()||String(r.note2||'').trim()||r.img||r.img2||((r.varyant&&r.varyant.satirlar)||[]).length);
@@ -9903,13 +9915,13 @@ function topmImgUrl(i,v,slot){
 
 /* ── EXCEL'DEN YAPISTIRMA: cok satirli/sutunlu blok kutulara dagitilir.
    Sutun sirasi asagidaki basliklarla ayni; eksik sutunlar bos kalir. ── */
-const TOPM_YAPISTIR_SUTUN=['name','code','brand','standart','weight','unit','cat','tags','varyant','proje','note','img','img2'];
+const TOPM_YAPISTIR_SUTUN=['name','code','barkod','brand','standart','weight','unit','cat','tags','varyant','proje','note','img','img2'];
 function topmYapistirAc(){
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:640px">
     <div class="modal-head"><h3>Excel'den Yapistir</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">
       <p class="t-meta" style="margin-bottom:9px;line-height:1.6">Excel'den kopyaladiginiz satirlari asagiya yapistirin - her satir bir urun kutusu olur. Sutun sirasi:<br>
-      <b style="font-family:var(--mono);font-size:11px">Malzeme Adi · Urun Kodu · Marka · Standart No · Agirlik · Birim · Kategori · Etiket · Varyant Kodlar · Proje · Not · Resim Linki · Resim Linki 2</b><br>
+      <b style="font-family:var(--mono);font-size:11px">Malzeme Adi · Urun Kodu · Barkod · Marka · Standart No · Agirlik · Birim · Kategori · Etiket · Varyant Kodlar · Proje · Not · Resim Linki · Resim Linki 2</b><br>
       Etiket ve varyant kodlari hucre icinde virgulle ayrilir. Sagdaki sutunlari bos birakabilirsiniz.</p>
       <textarea id="topmYapistirKutu" rows="9" placeholder="Galvaniz Kablo Tavasi 200mm&#9;121491&#9;Hilti&#9;TS EN 61386&#9;0,45&#9;metre" style="font-family:var(--mono);font-size:12px"></textarea>
     </div>
@@ -9962,8 +9974,89 @@ function topmYapistirUygula(){
    yazilmaz; yazma yine yalnizca "Tumunu Ekle" ile, sbInsertProjeMaterials'tan.
    Bu yuzden sablonda ACTION/islem sutunu da YOKTUR - silme/guncelleme yolu
    acilmasin diye. */
-const TOPM_XLS_BASLIK=['Malzeme Ismi','Standart Numarasi','Urun Kodu','Marka','Agirlik (kg)','Not','Etiket','Resim Linki','Resim Linki 2','Birim','Kategori','Proje','Varyant Kodlar'];
-const TOPM_XLS_GENIS=[{wch:42},{wch:18},{wch:18},{wch:16},{wch:11},{wch:24},{wch:24},{wch:40},{wch:40},{wch:8},{wch:14},{wch:16},{wch:22}];
+/* ===== ORTAK KUNYE SUTUNLARI =====================================
+   Proje Elektrigi ve Gecici Elektrik kutuphaneleri AYNI basliklari AYNI sirada
+   kullanir: iki dosya arasinda kopyala/yapistir calissin ve ayni urun her iki
+   tarafta da ayni kunyeyle dursun diye (bkz. exportMaterialLib / exportGeciciLib).
+   projeOnly isaretli DORT sutun - Proje, Ortak Bolumler, Kac Sartnamede,
+   Sartnameler - gecici tarafta YOKTUR: orada sartname/proje baglami bulunmuyor,
+   sutun hep bos kalirdi.
+   Gecicinin kendi alanlari (Ad (RU), Renk, Malzeme Cinsi, Paket Ici Adet, Bakiye)
+   ortak blogun SONUNA eklenir, bkz. GECICI_EK_SUTUN - boylece ilk sutunlar iki
+   dosyada birebir ayni kalir. */
+const KUNYE_SUTUN=[
+  {b:'Malzeme Ismi',      w:42},
+  {b:'Standart Numarasi', w:18},
+  {b:'Urun Kodu',         w:18},
+  {b:'Barkod',            w:18},
+  {b:'Marka',             w:16},
+  {b:'Agirlik (kg)',      w:11},
+  {b:'Not',               w:24},
+  {b:'Etiket',            w:24},
+  {b:'Resim Linki',       w:40},
+  {b:'Resim Linki 2',     w:40},
+  {b:'Birim',             w:8},
+  {b:'Kategori',          w:14},
+  {b:'Proje',             w:16, projeOnly:true},
+  {b:'Varyant Kodlar',    w:20},
+  {b:'Ortak Bolumler',    w:20, projeOnly:true, sistem:true},
+  {b:'Kac Sartnamede',    w:13, projeOnly:true, sistem:true},
+  {b:'Sartnameler',       w:30, projeOnly:true, sistem:true},
+  {b:'Olusturulma',       w:12, sistem:true},
+  {b:'Son Guncelleme',    w:14, sistem:true}
+];
+/* GECICI OZELLIKLERI: kullanicinin girdigi ozellik satirlari - proje tarafindaki
+   m.tek ile AYNI sekil ([{k,v}]). Renk / Malzeme Cinsi / Paket Ici Adet / Ad (RU)
+   artik KUNYE SUTUNU degil, birer OZELLIKTIR.
+   DEGERLER YINE KAYITTA KENDI ALANLARINDA DURUR (renk/cins/parca/adRu): renk
+   suzgeci, listedeki renk noktasi, tutanak kunyesi ve ihtiyac PDF'i bu alanlari
+   dogrudan okuyor - veriyi yalnizca tek[] icine tasimak onlari sessizce bosaltirdi.
+   Ozellik listesi bu alanlardan URETILIR; kullanicinin ekledigi diger satirlar
+   kaydin tek[] dizisinde yasar. */
+const GECICI_OZELLIK_ALAN=[
+  {ad:'Ad (RU)',        k:'adRu'},
+  {ad:'Renk',           k:'renk'},
+  {ad:'Malzeme Cinsi',  k:'cins'},
+  {ad:'Paket Ici Adet', k:'parca', sayi:true}
+];
+const _gozAnahtar=v=>norm(String(v||'')).replace(/[^a-z0-9]/g,'');
+function geciciOzellikler(x){
+  const out=[];
+  GECICI_OZELLIK_ALAN.forEach(a=>{
+    const ham=(x&&x[a.k])!=null?x[a.k]:'';
+    const v=String(ham).trim();
+    if(!v) return;
+    if(a.sayi && !(Number(v)>0)) return;        // paket ici adet 0 ise ozellik degil
+    out.push({k:a.ad,v});
+  });
+  (Array.isArray(x&&x.tek)?x.tek:[]).forEach(r=>{
+    const k=String((r&&r.k)||'').trim(), v=String((r&&r.v)||'').trim();
+    if(k||v) out.push({k,v});
+  });
+  return out;
+}
+/* Ozellik satirlarini kayda/kutuya yazar: bilinen adlar kendi alanina, kalanlar
+   tek[] dizisine. Bilinmeyen bir ozellik adi kaybolmaz. */
+function geciciOzellikUygula(hedef,satirlar){
+  if(!hedef) return hedef;
+  const kalan=[];
+  (satirlar||[]).forEach(r=>{
+    const k=String((r&&r.k)||'').trim(), v=String((r&&r.v)||'').trim();
+    if(!k&&!v) return;
+    const bilinen=GECICI_OZELLIK_ALAN.find(a=>_gozAnahtar(a.ad)===_gozAnahtar(k));
+    if(bilinen) hedef[bilinen.k]=bilinen.sayi?(Number(String(v).replace(',','.'))||0):v;
+    else kalan.push({k,v});
+  });
+  hedef.tek=kalan;
+  return hedef;
+}
+const kunyeSutun =gecici=>KUNYE_SUTUN.filter(c=>!(gecici&&c.projeOnly));
+const kunyeBaslik=gecici=>kunyeSutun(gecici).map(c=>c.b);
+// SABLON sutunlari = elle DOLDURULABILIR olanlar; sistemin urettikleri disarida kalir
+const kunyeGirilebilir=gecici=>kunyeSutun(gecici).filter(c=>!c.sistem);
+const kunyeGenis =gecici=>kunyeSutun(gecici).map(c=>({wch:c.w}));
+const TOPM_XLS_BASLIK=kunyeGirilebilir(false).map(c=>c.b);
+const TOPM_XLS_GENIS=kunyeGirilebilir(false).map(c=>({wch:c.w}));
 function topmSablonIndir(){
   const wb=XLSX.utils.book_new();
   /* 1) DOLDURULACAK sayfa: yalnizca baslik satiri. Ornek satirlar bilerek AYRI
@@ -9974,9 +10067,9 @@ function topmSablonIndir(){
   XLSX.utils.book_append_sheet(wb,ws,'Yeni Urunler');
   // 2) ORNEK: ayni basliklar + doldurulmus satirlar. Okuyucu bu sayfayi ATLAR.
   const wsOrn=XLSX.utils.aoa_to_sheet([TOPM_XLS_BASLIK.slice(),
-    ['Galvaniz Kablo Tavasi 200mm','TS EN 61386','121491','Hilti',0.45,'Kapakli, delikli','Tava, Galvaniz, Ic Mekan','','','metre','Tava','X Santiyesi','121491-100, 121491-300'],
-    ['LED Armatur 36W IP65','TS EN 60598','ARM-3665','Philips, Osram',1.2,'','Aydinlatma, IP65','','','adet','Aydinlatma','',''],
-    ['Kablo Kanali 40x40','','KK4040','',0.28,'PVC','Kanal','','','metre','Tava','','']]);
+    ['Galvaniz Kablo Tavasi 200mm','TS EN 61386','121491','8690000000011','Hilti',0.45,'Kapakli, delikli','Tava, Galvaniz, Ic Mekan','','','metre','Tava','X Santiyesi','121491-100, 121491-300'],
+    ['LED Armatur 36W IP65','TS EN 60598','ARM-3665','8690000000028','Philips, Osram',1.2,'','Aydinlatma, IP65','','','adet','Aydinlatma','',''],
+    ['Kablo Kanali 40x40','','KK4040','','',0.28,'PVC','Kanal','','','metre','Tava','','']]);
   wsOrn['!cols']=TOPM_XLS_GENIS.slice();
   XLSX.utils.book_append_sheet(wb,wsOrn,'ORNEK');
   /* 3) BOLUMLER: Kategori sutununa yazilabilecek gecerli degerler. Tanimsiz bir
@@ -10083,6 +10176,7 @@ function topmExcelDosya(e){
     // alias listeleri upsertMaterialsFromRows ile ayni - iki yol ayni dosyayi okur
     const iName =pick('material_name','materialname','malzeme ismi','malzeme adi','malzeme','urun adi','ad','name');
     const iCode =pick('material_code','materialcode','urun kodu','kod','kodu','code');
+    const iBrk  =pick('barkod','barcode','bar kod','barkod no');
     const iBrand=pick('brand','marka');
     const iCat  =pick('category','kategori','bolum');
     const iUnit =pick('unit','birim');
@@ -10107,7 +10201,7 @@ function topmExcelDosya(e){
       if(!name&&!code){ atlanan++; return; }
       if(/^(REQUIRED|optional|REQ|blank|ZORUNLU|ops)\b/i.test(name)){ atlanan++; return; }   // sablon aciklama satiri
       const r=_topmBosSatir();
-      r.name=name; r.code=code;
+      r.name=name; r.code=code; r.barkod=al(iBrk);
       r.brand=al(iBrand)?matBrandParts(al(iBrand).replace(/\s*,\s*/g,'\n')):[];
       r.standart=al(iStd); r.weight=_topmSayiHucre(al(iWgt)); r.unit=al(iUnit);
       r.cat=al(iCat); r.tags=parseTagsCell(al(iTags)); r.proje=al(iProje); r.note=al(iNote);
@@ -10200,7 +10294,7 @@ function _topmSatirCoz(r,i,gorulen){
     return {err:(gorulen.keys.get(anahtar)+1)+'. kutudaki urunun ayni'+(code?'':' - kod bos oldugu icin ad kimlik sayilir')};
   gorulen.keys.set(anahtar,i); kodlar.forEach(c=>gorulen.codes.set(c,i));
   const now=Date.now();
-  return {mat:{id:uid(),code,name,brand:(r.brand||[]).join('\n'),unit:String(r.unit||'').trim(),cat,
+  return {mat:{id:uid(),code,barkod:String(r.barkod||'').trim(),name,brand:(r.brand||[]).join('\n'),unit:String(r.unit||'').trim(),cat,
     note:String(r.note||'').trim(),note2:String(r.note2||'').trim(),img:r.img||null,img2:r.img2||null,
     standart:String(r.standart||'').trim(),weight:weightRaw!==''?Number(weightRaw):null,
     tags:(r.tags||[]).slice(),altCodes,varyant,proje:String(r.proje||'').trim(),createdAt:now,updatedAt:now}};
@@ -10258,6 +10352,9 @@ function topmCardHtml(i){
       <input data-k="name" value="${esc(r.name)}" placeholder="orn. Galvaniz Kablo Tavasi 200mm" oninput="topmIn(${i},'name',this.value)"></div>
     <div class="frow two">
       <div><label>Urun Kodu</label><input value="${esc(r.code)}" placeholder="orn. 121491" oninput="topmIn(${i},'code',this.value)"></div>
+      <div><label>Barkod</label><input value="${esc(r.barkod)}" placeholder="orn. 8698523950838" oninput="topmIn(${i},'barkod',this.value)"></div>
+    </div>
+    <div class="frow">
       <div><label>Marka <span class="t-meta">(birden fazla olabilir)</span></label>
         <div class="marka-cips" id="topmMarka_${i}">${topmMarkaCipsHtml(i)}</div>
         <div class="marka-bar">
@@ -10367,13 +10464,16 @@ function topmAfterRender(){
    dokunur, kutu yeniden cizilmez (yoksa her tusta imlec kayardi).
    =================================================================== */
 let _TOPG=null;
-function _topgBosSatir(){ return {ad:'',adRu:'',kod:'',grup:'',marka:'',unit:'ADET',renk:'',cins:'',barkod:'',bakiye:'',parca:'',img:null,img2:null,err:'',not:'',uyari:''}; }
+function _topgBosSatir(){ return {ad:'',adRu:'',kod:'',grup:'',marka:'',unit:'ADET',renk:'',cins:'',barkod:'',bakiye:'',parca:'',
+  standart:'',weight:'',tags:'',altCodes:'',note:'',tek:[],img:null,img2:null,err:'',not:'',uyari:''}; }
 /* unit'in varsayilani ('ADET') DOLULUK sayilmaz - yoksa hic dokunulmamis bos kutu
    da "dolu" gorunur, sayfadan cikista bosuna uyari cikardi. */
 function topgSatirDolu(r){
   if(!r) return false;
   return !!(String(r.ad||'').trim()||String(r.adRu||'').trim()||String(r.kod||'').trim()||String(r.grup||'').trim()
     ||String(r.marka||'').trim()||String(r.renk||'').trim()||String(r.cins||'').trim()||String(r.barkod||'').trim()
+    ||String(r.standart||'').trim()||String(r.weight||'').trim()||String(r.tags||'').trim()
+    ||String(r.altCodes||'').trim()||String(r.note||'').trim()
     ||String(r.bakiye==null?'':r.bakiye).trim()||r.img||r.img2);
 }
 function topgRenkler(){
@@ -10424,6 +10524,7 @@ function topgMarkaHtml(i){
   const lg=markaLogosu(ad), listede=!!markaBul(ad);
   return `<span class="marka-cip${listede?'':' yabanci'}"${listede?'':' title="Bu deger marka listesinde yok"'}>${lg?`<img src="${esc(lg)}" alt="">`:''}${esc(ad)}<b onclick="topgMarkaSil(${i})">&times;</b></span>`;
 }
+function topgTekIn(i,v){ const r=_topgR(i); if(r) r.tek=_libTekOku(v); }
 function topgMarkaCiz(i){ const b=document.getElementById('topgMarka_'+i); if(b) b.innerHTML=topgMarkaHtml(i); }
 function topgMarkaSil(i){ const r=_topgR(i); if(!r)return; r.marka=''; topgMarkaCiz(i); topgCount(); }
 function topgMarkaSecSec(i,sel){
@@ -10488,15 +10589,27 @@ function topgImgUrl(i,v,slot){
    yapistirma AYNI sirayi kullanir - ogrenilecek tek bir duzen olsun diye.
    Dosyadan yuklemede sira onemli degildir (baslik ADINA bakilir, bkz. _hdrMap),
    yalnizca panodan yapistirmada sutunlar bu sirada beklenir. --- */
-const TOPG_XLS_BASLIK=['Kod','Ad','Ad (RU)','Grup','Marka','Birim','Barkod','Renk','Malzeme Cinsi','Bakiye','Paket Ici Adet','Resim Linki','Resim Linki 2'];
-const TOPG_XLS_GENIS=[{wch:18},{wch:40},{wch:40},{wch:16},{wch:14},{wch:8},{wch:18},{wch:12},{wch:14},{wch:10},{wch:13},{wch:38},{wch:38}];
-const TOPG_YAPISTIR_SUTUN=['kod','ad','adRu','grup','marka','unit','barkod','renk','cins','bakiye','parca','img','img2'];
+/* SABLON SUTUNLARI = ortak kunyenin DOLDURULABILIR alanlari + gecicinin kendi
+   alanlari. Sira KUNYE_SUTUN ile ayni; yalnizca sistemin urettigi sutunlar
+   (Sartnameler, Olusturulma, Son Guncelleme) sablonda yoktur - proje tarafinda da
+   oyle (bkz. TOPM_XLS_BASLIK). */
+const TOPG_XLS_BASLIK=kunyeGirilebilir(true).map(c=>c.b);
+const TOPG_XLS_GENIS=kunyeGirilebilir(true).map(c=>({wch:c.w}));
+const TOPG_YAPISTIR_SUTUN=['ad','standart','kod','barkod','marka','weight','note','tags','img','img2','unit','grup','altCodes'];
+/* Kunye sayfasinda YER ALMAYAN iki sekme: girilebilen OZELLIKLER (Renk, Malzeme
+   Cinsi, Paket Ici Adet, Ad (RU) ve serbest satirlar) ve AMBAR STOK (bakiye -
+   kunye bilgisi degil, ambarin kendi verisi). */
+const TOPG_OZ_BASLIK=['Urun Kodu','Malzeme Ismi','Ozellik','Deger'];
+const TOPG_OZ_GENIS=[{wch:18},{wch:40},{wch:22},{wch:34}];
+const TOPG_STOK_BASLIK=['Urun Kodu','Malzeme Ismi','Birim','Bakiye'];
+const TOPG_STOK_GENIS=[{wch:18},{wch:40},{wch:10},{wch:12}];
 function topgYapistirAc(){
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:640px">
     <div class="modal-head"><h3>Excel'den Yapistir</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">
       <p class="t-meta" style="margin-bottom:9px;line-height:1.6">Excel'den kopyaladiginiz satirlari asagiya yapistirin - her satir bir malzeme kutusu olur. Sutun sirasi (ambar Excel raporuyla ayni):<br>
-      <b style="font-family:var(--mono);font-size:11px">Kod · Ad · Ad (RU) · Grup · Marka · Birim · Barkod · Renk · Malzeme Cinsi · Bakiye · Resim Linki · Resim Linki 2</b><br>
+      <b style="font-family:var(--mono);font-size:11px">Malzeme Ismi · Standart Numarasi · Urun Kodu · Barkod · Marka · Agirlik (kg) · Not · Etiket · Resim Linki · Resim Linki 2 · Birim · Kategori · Varyant Kodlar</b><br>
+      Renk, Malzeme Cinsi, Paket Ici Adet ve Ad (RU) artik sutun degil - kutunun <b>Ozellikler</b> bolumunden girilir. Bakiye de kunyeye ait degildir.<br>
       Sagdaki sutunlari bos birakabilirsiniz.</p>
       <textarea id="topgYapistirKutu" rows="9" placeholder="BC1-3505-2011&#9;5X32A ERKEK FIS 380V IP44&#9;Вилка 5x32A 380В&#9;FIS&#9;BEMIS&#9;ADET&#9;8698523950838&#9;Kirmizi&#9;PLASTIK&#9;86" style="font-family:var(--mono);font-size:12px"></textarea>
     </div>
@@ -10541,11 +10654,31 @@ function topgSablonIndir(){
   ws['!cols']=TOPG_XLS_GENIS.slice();
   XLSX.utils.book_append_sheet(wb,ws,'Yeni Malzemeler');
   const wsOrn=XLSX.utils.aoa_to_sheet([TOPG_XLS_BASLIK.slice(),
-    ['BC1-3505-2011','5X32A ERKEK FIS 380V IP44','Вилка 5x32A 380В IP44','FIS','BEMIS','ADET','8698523950838','Kirmizi','PLASTİK',86,'',''],
-    ['BK1-1402-3613','3 LU KAUCUK SEYYAR PRIZ 220V','П.резиновая розетка на 3 гнезда 220В','GRUP PRIZ','BEMIS','ADET','8698523953488','Siyah','KAUÇUK',68,'',''],
-    ['','3X2,5 TTR KABLO','','KABLO','','METRE','','Siyah','BAKIR',250,'https://ornek.com/kablo.jpg','']]);
+    ['5X32A ERKEK FIS 380V IP44','','BC1-3505-2011','8698523950838','BEMIS','','','','','','ADET','FIS',''],
+    ['3 LU KAUCUK SEYYAR PRIZ 220V','','BK1-1402-3613','8698523953488','BEMIS','','','','','','ADET','GRUP PRIZ',''],
+    ['3X2,5 TTR KABLO','TS EN 50525','','','','0,12','Makaradan kesilir','Kablo','https://ornek.com/kablo.jpg','','METRE','KABLO','']]);
   wsOrn['!cols']=TOPG_XLS_GENIS.slice();
   XLSX.utils.book_append_sheet(wb,wsOrn,'ORNEK');
+  /* OZELLIKLER sayfasi: Renk / Malzeme Cinsi / Paket Ici Adet / Ad (RU) ve istediginiz
+     diger ozellikler burada satir satir yazilir - kunye sayfasinda sutunlari yoktur.
+     Satirlar Urun Kodu (yoksa Malzeme Ismi) ile kunye satirina baglanir. */
+  const wsOz=XLSX.utils.aoa_to_sheet([TOPG_OZ_BASLIK.slice(),
+    ['BC1-3505-2011','5X32A ERKEK FIS 380V IP44','Ad (RU)','Вилка 5x32A 380В IP44'],
+    ['BC1-3505-2011','5X32A ERKEK FIS 380V IP44','Renk','Kirmizi'],
+    ['BC1-3505-2011','5X32A ERKEK FIS 380V IP44','Malzeme Cinsi','PLASTİK'],
+    ['BC1-3505-2011','5X32A ERKEK FIS 380V IP44','Koruma Sinifi','IP44'],
+    ['','3X2,5 TTR KABLO','Renk','Siyah'],
+    ['','3X2,5 TTR KABLO','Malzeme Cinsi','BAKIR'],
+    ['','3X2,5 TTR KABLO','Paket Ici Adet','100']]);
+  wsOz['!cols']=TOPG_OZ_GENIS.slice();
+  XLSX.utils.book_append_sheet(wb,wsOz,'Ozellikler');
+  /* AMBAR STOK sayfasi: bakiye kunye bilgisi DEGILDIR - kutuphane urunu tanimlar,
+     depodaki miktar ayri veridir. Bos birakilirsa kalem 0 bakiye ile eklenir. */
+  const wsSt=XLSX.utils.aoa_to_sheet([TOPG_STOK_BASLIK.slice(),
+    ['BC1-3505-2011','5X32A ERKEK FIS 380V IP44','ADET',86],
+    ['','3X2,5 TTR KABLO','METRE',250]]);
+  wsSt['!cols']=TOPG_STOK_GENIS.slice();
+  XLSX.utils.book_append_sheet(wb,wsSt,'Ambar Stok');
   /* GRUPLAR: Grup sutununa yazilabilecek MEVCUT degerler. Proje tarafindaki
      "Bolum"un aksine grup SERBESTTIR (yeni grup yazilabilir) - liste yalnizca
      ayni grubun iki farkli yazimla (SIGORTA / Sigortalar) bolunmemesi icindir. */
@@ -10570,7 +10703,7 @@ function topgSablonIndir(){
     ['   sirasini degistirebilir, kullanmadiginiz sutunlari bos birakabilirsiniz.'],
     ['   "ORNEK", "Gruplar" ve bu sayfa okunmaz - silmenize gerek yok.'],
     [''],
-    ['2) ZORUNLU tek alan: Ad. Digerleri opsiyoneldir.'],
+    ['2) ZORUNLU tek alan: Malzeme Ismi. Digerleri opsiyoneldir.'],
     [''],
     ['2a) Ad (RU): ikinci dildeki karsiligi. Ayni hucrede ALT SATIR olarak yazilmis'],
     ['    iki dilli adlar (TR alt satirda RU) yuklemede kendiliginden ayrilir -'],
@@ -10595,15 +10728,18 @@ function topgSablonIndir(){
     ['   Barkod kimlik degildir (ayni barkod birden fazla kaleme yapistirilmis'],
     ['   olabiliyor) - tekrari yalnizca sari serit olarak uyarir, kaydi durdurmaz.'],
     [''],
-    ['4) Bakiye: sayi olmali (orn. 86 ya da 12,5). Bos birakilirsa 0 kabul'],
-    ['   edilir. BASLANGIC BAKIYESI HAREKET KAYDI URETMEZ - tek malzeme'],
-    ['   eklemedeki davranisin aynisidir, Hareketler listesinde gorunmez.'],
+    ['4) BAKIYE ARTIK KUNYE SAYFASINDA DEGIL: "Ambar Stok" sayfasina yazilir.'],
+    ['   Kutuphane urunu TANIMLAR; depodaki miktar ayri bir veridir. Satirlar'],
+    ['   Urun Kodu (yoksa Malzeme Ismi) ile kunye satirina baglanir. Sayi olmali'],
+    ['   (orn. 86 ya da 12,5); bos birakilirsa 0 kabul edilir. BASLANGIC'],
+    ['   BAKIYESI HAREKET KAYDI URETMEZ - Hareketler listesinde gorunmez.'],
     [''],
     ['5) Birim bos birakilirsa ADET yazilir.'],
     [''],
-    ['6) Grup serbesttir: "Gruplar" sayfasindaki mevcut gruplardan birini'],
-    ['   yazabilir ya da yeni bir grup adi verebilirsiniz. Ayni grubun iki'],
-    ['   farkli yazimla bolunmemesi icin once o listeye bakin.'],
+    ['6) Kategori serbesttir: "Gruplar" sayfasindaki mevcut degerlerden birini'],
+    ['   yazabilir ya da yeni bir kategori adi verebilirsiniz. Ayni kategorinin'],
+    ['   iki farkli yazimla bolunmemesi icin once o listeye bakin.'],
+    ['   ("Grup" baslikli eski dosyalar da okunur - ayni sutundur.)'],
     [''],
     ['7) Fotograf Excel ile aktarilamaz - yukleme sonrasi kutunun icinden dosya'],
     ['   secebilir ya da resim linki yapistirabilirsiniz.'],
@@ -10622,9 +10758,26 @@ function topgSablonIndir(){
     ['    dogrudan yukleyebilirsiniz.'],
     [''],
     ['11) AYNI AD birden fazla satirda geciyorsa (ayni urunun farkli markalari)'],
-    ['    yukleme sirasinda adin sonuna ayirt edici eklenir: once (MARKA), o'],
-    ['    ayirt etmiyorsa [KOD]. Kutuda sari uyari ile gosterilir; isterseniz'],
-    ['    kutudan elle degistirebilirsiniz.']
+    ['    satirlarin adi DEGISTIRILMEZ: ayirt edici stok kodudur. Kodlari farkli'],
+    ['    oldugu surece hepsi ayri kalem olarak eklenir, kutuda yalnizca sari'],
+    ['    uyari cikar. Ayni stok kodu ikinci kez yazilamaz.'],
+    [''],
+    ['12) SUTUNLAR PROJE KUTUPHANESIYLE ORTAKTIR: Malzeme Ismi, Standart'],
+    ['    Numarasi, Urun Kodu, Barkod, Marka, Agirlik, Not, Etiket, Resim'],
+    ['    Linki 1-2, Birim, Kategori ve Varyant Kodlar - iki kutuphanede ayni'],
+    ['    isim ve siradadir. Ayni urun her iki tarafta da ayni kunyeyle durur,'],
+    ['    dosyalar arasinda kopyala/yapistir calisir.'],
+    [''],
+    ['13) RENK, MALZEME CINSI, PAKET ICI ADET ve AD (RU) ARTIK SUTUN DEGIL:'],
+    ['    "Ozellikler" sayfasina satir satir yazilir (Ozellik / Deger). Ayni'],
+    ['    sayfaya istediginiz baska ozelligi de ekleyebilirsiniz - orn.'],
+    ['    "Koruma Sinifi / IP44". Satirlar Urun Kodu (yoksa Malzeme Ismi) ile'],
+    ['    kunye satirina baglanir; bir urunun kac ozelligi olursa olsun sigar.'],
+    ['    ESKI DOSYALAR: bu bilgileri sutun olarak tasiyan dosyalar da okunmaya'],
+    ['    devam eder - donusturmeniz gerekmez.'],
+    [''],
+    ['14) Etiket ve Varyant Kodlar hucre icinde VIRGULLE ayrilir'],
+    ['    (orn. "Yangin, Ic Mekan"). Agirlik birim agirliktir (kg).']
   ]),'OKUBENI');
   XLSX.writeFile(wb,'mobilizasyon_toplu_malzeme_sablonu.xlsx');
   toast('Sablon indirildi');
@@ -10634,7 +10787,7 @@ function topgSablonIndir(){
    raporundaki "Hareketler" sayfasinda da "Malzeme" sutunu vardir; elenmezse rapor
    geri yuklendiginde stok hareketleri malzeme sanilirdi. */
 function _topgXlsSayfa(wb){
-  const atla=/ornek|okubeni|gruplar|hareketler/;
+  const atla=/ornek|okubeni|gruplar|hareketler|ozellik|ambarstok|ambar stok/;
   const sadelestir=s=>norm(s).replace(/[^a-z0-9]/g,'');
   let bosAday=null;                       // basligi dogru ama veri satiri olmayan sayfa
   const dene=nm=>{
@@ -10686,6 +10839,66 @@ function _topgSayiHucre(v){
   const s=String(v==null?'':v).trim().replace(/\s/g,'');
   return /^-?\d+(?:[.,]\d+)?$/.test(s)?s.replace(',','.'):s;
 }
+/* Kunye sayfasinda SUTUNU OLMAYAN bilgiler ayri sekmelerden okunur: "Ozellikler"
+   (Renk / Malzeme Cinsi / Paket Ici Adet / Ad (RU) ve serbest satirlar) ve
+   "Ambar Stok" (bakiye). Satirlar Urun Kodu ile, kod yoksa Malzeme Ismi ile
+   kutuya baglanir. Sekme yoksa hicbir sey yapilmaz - eski dosyalar bu bilgileri
+   kunye sutunu olarak tasiyor ve orada okunmaya devam ediyor. */
+function _topgEkSayfa(wb,adlar){
+  const sade=v=>norm(String(v||'')).replace(/[^a-z0-9]/g,'');
+  const iste=adlar.map(sade);
+  const nm=wb.SheetNames.find(x=>iste.includes(sade(x)));
+  if(!nm) return null;
+  const rows=XLSX.utils.sheet_to_json(wb.Sheets[nm],{header:1,blankrows:false,defval:''});
+  return (rows&&rows.length)?rows:null;
+}
+function _topgEkSayfalariUygula(wb,kutular){
+  const sade=v=>norm(String(v||'')).replace(/[^a-z0-9]/g,'');
+  // kod oncelikli dizin; kodsuz kalemler ada gore bulunur
+  const kodIx=new Map(), adIx=new Map();
+  kutular.forEach(r=>{
+    const k=sade(r.kod); if(k&&!kodIx.has(k)) kodIx.set(k,r);
+    const a=sade(r.ad);  if(a&&!adIx.has(a))  adIx.set(a,r);
+  });
+  const bul=(kod,ad)=>kodIx.get(sade(kod))||adIx.get(sade(ad))||null;
+  let ozSayi=0, stokSayi=0;
+
+  const ozRows=_topgEkSayfa(wb,['Ozellikler','Özellikler','Ozellik','Teknik Bilgi']);
+  if(ozRows){
+    const h=_topgBaslikSatiri(ozRows), pick=_hdrMap(ozRows[h]||[]);
+    const iKod=pick('urun kodu','kod','stok kodu','code'), iAd=pick('malzeme ismi','malzeme adi','ad','name');
+    const iK=pick('ozellik','ozellik adi','alan','key'), iV=pick('deger','value','icerik');
+    if(iK>=0&&iV>=0&&(iKod>=0||iAd>=0)){
+      const toplanan=new Map();                   // kutu -> [{k,v}]
+      for(let i=h+1;i<ozRows.length;i++){
+        const row=ozRows[i]||[]; const al=ix=>ix>=0?String(row[ix]==null?'':row[ix]).trim():'';
+        const k=al(iK), v=al(iV); if(!k&&!v) continue;
+        const r=bul(al(iKod),al(iAd)); if(!r) continue;
+        if(!toplanan.has(r)) toplanan.set(r,[]);
+        toplanan.get(r).push({k,v});
+      }
+      toplanan.forEach((liste,r)=>{ geciciOzellikUygula(r,liste); ozSayi++; });
+    }
+  }
+
+  const stRows=_topgEkSayfa(wb,['Ambar Stok','AmbarStok','Stok','Bakiye']);
+  if(stRows){
+    const h=_topgBaslikSatiri(stRows), pick=_hdrMap(stRows[h]||[]);
+    const iKod=pick('urun kodu','kod','stok kodu','code'), iAd=pick('malzeme ismi','malzeme adi','ad','name');
+    const iBak=pick('bakiye','stok','miktar','adet','qty'), iBrm=pick('birim','unit');
+    if(iBak>=0&&(iKod>=0||iAd>=0)){
+      for(let i=h+1;i<stRows.length;i++){
+        const row=stRows[i]||[]; const al=ix=>ix>=0?String(row[ix]==null?'':row[ix]).trim():'';
+        const r=bul(al(iKod),al(iAd)); if(!r) continue;
+        const bak=_topgBakiyeHucre(al(iBak));
+        if(bak.bakiye!==''){ r.bakiye=bak.bakiye; stokSayi++; }
+        if(bak.parca && !String(r.parca||'').trim()) r.parca=bak.parca;
+        const brm=al(iBrm); if(brm && !String(r.unit||'').trim()) r.unit=brm;
+      }
+    }
+  }
+  return {oz:ozSayi,stok:stokSayi};
+}
 function topgExcelDosya(e){
   const f=_TOPG, dosya=e.target.files&&e.target.files[0];
   e.target.value='';                       // ayni dosya ust uste secilebilsin
@@ -10701,7 +10914,12 @@ function topgExcelDosya(e){
        kullaniciyi dosyayi elle donusturmekten kurtarir - sutun sirasi da farketmez. */
     const iAd  =pick('ad','malzeme adi','malzeme ismi','malzeme','name');
     const iAdRu=pick('ad (ru)','ad ru','adru','rusca ad','rusca adi','name ru','ru');
-    const iKod =pick('kod','stok kodu','urun kodu','kodu','code');
+    const iKod =pick('urun kodu','kod','stok kodu','kodu','code');
+    const iStd =pick('standart numarasi','standart no','standart','standardi','standard');
+    const iWgt =pick('agirlik (kg)','agirlik(kg)','agirlik_kg','agirlik','agirligi','weight','kg');
+    const iTags=pick('etiket','etiketler','tags','tag');
+    const iAlt =pick('varyant kodlar','varyant kod','varyant kodu','varyant','alternatif kodlar','alias');
+    const iNot =pick('not','notu','aciklama','note');
     const iGrup=pick('grup','grubu','kategori','group');
     const iMrk =pick('marka','brand');
     const iUnit=pick('birim','unit');
@@ -10712,7 +10930,7 @@ function topgExcelDosya(e){
     const iPar =pick('paket ici adet','paket icindeki adet','parca bakiye','parca','koli ici');
     const iImg =pick('resim linki','resim_linki','resim url','fotograf linki','image_url','imageurl','resim','fotograf','foto','image','gorsel');
     const iImg2=pick('resim linki 2','resim_linki_2','resim url 2','fotograf linki 2','fotograf 2','image_url_2','image2','photo2');
-    if(iAd<0){ toast('Sayfada "Ad" sutunu yok - sablonu indirip kullanin','err'); return; }
+    if(iAd<0){ toast('Sayfada "Malzeme Ismi" sutunu yok - sablonu indirip kullanin','err'); return; }
     const veri=rows.slice(h+1).filter(r=>r&&r.some(c=>String(c).trim()!==''));
     if(!veri.length){ toast('Dosyada veri satiri yok','err'); return; }
     /* Her satir tam bir form kutusu acar: cok satirli dosya tarayiciyi zorlar.
@@ -10738,6 +10956,8 @@ function topgExcelDosya(e){
       r.kod=_topgYerTutucu(al(iKod)); r.marka=_topgYerTutucu(al(iMrk));
       r.unit=al(iUnit)||'ADET'; r.barkod=_topgYerTutucu(al(iBrk));
       r.renk=_topgYerTutucu(al(iRenk)); r.cins=_topgYerTutucu(al(iCins));
+      r.standart=_topgYerTutucu(al(iStd)); r.weight=_topgSayiHucre(al(iWgt));
+      r.tags=_topgYerTutucu(al(iTags)); r.altCodes=_topgYerTutucu(al(iAlt)); r.note=_topgYerTutucu(al(iNot));
       const bak=_topgBakiyeHucre(al(iBak));
       r.bakiye=bak.bakiye;
       r.parca=_topgSayiHucre(al(iPar))||bak.parca;
@@ -10748,13 +10968,16 @@ function topgExcelDosya(e){
       f.rows.push(r); eklenen++;
     });
     if(!eklenen){ toast('Okunabilir malzeme satiri bulunamadi','err'); return; }
+    const ek=_topgEkSayfalariUygula(wb,f.rows);     // Ozellikler + Ambar Stok sekmeleri
     f.rows=f.rows.filter(topgSatirDolu);            // yuklemeden onceki bos kutular gereksiz
     if(!f.rows.length) f.rows.push(_topgBosSatir());
     const hata=topgOnDenetim();                     // hatayi kaydede basmadan gorsun
     topgDraw();
-    const ek=(atlanan?', '+atlanan+' satir atlandi':'');
-    if(hata) toast(eklenen+' malzeme kutusu olusturuldu'+ek+' - '+hata+' kutuda hata var','err');
-    else toast(eklenen+' malzeme kutusu olusturuldu'+ek);
+    const ekNot=(atlanan?', '+atlanan+' satir atlandi':'')
+      +(ek.oz?', '+ek.oz+' kalemin ozellikleri okundu':'')
+      +(ek.stok?', '+ek.stok+' kalemin bakiyesi okundu':'');
+    if(hata) toast(eklenen+' malzeme kutusu olusturuldu'+ekNot+' - '+hata+' kutuda hata var','err');
+    else toast(eklenen+' malzeme kutusu olusturuldu'+ekNot);
   }catch(err){ console.error(err); toast('Excel okunamadi: '+((err&&err.message)||err),'err'); } };
   rd.readAsBinaryString(dosya);
 }
@@ -10838,10 +11061,17 @@ function _topgSatirCoz(r,i,gorulen){
   if(!gorulen.adlar.has(aAd)) gorulen.adlar.set(aAd,i);
   if(barkod && !gorulen.barkodlar.has(kk(barkod))) gorulen.barkodlar.set(kk(barkod),i);
   const lnk=v=>{ const t=String(v||'').trim(); return /^https?:\/\//i.test(t)?t:(t&&t.startsWith('data:')?t:null); };
+  const wRaw=_topgSayiHucre(r.weight);
+  if(wRaw!=='' && isNaN(Number(wRaw))) return {err:'Agirlik sayisal olmali'};
+  const simdi=Date.now();
   return {uyari:[r.not,...uyarilar].filter(Boolean).join(' · '),
     mal:{id:uid(),ad,adRu:String(r.adRu||'').trim(),kod,grup:String(r.grup||'').trim(),marka:String(r.marka||'').trim(),
     unit:String(r.unit||'').trim()||'ADET',renk:String(r.renk||'').trim(),cins:String(r.cins||'').trim(),barkod,
-    bakiye:bakRaw!==''?Number(bakRaw):0,parca:parRaw!==''?Number(parRaw):0,img:lnk(r.img),img2:lnk(r.img2)}};
+    standart:String(r.standart||'').trim(),weight:wRaw!==''?Number(wRaw):null,
+    tags:parseTagsCell(r.tags),altCodes:parseTagsCell(r.altCodes),note:String(r.note||'').trim(),
+    tek:(Array.isArray(r.tek)?r.tek:[]).filter(t=>t&&(String(t.k||'').trim()||String(t.v||'').trim())),
+    bakiye:bakRaw!==''?Number(bakRaw):0,parca:parRaw!==''?Number(parRaw):0,img:lnk(r.img),img2:lnk(r.img2),
+    createdAt:simdi,updatedAt:simdi}};
 }
 // TUMUNU EKLE: gecerli kutular tek istekte yazilir, hatali kutular sayfada kalir
 // ve nedeni kutunun basinda gorunur - kullanici bastan doldurmak zorunda kalmaz.
@@ -10893,8 +11123,6 @@ function topgCardHtml(i){
     ${!r.err&&r.uyari?`<div class="topm-uyari">${esc(r.uyari)}</div>`:''}
     <div class="frow"><label>Malzeme Adi <span class="specf-req">*</span></label>
       <input data-k="ad" value="${esc(r.ad)}" placeholder="orn. 5X32A ERKEK FIS 380V" oninput="topgIn(${i},'ad',this.value)"></div>
-    <div class="frow"><label>Malzeme Adi (RU) <span class="t-meta">(ikinci dil - opsiyonel)</span></label>
-      <input value="${esc(r.adRu)}" placeholder="orn. Вилка 5x32A 380В IP44" oninput="topgIn(${i},'adRu',this.value)"></div>
     <div class="frow two">
       <div><label>Stok Kodu</label><input value="${esc(r.kod)}" placeholder="orn. BC1-3505-2011" oninput="topgIn(${i},'kod',this.value)"></div>
       <div><label>Grup</label><input list="topgGrupList" value="${esc(r.grup)}" placeholder="SIGORTA / KABLO..." oninput="topgIn(${i},'grup',this.value)"></div>
@@ -10909,18 +11137,32 @@ function topgCardHtml(i){
     </div>
     <div class="frow two">
       <div><label>Birim</label><input value="${esc(r.unit)}" placeholder="ADET" oninput="topgIn(${i},'unit',this.value)"></div>
+      <div><label>Barkod</label><input value="${esc(r.barkod)}" placeholder="orn. 8698523950838" oninput="topgIn(${i},'barkod',this.value)"></div>
+    </div>
+    <div class="frow two">
+      <div><label>Standart Numarasi</label><input value="${esc(r.standart)}" placeholder="orn. TS EN 61386" oninput="topgIn(${i},'standart',this.value)"></div>
+      <div><label>Agirlik (kg)</label><input type="number" step="any" min="0" value="${esc(r.weight)}" placeholder="0" oninput="topgIn(${i},'weight',this.value)"></div>
+    </div>
+    <div class="frow two">
+      <div><label>Etiket <span class="t-meta">(virgulle ayirin)</span></label><input value="${esc(r.tags)}" placeholder="orn. Yangin, Ic Mekan" oninput="topgIn(${i},'tags',this.value)"></div>
+      <div><label>Varyant Kodlar <span class="t-meta">(virgulle ayirin)</span></label><input value="${esc(r.altCodes)}" placeholder="eski / alternatif kodlar" oninput="topgIn(${i},'altCodes',this.value)"></div>
+    </div>
+    <div class="frow"><label>Not</label><textarea placeholder="Teknik ozellik, tedarikci..." oninput="topgIn(${i},'note',this.value)">${esc(r.note)}</textarea></div>
+    <div class="lib-boluk"><b>Ozellikler</b><span>kunye sutunu degildir</span></div>
+    <div class="frow two">
+      <div><label>Ad (RU)</label><input value="${esc(r.adRu)}" placeholder="orn. Вилка 5x32A 380В IP44" oninput="topgIn(${i},'adRu',this.value)"></div>
       <div><label>Renk</label><input list="topgRenkList" value="${esc(r.renk)}" placeholder="orn. Siyah" oninput="topgIn(${i},'renk',this.value)"></div>
     </div>
     <div class="frow two">
-      <div><label>Barkod</label><input value="${esc(r.barkod)}" placeholder="orn. 8698523950838" oninput="topgIn(${i},'barkod',this.value)"></div>
       <div><label>Malzeme Cinsi</label><input list="topgCinsList" value="${esc(r.cins)}" placeholder="orn. BAKIR" oninput="topgIn(${i},'cins',this.value)"></div>
-    </div>
-    <div class="frow two">
-      <div><label>Baslangic Bakiyesi</label>
-        <input type="number" step="any" title="Kalemin acilis bakiyesi - stok HAREKETI uretmez (tek malzeme eklemedeki davranisin aynisi)" value="${esc(r.bakiye)}" placeholder="0" oninput="topgIn(${i},'bakiye',this.value)"></div>
       <div><label>Paket Ici Adet</label>
         <input type="number" step="any" min="0" title="Birim PAKET ise bir paketin icindeki adet - bakiye paket sayisidir" value="${esc(r.parca)}" placeholder="0" oninput="topgIn(${i},'parca',this.value)"></div>
     </div>
+    <div class="frow"><label>Diger Ozellikler <span class="t-meta">(her satir "Ozellik: Deger")</span></label>
+      <textarea rows="2" placeholder="Koruma Sinifi: IP44" oninput="topgTekIn(${i},this.value)">${esc((r.tek||[]).map(t=>t.k+': '+t.v).join('\n'))}</textarea></div>
+    <div class="lib-boluk"><b>Ambar</b><span>depodaki miktar</span></div>
+    <div class="frow"><label>Baslangic Bakiyesi</label>
+      <input type="number" step="any" title="Kalemin acilis bakiyesi - stok HAREKETI uretmez (tek malzeme eklemedeki davranisin aynisi)" value="${esc(r.bakiye)}" placeholder="0" oninput="topgIn(${i},'bakiye',this.value)"></div>
     <div class="frow two">
       <div><label>Urun Fotografi</label>${topgImgHtml(i,1)}</div>
       <div><label>Fotograf 2 <span class="t-meta">(opsiyonel)</span></label>${topgImgHtml(i,2)}</div>
@@ -10972,7 +11214,7 @@ function exportMaterialLib(){
   // urun sutunlari sartname Excel'i ile BIREBIR ayni isim/sirada (Malzeme Ismi...Resim Linki) -
   // iki dosya arasinda kopyala/yapistir ve entegrasyon sorunsuz olsun diye. Sona eklenen sutunlar
   // (Ortak Bolumler, Kac Sartnamede...) salt-bilgi amaclidir, ice aktarmada okunmaz.
-  const rows=[["Malzeme Ismi","Standart Numarasi","Urun Kodu","Marka","Agirlik (kg)","Not","Etiket","Resim Linki","Resim Linki 2","Birim","Kategori","Proje","Varyant Kodlar","Ortak Bolumler","Kac Sartnamede","Sartnameler","Olusturulma","Son Guncelleme"]];
+  const rows=[kunyeBaslik(false)];
   const sorted=mats.slice().sort((a,b)=>(a.cat||'').localeCompare(b.cat||'','tr')||(a.name||'').localeCompare(b.name||'','tr'));
   sorted.forEach(m=>{
     const usage=materialUsage(m.id); const specs=[...new Set(usage.map(s=>specGroupKey(s)))];
@@ -10980,10 +11222,10 @@ function exportMaterialLib(){
     // base64/veri linkleri (manuel yuklenen fotograflar) hucreye sigmayacagi icin disa aktarilmaz - sadece gercek URL'ler
     const imgUrl=(m.img&&/^https?:\/\//i.test(m.img))?m.img:'';
     const imgUrl2=(m.img2&&/^https?:\/\//i.test(m.img2))?m.img2:'';
-    rows.push([m.name,m.standart||'',m.code||'',m.brand||'',m.weight!=null?m.weight:'',m.note||'',formatTagsCell(m.tags),imgUrl,imgUrl2,m.unit||'',m.cat||'',m.proje||'',formatTagsCell(m.altCodes),
+    rows.push([m.name,m.standart||'',m.code||'',m.barkod||'',m.brand||'',m.weight!=null?m.weight:'',m.note||'',formatTagsCell(m.tags),imgUrl,imgUrl2,m.unit||'',m.cat||'',m.proje||'',formatTagsCell(m.altCodes),
       ortakBolumler,usage.length,specs.join(', '),m.createdAt?fmtDate(m.createdAt):'',m.updatedAt?fmtDate(m.updatedAt):'']);
   });
-  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:42},{wch:18},{wch:18},{wch:16},{wch:11},{wch:24},{wch:24},{wch:40},{wch:40},{wch:8},{wch:14},{wch:16},{wch:20},{wch:20},{wch:13},{wch:30},{wch:12},{wch:14}];
+  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=kunyeGenis(false);
   // kategori sutununda acilir filtre - Tava/Aydinlatma vb. tek tikla ayiklanabilsin.
   // Veri satirlarina dokunmuyor, ice aktarma fonksiyonlarini etkilemez.
   ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:rows[0].length-1}})};
@@ -13551,17 +13793,59 @@ function libCinsler(){
   return [...new Set([...(((DB.gecici&&DB.gecici.lib)||[]).map(x=>(x.cins||'').trim()).filter(Boolean)),...LIB_CINS_VARSAYILAN])]
     .sort((a,b)=>a.localeCompare(b,'tr'));
 }
-function renderLibrary(){
-  let lib=DB.gecici.lib.slice();
-  if(GFILTER) lib=lib.filter(x=>x.grup===GFILTER);
-  if(SEARCH){ lib=lib.filter(x=>matchText([x.ad,x.adRu,x.kod,x.barkod,x.marka,x.grup,x.renk,x.cins].filter(Boolean).join(' '), SEARCH)); }
+/* ---- AMBAR KUTUPHANESI: SUTUN BAZLI FILTRE ----
+   Ustteki dort buyuk istatistik kutusu kaldirildi. Ayni dort sayi artik bakiye
+   segmentinin UZERINDE durur: bir sayiya bakmak ile o kumeyi suzmek boylece ayni
+   harekettir (Ihtiyac / Fatura ekranlariyla ayni dil). Panelde kalan alanlar
+   tablonun sutunlariyla birebir eslesir:
+     Fotograf(ilk sutun) - Malzeme/Kod(arama) - Grup - Marka - Renk - Cins - Barkod
+   Segment sayaclari BAKIYE DISINDAKI filtrelere gore hesaplanir; "bu grupta kac
+   tukenen kalem var" sorusunun cevabi ekranda dogru dursun. */
+let LIBF={marka:'',renk:'',cins:'',barkod:'',img:'',bak:''};
+function setLibF(k,v){ LIBF[k]=v; render(); }
+function setGFilter(v){ GFILTER=v; render(); }
+function libAnyF(){ return !!(SEARCH||GFILTER||LIBF.marka||LIBF.renk||LIBF.cins||LIBF.barkod||LIBF.img||LIBF.bak); }
+function clearLibF(){ GFILTER=''; LIBF={marka:'',renk:'',cins:'',barkod:'',img:'',bak:''}; SEARCH=''; render(); }
+function libMarkalar(){ return [...new Set(((DB.gecici&&DB.gecici.lib)||[]).map(x=>(x.marka||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr')); }
+function libRenkler(){ return [...new Set(((DB.gecici&&DB.gecici.lib)||[]).map(x=>(x.renk||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr')); }
+/* bakDahil=false: segment sayaclarinin kaynagi (bakiye durumu disindaki her filtre uygulanir) */
+function libFiltered(bakDahil){
+  let lib=((DB.gecici&&DB.gecici.lib)||[]).slice();
+  // arama IKINCI DILI de kapsar: Rusca ad, alt kodlar ve malzeme cinsi de taranir
+  if(SEARCH) lib=lib.filter(x=>matchText([x.ad,x.adRu,x.kod,x.barkod,x.marka,x.grup,x.renk,x.cins,x.standart,(x.tags||[]).join(' '),(x.altCodes||[]).join(' ')].filter(Boolean).join(' '),SEARCH));
+  lib=lib.filter(x=>{
+    if(GFILTER && (x.grup||'')!==GFILTER) return false;
+    if(LIBF.marka && norm(x.marka||'')!==norm(LIBF.marka)) return false;
+    if(LIBF.renk && (x.renk||'').trim()!==LIBF.renk) return false;
+    if(LIBF.cins && (x.cins||'').trim()!==LIBF.cins) return false;
+    if(LIBF.barkod==='var' && !String(x.barkod||'').trim()) return false;
+    if(LIBF.barkod==='yok' && String(x.barkod||'').trim()) return false;
+    if(LIBF.img==='var' && !x.img) return false;
+    if(LIBF.img==='yok' && x.img) return false;
+    if(bakDahil && LIBF.bak){
+      const b=Number(x.bakiye)||0;
+      if(LIBF.bak==='stok' && b<=5) return false;
+      if(LIBF.bak==='az' && !(b>0&&b<=5)) return false;
+      if(LIBF.bak==='yok' && b>0) return false;
+    }
+    return true;
+  });
   lib.sort((a,b)=>(a.grup||'').localeCompare(b.grup||'','tr')||(a.ad||'').localeCompare(b.ad||'','tr'));
-  const totalKalem=DB.gecici.lib.length;
-  const totalAdet=DB.gecici.lib.reduce((s,x)=>s+(Number(x.bakiye)||0),0);
-  const tukenen=DB.gecici.lib.filter(x=>(Number(x.bakiye)||0)<=0).length;
-  const azalan=DB.gecici.lib.filter(x=>{const b=Number(x.bakiye)||0;return b>0&&b<=5;}).length;
+  return lib;
+}
+function renderLibrary(){
+  const tumu=((DB.gecici&&DB.gecici.lib)||[]);
+  const taban=libFiltered(false);          // bakiye segmenti disindaki filtreler
+  const lib=libFiltered(true);             // ekranda gorunen liste
+  const anyF=libAnyF();
+  const sayac={ hepsi:taban.length,
+    stok:taban.filter(x=>(Number(x.bakiye)||0)>5).length,
+    az:taban.filter(x=>{const b=Number(x.bakiye)||0;return b>0&&b<=5;}).length,
+    yok:taban.filter(x=>(Number(x.bakiye)||0)<=0).length };
+  const gosterilenAdet=lib.reduce((s,x)=>s+(Number(x.bakiye)||0),0);
   let rows='';
-  if(lib.length===0) rows=emptyRow(8,'Eslesen malzeme yok','Arama veya grup filtresini degistirin');
+  if(lib.length===0) rows=emptyRow(8,anyF?'Eslesen malzeme yok':'Kutuphanede kayit yok',
+    anyF?'Filtreleri degistirin veya temizleyin':'"Malzeme Ekle" ile ilk kunyeyi olusturun');
   else lib.forEach(x=>{
     const b=Number(x.bakiye)||0;
     const cls=b<=0?'zero':b<=5?'low':'ok';
@@ -13580,26 +13864,81 @@ function renderLibrary(){
         <button class="mini-btn" title="Gecmis & Duzenle" onclick='libDetail("${x.id}")'><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></button>
       </div></td></tr>`;
   });
-  const grpOpts=`<option value="">Tum gruplar</option>`+libGroups().map(g=>`<option ${GFILTER===g?'selected':''}>${esc(g)}</option>`).join('');
-  return statRow([['Toplam Kalem',totalKalem,'kutuphanede','var(--grid)'],['Toplam Adet',fmtNum(totalAdet),'tum bakiye','var(--amber)'],['Azalan',azalan,'<= 5 adet','var(--amber)'],['Tukenen',tukenen,'0 bakiye','var(--red)']])
-    +`<div class="toolbar">${searchBox('Ad, kod, barkod veya marka ara...')}
-      <select class="selbox" id="grpFilter" onchange="GFILTER=this.value;render()">${grpOpts}</select>
+  const grps=libGroups(), markalar=libMarkalar(), renkler=libRenkler(), cinsler=libCinsler();
+  const segBtn=(v,etiket,n,ip)=>`<button class="${LIBF.bak===v?'on':''}" onclick="setLibF('bak','${v}')" title="${esc(ip)}">${etiket}<i>${fmtNum(n)}</i></button>`;
+  const filterbar=`<div class="ord-filterbar">
+    <div class="ord-f"><label>Grup</label><select onchange="setGFilter(this.value)"><option value="">Tum gruplar</option>${grps.map(g=>`<option value="${esc(g)}" ${GFILTER===g?'selected':''}>${esc(g)}</option>`).join('')}</select></div>
+    <div class="ord-f"><label>Marka</label><select onchange="setLibF('marka',this.value)"><option value="">Tumu</option>${markalar.map(m=>`<option value="${esc(m)}" ${LIBF.marka===m?'selected':''}>${esc(m)}</option>`).join('')}</select></div>
+    ${renkler.length?`<div class="ord-f"><label>Renk</label><select onchange="setLibF('renk',this.value)"><option value="">Tumu</option>${renkler.map(r=>`<option value="${esc(r)}" ${LIBF.renk===r?'selected':''}>${esc(r)}</option>`).join('')}</select></div>`:''}
+    ${cinsler.length?`<div class="ord-f"><label>Malzeme Cinsi</label><select onchange="setLibF('cins',this.value)"><option value="">Tumu</option>${cinsler.map(c=>`<option value="${esc(c)}" ${LIBF.cins===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>`:''}
+    <div class="ord-f"><label>Barkod</label><select onchange="setLibF('barkod',this.value)"><option value="">Tumu</option><option value="var" ${LIBF.barkod==='var'?'selected':''}>Barkodu olan</option><option value="yok" ${LIBF.barkod==='yok'?'selected':''}>Barkodu eksik</option></select></div>
+    <div class="ord-f"><label>Fotograf</label><select onchange="setLibF('img',this.value)"><option value="">Tumu</option><option value="var" ${LIBF.img==='var'?'selected':''}>Foto ekli</option><option value="yok" ${LIBF.img==='yok'?'selected':''}>Foto eksik</option></select></div>
+    ${anyF?`<div class="ord-f" style="flex:0 0 auto;min-width:0;justify-content:flex-end"><label>&nbsp;</label><button class="iht-reset" style="padding:9px 13px;white-space:nowrap" onclick="clearLibF()">Filtreleri temizle</button></div>`:''}
+  </div>`;
+  return `<div class="toolbar">${searchBox('Ad, kod, barkod veya marka ara...')}
       <button class="btn btn-grid" onclick="exportLibExcel()">${icoXls()} Excel Raporu</button>
       ${canCreate('gecici')?`<button class="btn btn-order" onclick="openOrderModal()">${icoDoc()} Siparis / Fatura Gir</button>
       <button class="btn btn-grid" title="Toplu Malzeme Ekleme - her kutu bir yeni malzeme; Excel sablonu indirip toplu yukleyebilirsiniz" onclick="openTopluGeciciPage()">${icoPlus()} Toplu Ekle</button>
       <button class="btn btn-add" onclick="openLibModal()">${icoPlus()} Malzeme Ekle</button>`:''}</div>`
+    +filterbar
+    +`<div class="iht-seg lib-seg">
+      ${segBtn('','Tumu',sayac.hepsi,'Filtreye giren butun kalemler')}
+      ${segBtn('stok','Stokta',sayac.stok,'Bakiyesi 5 adetin uzerinde olan kalemler')}
+      ${segBtn('az','Azalan',sayac.az,'Bakiyesi 1-5 adet arasinda kalan kalemler')}
+      ${segBtn('yok','Tukenen',sayac.yok,'Bakiyesi sifir (veya eksi) olan kalemler')}
+    </div>`
+    +`<div class="ord-sumline"><b>${fmtNum(lib.length)}</b> kalem gosteriliyor · toplam bakiye <b>${fmtNum(gosterilenAdet)}</b>${
+      anyF?` <span class="t-meta">· ${fmtNum(tumu.length)} kalem icinden suzuldu</span>`:''}</div>`
     +`<div class="tablewrap"><table><thead><tr><th></th><th>Malzeme / Kod</th><th>Grup</th><th>Marka</th><th>Renk</th><th>Bakiye</th><th>Barkod</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
+/* ---- SIPARIS / FATURA: SUTUN BAZLI FILTRE ----
+   Ustteki uc buyuk istatistik karti (Toplam Siparis / Toplam Kalem / PDF Ekli)
+   kaldirildi: yer kapliyorlardi ama hicbir sey SUZMUYORLARDI. Yerine Ambar
+   Kutuphanesi ve proje siparis ekranlarindaki .ord-filterbar duzeni geldi;
+   paneldeki alanlar tablonun sutunlariyla birebir eslesir:
+     Tarih(tarih araligi) - Siparis No(arama) - Tedarikci - Icerik(malzeme) - Belge
+   Sayilar tek satirlik ozete indi ve artik FILTRELENMIS kumeyi anlatir. */
+let GORDF={ted:'',from:'',to:'',mat:'',pdf:''};
+function setGOrdF(k,v){ GORDF[k]=v; render(); }
+function gordAnyF(){ return !!(SEARCH||GORDF.ted||GORDF.from||GORDF.to||GORDF.mat||GORDF.pdf); }
+function clearGOrdF(){ GORDF={ted:'',from:'',to:'',mat:'',pdf:''}; SEARCH=''; render(); }
+function gordTedarikciler(){
+  return [...new Set(((DB.gecici&&DB.gecici.orders)||[]).map(o=>(o.tedarikci||'').trim()).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,'tr'));
+}
+// irsaliye kunyesinin aranabilir metni (eski kayitlarda o.irs yoktur -> bos doner)
+function irsAraMetin(o){
+  const r=o&&o.irs; if(!r) return '';
+  const s=r.satici||{}, a=r.alici||{}, t=r.tasiyici||{};
+  return [irsTurAd(r.tur),r.siparisNo,s.vkn,s.vd,a.unvan,a.vkn,a.adres,t.firma,t.plaka,t.surucu,r.not].filter(Boolean).join(' ');
+}
+function gordFiltrele(all){
+  return all.filter(o=>{
+    const lines=o.lines||[];
+    // arama siparisin ICINDEKI kalem adlarini ve irsaliye kunyesini de tarar:
+    // "bu malzeme hangi faturayla geldi", "34 ABC 123 plakali arac ne getirdi"
+    if(SEARCH && !matchText([o.no,o.tedarikci,...lines.map(l=>l.ad),irsAraMetin(o)].filter(Boolean).join(' '),SEARCH)) return false;
+    if(GORDF.ted && (o.tedarikci||'').trim()!==GORDF.ted) return false;
+    if(GORDF.from){ const t=new Date(GORDF.from).getTime(); if(!(o.date>=t)) return false; }
+    if(GORDF.to){ const t=new Date(GORDF.to).getTime()+86399999; if(!(o.date<=t)) return false; } // gun sonu dahil
+    if(GORDF.mat){ const q=norm(GORDF.mat).trim(); if(!lines.some(l=>norm(l.ad||'').indexOf(q)>=0)) return false; }
+    if(GORDF.pdf==='var' && !o.pdf) return false;
+    if(GORDF.pdf==='yok' &&  o.pdf) return false;
+    return true;
+  });
+}
 function renderOrders(){
-  const orders=DB.gecici.orders.slice().sort((a,b)=>b.date-a.date)
-    .filter(o=>!SEARCH||matchText(o.no+' '+(o.tedarikci||''), SEARCH));
+  const tumu=(DB.gecici.orders||[]).slice().sort((a,b)=>b.date-a.date);
+  const orders=gordFiltrele(tumu);
+  const anyF=gordAnyF();
   let rows='';
-  if(orders.length===0) rows=emptyRow(6,SEARCH?'Eslesen siparis yok':'Henuz siparis girilmedi','"Siparis / Fatura Gir" ile baslayin');
+  if(orders.length===0) rows=emptyRow(6,anyF?'Eslesen siparis yok':'Henuz siparis girilmedi',
+    anyF?'Filtreleri degistirin veya temizleyin':'"Siparis / Fatura Gir" ile baslayin');
   else orders.forEach(o=>{
     const adet=o.lines.reduce((s,l)=>s+(Number(l.qty)||0),0);
     rows+=`<tr><td class="t-meta">${fmtDate(o.date)}</td>
-      <td class="t-name"><span style="color:var(--violet)">${esc(o.no)}</span></td>
+      <td class="t-name"><span style="color:var(--violet)">${esc(o.no)}</span>${o.irs?`<div class="t-cins">${esc(irsTurAd(o.irs.tur))}</div>`:''}</td>
       <td class="t-meta">${esc(o.tedarikci||'-')}</td>
       <td class="t-meta">${o.lines.length} kalem / ${fmtNum(adet)} adet</td>
       <td>${o.pdf?`<button class="pdf-pill" onclick='openOrderPdf("${o.id}")'>${icoDoc()} PDF</button>`:'<span class="t-meta">-</span>'}</td>
@@ -13608,11 +13947,25 @@ function renderOrders(){
         <button class="mini-btn del" title="Sil (stok geri alinir)" onclick='delOrder("${o.id}")'><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
       </div></td></tr>`;
   });
-  const totalLines=DB.gecici.orders.reduce((s,o)=>s+o.lines.length,0);
-  return statRow([['Toplam Siparis',DB.gecici.orders.length,'kayit','var(--violet)'],['Toplam Kalem',totalLines,'siparis satiri','var(--amber)'],['PDF Ekli',DB.gecici.orders.filter(o=>o.pdf).length,'belge','var(--red)']])
-    +`<div class="toolbar">${searchBox('Siparis no veya tedarikci ara...')}
+  const tedarikciler=gordTedarikciler();
+  const filterbar=`<div class="ord-filterbar">
+    <div class="ord-f"><label>Tarih Araligi</label><div class="ord-f-dates">
+      <input type="date" value="${esc(GORDF.from)}" onchange="setGOrdF('from',this.value)"><span class="t-meta">-</span>
+      <input type="date" value="${esc(GORDF.to)}" onchange="setGOrdF('to',this.value)"></div></div>
+    ${tedarikciler.length?`<div class="ord-f"><label>Tedarikci</label><select onchange="setGOrdF('ted',this.value)"><option value="">Tumu</option>${tedarikciler.map(t=>`<option value="${esc(t)}" ${GORDF.ted===t?'selected':''}>${esc(t)}</option>`).join('')}</select></div>`:''}
+    <div class="ord-f"><label>Malzeme</label><input value="${esc(GORDF.mat)}" placeholder="kalem adi ile ara..." onchange="setGOrdF('mat',this.value.trim())"></div>
+    <div class="ord-f"><label>Belge</label><select onchange="setGOrdF('pdf',this.value)" title="Siparise yuklenmis fatura/irsaliye PDF'i"><option value="">Tumu</option><option value="var" ${GORDF.pdf==='var'?'selected':''}>PDF ekli</option><option value="yok" ${GORDF.pdf==='yok'?'selected':''}>PDF eksik</option></select></div>
+    ${anyF?`<div class="ord-f" style="flex:0 0 auto;min-width:0;justify-content:flex-end"><label>&nbsp;</label><button class="iht-reset" style="padding:9px 13px;white-space:nowrap" onclick="clearGOrdF()">Filtreleri temizle</button></div>`:''}
+  </div>`;
+  const gKalem=orders.reduce((s,o)=>s+(o.lines||[]).length,0);
+  const gAdet=orders.reduce((s,o)=>s+(o.lines||[]).reduce((x,l)=>x+(Number(l.qty)||0),0),0);
+  const gPdf=orders.filter(o=>o.pdf).length;
+  return `<div class="toolbar">${searchBox('Siparis no, tedarikci veya malzeme ara...')}
       ${exportBtns('siparisler')}
       ${canCreate('gecici')?`<button class="btn btn-order" onclick="openOrderModal()">${icoDoc()} Siparis / Fatura Gir</button>`:''}</div>`
+    +filterbar
+    +`<div class="ord-sumline"><b>${fmtNum(orders.length)}</b> siparis · <b>${fmtNum(gKalem)}</b> kalem · <b>${fmtNum(gAdet)}</b> adet · <b>${fmtNum(gPdf)}</b> belgeli${
+      anyF?` <span class="t-meta">· ${fmtNum(tumu.length)} siparis icinden suzuldu</span>`:''}</div>`
     +`<div class="tablewrap"><table><thead><tr><th>Tarih</th><th>Siparis No</th><th>Tedarikci</th><th>Icerik</th><th>Belge</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
@@ -18420,22 +18773,58 @@ function openSpecDetail(id){
   document.body.insertAdjacentHTML('beforeend',html);
 }
 
+/* "Ozellik: Deger" satirlarini [{k,v}] dizisine cevirir. Iki nokta yoksa satirin
+   tamami ozellik adi sayilir - kullanici yarim yazmis olsa da kaybolmaz. */
+function _libTekOku(metin){
+  return String(metin||'').split('\n').map(sat=>{
+    const t=sat.trim(); if(!t) return null;
+    const ix=t.indexOf(':');
+    return ix>0?{k:t.slice(0,ix).trim(),v:t.slice(ix+1).trim()}:{k:t,v:''};
+  }).filter(Boolean);
+}
 /* ---------- LIB modal (yeni malzeme) ---------- */
 function openLibModal(id){ if(!canEdit('gecici')) return; modalImg=null; const x=id?DB.gecici.lib.find(i=>i.id===id):null;
   const grps=libGroups();
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal"><div class="modal-head"><h3>${x?'Malzeme Duzenle':'Kutuphaneye Malzeme Ekle'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow"><label>Malzeme Adi *</label><input id="l_ad" value="${x?esc(x.ad):''}" placeholder="orn. 5X32A ERKEK FIS 380V"></div>
-    <div class="frow"><label>Malzeme Adi (RU) <span class="t-meta">(ikinci dil - opsiyonel, aramada da bulunur)</span></label><input id="l_adru" value="${x?esc(x.adRu||''):''}" placeholder="orn. Вилка 5x32A 380В IP44"></div>
     <div class="frow two"><div><label>Stok Kodu</label><input id="l_kod" value="${x?esc(x.kod||''):''}"></div><div><label>Grup</label><input id="l_grup" list="grpList" value="${x?esc(x.grup||''):''}" placeholder="SIGORTA / KABLO..."><datalist id="grpList">${grps.map(g=>`<option value="${esc(g)}">`).join('')}</datalist></div></div>
     <div class="frow"><label>Marka  <span class="t-meta">(ortak marka listesinden)</span></label>${markaAlaniHtml('l_marka',x?x.marka:'',false)}</div>
-    <div class="frow two"><div><label>Birim</label><input id="l_unit" value="${x?esc(x.unit||'ADET'):'ADET'}"></div><div><label>Renk</label><input id="l_renk" value="${x?esc(x.renk||''):''}"></div></div>
-    <div class="frow two"><div><label>Barkod</label><input id="l_barkod" value="${x?esc(x.barkod||''):''}"></div><div><label>${x?'Bakiye':'Baslangic Bakiyesi'}</label><input id="l_bakiye" type="number" step="any" value="${x?x.bakiye:0}"></div></div>
+    <div class="frow two"><div><label>Birim</label><input id="l_unit" value="${x?esc(x.unit||'ADET'):'ADET'}"></div><div><label>Barkod</label><input id="l_barkod" value="${x?esc(x.barkod||''):''}"></div></div>
+    <!-- ORTAK KUNYE ALANLARI: proje malzeme formuyla ayni dort alan (bkz. KUNYE_SUTUN) -
+         ayni urun iki kutuphanede de ayni kunyeyle dursun diye. -->
+    <div class="frow two">
+      <div><label>Standart Numarasi</label><input id="l_standart" value="${x?esc(x.standart||''):''}" placeholder="orn. TS EN 61386"></div>
+      <div><label>Agirlik (kg) <span class="t-meta">(birim agirlik)</span></label>
+        <input id="l_weight" type="number" step="any" min="0" value="${x&&x.weight!=null?x.weight:''}" placeholder="0"></div>
+    </div>
+    <div class="frow two">
+      <div><label>Etiket <span class="t-meta">(virgulle ayirin)</span></label>
+        <input id="l_tags" value="${x?esc(formatTagsCell(x.tags)):''}" placeholder="orn. Yangin, Ic Mekan"></div>
+      <div><label>Varyant Kodlar <span class="t-meta">(virgulle ayirin)</span></label>
+        <input id="l_altcodes" value="${x?esc(formatTagsCell(x.altCodes)):''}" placeholder="eski / alternatif kodlar"></div>
+    </div>
+    <div class="frow"><label>Not</label><textarea id="l_note" placeholder="Teknik ozellik, tedarikci...">${x?esc(x.note||''):''}</textarea></div>
+    <!-- OZELLIKLER: kunye SUTUNU degil, urunun girilebilen ozellikleri (bkz.
+         GECICI_OZELLIK_ALAN). Renk / Malzeme Cinsi / Paket Ici Adet kendi
+         kutularinda durur - listedeki renk noktasi ve renk/cins suzgecleri bu
+         alanlari okuyor; geri kalan ozellikler serbest satir olarak yazilir. -->
+    <div class="lib-boluk"><b>Ozellikler</b><span>urunun teknik ozellikleri - kunye sutunu degildir</span></div>
+    <div class="frow two">
+      <div><label>Ad (RU) <span class="t-meta">(ikinci dil - aramada da bulunur)</span></label>
+        <input id="l_adru" value="${x?esc(x.adRu||''):''}" placeholder="orn. Вилка 5x32A 380В IP44"></div>
+      <div><label>Renk</label><input id="l_renk" list="topgRenkList" value="${x?esc(x.renk||''):''}" placeholder="orn. Siyah">
+        <datalist id="topgRenkList">${topgRenkler().map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
+    </div>
     <div class="frow two">
       <div><label>Malzeme Cinsi <span class="t-meta">(yapildigi madde)</span></label>
         <input id="l_cins" list="libCinsList" value="${x?esc(x.cins||''):''}" placeholder="orn. BAKIR"><datalist id="libCinsList">${libCinsler().map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>
       <div><label>Paket Ici Adet <span class="t-meta">(birim PAKET ise)</span></label>
         <input id="l_parca" type="number" step="any" min="0" value="${x&&x.parca?x.parca:''}" placeholder="0"></div>
     </div>
+    <div class="frow"><label>Diger Ozellikler <span class="t-meta">(her satir "Ozellik: Deger" - orn. Koruma Sinifi: IP44)</span></label>
+      <textarea id="l_tek" rows="3" placeholder="Koruma Sinifi: IP44&#10;Gerilim: 380V">${x?esc((x.tek||[]).map(t=>t.k+': '+t.v).join('\n')):''}</textarea></div>
+    <div class="lib-boluk"><b>Ambar</b><span>depodaki miktar - kunye bilgisi degildir</span></div>
+    <div class="frow"><label>${x?'Bakiye':'Baslangic Bakiyesi'}</label><input id="l_bakiye" type="number" step="any" value="${x?x.bakiye:0}"></div>
     <div class="frow"><label>Urun Fotografi <span class="t-meta">(dosya secin veya internetten resim linki yapistirin)</span></label>
       <div class="drop ${x&&x.img?'has':''}" id="lImgDrop" onclick="document.getElementById('lImgInput').click()">${x&&x.img?`<img class="img-prev" src="${x.img}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div>
       <input type="file" id="lImgInput" accept="image/*" class="hidden" onchange="pickImg(event,'lImgDrop')">
@@ -18460,9 +18849,14 @@ async function saveLib(id){ const ad=document.getElementById('l_ad').value.trim(
      bakilir (proje malzeme modalindaki ayni onlem). */
   if(!al('l_imgUrl') && modalImg && /^https?:\/\//i.test(modalImg)) modalImg=null;
   if(!al('l_img2Url') && modalImg2 && /^https?:\/\//i.test(modalImg2)) modalImg2=null;
-  const data={ad,adRu:al('l_adru'),kod:al('l_kod'),grup:al('l_grup'),marka:al('l_marka'),unit:al('l_unit')||'ADET',renk:al('l_renk'),cins:al('l_cins'),barkod:al('l_barkod'),bakiye:Number(document.getElementById('l_bakiye').value)||0,parca:Number(al('l_parca'))||0,img:modalImg,img2:modalImg2};
+  const wRaw=al('l_weight');
+  if(wRaw!==''&&isNaN(Number(wRaw))){toast("Agirlik sayisal olmali","err");return;}
+  const data={ad,adRu:al('l_adru'),kod:al('l_kod'),grup:al('l_grup'),marka:al('l_marka'),unit:al('l_unit')||'ADET',renk:al('l_renk'),cins:al('l_cins'),barkod:al('l_barkod'),bakiye:Number(document.getElementById('l_bakiye').value)||0,parca:Number(al('l_parca'))||0,
+    standart:al('l_standart'),weight:wRaw!==''?Number(wRaw):null,tags:parseTagsCell(al('l_tags')),altCodes:parseTagsCell(al('l_altcodes')),note:al('l_note'),
+    tek:_libTekOku(al('l_tek')),
+    img:modalImg,img2:modalImg2};
   if(id){
-    const x=DB.gecici.lib.find(i=>i.id===id); const oldBal=x.bakiye; Object.assign(x,data);
+    const x=DB.gecici.lib.find(i=>i.id===id); const oldBal=x.bakiye; Object.assign(x,data,{updatedAt:Date.now()});
     const ops=[sbUpdateGeciciLibItem(id,{...x})];
     if(data.bakiye!==oldBal){
       const move={id:uid(),libId:id,type:data.bakiye>oldBal?'in':'out',qty:Math.abs(data.bakiye-oldBal),date:Date.now(),order:'Manuel duzeltme'};
@@ -18470,7 +18864,8 @@ async function saveLib(id){ const ad=document.getElementById('l_ad').value.trim(
     }
     await Promise.all(ops);
   } else {
-    const entity={id:uid(),...data,parca:0};
+    const now=Date.now();
+    const entity={id:uid(),...data,createdAt:now,updatedAt:now};
     await sbInsertGeciciLibItem(entity);
     DB.gecici.lib.push(entity);
   }
@@ -18528,17 +18923,116 @@ async function delLib(id){ if(!guard('delete'))return; if(!confirm("Bu malzemeyi
 
 /* ---------- ORDER modal (siparis/fatura -> kutuphaneye ekle) ---------- */
 let orderLines=[];
+/* ===== IRSALIYE BICIMINDE GIRIS =============================================
+   Ambara giren mal Turkiye'de SEVK IRSALIYESI ile gelir. Form artik o belgenin
+   alanlarini ayni sirayla sorar (VUK 230/5 asgari muhtevasi):
+     1) duzenleyenin unvani, adresi, vergi dairesi ve numarasi
+     2) alicinin ayni dortlusu
+     3) tasinan malin cinsi ve miktari
+     4) duzenleme tarihi ile FIILI SEVK tarih ve saati
+     5) belgenin seri-sira numarasi
+   Uzerine irsaliyenin nakliye bolumu (tasiyan firma / plaka / sofor) eklenir.
+   KAYIT SEKLI: yeni alanlarin tamami order.irs altinda toplanir; no, date,
+   tedarikci, lines ve pdf eski adlariyla yerinde durur. Boylece eski kayitlar
+   ve onlari okuyan yerler (tablo, filtre, delOrder, Ctrl+K) degismeden calisir.
+   Migration GEREKMEZ: kayit JSONB 'data' icine butun olarak yazilir
+   (supabase_schema.sql:426, src/supabase.js sbInsertEntity). */
+const IRS_TURLER=[['sevk','Sevk Irsaliyesi'],['irsfat','Irsaliyeli Fatura'],['tasima','Tasima Irsaliyesi'],['fatura','Fatura'],['fis','Siparis / Teslim Fisi']];
+function irsTurAd(t){ const b=IRS_TURLER.find(x=>x[0]===t); return b?b[1]:'Sevk Irsaliyesi'; }
+// unvan onerileri: Sirketler kaydi + daha once girilmis tedarikciler
+function irsFirmaOnerileri(){
+  return [...new Set([...((DB.companies||[]).map(c=>c&&c.ad)),...gordTedarikciler()]
+    .map(x=>String(x||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+}
+/* Unvan yazilinca Sirketler kaydindaki vergi dairesi / VKN / adres BOS kutulara
+   doldurulur - ayni firma her irsaliyede elle yeniden yazilmasin. Dolu kutuya
+   dokunmaz: elle girilen deger her zaman korunur. */
+function irsFirmaDoldur(pre){
+  const el=document.getElementById(pre==='s'?'o_ted':'o_aUnvan'); if(!el) return;
+  const ad=norm(el.value||'').trim(); if(!ad) return;
+  const c=(DB.companies||[]).find(x=>x&&norm(x.ad||'').trim()===ad); if(!c) return;
+  const koy=(id,v)=>{ const k=document.getElementById(id); if(k&&!String(k.value||'').trim()&&v) k.value=v; };
+  koy(pre==='s'?'o_sVd':'o_aVd', c.vergiDairesi||'');
+  koy(pre==='s'?'o_sVkn':'o_aVkn', c.vergi||'');
+  koy(pre==='s'?'o_sAdres':'o_aAdres', c.adres||'');
+}
+/* VKN 10, TCKN 11 hanedir. Bos gecilebilir - her tedarikci kaydi tam degil - ama
+   YAZILDIYSA hane sayisi tutmali; yarim numara sonradan eslestirmeyi bozar. */
+function irsVknSorun(v){
+  const t=String(v||'').trim(); if(!t) return '';
+  const rakam=[...t].filter(c=>c>='0'&&c<='9').length;
+  if(rakam!==t.length) return 'yalniz rakam girin';
+  return (rakam===10||rakam===11)?'':'10 hane (VKN) veya 11 hane (TCKN) olmali';
+}
+function irsPlakaNorm(v){ return String(v||'').toLocaleUpperCase('tr').split(' ').filter(Boolean).join(' '); }
+/* ALICI genelde HER SEFERINDE AYNI firmadir (kendi sirketiniz): en son kaydedilen
+   irsaliyenin alicisi forma hazir gelir, degistirilebilir. Tasiyici bilerek
+   tasinmaz - nakliyeci ve plaka her sevkiyatta degisir. */
+function irsSonAlici(){
+  const o=((DB.gecici&&DB.gecici.orders)||[]).filter(x=>x&&x.irs&&x.irs.alici&&x.irs.alici.unvan)
+    .sort((a,b)=>(b.date||0)-(a.date||0))[0];
+  return (o&&o.irs.alici)||{unvan:'',vd:'',vkn:'',adres:''};
+}
 function openOrderModal(){ if(!canCreate('gecici')) return; modalPdf=null; orderLines=[{ad:'',kod:'',qty:'',unit:'',libId:''}];
-  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal wide"><div class="modal-head"><h3>Siparis / Fatura Girisi</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
-    <div class="frow three"><div><label>Siparis / Fatura No *</label><input id="o_no" placeholder="orn. FTR-2026-0145"></div><div><label>Tarih</label><input id="o_date" type="date"></div><div><label>Tedarikci</label><input id="o_ted" placeholder="orn. Bemis"></div></div>
-    <div class="frow"><label>Malzeme Satirlari (kutuphanede ara veya yeni ekle)</label>
+  const al=irsSonAlici();
+  const ipucu=t=>`<span class="bbal" tabindex="0">B<span>${t}</span></span>`;
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal wide"><div class="modal-head"><h3>Irsaliye / Fatura Girisi</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <div class="frow three">
+      <div><label>Belge Turu${ipucu('Sevk irsaliyesi malin hareketini, irsaliyeli fatura hem sevki hem bedeli belgeler. Secim kayit ve suzme icindir; stok girisini degistirmez.')}</label>
+        <select id="o_tur">${IRS_TURLER.map(([v,ad])=>`<option value="${v}">${ad}</option>`).join('')}</select></div>
+      <div><label>Irsaliye / Fatura No *${ipucu('Belgenin uzerindeki seri-sira numarasi (orn. A-123456). Stok hareketleri bu numara ile eslesir; siparis silinince geri alma da bu numaradan yurur.')}</label>
+        <input id="o_no" placeholder="orn. A-123456"></div>
+      <div><label>Duzenleme Tarihi *${ipucu('Belgenin kesildigi tarih. Stok girisi bu tarihe yazilir.')}</label><input id="o_date" type="date"></div>
+    </div>
+    <div class="frow three">
+      <div><label>Fiili Sevk Tarihi${ipucu('Malin fiilen yola ciktigi tarih. Irsaliyede duzenleme tarihinden ayri bir alandir ve farkli olabilir.')}</label><input id="o_sevkT" type="date"></div>
+      <div><label>Fiili Sevk Saati${ipucu('Irsaliyede saat de zorunlu alandir - malin cikis saati.')}</label><input id="o_sevkS" type="time"></div>
+      <div><label>Siparis / Referans No${ipucu('Varsa bu sevkiyatin dayandigi siparis numarasi. Opsiyonel.')}</label><input id="o_sipno" placeholder="orn. SP-2026-014"></div>
+    </div>
+
+    <div class="lib-boluk"><b>Duzenleyen (Satici / Tedarikci)</b><span>belgeyi kesen taraf</span></div>
+    <div class="frow"><label>Unvan *${ipucu('Sirketler kaydinda ayni unvan varsa vergi dairesi, VKN ve adres kendiliginden dolar.')}</label>
+      <input id="o_ted" list="oFirmaListesi" placeholder="orn. Bemis" onchange="irsFirmaDoldur('s')"></div>
+    <div class="frow three">
+      <div><label>Vergi Dairesi</label><input id="o_sVd" placeholder="orn. Limonlu"></div>
+      <div><label>VKN / TCKN${ipucu('Tuzel kisi 10, gercek kisi 11 hane. Bos birakilabilir; yazilirsa hane sayisi kontrol edilir.')}</label><input id="o_sVkn" inputmode="numeric" placeholder="10 veya 11 hane"></div>
+      <div><label>Telefon</label><input id="o_sTel" placeholder="orn. 0212 000 00 00"></div>
+    </div>
+    <div class="frow"><label>Adres</label><input id="o_sAdres" placeholder="satici is adresi"></div>
+
+    <div class="lib-boluk"><b>Alici (Teslim Alan)</b><span>mali kabul eden taraf</span></div>
+    <div class="frow"><label>Unvan${ipucu('Genelde kendi sirketiniz - en son irsaliyeden dolu gelir. Sirketler kaydindaki unvani yazarsaniz VD/VKN/adres kendiliginden dolar.')}</label>
+      <input id="o_aUnvan" list="oFirmaListesi" value="${esc(al.unvan||'')}" onchange="irsFirmaDoldur('a')"></div>
+    <div class="frow two">
+      <div><label>Vergi Dairesi</label><input id="o_aVd" value="${esc(al.vd||'')}"></div>
+      <div><label>VKN / TCKN</label><input id="o_aVkn" inputmode="numeric" value="${esc(al.vkn||'')}" placeholder="10 veya 11 hane"></div>
+    </div>
+    <div class="frow"><label>Teslim / Sevk Adresi${ipucu('Malin indirildigi yer: santiye, ambar veya depo adresi. Adres uzun oldugu icin tam satiri kullanir.')}</label>
+      <input id="o_aAdres" value="${esc(al.adres||'')}" placeholder="santiye / ambar / depo adresi"></div>
+
+    <div class="lib-boluk"><b>Tasima</b><span>irsaliyenin nakliye bolumu</span></div>
+    <div class="frow three">
+      <div><label>Tasiyan Firma</label><input id="o_tFirma" placeholder="nakliyeci / kendi araci"></div>
+      <div><label>Plaka</label><input id="o_tPlaka" placeholder="34 ABC 123" onchange="this.value=irsPlakaNorm(this.value)"></div>
+      <div><label>Sofor Adi Soyadi</label><input id="o_tSurucu"></div>
+    </div>
+
+    <div class="lib-boluk"><b>Tasinan Mal</b><span>malin cinsi ve miktari - kutuphanede ara veya yeni ekle</span></div>
+    <div class="frow">
       <div id="olines"></div>
       <button class="add-line" onclick="addOrderLine()">+ Satir Ekle</button>
     </div>
-    <div class="frow"><label>Siparis / Fatura PDF'i</label><div class="drop" id="oPdfDrop" onclick="document.getElementById('oPdfInput').click()">${icoDoc()}<div style="margin-top:6px">PDF ekleyin</div></div><input type="file" id="oPdfInput" accept="application/pdf" class="hidden" onchange="pickPdf(event,'oPdfDrop')"></div>
-  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-order" onclick="saveOrder()">Siparisi Kaydet & Stok Ekle</button></div></div></div>`;
+
+    <div class="lib-boluk"><b>Belge ve Aciklama</b><span>taranmis nusha ve notlar</span></div>
+    <div class="frow"><label>Irsaliye / Fatura PDF'i</label><div class="drop" id="oPdfDrop" onclick="document.getElementById('oPdfInput').click()">${icoDoc()}<div style="margin-top:6px">PDF ekleyin</div></div><input type="file" id="oPdfInput" accept="application/pdf" class="hidden" onchange="pickPdf(event,'oPdfDrop')"></div>
+    <div class="frow"><label>Aciklama${ipucu('Eksik teslim, hasarli kap, kismi sevkiyat gibi notlar.')}</label><textarea id="o_not" placeholder="orn. 2 kap eksik geldi, kalani 3 gun icinde gonderilecek"></textarea></div>
+    <datalist id="oFirmaListesi">${irsFirmaOnerileri().map(f=>`<option value="${esc(f)}"></option>`).join('')}</datalist>
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-order" onclick="saveOrder()">Irsaliyeyi Kaydet ve Stok Ekle</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
-  document.getElementById('o_date').value=new Date().toISOString().slice(0,10);
+  const simdi=new Date(), iso=new Date(simdi.getTime()-simdi.getTimezoneOffset()*60000).toISOString();
+  document.getElementById('o_date').value=iso.slice(0,10);
+  document.getElementById('o_sevkT').value=iso.slice(0,10);   // sevk tarihi duzenleme tarihinden baslar
+  document.getElementById('o_sevkS').value=iso.slice(11,16);  // saat: su an
   renderOrderLines();
 }
 /* SATIR -> KUTUPHANE KAYDI. Once libId (arama kutusundan secilen kalem), sonra ad.
@@ -18594,10 +19088,16 @@ function updLine(i,k,v){ orderLines[i][k]=v;
 }
 async function saveOrder(){
   if(!guard('order',{bina:PBINA}))return;
-  const no=document.getElementById('o_no').value.trim();
-  if(!no){toast("Siparis/fatura no zorunlu","err");return;}
-  const date=new Date(document.getElementById('o_date').value||Date.now()).getTime();
-  const ted=document.getElementById('o_ted').value.trim();
+  const al=id=>{ const e=document.getElementById(id); return e?String(e.value||'').trim():''; };
+  const no=al('o_no');
+  if(!no){toast("Irsaliye / fatura no zorunlu","err");return;}
+  const date=new Date(al('o_date')||Date.now()).getTime();
+  const ted=al('o_ted');
+  if(!ted){toast("Duzenleyen (satici) unvani zorunlu - irsaliyenin ust bolumu","err");return;}
+  // VKN/TCKN bos gecilebilir ama yazildiysa hane sayisi tutmali (bkz. irsVknSorun)
+  for(const [id,kim] of [['o_sVkn','Satici'],['o_aVkn','Alici']]){
+    const sorun=irsVknSorun(al(id)); if(sorun){ toast(kim+' VKN/TCKN: '+sorun,'err'); return; }
+  }
   orderLines.forEach((l,i)=>{ const el=document.getElementById('ol_ad_'+i); if(el)l.ad=el.value; orderBagiKontrol(l); });
   const valid=orderLines.filter(l=>l.ad.trim()&&Number(l.qty)>0);
   if(valid.length===0){toast("En az bir gecerli satir girin","err");return;}
@@ -18611,12 +19111,24 @@ async function saveOrder(){
     const q=Number(l.qty);
     let x=orderLibCoz(l).x;
     if(x){ x.bakiye=(Number(x.bakiye)||0)+q; updatedLibItems.push(x); updated++; }
-    else { x={id:uid(),ad:l.ad.trim(),adRu:'',kod:'',grup:'',marka:ted,unit:l.unit.trim()||'ADET',renk:'',cins:'',barkod:'',bakiye:q,parca:0,img:null,img2:null}; DB.gecici.lib.push(x); newLibItems.push(x); added++; }
+    else { const sim=Date.now();
+      x={id:uid(),ad:l.ad.trim(),adRu:'',kod:'',grup:'',marka:ted,unit:l.unit.trim()||'ADET',renk:'',cins:'',barkod:'',bakiye:q,parca:0,
+         standart:'',weight:null,tags:[],altCodes:[],note:'',img:null,img2:null,createdAt:sim,updatedAt:sim};
+      DB.gecici.lib.push(x); newLibItems.push(x); added++; }
     const move={id:uid(),libId:x.id,type:'in',qty:q,date,order:no};
     DB.gecici.moves.push(move); newMoves.push(move);
     savedLines.push({libId:x.id,ad:x.ad,qty:q,unit:x.unit});
   });
-  const order={id:uid(),no,date,tedarikci:ted,lines:savedLines,pdf:modalPdf};
+  /* IRSALIYE BOLUMU: belgeye ait her sey order.irs altinda toplanir. Ust duzeydeki
+     no/date/tedarikci/lines/pdf eski anlamlariyla durur - eski kayitlari okuyan
+     yerler (tablo, filtre, delOrder, Ctrl+K) bu alani hic gormeden calisir. */
+  const irs={ tur:al('o_tur')||'sevk',
+    sevkTarih:al('o_sevkT'), sevkSaat:al('o_sevkS'), siparisNo:al('o_sipno'),
+    satici:{unvan:ted, vd:al('o_sVd'), vkn:al('o_sVkn'), tel:al('o_sTel'), adres:al('o_sAdres')},
+    alici:{unvan:al('o_aUnvan'), vd:al('o_aVd'), vkn:al('o_aVkn'), adres:al('o_aAdres')},
+    tasiyici:{firma:al('o_tFirma'), plaka:al('o_tPlaka'), surucu:al('o_tSurucu')},
+    not:al('o_not') };
+  const order={id:uid(),no,date,tedarikci:ted,lines:savedLines,pdf:modalPdf,irs};
   DB.gecici.orders.push(order);
   await Promise.all([
     ...(newLibItems.length?[sbInsertGeciciLibItems(newLibItems)]:[]),
@@ -18624,14 +19136,32 @@ async function saveOrder(){
     sbInsertGeciciMoves(newMoves),
     sbInsertGeciciOrder(order)
   ]);
-  logAction('order','Mobilizasyon siparisi: '+no+(ted?' / '+ted:'')+' - '+valid.length+' kalem ('+added+' yeni, '+updated+' guncellenen malzeme)');
+  logAction('order',irsTurAd(irs.tur)+': '+no+(ted?' / '+ted:'')+' - '+valid.length+' kalem ('+added+' yeni, '+updated+' guncellenen malzeme)');
   closeModal(); render();
-  toast(`Siparis kaydedildi - ${added} yeni, ${updated} guncellenen malzeme`);
+  toast(`${irsTurAd(irs.tur)} kaydedildi - ${added} yeni, ${updated} guncellenen malzeme`);
+}
+/* Detay penceresinde irsaliye bolumu. ESKI KAYITLARDA o.irs YOKTUR - o zaman bu
+   blok hic basilmaz, pencere eskisi gibi tarih + tedarikci + kalemler gosterir. */
+function irsDetayHtml(o){
+  const r=o&&o.irs; if(!r) return '';
+  const bas=t=>`<div style="font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin:14px 0 6px">${esc(t)}</div>`;
+  const sat=(l,v)=>v?`<div class="hist-row"><span style="flex:1;color:var(--mute)">${esc(l)}</span><span style="flex:2;text-align:right">${esc(v)}</span></div>`:'';
+  const firma=(baslik,f)=>{ f=f||{};
+    if(!(f.unvan||f.vd||f.vkn||f.tel||f.adres)) return '';
+    return bas(baslik)+sat('Unvan',f.unvan)+sat('Vergi Dairesi',f.vd?f.vd+' V.D.':'')+sat('VKN / TCKN',f.vkn)+sat('Telefon',f.tel)+sat('Adres',f.adres); };
+  const t=r.tasiyici||{};
+  const sevk=[r.sevkTarih?fmtDateISO(r.sevkTarih):'',r.sevkSaat].filter(Boolean).join(' ');
+  return bas('Belge')+sat('Belge Turu',irsTurAd(r.tur))+sat('Fiili Sevk',sevk)+sat('Siparis / Referans No',r.siparisNo)
+    +firma('Duzenleyen (Satici)',r.satici)
+    +firma('Alici (Teslim Alan)',r.alici)
+    +((t.firma||t.plaka||t.surucu)?bas('Tasima')+sat('Tasiyan Firma',t.firma)+sat('Plaka',t.plaka)+sat('Sofor',t.surucu):'')
+    +(r.not?bas('Aciklama')+`<div class="t-meta" style="white-space:pre-wrap">${esc(r.not)}</div>`:'');
 }
 function orderDetail(id){ const o=DB.gecici.orders.find(x=>x.id===id); if(!o)return;
   let rows=o.lines.map(l=>`<div class="hist-row"><span class="hist-ord" style="flex:2">${esc(l.ad)}</span><span class="t-qty" style="width:90px">${fmtNum(l.qty)} ${esc(l.unit||'')}</span></div>`).join('');
-  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal"><div class="modal-head"><h3 style="color:var(--violet)">${esc(o.no)}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal wide"><div class="modal-head"><h3 style="color:var(--violet)">${esc(o.no)}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="t-meta" style="margin-bottom:14px">${fmtDate(o.date)} ${o.tedarikci?' - '+esc(o.tedarikci):''}</div>
+    ${irsDetayHtml(o)}
     ${o.pdf?`<button class="btn btn-ghost" style="width:100%;margin-bottom:14px" onclick="openOrderPdf('${o.id}')">${icoDoc()} PDF'i Goruntule (${esc(o.pdf.name)})</button>`:''}
     <div style="font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:6px">Kalemler (${o.lines.length})</div>${rows}
   </div></div></div>`;
@@ -18671,16 +19201,36 @@ function exportProjeExcel(){
 function exportLibExcel(){
   const lib=DB.gecici.lib; if(lib.length===0){toast("Veri yok","err");return;}
   const wb=XLSX.utils.book_new();
-  /* SUTUNLAR TOPLU EKLEME SABLONUYLA BIREBIR AYNI (bkz. TOPG_XLS_BASLIK): bu rapor
-     dosyasi hicbir duzenleme gerektirmeden Toplu Malzeme Ekleme ekranina geri
-     yuklenebilsin - ogrenilecek tek bir sutun duzeni olsun diye. Fotograflar
-     LINK olarak cikar; dosyadan yuklenmis (base64) gorseller hucreye sigmayacagi
-     icin disa aktarilmaz. */
+  /* SUTUN DUZENI PROJE KUTUPHANESIYLE ORTAK (bkz. KUNYE_SUTUN): sutunlar iki dosyada
+     birebir ayni isim ve sirada, boylece ayni urun her iki tarafta da ayni kunyeyle
+     durur ve dosyalar arasinda kopyala/yapistir calisir.
+     KUNYE SAYFASINDA OLMAYANLAR ayri sekmelere yazilir: girilebilen OZELLIKLER
+     (Renk, Malzeme Cinsi, Paket Ici Adet, Ad (RU) ve serbest satirlar) ile AMBAR
+     STOK (bakiye kunye bilgisi degil, ambarin kendi verisidir). Dosya hicbir
+     duzenleme gerektirmeden Toplu Malzeme Ekleme ekranina geri yuklenebilir - okuyucu
+     bu sekmeleri de okur. Fotograflar LINK olarak cikar; dosyadan yuklenmis (base64)
+     gorseller hucreye sigmayacagi icin cikmaz. */
   const lnk=v=>(v&&/^https?:\/\//i.test(v))?v:'';
-  const head=[TOPG_XLS_BASLIK.slice()];
-  lib.slice().sort((a,b)=>(a.grup||'').localeCompare(b.grup||'','tr')||(a.ad||'').localeCompare(b.ad||'','tr')).forEach(x=>head.push([x.kod||'',x.ad,x.adRu||'',x.grup||'',x.marka||'',x.unit||'',x.barkod||'',x.renk||'',x.cins||'',Number(x.bakiye)||0,Number(x.parca)||'',lnk(x.img),lnk(x.img2)]));
-  const ws=XLSX.utils.aoa_to_sheet(head); ws['!cols']=TOPG_XLS_GENIS.slice();
+  const sirali=lib.slice().sort((a,b)=>(a.grup||'').localeCompare(b.grup||'','tr')||(a.ad||'').localeCompare(b.ad||'','tr'));
+  const head=[kunyeBaslik(true)];
+  sirali.forEach(x=>head.push([
+    x.ad||'', x.standart||'', x.kod||'', x.barkod||'', x.marka||'',
+    x.weight!=null&&x.weight!==''?x.weight:'', x.note||'', formatTagsCell(x.tags),
+    lnk(x.img), lnk(x.img2), x.unit||'', x.grup||'', formatTagsCell(x.altCodes),
+    x.createdAt?fmtDate(x.createdAt):'', x.updatedAt?fmtDate(x.updatedAt):'']));
+  const ws=XLSX.utils.aoa_to_sheet(head);
+  ws['!cols']=kunyeGenis(true).slice();
   XLSX.utils.book_append_sheet(wb,ws,"Ambar");
+  // OZELLIKLER sekmesi - malzeme basina N satir oldugu icin kunyeye sutun olarak sigmaz
+  const ozRows=[TOPG_OZ_BASLIK.slice()];
+  sirali.forEach(x=>geciciOzellikler(x).forEach(o=>ozRows.push([x.kod||'',x.ad||'',o.k,o.v])));
+  const wsOz=XLSX.utils.aoa_to_sheet(ozRows); wsOz['!cols']=TOPG_OZ_GENIS.slice();
+  XLSX.utils.book_append_sheet(wb,wsOz,"Ozellikler");
+  // AMBAR STOK sekmesi - kutuphane kunyesi degil, depodaki miktar
+  const stokRows=[TOPG_STOK_BASLIK.slice()];
+  sirali.forEach(x=>stokRows.push([x.kod||'',x.ad||'',x.unit||'',Number(x.bakiye)||0]));
+  const wsSt=XLSX.utils.aoa_to_sheet(stokRows); wsSt['!cols']=TOPG_STOK_GENIS.slice();
+  XLSX.utils.book_append_sheet(wb,wsSt,"Ambar Stok");
   // hareketler sayfasi
   if(DB.gecici.moves.length){ const mv=[["Tarih","Malzeme","Tip","Miktar","Birim","Siparis/Aciklama"]];
     DB.gecici.moves.slice().sort((a,b)=>b.date-a.date).forEach(m=>{ const x=DB.gecici.lib.find(i=>i.id===m.libId); mv.push([fmtDate(m.date),x?x.ad:'(silinmis)',m.type==='in'?'GIRIS':'CIKIS',Number(m.qty),x?x.unit:'',m.order||'']); });
