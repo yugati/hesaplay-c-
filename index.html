@@ -3690,6 +3690,11 @@ main:has(>.fat-form-wrap){max-width:none}
     <button class="icon-btn" id="restoreBtn" title="Yedek Yukle" onclick="document.getElementById('restoreInput').click()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg></button>
     </div>
     <span class="hd-sep"></span>
+    <!-- HESABIM: her kullanicida gorunur - kendi adini, iletisim bilgisini ve
+         SIFRESINI buradan degistirir (api/profil.js). hd-actions'in DISINDA
+         durur cunku oradakiler yonetici dugmeleri ve dar ekranda gizlenir
+         (bkz. "#auditBtn,#backupBtn,#restoreBtn{display:none}"). -->
+    <button class="icon-btn" id="profilBtn" title="Hesabim" onclick="openProfilModal()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
     <button class="icon-btn danger" title="Cikis" onclick="logout()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg></button>
     <input type="file" id="restoreInput" accept=".json" class="hidden" onchange="importBackup(event)">
   </header>
@@ -4022,7 +4027,13 @@ let ORDVIEW='orders'; // Tum Siparisler alt gorunumu: 'orders' (kesinlesmis) | '
 let SPECVIEW=localStorage.getItem('specview')==='list'?'list':'grid';     // sartname kalemleri gorunumu: 'grid' (kart) | 'list' (satir) - kullanicinin son secimi hatirlanir
 function setSpecView(v){ SPECVIEW=v; try{localStorage.setItem('specview',v);}catch(e){} render(); }
 let CURRENT_USER=null;   // giris yapan kullanici
-let SB_USERS=[];         // Supabase kullanici onbellek
+let SB_USERS=[];         // Supabase kullanici onbellek (YALNIZ yonetici doldurur - openUsers)
+/* KISI DIZINI: [{username, ad, meslek}] - HER kullanicida dolu (api/kisiler.js).
+   Gerekli cunku kayitlarin icinde "olusturan kisi" GIRIS ADI olarak yazilidir
+   (createdBy / olusturan) ve ekranda GORUNEN AD gosterilmeli. SB_USERS bu isi
+   goremez: onu yalnizca yonetici, Kullanici Yonetimi'ni acinca doldurur -
+   saha personelinde hep bos kalir. */
+let KISI_DIZIN=[];
 let PENDING_INVITES=[];  // Supabase davet onbellek (Kullanici Yonetimi > Bekleyen Davetler)
 let PUSERS=false;        // admin kullanici yonetim ekrani gorunumu
 let PAUDIT=false;        // admin denetim kaydi ekrani gorunumu
@@ -4116,8 +4127,8 @@ function logAction(action, detail){
   }catch(e){}
 }
 const AUDIT_LABELS={ stock:'Stok hareketi', order:'Siparis', editSpec:'Spesifikasyon', editMaterial:'Malzeme', delete:'Silme', define:'Tanim', import:'Excel import', sync:'Full sync', wipe:'Veri temizleme', backup:'Yedek alma', restore:'Yedek yukleme', user:'Kullanici', login:'Giris',
-  // sunucunun yazdigi islemler (api/login.js, api/cikis.js) - tarayici bunlari uretmez
-  logout:'Cikis', girisHata:'Basarisiz giris', kilit:'Hesap kilidi', sistem:'Sistem' };
+  // sunucunun yazdigi islemler (api/login.js, api/cikis.js, api/profil.js) - tarayici bunlari uretmez
+  logout:'Cikis', girisHata:'Basarisiz giris', kilit:'Hesap kilidi', sistem:'Sistem', profil:'Hesap bilgileri' };
 function firstAllowedSection(){ if(isAdmin())return 'proje'; for(const k of ['proje','gecici','alet','saha','hakedis','rapor','tanimlar','kutuphane']){ if(canSee(k))return k; } return 'proje'; }
 // ACILIS PANELI: 'siparis' bir SEC gorunumu degil, bir panel (PORD). Gorunur bir SEC'i olmayan ama
 // Tum Siparisler yetkisi olan kullanici (orn. yalnizca siparis) dogrudan siparis paneline iner.
@@ -4130,7 +4141,7 @@ function applyUserChrome(){
   /* ORGANIZASYON ADI HER ZAMAN GORUNUR - tek kiracili kurulumda bile. Yanlis
      sirkete veri girmenin tek panzehiri, hangisinde oldugunu gormek. */
   if(info&&CURRENT_USER){ const rl=ROLES[CURRENT_USER.role]||CURRENT_USER.role;
-    info.innerHTML=`<span style="color:var(--mute)">${esc(orgAdiGoster())}</span> <span style="opacity:.6">·</span> ${esc(CURRENT_USER.username)} <span style="opacity:.6">| ${esc(rl)}</span>`; }
+    info.innerHTML=`<span style="color:var(--mute)">${esc(orgAdiGoster())}</span> <span style="opacity:.6">·</span> ${esc(CURRENT_USER.ad||CURRENT_USER.username)} <span style="opacity:.6">| ${esc(rl)}</span>`; }
   // Organizasyon degistirici YALNIZCA super yoneticide. Normal kullanici kendi
   // organizasyonuna kilitli oldugu icin dugmeyi hic gormez (sunucu da oyle davranir).
   const ow=document.getElementById('orgWrap'); if(ow) ow.classList.toggle('acik', !!(CURRENT_USER&&CURRENT_USER.is_super));
@@ -4410,6 +4421,10 @@ async function afterLogin(user, token, remember, opts){
   }
   showAppFade();
   startClock(); applyUserChrome(); render();
+  /* KISI DIZINI ARKADAN GELIR - acilisi BEKLETMEZ. Yalnizca gosterim icin
+     ("olusturan kisi" adlari); geldiginde ekran bir kez tazelenir. Await
+     edilseydi her acilisa gereksiz bir tur eklenirdi. */
+  kisiDizinYukle().then(()=>{ applyUserChrome(); render(); });
   if(SEC==='saha') initSaha();
 }
 async function doLogin(){
@@ -4672,6 +4687,10 @@ document.addEventListener('DOMContentLoaded', async function(){
     hideLoading();
     showAppFade();
     startClock(); applyUserChrome(); render();
+  /* KISI DIZINI ARKADAN GELIR - acilisi BEKLETMEZ. Yalnizca gosterim icin
+     ("olusturan kisi" adlari); geldiginde ekran bir kez tazelenir. Await
+     edilseydi her acilisa gereksiz bir tur eklenirdi. */
+  kisiDizinYukle().then(()=>{ applyUserChrome(); render(); });
     if(SEC==='saha') initSaha();
     // Kullanici tazeleme YUKARI ALINDI (veri yuklemesinden once) - yukleme
     // kapsami ona bagli oldugu icin arkada calismasi yetmiyordu.
@@ -6055,7 +6074,7 @@ function openGunlukIsDetay(id){
       ${satir('Denetim',denSatir)}
       ${satir('Denetim Notu',esc((t.denetim&&t.denetim.not)||''))}
       ${satir('Aciklama',esc(t.aciklama||'').replace(/\n/g,'<br>'))}
-      ${satir('Olusturan',esc(t.olusturan||'')+(t.olusturmaTs?' · '+fmtDate(t.olusturmaTs):''))}
+      ${satir('Olusturan',esc(kisiAd(t.olusturan))+(t.olusturmaTs?' · '+fmtDate(t.olusturmaTs):''))}
       ${t.guncellemeTs&&t.guncellemeTs!==t.olusturmaTs?satir('Son Guncelleme',esc(t.guncelleyen||'')+' · '+fmtDate(t.guncellemeTs)):''}
       ${gidFotolar.length?`<div class="gid-sec"><div class="gid-sec-h">Ekran Goruntusu${gidFotolar.length>1?' ('+gidFotolar.length+')':''}</div>
         <div class="gid-fotolar${gidFotolar.length>1?' cok':''}">${gidFotolar.map((f,i)=>
@@ -7179,12 +7198,12 @@ function renderAudit(){
   const shown=list.slice(0,500);
   const rows=shown.map(a=>{
     const col={delete:'var(--red)',wipe:'var(--red)',sync:'#a855f7',import:'#a855f7',user:'#f59e0b',login:'var(--dim)',stock:'var(--blue)',order:'var(--blue)',editSpec:'var(--green)',editMaterial:'var(--green)',define:'var(--amber)',backup:'var(--dim)',restore:'var(--red)',
-      logout:'var(--dim)',girisHata:'var(--red)',kilit:'var(--red)',sistem:'var(--dim)'}[a.action]||'var(--dim)';
+      logout:'var(--dim)',girisHata:'var(--red)',kilit:'var(--red)',sistem:'var(--dim)',profil:'#f59e0b'}[a.action]||'var(--dim)';
     // Sunucunun yazdigi kayitlar isaretlenir: bunlar atlanamaz/sahtelenemez kayitlardir
     const kaynak=a.kaynak==='sunucu'?' <span class="t-meta" title="Sunucuda kaydedildi - atlanamaz" style="font-size:10px;opacity:.7">SUNUCU</span>':'';
     return `<tr>
       <td class="t-meta" style="font-family:var(--mono);font-size:11px;white-space:nowrap">${_auditTime(a.ts)}</td>
-      <td class="t-name" style="font-size:12px">${esc(a.user)} <span class="t-meta">${esc(ROLES[a.role]||a.role)}</span></td>
+      <td class="t-name" style="font-size:12px">${esc(a.user)} <span class="t-meta">${esc(ROLES[a.role]||a.role)}</span>${(kisiAd(a.user)!==a.user)?'<div class="t-meta" style="font-size:11px">'+esc(kisiAd(a.user))+'</div>':''}</td>
       <td><span class="cat-tag" style="background:${col}22;color:${col}">${esc(AUDIT_LABELS[a.action]||a.action)}</span>${kaynak}</td>
       <td class="t-meta" style="font-size:12px">${esc(a.detail||'')}${a.ip?' <span style="opacity:.6;font-family:var(--mono);font-size:10px">'+esc(a.ip)+'</span>':''}</td>
     </tr>`;
@@ -7220,8 +7239,26 @@ async function clearAudit(){
   DB.meta.audit=[]; logAction('wipe','Denetim kaydi temizlendi'); await saveDB(); render(); toast("Denetim kaydi temizlendi");
 }
 function roleBadge(role){ const c={admin:'#f59e0b',izleyici:'var(--dim)',saha_personeli:'var(--blue)',sef:'var(--dim)',saha:'var(--dim)',viewer:'var(--dim)'}[role]||'var(--dim)'; return `<span class="cat-tag" style="background:${c}22;color:${c}">${esc(ROLES[role]||role)}</span>`; }
+/* GORUNEN AD COZUCU. Kayitlarin icindeki "olusturan kisi" alani GIRIS ADIDIR
+   (createdBy / olusturan) ve orada oyle KALIR - kimlik anahtaridir, ekip atamasi
+   (userEkipOf) ve "kendi kaydini duzenleyebilir" kurali (rOwnEntry) ona bakar.
+   Degisebilen sey yalnizca GOSTERIM: kisi kendi adini yazdiysa ekranda o gorunur,
+   yazmadiysa giris adi. Bu yuzden eski kayitlar da yeni adla gorunur, hicbir
+   bagi kopmadan (bkz. migration_gorunen_ad.sql).
+   Kaynak sirasi: kisi dizini (herkeste dolu) -> SB_USERS (yalniz yonetici). */
+function kisiKayit(username){
+  if(!username) return null;
+  return (KISI_DIZIN||[]).find(x=>x.username===username)
+      || (SB_USERS||[]).find(x=>x.username===username) || null;
+}
+function kisiAd(username){ const u=kisiKayit(username); return (u&&u.ad)||username||''; }
 // Kullanici adindan meslek/unvan bulur - ciktilarda "olusturan" adinin yaninda gosterilir (bkz. Kullanici Yonetimi)
-function kisiMeslek(username){ const u=(SB_USERS||[]).find(x=>x.username===username); return (u&&u.meslek)||''; }
+function kisiMeslek(username){ const u=kisiKayit(username); return (u&&u.meslek)||''; }
+/* Dizini tazeler. HATA YUTULUR: dizin yalnizca gosterim icindir, alinamazsa
+   ekranda giris adi gorunur - uygulama acilisi buna takilmamali. */
+async function kisiDizinYukle(){
+  try{ KISI_DIZIN=await sbKisiDizin()||[]; }catch(e){ console.warn('Kisi dizini alinamadi',e); }
+}
 function renderUsers(){
   const users=SB_USERS;
   const admins=users.filter(u=>u.role==='admin');
@@ -7232,7 +7269,7 @@ function renderUsers(){
     const uEkip=u.role==='admin'?'':userEkipOf(u.username);
     const iletisim=[u.tel?esc(u.tel):'',u.email?esc(u.email):''].filter(Boolean).join('<br>');
     return `<tr>
-      <td class="t-name">${esc(u.username)}${isMe?' <span class="t-meta">(siz)</span>':''}${u.meslek?'<div class="t-meta" style="font-size:11px">'+esc(u.meslek)+'</div>':''}</td>
+      <td class="t-name">${esc(u.ad||u.username)}${isMe?' <span class="t-meta">(siz)</span>':''}${u.ad?'<div class="t-meta" style="font-size:11px">giris: '+esc(u.username)+'</div>':''}${u.meslek?'<div class="t-meta" style="font-size:11px">'+esc(u.meslek)+'</div>':''}</td>
       <td>${roleBadge(u.role)}${canAudit(u)?' <span class="cat-tag" title="Denetim kaydini goruntuleyebilir" style="background:#a855f722;color:#a855f7">Denetim</span>':''}</td>
       <td class="t-meta" style="font-size:11px">${uEkip?esc(shortEkip(uEkip))+' '+ekipBolumBadge(uEkip):'-'}</td>
       <td class="t-meta" style="font-size:11px">${iletisim||'-'}</td>
@@ -7385,7 +7422,9 @@ function openUserModal(id){
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${u?'Kullanici Duzenle':'Yeni Kullanici'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow two"><div><label>Kullanici Adi *</label><input id="u_name" value="${u?esc(u.username):''}" placeholder="orn. ahmet" ${u?'readonly style="opacity:.6"':''}></div><div><label>Sifre ${u?'':'*'}</label><input type="password" id="u_pass" value="" placeholder="${u?'Degistirmek icin yeni sifre girin':'sifre'}" autocomplete="new-password"></div></div>
     <div class="frow two"><div><label>Telefon <span class="t-meta">(opsiyonel)</span></label><input id="u_tel" value="${u?esc(u.tel||''):''}" placeholder="+90 ..."></div><div><label>E-posta <span class="t-meta">(opsiyonel)</span></label><input id="u_email" value="${u?esc(u.email||''):''}" placeholder="ornek@..."></div></div>
-    <div class="frow"><label>Meslek / Unvan <span class="t-meta">(opsiyonel - ciktilarda olusturan adinin yaninda gosterilir)</span></label><input id="u_meslek" value="${u?esc(u.meslek||''):''}" placeholder="orn. Saha Muhendisi"></div>
+    <div class="frow two"><div><label>Gorunen Ad <span class="t-meta">(opsiyonel)</span></label><input id="u_ad" value="${u?esc(u.ad||''):''}" maxlength="60" placeholder="orn. Babur Yilmaz"></div>
+      <div><label>Meslek / Unvan <span class="t-meta">(opsiyonel)</span></label><input id="u_meslek" value="${u?esc(u.meslek||''):''}" placeholder="orn. Saha Muhendisi"></div></div>
+    <p class="t-meta" style="font-size:11px;margin:-6px 0 12px">Gorunen ad ekranlarda ve ciktilarda giris adi yerine gosterilir; giris adi degismez. Unvan, olusturan adinin yaninda yazilir. <b>Kullanici ikisini de Hesabim ekranindan kendi degistirebilir</b> (unvan haric).</p>
     <div class="frow"><label>Rol</label><select id="u_role" onchange="_userRoleChange()">${roleOpts}</select>
       <p class="t-meta" id="u_roleHint" style="font-size:11px;margin-top:6px"></p></div>
     <div class="frow" id="u_ekipRow"><label>Bagli Ekip  <span class="t-meta">(opsiyonel - atanirsa raporda YALNIZ kendi ekibinin kaydini girer/duzenler)</span></label>
@@ -7439,6 +7478,7 @@ async function saveUser(id){
   const tel=(document.getElementById('u_tel').value||'').trim();
   const email=(document.getElementById('u_email').value||'').trim();
   const meslek=(document.getElementById('u_meslek').value||'').trim();
+  const ad=(document.getElementById('u_ad').value||'').trim();
   const role=document.getElementById('u_role').value;
   if(!name){toast('Kullanici adi zorunlu','err');return;}
   if(!id && !pass){toast('Sifre zorunlu','err');return;}
@@ -7484,12 +7524,12 @@ async function saveUser(id){
   try {
     let updated;
     if(id){
-      const payload={role,sections,buildings,permissions,tel,email,meslek};
+      const payload={role,sections,buildings,permissions,tel,email,meslek,ad};
       if(pass) payload.password=pass; // bos birakilirsa mevcut sifre degismez
       updated=await sbUpdateUser(id,payload);
       if(CURRENT_USER&&CURRENT_USER.id===id){ CURRENT_USER=updated; window.CURRENT_USER=updated; }
     } else {
-      updated=await sbCreateUser({username:name,password:pass,role,sections,buildings,permissions,tel,email,meslek});
+      updated=await sbCreateUser({username:name,password:pass,role,sections,buildings,permissions,tel,email,meslek,ad});
     }
     // EKIP ATAMASI: kullanici API'si sabit alanli oldugundan app_settings > userEkip'te tutulur
     // (kullanici adi anahtardir). Yalniz yonetici bu ekrani acabildigi icin atamayi da yalniz o yapar.
@@ -7502,6 +7542,7 @@ async function saveUser(id){
     logAction('user',(id?'Guncelleme: ':'Ekleme: ')+name+' ('+(ROLES[role]||role)+')'+(ekipVal?' - ekip: '+ekipVal:''));
     await saveDB();
     SB_USERS=await sbGetAllUsers();
+    await kisiDizinYukle();   // gorunen ad degismis olabilir - "olusturan kisi" adlari tazelensin
     closeModal(); render(); applyUserChrome();
     toast(id?'Kullanici guncellendi':'Kullanici eklendi');
   } catch(e){
@@ -7521,8 +7562,86 @@ async function delUser(id){
     await sbDeleteUser(id);
     logAction('user','Silme: '+u.username); await saveDB();
     SB_USERS=await sbGetAllUsers();
+    await kisiDizinYukle();
     render(); toast('Kullanici silindi');
   } catch(e){ toast('Silme basarisiz: '+(e.message||'Hata'),'err'); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HESABIM - kullanicinin KENDI kaydi
+
+   Bugune kadar sifreyi yalnizca yonetici degistirebiliyordu (api/users/[id].js
+   requireAdmin ile basliyor): kullaniciya bir sifre ATANIYOR ve o sifre elden
+   verildigi gibi kaliyordu - yani hesabin sifresini kullanicidan baskasi da
+   biliyordu. Bu ekran o dugumu cozer; sunucu tarafi api/profil.js.
+
+   GIRIS ADI BURADA DA DEGISMEZ. Kimlik anahtaridir: gecmis kayitlarin icine
+   metin olarak yazilmistir (createdBy / olusturan), ekip atamasi ona gore
+   tutulur (userEkipOf) ve "kendi kaydini duzenleyebilir" kurali onu
+   karsilastirir (rOwnEntry). Degistirilseydi kisi kendi gecmisinde bir
+   yabanciya donerdi. Kullanici bunun yerine GORUNEN AD'ini degistirir -
+   ekranlarda ve ciktilarda gorunen odur (kisiAd).
+
+   ROL / IZIN / BINA / UNVAN BU EKRANDA YOKTUR - olsaydi herkes kendini
+   yonetici yapabilirdi. Sunucu da yalnizca ad, telefon, e-posta ve sifreyi
+   kabul eder; istekten gelen bir id'ye hic bakmaz.
+   ═══════════════════════════════════════════════════════════════════════════ */
+function openProfilModal(){
+  const u=CURRENT_USER; if(!u){toast('Oturum bulunamadi','err');return;}
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:520px"><div class="modal-head"><h3>Hesabim</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <div class="frow"><label>Giris Adi</label>
+      <input value="${esc(u.username)}" readonly style="opacity:.6">
+      <p class="t-meta" style="font-size:11px;margin-top:6px">Giris adi degismez - gecmis kayitlariniz (rapor girisleri, siparisler, faturalar) buna bagli. Ekranlarda gorunmesini istediginiz adi asagiya yazin.</p></div>
+    <div class="frow"><label>Gorunen Ad <span class="t-meta">(bos birakilirsa giris adiniz gorunur)</span></label>
+      <input id="pf_ad" value="${esc(u.ad||'')}" maxlength="60" placeholder="orn. Babur Yilmaz"></div>
+    <div class="frow two"><div><label>Telefon</label><input id="pf_tel" value="${esc(u.tel||'')}" placeholder="+90 ..."></div>
+      <div><label>E-posta</label><input id="pf_email" value="${esc(u.email||'')}" placeholder="ornek@..."></div></div>
+    ${u.meslek?`<div class="frow"><label>Meslek / Unvan</label><input value="${esc(u.meslek)}" readonly style="opacity:.6"><p class="t-meta" style="font-size:11px;margin-top:6px">Unvani yonetici tanimlar.</p></div>`:''}
+    <div style="border-top:1px solid var(--line);margin:16px 0 4px"></div>
+    <div class="frow"><label style="color:var(--mute)">Sifre Degistir <span class="t-meta">(degistirmek istemiyorsaniz bos birakin)</span></label></div>
+    <div class="frow"><label>Mevcut Sifre</label><input type="password" id="pf_eski" value="" autocomplete="current-password" placeholder="simdiki sifreniz"></div>
+    <div class="frow two"><div><label>Yeni Sifre</label><input type="password" id="pf_yeni" value="" autocomplete="new-password" placeholder="en az 8 karakter"></div>
+      <div><label>Yeni Sifre (Tekrar)</label><input type="password" id="pf_yeni2" value="" autocomplete="new-password" placeholder="tekrar girin"></div></div>
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveProfil()">Kaydet</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  const el=document.getElementById('pf_ad'); if(el) setTimeout(()=>el.focus(),0);
+}
+async function saveProfil(){
+  const ad=(document.getElementById('pf_ad').value||'').trim();
+  const tel=(document.getElementById('pf_tel').value||'').trim();
+  const email=(document.getElementById('pf_email').value||'').trim();
+  const eski=document.getElementById('pf_eski').value||'';
+  const yeni=document.getElementById('pf_yeni').value||'';
+  const yeni2=document.getElementById('pf_yeni2').value||'';
+  /* SIFRE ALANLARI YA HEP YA HIC. Yarim doldurulmus bir form sessizce
+     "sifre degismedi" diye gecseydi kullanici degistirdigini sanip eski
+     sifreyle kalirdi - fark ettigi an ya giris denemesidir ya da hic. */
+  const sifreIstendi=!!(eski||yeni||yeni2);
+  if(sifreIstendi){
+    if(!eski){toast('Mevcut sifrenizi girin','err');return;}
+    if(!yeni){toast('Yeni sifre girin','err');return;}
+    if(yeni!==yeni2){toast('Yeni sifreler birbirini tutmuyor','err');return;}
+    if(yeni.length<8){toast('Yeni sifre en az 8 karakter olmali','err');return;}
+  }
+  try{
+    const payload={ad,tel,email};
+    if(sifreIstendi){ payload.mevcutSifre=eski; payload.yeniSifre=yeni; }
+    const updated=await sbProfilGuncelle(payload);
+    /* Oturumdaki kullaniciyi da tazele: ust cubuk adi buradan okur ve sayfa
+       yenilenince localStorage'daki kopya kullanilir - guncellenmezse ad eski
+       haliyle geri gelir. Token DEGISMEZ: gorunen ad tokende tasinmaz. */
+    CURRENT_USER=updated; window.CURRENT_USER=updated;
+    try{
+      const sess=JSON.parse(localStorage.getItem('authSession')||'null');
+      if(sess){ sess.user=updated; localStorage.setItem('authSession',JSON.stringify(sess)); }
+    }catch(e){}
+    await kisiDizinYukle();
+    if(isAdmin()&&PUSERS){ try{ SB_USERS=await sbGetAllUsers(); }catch(e){} }
+    closeModal(); applyUserChrome(); render();
+    toast(sifreIstendi?'Bilgileriniz ve sifreniz guncellendi':'Bilgileriniz guncellendi');
+  }catch(e){
+    toast(e.message||'Guncelleme basarisiz','err');
+  }
 }
 
 /* ============ BOLUM & SARTNAME TANIMLAMA EKRANI ============ */
@@ -14074,7 +14193,7 @@ function buildAltCardHtml(a, specId){
       ${metaParts.length?`<div class="alt-meta">${esc(metaParts.join(' · '))}</div>`:''}
       ${a.reason?`<div class="alt-meta" style="color:var(--amber)66;margin-top:3px">${altReasonLabel(a.reason)}</div>`:''}
       ${a.note?`<div class="alt-note">${esc(a.note)}</div>`:''}
-      <div style="font-size:10px;color:var(--dim);margin-top:4px">${fmtDate(a.createdAt||0)} · ${esc(a.createdBy||'')}${a.approvedBy?` · <b style="color:var(--mute)">${esc(a.approvedBy)}</b> onayladı`:''}</div>
+      <div style="font-size:10px;color:var(--dim);margin-top:4px">${fmtDate(a.createdAt||0)} · ${esc(kisiAd(a.createdBy))}${a.approvedBy?` · <b style="color:var(--mute)">${esc(kisiAd(a.approvedBy))}</b> onayladı`:''}</div>
     </div>
     <div class="alt-actions">
       ${adminBtns}
@@ -15006,7 +15125,7 @@ function _openMatDetail(matId){
       <span class="t-meta" style="flex-shrink:0">${fmtDate(e.tarih)}</span>
       <span class="bina-tag" style="background:${bc}22;color:${bc};flex-shrink:0">${esc(e.bina)}</span>
       ${e.kat?`<span class="t-meta" style="flex-shrink:0">Kat ${esc(e.kat)}</span>`:''}
-      ${e.createdBy?`<span class="t-meta" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${icoUserSm()} ${esc(e.createdBy)}</span>`:''}
+      ${e.createdBy?`<span class="t-meta" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${icoUserSm()} ${esc(kisiAd(e.createdBy))}</span>`:''}
       <b style="margin-left:auto;white-space:nowrap;font-family:var(--mono);font-size:12px">${fmtNum(e.miktar)} <span class="t-meta">${esc(e.birim||'')}</span></b>
     </div>`;
   }).join('')+(raps.length>30?`<p class="matd-empty">+ ${raps.length-30} eski kayit daha</p>`:''):`<p class="matd-empty">Bu urun icin montaj (saha raporu) kaydi yok.</p>`;
@@ -17277,7 +17396,7 @@ function orderIadeHtml(o){
     const rz=iadeSatirlari(ia).map(r=>`<span class="cat-tag inv-iade-tag" title="${esc(r.code||'')} · bu miktar alimdan dusuldu">${esc(r.ad||r.code||'?')} · <b>${fmtNum(Number(r.qty)||0)}</b> ${esc(r.unit||'')}</span>`).join('');
     return `<div class="inv-iade-row">
       <div class="inv-iade-h"><b>${esc(ia.no||'IADE')}</b>
-        <span>${fmtDate(ia.tarih)}${ia.olusturan?' · '+esc(ia.olusturan):''}</span>
+        <span>${fmtDate(ia.tarih)}${ia.olusturan?' · '+esc(kisiAd(ia.olusturan)):''}</span>
         <span class="inv-iade-mik">${fmtNum(iadeToplam(ia))} birim</span>
         ${ia.pdf?`<button class="pdf-pill" onclick="event.stopPropagation();openIadePdf('${o.id}','${ia.id}')" title="${esc(ia.pdf.name||'belge')}">${icoDoc()} Iade PDF</button>`:''}
         ${can('delete')?`<button class="mini-btn del" title="Iadeyi sil - miktar alima geri eklenir" onclick="event.stopPropagation();iadeSil('${o.id}','${ia.id}')">${icoTrash()}</button>`:''}</div>
@@ -20241,7 +20360,7 @@ function rIsgGroupHtml(items){
   if(!items.length) return '';
   const rows=items.map(e=>{
     const bolB=e.ekip?ekipBolumBadge(e.ekip):'';
-    const meta=[e.bina?esc(e.bina):'', e.ekip?esc(shortEkip(e.ekip)):'', e.createdBy?`${icoUserSm()} ${esc(e.createdBy)}`:''].filter(Boolean).join(' · ');
+    const meta=[e.bina?esc(e.bina):'', e.ekip?esc(shortEkip(e.ekip)):'', e.createdBy?`${icoUserSm()} ${esc(kisiAd(e.createdBy))}`:''].filter(Boolean).join(' · ');
     return `<div class="rap-row">
       <div style="flex:1;min-width:0"><div class="rap-mat">${esc(e.malzeme)} ${bolB}</div><div class="rap-meta">${meta}${e.notlar?` · <i title="${esc(e.notlar)}">not</i>`:''}</div></div>
       <div class="rap-qty">${fmtNum(e.miktar)} <span>adam/gun</span></div>
@@ -20362,7 +20481,7 @@ function rGroupHtml(g){
   const bcol=buildingColor(g.bina);
   const grpCreators=rCreators(g.items); // gruptaki essiz olusturan kisiler
   let rows='';
-  g.items.forEach(e=>{ const metaBits=[e.kat?`Kat ${esc(e.kat)}`:'', (e.kot!=null&&e.kot!=='')?`Kot ${esc(e.kot)}`:'', e.ekip?esc(shortEkip(e.ekip)):'', e.createdBy?`${icoUserSm()} ${esc(e.createdBy)}`:''].filter(Boolean).join(' · ');
+  g.items.forEach(e=>{ const metaBits=[e.kat?`Kat ${esc(e.kat)}`:'', (e.kot!=null&&e.kot!=='')?`Kot ${esc(e.kot)}`:'', e.ekip?esc(shortEkip(e.ekip)):'', e.createdBy?`${icoUserSm()} ${esc(kisiAd(e.createdBy))}`:''].filter(Boolean).join(' · ');
     // ALT: ana urun yerine alternatifi montajlanmis kayit - miktar ana kalemin montajina sayilir
     const _altSp=e.altId?(DB.proje.specs||[]).find(s=>s.id===e.specId):null;
     const altTag=e.altId?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)55" title="Alternatif urunle montaj${_altSp?' - ilerleme ana kaleme sayilir: '+esc(_altSp.name):''}">ALT</span>`:'';
@@ -20382,9 +20501,9 @@ function rGroupHtml(g){
   const ortakVardiya=g.items[0]?g.items[0].vardiya:'';
   // olusturan kisi rozeti: tek kisi ise adi, birden fazla ise "N kisi" - tiklaninca kullanici girisleri acilir
   const creatorTag = grpCreators.length===1
-    ? `<span class="rap-creator" title="Olusturan - girislerini gormek icin tikla" onclick="openRaporUserModal('${esc(grpCreators[0])}')">${icoUserSm()} ${esc(grpCreators[0])}</span>`
+    ? `<span class="rap-creator" title="Olusturan - girislerini gormek icin tikla" onclick="openRaporUserModal('${esc(grpCreators[0])}')">${icoUserSm()} ${esc(kisiAd(grpCreators[0]))}</span>`
     : grpCreators.length>1
-      ? `<span class="rap-creator" title="Olusturanlar: ${esc(grpCreators.join(', '))} - tikla" onclick="openRaporUserModal()">${icoUserSm()} ${grpCreators.length} kisi</span>`
+      ? `<span class="rap-creator" title="Olusturanlar: ${esc(grpCreators.map(kisiAd).join(', '))} - tikla" onclick="openRaporUserModal()">${icoUserSm()} ${grpCreators.length} kisi</span>`
       : '';
   // grup silme: sadece silebilecegi kayit varsa goster (admin hepsi, digerleri yalniz kendi kayitlari)
   const tarih=g.items[0]?g.items[0].tarih:'';
@@ -20570,8 +20689,10 @@ function openRaporUserModal(name){
     title='Kim Girdi?'; sub=keys.length?`${all.length} kalem · ${keys.filter(k=>k!=='__unknown').length} kullanici`:'';
     body = keys.length ? `<div class="usr-list">`+keys.map(k=>{
       const m=map[k]; const unknown=k==='__unknown';
-      const nm=unknown?'Olusturani bilinmiyor':k;
-      const ini=unknown?'?':k.slice(0,2).toUpperCase();
+      /* ANAHTAR k = GIRIS ADI ve oyle kalir: filtre de (e.createdBy===name) ona
+         bakar. Cozulen yalnizca gorunen ad ve bas harfler. */
+      const nm=unknown?'Olusturani bilinmiyor':kisiAd(k);
+      const ini=unknown?'?':nm.slice(0,2).toUpperCase();
       return `<button class="usr-item ${unknown?'unknown':''}" onclick="openRaporUserModal('${esc(k)}')">
         <span class="usr-avatar">${esc(ini)}</span>
         <span style="min-width:0"><span class="usr-name" style="display:block">${esc(nm)}</span><span class="usr-sub">${m.days.size} gun · son giris ${m.last?fmtDate(m.last):'-'}</span></span>
@@ -20580,7 +20701,7 @@ function openRaporUserModal(name){
   } else {
     const unknown=name==='__unknown';
     const items=all.filter(e=>unknown?!e.createdBy:e.createdBy===name);
-    title=unknown?'Olusturani Bilinmiyor':name;
+    title=unknown?'Olusturani Bilinmiyor':kisiAd(name);
     sub=`${items.length} kalem · ${new Set(items.map(e=>e.tarih).filter(Boolean)).size} gun`;
     const note=unknown?`<div class="t-meta" style="margin-bottom:10px">Bu kayitlar, olusturan kisi ozelligi eklenmeden once girilmisti; yeni girislerde olusturan otomatik kaydedilir.</div>`:'';
     const byDate={};
@@ -20715,7 +20836,7 @@ function _rsilGunler(){
     const d=e.tarih||'?';
     if(!m.has(d)) m.set(d,{tarih:d,kayit:0,isg:0,stok:0,binalar:new Set(),kisiler:new Set()});
     const o=m.get(d); o.kayit++; if(e.isgucu)o.isg++; if(e._moveId)o.stok++;
-    if(e.bina)o.binalar.add(e.bina); if(e.createdBy)o.kisiler.add(e.createdBy);
+    if(e.bina)o.binalar.add(e.bina); if(e.createdBy)o.kisiler.add(kisiAd(e.createdBy));
   });
   return [...m.values()].sort((a,b)=>String(b.tarih).localeCompare(String(a.tarih)));
 }
@@ -21464,7 +21585,7 @@ function exportRaporExcel(){
       specKalemi,
       e.kat||'', e.kot||'',
       e.malzeme, e.miktar, e.birim||'',
-      e.adamSayisi||'', e.vardiya||'GUNDUZ', e.notlar||'', e.createdBy||''
+      e.adamSayisi||'', e.vardiya||'GUNDUZ', e.notlar||'', kisiAd(e.createdBy)
     ]);
   });
   const ws=XLSX.utils.aoa_to_sheet(rows);
@@ -26536,7 +26657,7 @@ function ihtDurumu(x){ return (x&&x.durum==='tamam')?'tamam':'acik'; }
 function ihtBinaEsler(x,bina){ return !bina || x.bina===bina || ((x.lines||[]).some(l=>l&&l.bina===bina)); }
 function ihtAramaEsler(x,q){
   if(!q) return true;
-  return matchText([x.kod,x.ad,x.bina,x.aciklama,x.olusturan,
+  return matchText([x.kod,x.ad,x.bina,x.aciklama,x.olusturan,kisiAd(x.olusturan),
     ...((x.lines||[]).map(l=>[l.ad,l.code,l.marka,l.bina,l.kat,l.konum].filter(Boolean).join(' ')))].join(' '),q);
 }
 function ihtFiltreVar(){ return !!(IHTV.q||IHTV.bina||IHTV.durum); }
@@ -26564,7 +26685,7 @@ function renderIhtiyacList(){
     const hedef=ihtHedefOzet(x);
     rows+=`<tr>
       <td><span class="iht-ad">${esc(x.ad||'(adsiz liste)')}<span class="iht-durum ${tamam?'tamam':'acik'}" style="margin-left:7px">${tamam?'TAMAM':'ACIK'}</span>
-        <i>${x.kod?`<b class="iht-kod">${esc(x.kod)}</b> · `:''}${esc(x.olusturan||'-')}${x.aciklama?' · '+esc(x.aciklama):''}</i></span></td>
+        <i>${x.kod?`<b class="iht-kod">${esc(x.kod)}</b> · `:''}${esc(x.olusturan?kisiAd(x.olusturan):'-')}${x.aciklama?' · '+esc(x.aciklama):''}</i></span></td>
       <td class="t-meta">${esc(fmtDate(x.tarih))}</td>
       <td class="t-meta">${esc(x.bina||'-')}</td>
       <td class="t-qty">${fmtNum(tt.kalem)} kalem <span style="color:var(--mute)">· ${fmtNum(tt.miktar)}</span>${
@@ -27175,6 +27296,30 @@ function ihtDetaySatirYuksekligi(l){
 const IHT_GRP_MM=10;                         // .gh grup basligi yuksekligi
 const IHT_GOVDE_MM=IHT_PDF_ROWS*IHT_ROW_MM;  // 215mm
 
+/* ACIKLAMA KUTUSU. Liste bilgisindeki "Aciklama" alani ciktinin SON sayfasinda,
+   toplam serisinin hemen ustunde basilir: listeyi acan gerekce (orn. "proje
+   degisikligi sebebiyle ihtiyac artti") kagida gecmiyor, tedarikciye ayrica
+   soylenmek zorunda kaliniyordu. SON sayfa secildi cunku gerekce listenin
+   OZETIDIR - once malzeme okunur, sonra sebebi; ayrica her sayfada tekrarlanmasi
+   ciktiyi gurultulu yapardi.
+   Kutunun kac mm tutacagi ONCEDEN olculur: olculmeseydi dolu bir son sayfada
+   kutu kagidi asar, arkaya bombos bir yaprak dusururdu - tutanak ciktisinda
+   yasanan ayni tuzak (bkz. notAyriSayfa). Sigmiyorsa govde satirlari
+   kisilmaz; kutu toplam serisiyle birlikte KENDI sayfasina iner.
+   Olculer COMERT: fazla tahmin sayfanin dibinde bos yer birakir, eksik tahmin
+   bos yaprak dusurur - kacinilmak istenen tam olarak ikincisi. */
+const IHT_NOT_KAR_MM=1.72;   // 8pt'de karakter basina yaklasik genislik
+const IHT_NOT_SATIR_MM=4.1;  // bir metin satirinin yuksekligi (8pt x 1.45)
+const IHT_NOT_PAY_MM=9.5;    // ust cizgi + pay + etiket satiri
+function ihtNotYuksekligi(metin){
+  const t=String(metin==null?'':metin).trim();
+  if(!t) return 0;
+  const ic=210-2*IHT_KENAR_MM;                          // kutunun ic genisligi
+  const satir=t.split(/\n/).reduce((a,r)=>
+    a+Math.max(1,Math.ceil(r.trim().length*IHT_NOT_KAR_MM/ic)),0);
+  return satir*IHT_NOT_SATIR_MM+IHT_NOT_PAY_MM;
+}
+
 /* KAT DETAYI: satirlar bina+kat kumelerine ayrilir. Kume sirasi listedeki ILK
    GORULME sirasidir, alfabetik degil: kullanici satir sirasini elle
    duzenleyebiliyor (bkz. ihtSatirTasi), o emek ciktida da korunmali. */
@@ -27558,6 +27703,17 @@ body{margin:0;background:var(--pg);color:var(--tx);
 .gh b i{font-style:normal;font-weight:400;color:var(--fn);margin-left:1.6mm;letter-spacing:.6px}
 .gh span{font-size:6pt;font-weight:500;color:var(--mu);white-space:nowrap}
 .ih-spacer{flex:1}
+/* ACIKLAMA: kart degil, toplam serisiyle AYNI dil - tek sac cizgi, uzerinde
+   kucuk bir etiket. Cerceve/zemin verilmedi: sayfadaki tek murekkep disiplini
+   (bkz. :root) kutulu bir blokla bozulurdu. Metin sayfanin dibine, toplamin
+   hemen ustune oturur - govdenin altina yapistirilsaydi yarim dolu bir son
+   sayfada havada asili kalirdi. */
+.ih-not{border-top:.6px solid var(--hr);margin-top:3mm;padding-top:2.2mm}
+.ih-not h6{margin:0 0 1.1mm;font-size:5.8pt;letter-spacing:.6px;color:var(--fn);
+  text-transform:uppercase;font-weight:600}
+.ih-not h6 i{font-style:normal;font-weight:500}
+.ih-not p{margin:0;font-size:8pt;line-height:1.45;color:var(--tx);
+  white-space:pre-wrap;overflow-wrap:anywhere}
 /* TOPLAM: kart degil, tablonun altina cekilmis tek sac cizgi ve sagda rakamlar */
 .ih-tot{display:flex;justify-content:flex-end;gap:11mm;border-top:.6px solid var(--hr);
   margin-top:3mm;padding-top:2.2mm}
@@ -27683,27 +27839,48 @@ function ihtPdfHtml(x,kip){
       if(h.bina&&binalar.indexOf(h.bina)<0) binalar.push(h.bina); }));
     ozetTekBina=binalar.length===1?binalar[0]:'';
     for(let i=0;i<satirlar.length;i+=IHT_PDF_ROWS){
-      govdeler.push(satirlar.slice(i,i+IHT_PDF_ROWS)
-        .map((l,j)=>ihtPdfRow(l,i+j+1,ihtOzetKatMetni(l._hedefler,!!ozetTekBina),0,kip)).join(''));
+      const dilim=satirlar.slice(i,i+IHT_PDF_ROWS);
+      govdeler.push({ mm:dilim.length*IHT_ROW_MM, html:dilim
+        .map((l,j)=>ihtPdfRow(l,i+j+1,ihtOzetKatMetni(l._hedefler,!!ozetTekBina),0,kip)).join('') });
     }
   } else {
     /* KAT DETAYI: her kume kendi basligiyla, sayfalama milimetre olcerek. */
     let n=0;
     ihtPdfSayfala(ihtPdfGrupla(ls),ihtDetaySatirYuksekligi).forEach(parcalar=>{
-      govdeler.push(parcalar.map(p=>{
+      /* Sayfanin doluluk olcusu BURADA toplanir - sayfalayici ayni hesabi zaten
+         yapiyor ama sonucunu dondurmuyor; aciklama kutusunun sigip sigmadigi
+         ancak bu sayi bilinirse sorulabilir. */
+      let dolu=0;
+      govdeler.push({ mm:0, html:parcalar.map(p=>{
+        dolu+=IHT_GRP_MM+p.satirlar.reduce((a,l)=>a+ihtDetaySatirYuksekligi(l),0);
         const gm=p.grup.satirlar.reduce((a,l)=>a+ihtSayi(l.qty),0);
         return `<div class="grp">
           <div class="gh"><b>${p.grup.etiket?esc(p.grup.etiket):'Hedef belirtilmemiş / Без назначения'}${p.devam?'<i>(devam / продолжение)</i>':''}</b>
             <span>${fmtNum(p.grup.satirlar.length)} kalem &nbsp;·&nbsp; ${fmtNum(gm)} adet</span></div>
           ${p.satirlar.map(l=>ihtPdfRow(l,++n,ihtOdalar(l),ihtDetaySatirYuksekligi(l),kip)).join('')}
         </div>`;
-      }).join(''));
+      }).join('') });
+      govdeler[govdeler.length-1].mm=dolu;
     });
   }
-  if(!govdeler.length) govdeler.push('');
+  if(!govdeler.length) govdeler.push({mm:0,html:''});
+  /* Aciklama son sayfaya sigmiyorsa BOS bir sayfa acilir: kutu ve toplam serisi
+     oraya iner. Alternatif -- son sayfadan satir dusurmek -- denenmedi: satir
+     sayfalamasi milimetre olcerek yukaridan asagi kuruluyor, sondan satir
+     kopartmak grup basligi/"devam" mantigini geri sarmak demekti. */
+  const notMetni=String((x&&x.aciklama)||'').trim();
+  const notMm=ihtNotYuksekligi(notMetni);
+  if(notMm && govdeler[govdeler.length-1].mm+notMm>IHT_GOVDE_MM+0.001)
+    govdeler.push({mm:0,html:''});
   const toplam=govdeler.length;
 
-  const sayfalar=govdeler.map((govde,bi)=>{
+  const sayfalar=govdeler.map((g,bi)=>{
+    const govde=g.html;
+    // aciklama YALNIZ son sayfada: her yaprakta tekrarlamasi ciktiyi gurultulu yapardi
+    const notBlok=(notMm&&bi===toplam-1)?`<div class="ih-not">
+        <h6>AÇIKLAMA <i>/ ПРИМЕЧАНИЕ</i></h6>
+        <p>${esc(notMetni)}</p>
+      </div>`:'';
     // toplam serisi YALNIZ son sayfada: ara sayfalarda "toplam" yaniltici olurdu
     const tot=(bi===toplam-1)?`<div class="ih-tot">
         <div><span>${esc(K.sayacAd)}</span><b>${fmtNum(sayac)}</b></div>
@@ -27719,16 +27896,17 @@ function ihtPdfHtml(x,kip){
         </div>
         <div class="ih-meta"><b>${esc(x.kod||x.ad||'-')}</b>
           ${x.kod&&x.ad?esc(x.ad)+' &nbsp;·&nbsp; ':''}${esc(fmtDate(x.tarih))}${x.bina?' &nbsp;·&nbsp; '+esc(x.bina):''}
-          ${x.olusturan?'<br><i>'+esc(x.olusturan)+(kisiMeslek(x.olusturan)?' &nbsp;·&nbsp; '+esc(kisiMeslek(x.olusturan)):'')+'</i>':''}</div>
+          ${x.olusturan?'<br><i>'+esc(kisiAd(x.olusturan))+(kisiMeslek(x.olusturan)?' &nbsp;·&nbsp; '+esc(kisiMeslek(x.olusturan)):'')+'</i>':''}</div>
       </div>
-      <div class="ih-cols">
+      ${govde?`<div class="ih-cols">
         <div class="c1">#<i>№</i></div>
         <div class="c2">GÖRSEL<i>ФОТО</i></div>
         <div class="c3">MALZEME VE KÜNYE<i>МАТЕРИАЛ И РЕКВИЗИТЫ</i></div>
         <div class="c4">${K.c4[0]}${ozetTekBina?' · '+esc(ozetTekBina):''}<i>${K.c4[1]}</i></div>
-        <div class="c5">İSTENEN<i>КОЛ-ВО</i></div></div>
+        <div class="c5">İSTENEN<i>КОЛ-ВО</i></div></div>`:''}
       ${govde}
       <div class="ih-spacer"></div>
+      ${notBlok}
       ${tot}
       <div class="ph-foot">${antetAltLogo()}<span>İHTİYAÇ LİSTESİ &nbsp;/&nbsp; ЗАЯВКА НА МАТЕРИАЛЫ &nbsp;·&nbsp; ${K.ad} / ${K.ru}</span>
         <span>${esc(damga)}</span>
@@ -29026,7 +29204,7 @@ function renderFaturaDetay(){
     <div class="tut-card">
       <h4>Kayit Bilgisi</h4>
       <div class="fdet-kunye">
-        <div><div class="et">Kaydeden</div><div class="dg">${esc(f.olusturan||'-')}${f.olusturmaTs?' · '+esc(fmtDate(f.olusturmaTs)):''}</div></div>
+        <div><div class="et">Kaydeden</div><div class="dg">${esc(f.olusturan?kisiAd(f.olusturan):'-')}${f.olusturmaTs?' · '+esc(fmtDate(f.olusturmaTs)):''}</div></div>
         ${f.guncelleyen?`<div><div class="et">Son Duzenleyen</div><div class="dg">${esc(f.guncelleyen)}${f.guncellemeTs?' · '+esc(fmtDate(f.guncellemeTs)):''}</div></div>`:''}
         ${f.kesinTs?`<div><div class="et">Kesinlestiren</div><div class="dg">${esc(f.kesinBy||'-')} · ${esc(fmtDate(f.kesinTs))}</div></div>`:''}
         ${f.kilitTs?`<div><div class="et">Kilitleyen</div><div class="dg" style="color:var(--amber)">${esc(f.kilitBy||'-')} · ${esc(fmtDate(f.kilitTs))}</div></div>`:''}
@@ -30586,7 +30764,7 @@ function exportFaturaXlsx(){
     const bas=[FAT_KAYIT_DURUM[fatDurumu(f)].ad, fatKilitSonrasiDegisti(f)?'EVET':'', f.no||'', fmtDate(f.tarih), fatSaatGoster(f), fatCompany(f)||'', f.senaryo||'', f.faturaTipi||'',
       f.irsaliyeNo||'', f.irsaliyeTarihi?fmtDate(f.irsaliyeTarihi):'', f.ettn||'',
       f.paraBirimi||'TRY', f.kur||''];
-    const kuyruk=[f.beyanTutar||'', Number(top.toplam.toFixed(2)), f.not||'', f.olusturan||''];
+    const kuyruk=[f.beyanTutar||'', Number(top.toplam.toFixed(2)), f.not||'', kisiAd(f.olusturan)];
     if(!sat.length){ aoa.push(bas.concat(['','','','',0,'',0,0,0,0,0,0,0,''],kuyruk)); return; }
     sat.forEach((r,i)=>{ const h=fatSatirHesap(r);
       aoa.push(bas.concat([i+1, r.code||'', r.ad||'', r.unit||'',
@@ -30982,7 +31160,7 @@ function fatKitapKur(dil){
     ikili(L.eIrsaliye, (f.irsaliyeNo||'-')+(f.irsaliyeTarihi?'  ·  '+fmtDate(f.irsaliyeTarihi):''),
       B.deger, L.eBelgeDurum, durAd+(fatKilitSonrasiDegisti(f)?'  ·  '+L.kilitDegisti:''),
       fatKilitSonrasiDegisti(f)?B.uyari:B.deger);
-    ikili(L.eEttn, f.ettn||'-', B.kod, L.eKaydeden, f.olusturan||'-');
+    ikili(L.eEttn, f.ettn||'-', B.kod, L.eKaydeden, f.olusturan?kisiAd(f.olusturan):'-');
     if(String(f.not||'').trim()){
       const n=s.satir([{v:L.eNot,b:B.etiket},{v:'',b:B.etiket},{v:String(f.not).trim(),b:B.not},
         ...new Array(14).fill({v:'',b:B.not})],{h:34});

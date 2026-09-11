@@ -3,6 +3,7 @@ import { requireAdmin } from '../lib/auth.js'
 import { hashPassword, sifreKurallari } from '../lib/password.js'
 import { aktifOrg } from '../lib/org.js'
 import { denetimGorebilir, tokenKullanici } from '../lib/yetki.js'
+import { adUyumlu } from '../lib/adSutunu.js'
 
 // GET  /api/users  - AKTIF ORGANIZASYONUN kullanicilarini listeler (sifresiz)
 // POST /api/users  - aktif organizasyonda yeni kullanici olusturur
@@ -31,7 +32,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { username, password, role, sections, buildings, permissions, tel, email, meslek } = req.body || {}
+    const { username, password, role, sections, buildings, permissions, tel, email, meslek, ad } = req.body || {}
     if (!username || !password) { res.status(400).json({ error: 'Kullanici adi ve sifre gerekli' }); return }
     // Asama 4: yeni sifreler asgari kuraldan gecer (bkz. lib/password.js sifreKurallari)
     const kuralHatasi = sifreKurallari(password, username)
@@ -60,10 +61,12 @@ export default async function handler(req, res) {
          bu uctan verilemez - verilebilseydi herhangi bir sirket yoneticisi kendine
          butun organizasyonlari acan bir hesap yaratabilirdi. O bayrak yalnizca
          veritabanindan elle konur (bkz. migration_org_1.sql). */
-      const { data, error } = await supabaseAdmin
-        .from('users')
-        .insert([{ username, password: hashed, role, sections, buildings, permissions: izinler, tel: tel || '', email: email || '', meslek: meslek || '', org_id: org, is_super: false }])
-        .select().single()
+      // adUyumlu: users.ad sutunu henuz eklenmemisse kayit adsiz gecer (bkz. lib/adSutunu.js)
+      const { data, error } = await adUyumlu(adDahil => {
+        const satir = { username, password: hashed, role, sections, buildings, permissions: izinler, tel: tel || '', email: email || '', meslek: meslek || '', org_id: org, is_super: false }
+        if (adDahil) satir.ad = ad || ''
+        return supabaseAdmin.from('users').insert([satir]).select().single()
+      })
       if (error) throw error
       const safe = { ...data }; delete safe.password
       res.status(201).json(safe)

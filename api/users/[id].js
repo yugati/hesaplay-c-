@@ -3,6 +3,7 @@ import { requireAdmin } from '../../lib/auth.js'
 import { hashPassword, sifreKurallari } from '../../lib/password.js'
 import { aktifOrg, VARSAYILAN_ORG } from '../../lib/org.js'
 import { denetimGorebilir, tokenKullanici } from '../../lib/yetki.js'
+import { adUyumlu } from '../../lib/adSutunu.js'
 
 // PUT    /api/users/:id - kullanici guncelle (sifre bos birakilirsa degismez)
 // DELETE /api/users/:id - kullanici sil
@@ -35,7 +36,7 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
-    const { password, role, sections, buildings, permissions, tel, email, meslek } = req.body || {}
+    const { password, role, sections, buildings, permissions, tel, email, meslek, ad } = req.body || {}
     const update = { role, sections, buildings }
     if (permissions !== undefined) update.permissions = permissions
 
@@ -79,6 +80,10 @@ export default async function handler(req, res) {
     if (tel !== undefined) update.tel = tel
     if (email !== undefined) update.email = email
     if (meslek !== undefined) update.meslek = meslek
+    /* GORUNEN AD. Yonetici de girebilir (yeni hesap acarken kisinin adi bilinir),
+       ama kullanici da kendi degistirebilir - bkz. api/profil.js. Giris adi
+       (username) buradan da degismez: kimlik anahtaridir. */
+    if (ad !== undefined) update.ad = String(ad).trim().slice(0, 60)
     if (password) {
       // Asama 4: sifre kurali. Kullanici adi hedef kayittan geliyor ki "sifre =
       // kullanici adi" durumu da yakalansin.
@@ -87,8 +92,12 @@ export default async function handler(req, res) {
       update.password = await hashPassword(password)
     }
     try {
-      const { data, error } = await supabaseAdmin
-        .from('users').update(update).eq('id', id).eq('org_id', org).select().single()
+      // adUyumlu: users.ad sutunu henuz eklenmemisse guncelleme adsiz gecer (bkz. lib/adSutunu.js)
+      const { data, error } = await adUyumlu(adDahil => {
+        const govde = { ...update }
+        if (!adDahil) delete govde.ad
+        return supabaseAdmin.from('users').update(govde).eq('id', id).eq('org_id', org).select().single()
+      })
       if (error) throw error
       const safe = { ...data }; delete safe.password
       res.status(200).json(safe)

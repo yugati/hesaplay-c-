@@ -13,6 +13,8 @@ import {
   sbCreateUser,
   sbUpdateUser,
   sbDeleteUser,
+  sbProfilGuncelle,
+  sbKisiDizin,
   // Davetler
   sbListInvites,
   sbCreateInvite,
@@ -248,6 +250,8 @@ window.sbGetAllUsers       = sbGetAllUsers
 window.sbCreateUser        = sbCreateUser
 window.sbUpdateUser        = sbUpdateUser
 window.sbDeleteUser        = sbDeleteUser
+window.sbProfilGuncelle    = sbProfilGuncelle
+window.sbKisiDizin         = sbKisiDizin
 
 // ─── Davetler ────────────────────────────────────────────────────────────────
 window.sbListInvites       = sbListInvites

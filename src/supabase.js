@@ -98,20 +98,41 @@ export async function sbGetAllUsers() {
   return authFetch('/api/users')
 }
 
-export async function sbCreateUser({ username, password, role, sections, buildings, permissions, tel, email, meslek }) {
+export async function sbCreateUser({ username, password, role, sections, buildings, permissions, tel, email, meslek, ad }) {
   return authFetch('/api/users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, role, sections, buildings, permissions: permissions || {}, tel, email, meslek }),
+    body: JSON.stringify({ username, password, role, sections, buildings, permissions: permissions || {}, tel, email, meslek, ad }),
   })
 }
 
-export async function sbUpdateUser(id, { password, role, sections, buildings, permissions, tel, email, meslek }) {
+export async function sbUpdateUser(id, { password, role, sections, buildings, permissions, tel, email, meslek, ad }) {
   return authFetch(`/api/users/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password, role, sections, buildings, permissions, tel, email, meslek }),
+    body: JSON.stringify({ password, role, sections, buildings, permissions, tel, email, meslek, ad }),
   })
+}
+
+/* KENDI HESABI - gorunen ad / telefon / e-posta / sifre (api/profil.js).
+   sbUpdateUser'dan AYRI durur cunku o uc YONETICI ister; burasi her kullanicinin
+   kendi kaydina, tokendeki kimlikle gider. Sifre degisikliginde mevcutSifre
+   zorunludur - acik kalmis bir ekranin hesabi devralmasini engeller. */
+export async function sbProfilGuncelle({ ad, tel, email, mevcutSifre, yeniSifre }) {
+  return authFetch('/api/profil', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ad, tel, email, mevcutSifre, yeniSifre }),
+  })
+}
+
+/* KISI DIZINI - [{username, ad, meslek}]. Gorunen adi ve unvani COZMEK icin
+   herkese aciktir (api/kisiler.js): "olusturan kisi" her ekranda gorunur ama
+   /api/users yalnizca yoneticiye acik oldugu icin saha personelinde SB_USERS
+   hep bos kalirdi. Hata YUTULMAZ - cagiran taraf bos dizinle devam eder ve
+   ad yerine kullanici adi gosterilir (index.html kisiAd). */
+export async function sbKisiDizin() {
+  return authFetch('/api/kisiler')
 }
 
 export async function sbDeleteUser(id) {
