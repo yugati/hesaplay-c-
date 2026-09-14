@@ -5,12 +5,55 @@ import { signSession, SESSION_TTL_DEFAULT } from '../../../lib/auth.js'
 import { girisKilitli, hataliDeneme, basariliGiris, istekIp } from '../../../lib/girisKoruma.js'
 import { denetimYaz } from '../../../lib/denetim.js'
 
+const ROL_AD = { admin: 'Yonetici', izleyici: 'Izleyici', saha_personeli: 'Saha Personeli' }
+
 function kalanMetin(sn) {
   if (sn >= 60) { const d = Math.ceil(sn / 60); return d + ' dakika' }
   return sn + ' saniye'
 }
 
-// POST /api/davet/:token/kabul - KIMLIK DOGRULAMASIZ, herkese acik.
+// GET  /api/davet/:token       - davet onizleme
+// POST /api/davet/:token/kabul - daveti kabul edip hesap acar
+// Ikisi de KIMLIK DOGRULAMASIZ, herkese acik. Eskiden ayri dosyalardi
+// (davet/[token].js + davet/[token]/kabul.js) - api/users/[[...id]].js'teki
+// notla ayni sebeple (Vercel Hobby 12 fonksiyon siniri) tek dosyada birlesti;
+// URL semasi degismedi.
+export default async function handler(req, res) {
+  const { token } = req.query
+  const actionParam = req.query.action
+  const action = Array.isArray(actionParam) ? actionParam[0] : actionParam
+  if (!token) { res.status(400).json({ error: 'token gerekli' }); return }
+
+  if (!action) return davetOnizle(req, res, token)
+  if (action === 'kabul') return davetKabul(req, res, token)
+  res.status(404).json({ error: 'Bulunamadi' })
+}
+
+// Davet kabul ekrani, form gostermeden once daveti onizler: hangi organizasyon,
+// hangi rol, kime gonderilmis. Token gecersiz/kullanilmis/suresi gecmisse 404 -
+// bulunamadi ile "gecersiz token" arasinda fark gostermek saldirgan icin
+// bilgi sizdirir, o yuzden ayrilmiyor (login.js'teki "kullanici yok" mantigiyla ayni).
+async function davetOnizle(req, res, token) {
+  if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return }
+
+  try {
+    const { data: davet, error } = await supabaseAdmin
+      .from('invites').select('org_id, email, role, expires_at, used_at')
+      .eq('token_hash', tokenHash(token)).maybeSingle()
+    if (error) throw error
+    if (!davet || davet.used_at || new Date(davet.expires_at).getTime() < Date.now()) {
+      res.status(404).json({ error: 'Davet linki gecersiz veya suresi dolmus' })
+      return
+    }
+    const { data: orgRow } = await supabaseAdmin.from('organizations').select('data').eq('id', davet.org_id).maybeSingle()
+    const orgAd = (orgRow && orgRow.data && orgRow.data.ad) || davet.org_id
+    res.status(200).json({ orgAd, email: davet.email, role: davet.role, roleAd: ROL_AD[davet.role] || davet.role })
+  } catch (e) {
+    console.error('davet GET basarisiz', e)
+    res.status(500).json({ error: 'Sunucu hatasi' })
+  }
+}
+
 // Gecerli bir davetle kendi kullanici adi/sifresini secip hesabini acar ve
 // oturum tokeniyle otomatik giris yapmis olarak doner - api/login.js'teki
 // basariyla-giris akisinin ayni sonucu.
@@ -18,11 +61,9 @@ function kalanMetin(sn) {
 // KABA KUVVET: kullanici adi henuz yokken tek hedef tokenin kendisi (birisi
 // rastgele tokenler deneyerek gecerli bir davet bulmaya calisabilir). Ayni
 // lib/girisKoruma.js kilit mekanizmasi IP anahtariyla burada da kullanilir.
-export default async function handler(req, res) {
+async function davetKabul(req, res, token) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return }
-  const { token } = req.query
   const { username, password } = req.body || {}
-  if (!token) { res.status(400).json({ error: 'token gerekli' }); return }
   if (!username || !password) { res.status(400).json({ error: 'Kullanici adi ve sifre gerekli' }); return }
 
   const ip = istekIp(req)
