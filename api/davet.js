@@ -1,10 +1,10 @@
-import { supabaseAdmin } from '../../../lib/supabaseAdmin.js'
-import { tokenHash } from '../../../lib/invites.js'
-import { hashPassword, sifreKurallari } from '../../../lib/password.js'
-import { signSession, SESSION_TTL_DEFAULT } from '../../../lib/auth.js'
-import { girisKilitli, hataliDeneme, basariliGiris, istekIp } from '../../../lib/girisKoruma.js'
-import { denetimYaz } from '../../../lib/denetim.js'
-import { ilkTasari, VARSAYILAN_TASARI } from '../../../lib/tasari.js'
+import { supabaseAdmin } from '../lib/supabaseAdmin.js'
+import { tokenHash } from '../lib/invites.js'
+import { hashPassword, sifreKurallari } from '../lib/password.js'
+import { signSession, SESSION_TTL_DEFAULT } from '../lib/auth.js'
+import { girisKilitli, hataliDeneme, basariliGiris, istekIp } from '../lib/girisKoruma.js'
+import { denetimYaz } from '../lib/denetim.js'
+import { ilkTasari, VARSAYILAN_TASARI } from '../lib/tasari.js'
 
 const ROL_AD = { admin: 'Yonetici', izleyici: 'Izleyici', saha_personeli: 'Saha Personeli' }
 
@@ -16,9 +16,11 @@ function kalanMetin(sn) {
 // GET  /api/davet/:token       - davet onizleme
 // POST /api/davet/:token/kabul - daveti kabul edip hesap acar
 // Ikisi de KIMLIK DOGRULAMASIZ, herkese acik. Eskiden ayri dosyalardi
-// (davet/[token].js + davet/[token]/kabul.js) - api/users/[[...id]].js'teki
-// notla ayni sebeple (Vercel Hobby 12 fonksiyon siniri) tek dosyada birlesti;
-// URL semasi degismedi.
+// (davet/[token].js + davet/[token]/kabul.js) - api/users.js'teki notla ayni
+// sebeple (Vercel Hobby 12 fonksiyon siniri) tek dosyada birlesti; URL semasi
+// degismedi. token ve action vercel.json rewrite'lariyla sorgu olarak gelir:
+//   /api/davet/:token        -> /api/davet?token=:token
+//   /api/davet/:token/kabul  -> /api/davet?token=:token&action=kabul
 export default async function handler(req, res) {
   const { token } = req.query
   const actionParam = req.query.action

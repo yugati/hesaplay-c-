@@ -17,16 +17,94 @@ const SERVER_ENV_KEYS = ['VITE_SUPABASE_URL', 'APP_SUPABASE_SECRET_KEY', 'SESSIO
 function localApiPlugin() {
   const apiDir = path.resolve(import.meta.dirname, 'api')
 
-  // /api/users/123 -> api/users/[id].js + { id: '123' } ; /api/login -> api/login.js
+  /* ───────────────────────────────────────────────────────────────────────
+     VERCEL YONLENDIRMESININ YEREL KARSILIGI — CANLIYLA BIREBIR AYNI KURALLAR
+
+     BU TAKLIT VERCEL'DEN HOSGORULU OLAMAZ. 14 Eylul 2026'da (e99c02e) uclar
+     Next.js tarzi optional catch-all dosyalara ([[...id]].js) birlestirildi.
+     Bu dosyadaki taklit o deseni Next.js gibi cozdugu icin yerelde her sey
+     calisti; oysa Next.js OLMAYAN bir Vercel projesinde bu desen YOK:
+     Vercel'in rota ureticisi (@vercel/fs-detectors createRouteFromPath +
+     getSegmentName) koseli parantezli her adi TEK segment sayar ve parametre
+     adini dis parantezleri soyarak verir - [[...id]] -> '[...id]'. Sonuc:
+       /api/users           rota yok -> 404  ("Kullanicilar yuklenemedi (404)")
+       /api/users/abc       calisir ama req.query.id bos -> PUT/DELETE 405
+       /api/davet/:t/kabul  req.query.action bos -> davet kabulu calismaz
+     Canli gunlerce bozuk kaldi, yerelde kimse goremedi.
+
+     O yuzden burada YALNIZCA Vercel'in gercekten yaptigi uygulanir:
+       1) api/<yol>.js birebir dosya (once dosya sistemi - Vercel sirasi)
+       2) Koseli parantezli klasor/dosya adi TEK segment eslesir; parametre adi
+          dis parantezlerin ici olur ([id] -> 'id'). Catch-all destegi yok,
+          cunku canlida da yok.
+       3) Dosya bulunamazsa vercel.json "rewrites" icindeki /api/ kurallari
+          (":ad" tek segment; hedefteki ?sorgu req.query'ye eklenir)
+     Tek fonksiyonda birden cok URL gerekiyorsa yol: duz dosya (api/users.js)
+     + vercel.json rewrite (/api/users/:id -> /api/users?id=:id).
+     ─────────────────────────────────────────────────────────────────────── */
+  const kokDizin = import.meta.dirname
+
+  function dizin(d) {
+    try { return fs.readdirSync(d, { withFileTypes: true }) } catch (e) { return [] }
+  }
+
+  // Vercel getSegmentName: '[id]' -> 'id', '[[...id]]' -> '[...id]', 'users' -> null
+  const parantezAdi = (ad) => (ad.startsWith('[') && ad.endsWith(']') ? ad.slice(1, -1) : null)
+
+  function ara(d, parca, params) {
+    const [bas, ...kalan] = parca
+    const girdiler = dizin(d)
+    if (kalan.length === 0) {
+      if (girdiler.some(e => e.isFile() && e.name === bas + '.js')) {
+        return { file: path.join(d, bas + '.js'), params }
+      }
+      for (const e of girdiler) {
+        const ad = e.isFile() && e.name.endsWith('.js') ? parantezAdi(e.name.slice(0, -3)) : null
+        if (ad !== null) return { file: path.join(d, e.name), params: { ...params, [ad]: bas } }
+      }
+      return null
+    }
+    if (girdiler.some(e => e.isDirectory() && e.name === bas)) {
+      const r = ara(path.join(d, bas), kalan, params)
+      if (r) return r
+    }
+    for (const e of girdiler) {
+      const ad = e.isDirectory() ? parantezAdi(e.name) : null
+      if (ad !== null) {
+        const r = ara(path.join(d, e.name), kalan, { ...params, [ad]: bas })
+        if (r) return r
+      }
+    }
+    return null
+  }
+
+  // /api/users -> api/users.js ; /api/me -> api/me.js
   function resolveApiFile(pathname) {
     const rel = pathname.replace(/^\/api\//, '').replace(/\/+$/, '')
-    if (!rel || rel.includes('..')) return null
-    const parts = rel.split('/')
-    const exact = path.join(apiDir, ...parts) + '.js'
-    if (fs.existsSync(exact)) return { file: exact, params: {} }
-    if (parts.length >= 2) {
-      const dyn = path.join(apiDir, ...parts.slice(0, -1), '[id].js')
-      if (fs.existsSync(dyn)) return { file: dyn, params: { id: decodeURIComponent(parts.at(-1)) } }
+    if (!rel) return null
+    const parts = rel.split('/').map(decodeURIComponent)
+    if (parts.some(x => !x || x === '.' || x === '..')) return null
+    return ara(apiDir, parts, {})
+  }
+
+  // /api/users/abc -> URL('/api/users?id=abc') ; eslesme yoksa null.
+  // vercel.json her istekte okunur: kural eklenince sunucuyu yeniden baslatmak gerekmez.
+  function yenidenYaz(pathname) {
+    let kurallar = []
+    try {
+      kurallar = JSON.parse(fs.readFileSync(path.join(kokDizin, 'vercel.json'), 'utf8')).rewrites || []
+    } catch (e) { return null }
+    for (const r of kurallar) {
+      if (!String(r.source).startsWith('/api/') || typeof r.destination !== 'string') continue
+      const adlar = []
+      const kalip = r.source.replace(/:(\w+)/g, (_, ad) => { adlar.push(ad); return '([^/]+)' })
+      const m = pathname.match(new RegExp('^' + kalip + '/?$'))
+      if (!m) continue
+      const hedef = r.destination.replace(/:(\w+)/g, (_, ad) => {
+        const i = adlar.indexOf(ad)
+        return i < 0 ? '' : m[i + 1]
+      })
+      return new URL(hedef, 'http://localhost')
     }
     return null
   }
@@ -54,13 +132,24 @@ function localApiPlugin() {
           return
         }
 
-        const match = resolveApiFile(url.pathname)
+        // Vercel sirasi: once dosya sistemi, bulunamazsa vercel.json rewrite'lari
+        let hedef = url
+        let match = resolveApiFile(url.pathname)
+        if (!match) {
+          const yeni = yenidenYaz(url.pathname)
+          if (yeni) { hedef = yeni; match = resolveApiFile(yeni.pathname) }
+        }
         if (!match) { sendJson(res, 404, { error: 'API bulunamadi: ' + url.pathname }); return }
 
         try {
           // Vercel'in handler'a sagladigi alanlari taklit et: req.query, req.body,
-          // res.status().json()
-          req.query = { ...Object.fromEntries(url.searchParams), ...match.params }
+          // res.status().json(). Istegin kendi sorgusu + rewrite hedefinin sorgusu
+          // (?id=...) + koseli parantezli yol parametreleri.
+          req.query = {
+            ...Object.fromEntries(url.searchParams),
+            ...(hedef !== url ? Object.fromEntries(hedef.searchParams) : {}),
+            ...match.params,
+          }
           if (req.method !== 'GET' && req.method !== 'HEAD') {
             const chunks = []
             for await (const c of req) chunks.push(c)

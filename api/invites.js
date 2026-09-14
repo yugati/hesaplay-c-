@@ -1,8 +1,8 @@
-import { supabaseAdmin } from '../../lib/supabaseAdmin.js'
-import { requireAdmin } from '../../lib/auth.js'
-import { aktifOrg } from '../../lib/org.js'
-import { uretToken, tokenHash, davetLinki, DAVET_GECERLILIK_MS } from '../../lib/invites.js'
-import { epostaGonder, davetEpostaHtml } from '../../lib/email.js'
+import { supabaseAdmin } from '../lib/supabaseAdmin.js'
+import { requireAdmin } from '../lib/auth.js'
+import { aktifOrg } from '../lib/org.js'
+import { uretToken, tokenHash, davetLinki, DAVET_GECERLILIK_MS } from '../lib/invites.js'
+import { epostaGonder, davetEpostaHtml } from '../lib/email.js'
 
 const ROL_AD = { admin: 'Yonetici', izleyici: 'Izleyici', saha_personeli: 'Saha Personeli' }
 
@@ -11,8 +11,8 @@ const ROL_AD = { admin: 'Yonetici', izleyici: 'Izleyici', saha_personeli: 'Saha 
 // PUT    /api/invites/:id - daveti yeniden gonderir (token doner, sure uzar, eposta tekrar denenir)
 // DELETE /api/invites/:id - daveti iptal eder
 // Hepsi yalnizca admin rolundeki gecerli bir oturum tokeniyle calisir - ayni
-// api/users/[[...id]].js deseni (tek dosyada birlesmesinin nedeni de ayni:
-// Vercel Hobby'nin 12 fonksiyon siniri, bkz. o dosyadaki not).
+// api/users.js deseni: tek dosya (Vercel Hobby'nin 12 fonksiyon siniri), id
+// vercel.json rewrite'i ile ?id= olarak gelir (bkz. o dosyadaki not).
 export default async function handler(req, res) {
   const claims = requireAdmin(req)
   if (!claims) { res.status(403).json({ error: 'Yetkiniz yok' }); return }
@@ -75,7 +75,7 @@ export default async function handler(req, res) {
   }
 
   // ---- id VERILMIS: PUT / DELETE ----
-  // api/users/[[...id]].js ile ayni org-sahiplik kontrolu.
+  // api/users.js ile ayni org-sahiplik kontrolu.
   const { data: davet } = await supabaseAdmin
     .from('invites').select('id, org_id, email, role').eq('id', id).maybeSingle()
   if (!davet || davet.org_id !== org) { res.status(404).json({ error: 'Davet bulunamadi' }); return }

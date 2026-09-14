@@ -1,10 +1,10 @@
-import { supabaseAdmin } from '../../lib/supabaseAdmin.js'
-import { requireAdmin } from '../../lib/auth.js'
-import { hashPassword, sifreKurallari } from '../../lib/password.js'
-import { aktifOrg, VARSAYILAN_ORG } from '../../lib/org.js'
-import { aktifTasari } from '../../lib/tasari.js'
-import { denetimGorebilir, tokenKullanici } from '../../lib/yetki.js'
-import { adUyumlu } from '../../lib/adSutunu.js'
+import { supabaseAdmin } from '../lib/supabaseAdmin.js'
+import { requireAdmin } from '../lib/auth.js'
+import { hashPassword, sifreKurallari } from '../lib/password.js'
+import { aktifOrg, VARSAYILAN_ORG } from '../lib/org.js'
+import { aktifTasari } from '../lib/tasari.js'
+import { denetimGorebilir, tokenKullanici } from '../lib/yetki.js'
+import { adUyumlu } from '../lib/adSutunu.js'
 
 // GET    /api/users     - AKTIF ORGANIZASYONUN kullanicilarini listeler (sifresiz)
 // POST   /api/users     - aktif organizasyonda yeni kullanici olusturur
@@ -15,9 +15,14 @@ import { adUyumlu } from '../../lib/adSutunu.js'
 // TEK DOSYADA: id'li ve id'siz uclar eskiden ayri dosyalardaydi (users.js +
 // users/[id].js). Vercel Hobby plani deploy basina 12 Serverless Function ile
 // sinirli - iki dosya bu sayiyi astirip deploy'u "Deploying outputs..."
-// asamasinda sessizce basarisiz birakiyordu. Optional catch-all route (dosya
-// adindaki [[...id]]) ikisini TEK fonksiyonda birlestirir; URL semasi
-// (/api/users, /api/users/:id) degismez.
+// asamasinda sessizce basarisiz birakiyordu.
+//
+// id, vercel.json'daki rewrite ile SORGU PARAMETRESI olarak gelir:
+//   /api/users/:id  ->  /api/users?id=:id
+// Dosya adinda [[...id]] (optional catch-all) KULLANILMAZ: Next.js olmayan bir
+// Vercel projesinde o desen yok - rota tek segmentlik kalir, /api/users 404
+// doner ve parametre 'id' degil '[...id]' adiyla gelir. 14 Eylul 2026'da canli
+// bu yuzden bozuldu (Kullanici Yonetimi "Istek basarisiz (404)").
 export default async function handler(req, res) {
   const claims = requireAdmin(req)
   if (!claims) { res.status(403).json({ error: 'Yetkiniz yok' }); return }

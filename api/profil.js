@@ -96,7 +96,7 @@ export default async function handler(req, res) {
     await basariliGiris(user.username, ip)
 
     // Yeni sifre asgari kuraldan gecer - yonetici ekraniyla ayni esik
-    // (api/users/[id].js). Kullanici adi da verilir ki "sifre = kullanici adi"
+    // (api/users.js). Kullanici adi da verilir ki "sifre = kullanici adi"
     // durumu yakalansin.
     const kuralHatasi = sifreKurallari(yeniSifre, user.username)
     if (kuralHatasi) { res.status(400).json({ error: kuralHatasi }); return }
