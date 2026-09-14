@@ -3227,6 +3227,29 @@ datalist{display:none}
   padding:2px 8px;border-radius:20px;vertical-align:middle;border:1px solid currentColor}
 .iht-durum.acik{background:color-mix(in srgb,var(--blue) 14%,transparent);color:var(--blue)}
 .iht-durum.tamam{background:color-mix(in srgb,var(--green) 14%,transparent);color:var(--green)}
+/* SIPARIS GONDERILDI rozeti durum rozetinin yaninda durur. Ayri renk: acik/tamam'dan
+   BAGIMSIZ bir bilgi (liste hem ACIK hem GONDERILDI olabilir); mavi/yesil durumun,
+   amber ise "hedef yok" uyarisinin rengi. */
+.iht-durum.gonderildi{background:color-mix(in srgb,var(--violet) 14%,transparent);color:var(--violet)}
+/* Siparis sutunundaki isaretleme dugmesi (eskiden onay kutusuydu) */
+.iht-sip-btn{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;font-size:11.5px;font-weight:600;
+  border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--ink);cursor:pointer;
+  white-space:nowrap;transition:background var(--transition)}
+.iht-sip-btn:hover{background:var(--hover)}
+.iht-sip-btn svg{width:12px;height:12px;flex:none}
+.iht-sip-btn.geri{font-weight:500;color:var(--mute)}
+/* Ihtiyac formu SARTNAME hucresi: secim kutusu + "Coklu" anahtari tek satirda.
+   Anahtar da bir <label> oldugu icin form etiketlerinin kurallarini miras aliyordu
+   (.frow label: blok + BUYUK HARF; .tut-grid.hizali .frow label: alta yasli +
+   6px alt bosluk; .frow input: %100 genislik + dolgu) - secicilerin ozgullugu
+   bilerek onlarin USTUNDE tutuldu. */
+.iht-sart-alan{display:flex;align-items:center;gap:8px;min-width:0}
+.iht-sart-alan>select,.iht-sart-alan>input{flex:1;min-width:0}
+.tut-grid.hizali .frow .iht-sart-alan label.iht-sart-sw{display:inline-flex;align-items:center;gap:5px;
+  flex:none;align-self:center;margin:0;cursor:pointer;text-transform:none;letter-spacing:0;
+  font-size:11.5px;font-weight:500;color:var(--ink);white-space:nowrap}
+.frow .iht-sart-alan label.iht-sart-sw input{width:auto;margin:0;padding:0;cursor:pointer;flex:none}
+.iht-sart-coklu{margin:12px 0 0}
 .iht-ad{font-weight:600;font-size:13px}
 .iht-ad i{display:block;font-style:normal;font-size:11px;color:var(--dim);font-weight:500}
 /* belge kodu: satirda gozle taranabilsin diye esaralikli ve bir ton koyu */
@@ -26929,7 +26952,7 @@ function ihtDurumu(x){ return (x&&x.durum==='tamam')?'tamam':'acik'; }
 function ihtBinaEsler(x,bina){ return !bina || x.bina===bina || ((x.lines||[]).some(l=>l&&l.bina===bina)); }
 function ihtAramaEsler(x,q){
   if(!q) return true;
-  return matchText([x.kod,x.ad,x.bina,x.aciklama,x.olusturan,kisiAd(x.olusturan),
+  return matchText([x.kod,x.ad,x.bina,...ihtSartlar(x),x.aciklama,x.olusturan,kisiAd(x.olusturan),
     ...((x.lines||[]).map(l=>[l.ad,l.code,l.marka,l.bina,l.kat,l.konum].filter(Boolean).join(' ')))].join(' '),q);
 }
 function ihtFiltreVar(){ return !!(IHTV.q||IHTV.bina||IHTV.durum); }
@@ -26956,17 +26979,21 @@ function renderIhtiyacList(){
     const tamam=x.durum==='tamam';
     const hedef=ihtHedefOzet(x);
     rows+=`<tr>
-      <td><span class="iht-ad">${esc(x.ad||'(adsiz liste)')}<span class="iht-durum ${tamam?'tamam':'acik'}" style="margin-left:7px">${tamam?'TAMAM':'ACIK'}</span>
-        <i>${x.kod?`<b class="iht-kod">${esc(x.kod)}</b> · `:''}${esc(x.olusturan?kisiAd(x.olusturan):'-')}${x.aciklama?' · '+esc(x.aciklama):''}</i></span></td>
+      <td><span class="iht-ad">${esc(x.ad||'(adsiz liste)')}<span class="iht-durum ${tamam?'tamam':'acik'}" style="margin-left:7px">${tamam?'TAMAM':'ACIK'}</span>${
+        x.siparisGonderildi?'<span class="iht-durum gonderildi" style="margin-left:4px" title="Bu listenin siparisi gonderildi">GONDERILDI</span>':''}
+        <i>${x.kod?`<b class="iht-kod">${esc(x.kod)}</b> · `:''}${ihtSartlar(x).length?`<span class="iht-kod" title="Sartname: ${esc(ihtSartlar(x).join(', '))}">${esc(ihtSartOzet(x))}</span> · `:''}${esc(x.olusturan?kisiAd(x.olusturan):'-')}${x.aciklama?' · '+esc(x.aciklama):''}</i></span></td>
       <td class="t-meta">${esc(fmtDate(x.tarih))}</td>
       <td class="t-meta">${esc(x.bina||'-')}</td>
       <td class="t-qty">${fmtNum(tt.kalem)} kalem <span style="color:var(--mute)">· ${fmtNum(tt.miktar)}</span>${
         tt.eksik?`<div class="iht-uyari" style="font-size:11px">&#9888; ${fmtNum(tt.eksik)} satirda hedef yok</div>`:''}</td>
       <td class="t-meta">${esc(hedef||'-')}</td>
-      <td style="text-align:center" title="${x.siparisGonderildi?'Siparis gonderildi':'Siparis henuz gonderilmedi'}">
-        <label class="chk" style="display:inline-flex;justify-content:center;margin:0;text-transform:none">
-          <input type="checkbox" style="width:auto;margin:0" ${x.siparisGonderildi?'checked':''} ${ihtCanEdit()?'':'disabled'}
-            onchange="ihtSiparisToggle('${x.id}',this.checked)"></label></td>
+      <!-- Onay kutusu yerine DUGME (kullanici istegi): basilinca liste adinin yaninda
+           GONDERILDI rozeti belirir, dugme "Geri Al"a doner - yanlis basis tek tikla duzelir.
+           Durumu artik rozet anlatiyor; yetkisi olmayan kullanici da rozeti gorur, dugmeyi gormez. -->
+      <td style="text-align:center">${!ihtCanEdit()?'<span class="t-meta">-</span>'
+        :x.siparisGonderildi
+          ?`<button class="iht-sip-btn geri" title="Gonderildi isaretini kaldir" onclick="ihtSiparisToggle('${x.id}',false)">Geri Al</button>`
+          :`<button class="iht-sip-btn" title="Siparis gonderildi olarak isaretle - liste adinin yaninda GONDERILDI yazar" onclick="ihtSiparisToggle('${x.id}',true)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4z"/></svg>Gonderildi</button>`}</td>
       <td><div class="row-actions">
         <button class="mini-btn" title="Listenin icerigini gor" onclick="openIhtiyacDetay('${x.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
         <button class="mini-btn" title="Excel'e aktar - satirlar + bina/kat ozeti" onclick="exportIhtiyacXlsx('${x.id}')">${icoXls()}</button>
@@ -26989,7 +27016,7 @@ function renderIhtiyacList(){
       </div>
       <div class="iht-search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-        <input value="${esc(IHTV.q)}" placeholder="liste adi, malzeme, bina veya kat ara..." onchange="setIhtQ(this.value.trim())">
+        <input value="${esc(IHTV.q)}" placeholder="liste adi, sartname, malzeme, bina veya kat ara..." onchange="setIhtQ(this.value.trim())">
         ${IHTV.q?`<button class="iht-x" title="Aramayi temizle" onclick="setIhtQ('')">&times;</button>`:''}
       </div>
       <select onchange="setIhtBina(this.value)" title="Binaya gore suz - liste basligina da satirlarina da bakar">
@@ -27026,7 +27053,7 @@ function openIhtiyacDetay(id){
     `<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:780px">
       <div class="modal-head"><h3>${esc(x.ad||'Ihtiyac Listesi')}</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
       <div class="modal-body">
-        <p class="t-meta" style="margin-bottom:12px">${esc(fmtDate(x.tarih))}${x.bina?' · '+esc(x.bina):''} · ${fmtNum(tt.kalem)} kalem · toplam ${fmtNum(tt.miktar)}${
+        <p class="t-meta" style="margin-bottom:12px">${esc(fmtDate(x.tarih))}${x.bina?' · '+esc(x.bina):''}${ihtSartlar(x).length?' · '+esc(ihtSartlar(x).join(', ')):''} · ${fmtNum(tt.kalem)} kalem · toplam ${fmtNum(tt.miktar)}${
           tt.eksik?` · <span class="iht-uyari">&#9888; ${fmtNum(tt.eksik)} satirda bina/kat yok</span>`:''}</p>
         ${x.aciklama?`<p style="font-size:12.5px;margin-bottom:12px">${esc(x.aciklama)}</p>`:''}
         <div class="tablewrap" style="max-height:calc(46 * var(--vh));overflow:auto"><table class="tut-lines"><thead><tr>
@@ -27046,8 +27073,109 @@ function ihtSetTarih(v){ if(_IHT) _IHT.tarih=v?new Date(v+'T12:00:00').getTime()
 /* Liste geneli bina degisince ACIK satirlar OLDUGU GIBI kalir - yalnizca bundan
    sonra eklenecek satirlarin on degeri degisir. Yazilmis hedefleri toptan degistirmek
    sessiz veri kaybi olurdu; degistirmek isteyen satirin kendi hucresinden secer. */
-function ihtSetBina(v){ if(!_IHT)return; _IHT.bina=v; render(); }
+function ihtSetBina(v){ if(!_IHT)return;
+  const eski=_IHT.bina||'';
+  _IHT.bina=v;
+  /* SARTNAME secimi ise SIFIRLANIR: kodlar binaya aittir, 00UYB'nin kodu 01UJA
+     listesinde secili kalirsa secici bos acilir ve cikti yanlis sartname yazar
+     (siparis formunda da boyle, bkz. nordSetBina). Satirlarin aksine bu kullanicinin
+     emegi degil tek tikla yeniden kurulan bir secim - yine de haber verilir. */
+  if((v||'')!==eski && ihtSartlar(_IHT).length){ _IHT.sartlar=[]; toast('Bina degisti - sartname secimi sifirlandi'); }
+  render(); }
 function ihtSetDurum(v){ if(!_IHT)return; _IHT.durum=(v==='tamam')?'tamam':'acik'; render(); }
+
+/* ---------- SARTNAME SECIMI ----------
+   Listenin hangi sartname(ler) icin acildigi. Etkileri:
+     - "Kutuphaneden Ekle" PROJE urunlerini bu sartnamelerin kalemleriyle suzer
+       (bkz. ihtPickSartSuzgeci; Mobilizasyon/Mekanik etkilenmez)
+     - PDF seridi ve Excel "Liste Bilgisi" bu kodlari yazar (bkz. ihtCiktiSartnameleri)
+   Siparis formundaki TEK/COKLU desenin uyarlamasi. O fonksiyonlar NORD globalini
+   okudugu icin dogrudan kullanilmadi (ortaklastirmak siparis formuna dokunmak
+   demekti); yalnizca liste kaynagi (nordSartGrupListesi) ve gorunum (nord-sart-*)
+   paylasiliyor.
+   KAYIT: x.sartlar (dizi; tek kipte en fazla 1 uye) + x.sartCoklu (kip). Siparisteki
+   sart/sartlar ikiligi eski kayitlarla uyum icindi - burada eski kayit yok, tek alan yeter.
+   KAYITLI SECIM SESSIZCE ELENMEZ: yalnizca siparis yetkisi olan kullaniciya sartname
+   kalemleri inmiyor (src/supabase.js needProjeCore), listesi bos gelir. Siparis
+   formu gibi "listede yok" diye eleseydik o kullanici listeyi acip kaydettiginde
+   secim yok olurdu. Listede bulunmayan kod isaretiyle secili gorunur; kaldirmak
+   kullanicinin karari (Varsayilan Bina'daki "disarida" deseni). */
+function ihtSartlar(x){ const s=x&&x.sartlar; return Array.isArray(s)?s.filter(Boolean):[]; }
+function ihtSartListesi(x){
+  const liste=nordSartGrupListesi((x&&x.bina)||'');
+  const bilinen=new Set(liste.map(it=>it.g));
+  ihtSartlar(x).forEach(g=>{ if(!bilinen.has(g)) liste.push({g,n:0,section:'',yok:true}); });
+  return liste;
+}
+// listede ve arama ipucunda kisa yazim: tek kod oldugu gibi, cok kodda ilki + sayi
+function ihtSartOzet(x){ const s=ihtSartlar(x); return s.length<2?(s[0]||''):s[0]+' +'+(s.length-1); }
+function ihtSetSart(v){ if(!_IHT)return; _IHT.sartlar=v?[v]:[]; render(); }
+/* Kip degisince secim TASINIR: acilirken tek deger listenin ilk uyesi olarak kalir,
+   kapanirken ilk uye tek deger olur - kullanici secimi bastan kurmasin. */
+function ihtSartCokluSet(on){
+  if(!_IHT)return;
+  _IHT.sartCoklu=!!on;
+  if(!on) _IHT.sartlar=ihtSartlar(_IHT).slice(0,1);
+  render();
+}
+// indeksle adreslenir - kod metni onclick'e gomulmez (nordSartToggle ile ayni)
+function ihtSartToggle(i){
+  if(!_IHT)return;
+  const it=ihtSartListesi(_IHT)[i]; if(!it)return;
+  const cur=ihtSartlar(_IHT).slice(), k=cur.indexOf(it.g);
+  if(k>=0) cur.splice(k,1); else cur.push(it.g);
+  _IHT.sartlar=cur; render();
+}
+// "Tumunu Sec" listede bulunamayan kayitli kodlari DUSURMEZ; "Temizle" bilincli bir istek, hepsini siler
+function ihtSartTumu(on){
+  if(!_IHT)return;
+  const hepsi=nordSartGrupListesi(_IHT.bina||'').map(it=>it.g);
+  _IHT.sartlar=on?[...hepsi,...ihtSartlar(_IHT).filter(g=>!hepsi.includes(g))]:[];
+  render();
+}
+/* Form hucresi. Varsayilan Bina secilmeden KILITLI: kodlar binaya ait, binasiz
+   bir secim listesi kurulamaz. Coklu kipte hucre yalnizca ozet yazar, onay
+   kutulu liste kapsam satirinin ALTINDA tam genislikte acilir - 30vh'lik liste
+   hucrenin icinde Firma/Durum'u da uzatirdi. */
+function ihtSartHucre(x){
+  const etiket=`<label>Sartname<span class="bbal" tabindex="0">B<span>Secilirse Kutuphaneden Ekle yalnizca bu sartnamelerin urunlerini gosterir; PDF ve Excel bu kodlari yazar</span></span></label>`;
+  if(!x.bina) return `<div class="frow">${etiket}
+    <select disabled title="Sartname kodlari binaya aittir - once Varsayilan Bina secin"><option>- once bina secin -</option></select></div>`;
+  const sec=ihtSartlar(x);
+  const anahtar=`<label class="iht-sart-sw" title="Birden fazla sartname secmek icin acin. Kapatirsaniz secimin ilki kalir.">
+      <input type="checkbox" ${x.sartCoklu?'checked':''} onchange="ihtSartCokluSet(this.checked)">Coklu</label>`;
+  if(x.sartCoklu) return `<div class="frow">${etiket}<div class="iht-sart-alan">
+      <input readonly tabindex="-1" value="${sec.length?fmtNum(sec.length)+' sartname secili':'secim yok - asagidan secin'}">${anahtar}</div></div>`;
+  const liste=ihtSartListesi(x);
+  return `<div class="frow">${etiket}<div class="iht-sart-alan">
+      <select onchange="ihtSetSart(this.value)" title="${esc(sec[0]||'Sartname secilmedi')}">
+        <option value="">${liste.length?'- secilmedi (tum kutuphane) -':'- bu binada sartname yok -'}</option>
+        ${liste.map(it=>`<option value="${esc(it.g)}" ${sec[0]===it.g?'selected':''}>${esc(it.g)}${it.section?' · '+esc(it.section):''}${it.yok?' (bu binada bulunamadi)':' ('+fmtNum(it.n)+' kalem)'}</option>`).join('')}
+      </select>${anahtar}</div></div>`;
+}
+function ihtSartCokluHtml(x){
+  const liste=ihtSartListesi(x);
+  if(!liste.length) return `<p class="t-meta iht-sart-coklu">Bu binada sartname bulunamadi.</p>`;
+  const sec=ihtSartlar(x);
+  const kalem=liste.filter(it=>sec.includes(it.g)).reduce((t,it)=>t+it.n,0);
+  return `<div class="iht-sart-coklu">
+    <div class="nord-sart-arac">
+      <button type="button" class="btn btn-ghost" onclick="ihtSartTumu(true)">Tumunu Sec</button>
+      <button type="button" class="btn btn-ghost" onclick="ihtSartTumu(false)">Secimi Temizle</button>
+      <span class="t-meta" style="margin-left:auto">${sec.length?`${fmtNum(sec.length)} sartname · ${fmtNum(kalem)} kalem`:'secim yok - tum kutuphane gorunur'}</span>
+    </div>
+    <div class="nord-sart-liste">${liste.map((it,i)=>{ const on=sec.includes(it.g);
+      return `<label class="nord-sart-row ${on?'on':''}">
+        <input type="checkbox" ${on?'checked':''} onchange="ihtSartToggle(${i})">
+        <span class="nss-text">
+          <span class="nss-kod">${esc(it.g)}</span>
+          ${it.section?`<span class="nss-bol">${esc(it.section)}</span>`:''}
+          ${it.yok?`<span class="nss-bol">bu binanin sartname listesinde bulunamadi</span>`:''}
+        </span>
+        <span class="nss-n">${it.yok?'-':fmtNum(it.n)}</span>
+      </label>`; }).join('')}</div>
+  </div>`;
+}
 
 function renderIhtiyacForm(){
   const x=_IHT, tt=ihtTotals(x);
@@ -27067,7 +27195,9 @@ function renderIhtiyacForm(){
 
     <div class="tut-card"><h4>Liste Bilgisi</h4>
       <!-- Ust satir listenin KIMLIGI (ad / kod / tarih), alt satir KAPSAMI
-           (firma / bina / durum). Her hucre uc parcali: etiket - alan - ipucu;
+           (firma / bina / sartname / durum). Kapsam dort alanli oldugu icin iki ayri
+           izgara: tek izgarada dorduncu alan Durum'u ucuncu satira tek basina itiyordu.
+           Her hucre uc parcali: etiket - alan - ipucu;
            ucu de .hizali subgrid'i sayesinde komsulariyla ayni cizgide durur.
            Parantezli aciklamalar etiketten IPUCUNA alindi: etiket iki satira
            tastiginda alanini asagi itiyor, hizayi bozuyordu. -->
@@ -27078,6 +27208,8 @@ function renderIhtiyacForm(){
           <input value="${esc(ihtKodGoster(x)||'-')}" readonly tabindex="-1" style="font-family:Consolas,monospace;letter-spacing:.4px"></div>
         <div class="frow"><label>Tarih<span class="bbal" tabindex="0">B<span>Kodun tarih bolumu buradan gelir</span></span></label>
           <input type="date" value="${tutISO(x.tarih)}" onchange="ihtSetTarih(this.value)"></div>
+      </div>
+      <div class="tut-grid hizali dort" style="margin-top:16px">
         <div class="frow"><label>Firma<span class="bbal" tabindex="0">B<span>${ihtFirmaIpucu(x)}</span></span></label>
           <select onchange="ihtSet('firmaId',this.value);render()">
             <option value="">- secilmedi -</option>
@@ -27089,12 +27221,14 @@ function renderIhtiyacForm(){
             ${binalar.map(b=>`<option ${x.bina===b?'selected':''}>${esc(b)}</option>`).join('')}
             ${disarida?`<option selected>${esc(x.bina)}</option>`:''}
           </select></div>
+        ${ihtSartHucre(x)}
         <div class="frow"><label>Durum<span class="bbal" tabindex="0">B<span>Tamamlananlar listede ayri suzulur</span></span></label>
           <select onchange="ihtSetDurum(this.value)">
             <option value="acik" ${x.durum!=='tamam'?'selected':''}>Acik</option>
             <option value="tamam" ${x.durum==='tamam'?'selected':''}>Tamamlandi</option>
           </select></div>
       </div>
+      ${(x.bina&&x.sartCoklu)?ihtSartCokluHtml(x):''}
       <div class="frow" style="margin:14px 0 0"><label>Aciklama</label>
         <input value="${esc(x.aciklama||'')}" placeholder="istege bagli - listeyi acan not" onchange="ihtSet('aciklama',this.value.trim())"></div>
       ${hedefler?`<div class="iht-hedefler">${hedefler}</div>`:''}
@@ -27143,7 +27277,42 @@ let _IHTPICK='hepsi';
    iki kopya olsaydi biri duzelirken digeri geride kalirdi (secici aramasinda
    tam bu olmustu, bkz. pickSirala). */
 let _IHTPICKHEDEF=null;
+/* SARTNAME SUZGECI (secici). Listede sartname secildiyse PROJE kutuphanesi yalnizca o
+   sartnamelerin (Varsayilan Bina'daki) kalemlerine karsilik gelen urunleri gosterir.
+   Eslesme materialUsage ile AYNI kural - matId ya da kod/ad anahtari, varyant kodlar
+   dahil - "bu urun hangi kalemde geciyor" sorusunun tersi; iki kural ayrisirsa secicide
+   gorunen urun ciktida o sartnameye sayilmazdi.
+   Mobilizasyon/Mekanik kutuphanelerinin sartnamesi yoktur, suzulmez.
+   Secicideki anahtarla GECICI olarak kapatilabilir: sartname disi tek bir urun eklemek
+   icin formdaki secimi silip yeniden kurmak gerekmesin. Her acilista acik baslar. */
+let _IHTPICKSART=true;
+function ihtPickSartSuzgeci(){
+  const sec=ihtSartlar(_IHT);
+  if(!_IHTPICKSART || !_IHT || !_IHT.bina || !sec.length) return null;
+  const grup=new Set(sec), ids=new Set(), anahtar=new Set();
+  (DB.proje.specs||[]).forEach(s=>{
+    if(s.is_deleted || (s.bina||'')!==_IHT.bina || !grup.has(specGroupKey(s))) return;
+    if(s.matId) ids.add(s.matId);
+    anahtar.add(matKey(s.code,s.name));
+  });
+  const mats=new Map((DB.proje.materials||[]).map(mt=>[mt.id,mt]));
+  return it=>{
+    if(ids.has(it.id)) return true;
+    const mt=mats.get(it.id); if(!mt) return false;
+    return anahtar.has(matKey(mt.code,mt.name))
+      || (mt.altCodes||[]).some(c=>String(c==null?'':c).trim() && anahtar.has(matKey(c,'')));
+  };
+}
+function ihtPickSartAnahtar(){
+  const sec=ihtSartlar(_IHT);
+  if(!_IHT || !_IHT.bina || !sec.length || !tutKaynaklar().some(k=>k.src==='proje')) return '';
+  return `<label class="nord-sart-sw" title="${esc(sec.join(', '))} - yalnizca Proje kutuphanesini suzer; Mobilizasyon ve Mekanik etkilenmez">
+      <input type="checkbox" ${_IHTPICKSART?'checked':''} onchange="setIhtPickSart(this.checked)">
+      <span>Yalnizca secili sartnamelerin urunleri · <b style="font-family:var(--mono);font-size:11.5px">${esc(sec.length===1?sec[0]:fmtNum(sec.length)+' sartname')}</b></span></label>`;
+}
+function setIhtPickSart(on){ _IHTPICKSART=!!on; ihtPickFilter(); }
 function openIhtMatPick(hedef){
+  _IHTPICKSART=true;
   _IHTPICKHEDEF=(typeof hedef==='number'&&_IHT&&_IHT.lines[hedef])?hedef:null;
   const kaynaklar=tutKaynaklar();
   if(!kaynaklar.length){
@@ -27164,6 +27333,7 @@ function openIhtMatPick(hedef){
       <div class="modal-head"><h3>${esc(baslik)}</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
       <div class="modal-body">
         ${seg}
+        ${ihtPickSartAnahtar()}
         <div class="frow"><input id="ihtPickQ" data-guard="off" placeholder="Malzeme adi, urun kodu, marka veya barkod ara..." oninput="ihtPickFilter()"></div>
         <div class="tut-pick" id="ihtPickList">${ihtPickRows('')}</div>
         <p class="t-meta" style="margin-top:9px;font-size:11.5px">${hd===null
@@ -27183,9 +27353,12 @@ function setIhtPickSrc(src){
 function ihtPickRows(q){
   const hepsiKaynak=tutKaynaklar();
   const secili=hepsiKaynak.filter(k=>_IHTPICK==='hepsi'||k.src===_IHTPICK);
+  const sartSuz=ihtPickSartSuzgeci();   // null = suzgec yok
   // aramada alaka sirasi, aramasizken ada gore (bkz. pickSirala)
-  const mats=pickSirala(secili.flatMap(k=>k.items()),q);
-  if(!mats.length) return `<div style="padding:22px;text-align:center;color:var(--mute);font-size:12.5px">${q?'Eslesen urun yok':'Bu kutuphane bos'}</div>`;
+  const mats=pickSirala(secili.flatMap(k=>(sartSuz&&k.src==='proje')?k.items().filter(sartSuz):k.items()),q);
+  if(!mats.length) return `<div style="padding:22px;text-align:center;color:var(--mute);font-size:12.5px">${sartSuz
+    ?(q?'Secili sartnamelerde eslesen urun yok':'Secili sartnamelerde urun yok')+' - ustteki suzgeci kapatip tum kutuphanede arayabilirsiniz'
+    :(q?'Eslesen urun yok':'Bu kutuphane bos')}</div>`;
   const shown=mats.slice(0,150);
   const rozet=hepsiKaynak.length>1;
   return shown.map(m=>`<div class="tut-pick-row" onclick="ihtPickAdd('${m.src}','${m.id}')">
@@ -27280,7 +27453,7 @@ function newIhtiyac(){
   if(!ihtCanEdit()){ toast('Bu islem icin yetkiniz yok','err'); return; }
   const bina=IHTV.bina||'';   // liste ekranindaki bina filtresi on deger olur
   _IHT={ id:uid(), ad:'Ihtiyac Listesi - '+fmtDate(Date.now()), tarih:Date.now(),
-    bina, firmaId:ihtVarsayilanFirma(), durum:'acik', siparisGonderildi:false, aciklama:'', lines:[ihtBlankLine(bina)],
+    bina, sartlar:[], sartCoklu:false, firmaId:ihtVarsayilanFirma(), durum:'acik', siparisGonderildi:false, aciklama:'', lines:[ihtBlankLine(bina)],
     olusturan:(CURRENT_USER&&CURRENT_USER.username)||'', olusturmaTs:Date.now(),
     guncelleyen:'', guncellemeTs:Date.now(), _yeni:true };
   IHTV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
@@ -27363,6 +27536,9 @@ async function saveIhtiyac(){
   if(!ihtFilledLines(_IHT).length){ toast('En az bir malzeme satiri girin','err'); return; }
   _IHT.ad=ad;
   _IHT.durum=(_IHT.durum==='tamam')?'tamam':'acik';
+  // sartname: tek kipte en fazla bir kod; binasiz secim olmaz (kodlar binaya ait, arayuz de kilitli)
+  _IHT.sartCoklu=!!_IHT.sartCoklu;
+  _IHT.sartlar=_IHT.bina?ihtSartlar(_IHT).slice(0,_IHT.sartCoklu?undefined:1):[];
   _IHT.guncelleyen=(CURRENT_USER&&CURRENT_USER.username)||'';
   _IHT.guncellemeTs=Date.now();
   const yeni=_IHT._yeni;
@@ -27394,9 +27570,20 @@ async function saveIhtiyac(){
 }
 
 /* ---------- EXCEL ----------
-   IKI SAYFA: "Ihtiyac" ham satirlar, "Bina-Kat Ozet" ise hedef basina toplam.
-   Ozet sayfasi sahaya dagitim icindir: ayni malzeme birden cok satirda gecebiliyor,
-   satin alma ise "bu kata toplam kac tane" diye soruyor.
+   PDF'TE BASILAN HER BILGI EXCEL'DE DE VAR (kullanici istegi). Dort sayfa:
+     Liste Bilgisi  PDF'in antet + baslik + sartname seridi + aciklama + toplam
+                    serisi + kat grubu basliklari (bina · kat · kot, kalem, miktar)
+     Ihtiyac        KAT DETAYI ciktisinin satirlari - ayni SIRA ve ayni sira numarasi
+     Urun Ozeti     OZET ciktisinin satirlari - urun basina toplam + KATLAR sutunu
+     Bina-Kat Ozet  hedef basina toplam (sahaya dagitim; PDF'te karsiligi yok, eskiden beri var)
+   KUNYE PDF ILE AYNI KAYNAKTAN okunur (ihtPdfKunye): ad/kod/marka kutuphaneden CANLI,
+   kutuphanede bulunamazsa satirdaki kopya. Iki cikti ayri kaynaktan okusaydi ayni
+   listenin PDF'i ile Excel'i farkli urun adi yazabilirdi.
+   Excel'de PDF'ten FAZLA olanlar bilerek kaldi: kutuphane, satir notu, teknik bilginin
+   TAMAMI (PDF yer yuzunden ilk 6'yi basar).
+   GORSEL: SheetJS'in ucretsiz surumu resim gommez - gercek URL tiklanabilir link
+   olarak yazilir; dosyaya gomulu (base64) gorselin linki yoktur, hucre bunu soyler
+   (hucreye sigmaz, bkz. exportMaterialLib).
    id verilirse kayitli liste, verilmezse duzenlenmekte olan taslak aktarilir. */
 function exportIhtiyacXlsx(id){
   const x=id?(DB.ihtiyaclar||[]).find(y=>y.id===id):_IHT;
@@ -27404,23 +27591,103 @@ function exportIhtiyacXlsx(id){
   const ls=ihtFilledLines(x);
   if(!ls.length){ toast('Aktarilacak satir yok','err'); return; }
   const kaynakAd=src=>((tutKaynakTanim(src)||{}).label)||'';
-  const rows=[['sira','urun_kodu','malzeme','marka','birim','miktar','bina','kat','kot','konum','kutuphane','not']];
-  ls.forEach((l,i)=>rows.push([i+1,l.code||'',l.ad||'',l.marka||'',l.birim||'',ihtSayi(l.qty),
-    l.bina||'',l.kat||'',ihtKot(l),l.konum||'',kaynakAd(l.matSrc),l.not||'']));
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:6},{wch:16},{wch:44},{wch:16},{wch:9},{wch:10},{wch:14},{wch:16},{wch:10},{wch:22},{wch:14},{wch:26}];
+  const httpMi=v=>/^https?:\/\//i.test(String(v||'').trim());
+  const gorsel=v=>!String(v||'').trim()?'':(httpMi(v)?String(v).trim():'(dosyaya gomulu gorsel, link yok)');
+  const kg=v=>{ if(v==null||v==='') return ''; const n=Number(String(v).replace(',','.')); return isFinite(n)?n:String(v); };
+  const markaMetni=k=>(k.marka||[]).join(', ');
+  const teknikMetni=k=>(k.tek||[]).map(r=>r.k+': '+r.v).join('; ');
+  const genislik=(ws,g)=>{ ws['!cols']=g.map(w=>({wch:w})); };
+  const suzgec=(ws,aoa)=>{ ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:aoa[0].length-1}})}; };
+  const linkle=(ws,aoa,c)=>{ for(let r=1;r<aoa.length;r++){ const v=aoa[r][c];
+    if(httpMi(v)){ const h=ws[XLSX.utils.encode_cell({r,c})]; if(h) h.l={Target:String(v).trim()}; } } };
+  /* Kunye ve sartname kodu satir basina BIR KEZ hesaplanir, dort sayfa ayni sonucu
+     kullanir - ikisi de kutuphaneyi/kalem listesini tariyor. Anahtar SATIR NESNESIDIR,
+     id degil: eski kayitlarda satir id'si eksik olabilir. */
+  const kunye=new Map(ls.map(l=>[l,ihtPdfKunye(l)]));
+  const sartKod=new Map(ls.map(l=>[l,ihtSatirSartKodlari(l)]));
   const wb=XLSX.utils.book_new();
+
+  // ---- IHTIYAC (KAT DETAYI) ----
+  /* Satirlar PDF'in kat detayindaki sirayla yazilir (bina+kat kumeleri, ilk gorulme
+     sirasi) ve sira numarasi da PDF'teki numaradir: "5 numarali urun" iki ciktida
+     ayni urunu gostermeli. Tek hedefli listede sira eskisiyle birebir aynidir.
+     Ilk 13 sutunun adi ve yeri DEGISMEDI, yeniler sona eklendi. */
+  const gruplar=ihtPdfGrupla(ls);
+  const rows=[['sira','urun_kodu','malzeme','marka','birim','miktar','bina','kat','kot','konum','kutuphane','not','sartname_kodu',
+    'kategori','standart','agirlik_kg','teknik_bilgi','gorsel_linki']];
+  let n=0;
+  gruplar.forEach(g=>g.satirlar.forEach(l=>{ const k=kunye.get(l);
+    rows.push([++n,k.kod||'',k.ad||'',markaMetni(k),k.birim||l.birim||'',ihtSayi(l.qty),
+      l.bina||'',l.kat||'',ihtKot(l),l.konum||'',kaynakAd(l.matSrc),l.not||'',sartKod.get(l).join(', '),
+      k.kategori||'',k.standart||'',kg(k.agirlikKg),teknikMetni(k),gorsel(k.img)]); }));
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  genislik(ws,[6,16,44,16,9,10,14,16,10,22,14,26,44,18,24,11,50,40]);
+  suzgec(ws,rows); linkle(ws,rows,17);
+
+  // ---- URUN OZETI (OZET ciktisi) ----
+  const urunler=ihtPdfOzetle(ls);
+  const uRows=[['sira','urun_kodu','malzeme','marka','kategori','standart','agirlik_kg','birim','toplam_miktar',
+    'katlar','satir_sayisi','sartname_kodu','teknik_bilgi','gorsel_linki','kutuphane']];
+  urunler.forEach((u,i)=>{
+    const ilk=u._satirlar[0], k=kunye.get(ilk);
+    // birlesen satirlarin kodlari BIRLESIM olarak tasinir: urun farkli binalarda
+    // geciyorsa her binanin kodu ayri gelir, biri kodsuzsa digerininki kaybolmaz
+    const kodlar=[];
+    u._satirlar.forEach(l=>sartKod.get(l).forEach(c=>{ if(!kodlar.includes(c)) kodlar.push(c); }));
+    uRows.push([i+1,k.kod||'',k.ad||'',markaMetni(k),k.kategori||'',k.standart||'',kg(k.agirlikKg),
+      k.birim||ilk.birim||'',u.qty,ihtOzetKatMetni(u._hedefler,false),u._satirlar.length,kodlar.join(', '),
+      teknikMetni(k),gorsel(k.img),kaynakAd(ilk.matSrc)]);
+  });
+  const wsU=XLSX.utils.aoa_to_sheet(uRows);
+  genislik(wsU,[6,16,44,16,18,24,11,9,14,24,11,44,50,40,14]);
+  suzgec(wsU,uRows); linkle(wsU,uRows,13);
+
+  // ---- LISTE BILGISI (antet + baslik + toplamlar) ----
+  const A=sirketAntet(x.firmaId)||eskiAntet()||BOS_ANTET;
+  const tt=ihtTotals(x);
+  const hedefler=new Set(ls.filter(ihtHedefTam).map(l=>l.bina+'|@|'+l.kat));
+  const damga=new Date().toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const bilgi=[['alan','deger'],
+    ['Belge Kodu',x.kod||''],['Liste Adi',x.ad||''],['Tarih',x.tarih?fmtDate(x.tarih):''],['Bina',x.bina||''],
+    ['Hazirlayan',x.olusturan?kisiAd(x.olusturan):''],['Meslek',x.olusturan?(kisiMeslek(x.olusturan)||''):''],
+    ['Firma',A.unvan||''],['Adres',A.adres||''],['Telefon',A.tel||''],['E-posta',A.email||''],
+    ['Vergi Dairesi',A.vergiDairesi||''],['Vergi No',A.vergi||''],['Firma Logosu',gorsel(A.logo)],
+    ['Aciklama',String(x.aciklama||'').trim()],
+    ['Toplam Kalem',tt.kalem],['Farkli Urun',urunler.length],['Toplam Miktar',tt.miktar],['Hedef Kat',hedefler.size],
+    ['Cikti Tarihi',damga]];
+  const sartlar=ihtCiktiSartnameleri(x);
+  // basliktaki kaynak notu: okuyan kodlarin elle mi secildigini, urunlerden mi geldigini bilsin
+  bilgi.push([],['SARTNAMELER ('+(ihtSartlar(x).length?'listede secilen':'urunlerden turetilen')+', '+sartlar.length+')','urun_sayisi']);
+  sartlar.forEach(s=>bilgi.push([s.kod,s.urun]));
+  // PDF'teki kat grubu basliklari: "00UYB · 3. Kat · Kot 3600   8 kalem · 12.898 adet"
+  bilgi.push([],['HEDEFLER (bina · kat · kot)','kalem','miktar']);
+  gruplar.forEach(g=>bilgi.push([g.etiket||'Hedef belirtilmemis',g.satirlar.length,
+    g.satirlar.reduce((a,l)=>a+ihtSayi(l.qty),0)]));
+  const wsB=XLSX.utils.aoa_to_sheet(bilgi);
+  genislik(wsB,[36,60,12]);
+  linkle(wsB,bilgi,1);   // logo linki; alan metinleri http ile baslamadigi icin baska hucre etkilenmez
+
+  // belge once kimligiyle acilsin: PDF'te de antet ve baslik ilk okunan yer
+  XLSX.utils.book_append_sheet(wb,wsB,'Liste Bilgisi');
   XLSX.utils.book_append_sheet(wb,ws,'Ihtiyac');
+  XLSX.utils.book_append_sheet(wb,wsU,'Urun Ozeti');
+
+  // ---- BINA-KAT OZET ----
   const AYR='|@|';   // grup anahtari ayraci - bina/kat/malzeme adinda gecmeyecek bir dizi
-  const grup={};
-  ls.forEach(l=>{ const k=[l.bina||'(bina yok)',l.kat||'(kat yok)',String(ihtKot(l)),
-    l.ad||'-',l.birim||''].join(AYR);
-    grup[k]=(grup[k]||0)+ihtSayi(l.qty); });
-  const ozet=[['bina','kat','kot','malzeme','birim','toplam_miktar']];
+  const grup={}, grupSart={};
+  ls.forEach(l=>{ const ku=kunye.get(l);
+    const k=[l.bina||'(bina yok)',l.kat||'(kat yok)',String(ihtKot(l)),
+    ku.ad||'-',ku.birim||l.birim||''].join(AYR);
+    grup[k]=(grup[k]||0)+ihtSayi(l.qty);
+    // birlesen satirlarin kodlari birlesim olarak tasinir - biri kodsuz kaldiysa digerininki kaybolmasin
+    const s=grupSart[k]||(grupSart[k]=[]);
+    sartKod.get(l).forEach(kod=>{ if(!s.includes(kod)) s.push(kod); }); });
+  const ozet=[['bina','kat','kot','malzeme','birim','toplam_miktar','sartname_kodu']];
   Object.keys(grup).sort((a,b)=>a.localeCompare(b,'tr',{numeric:true}))
-    .forEach(k=>{ const p=k.split(AYR); ozet.push([p[0],p[1],p[2],p[3],p[4],grup[k]]); });
+    .forEach(k=>{ const p=k.split(AYR); ozet.push([p[0],p[1],p[2],p[3],p[4],grup[k],grupSart[k].join(', ')]); });
   const wsO=XLSX.utils.aoa_to_sheet(ozet);
-  wsO['!cols']=[{wch:14},{wch:16},{wch:10},{wch:44},{wch:9},{wch:14}];
+  wsO['!cols']=[{wch:14},{wch:16},{wch:10},{wch:44},{wch:9},{wch:14},{wch:44}];
+  suzgec(wsO,ozet);
   XLSX.utils.book_append_sheet(wb,wsO,'Bina-Kat Ozet');
   // kod varsa dosya adi ODUR: klasorde belge numarasiyla aranabilsin
   XLSX.writeFile(wb,((x.kod||('Ihtiyac_'+(x.ad||'liste')+'_'+new Date().toISOString().slice(0,10)))+'.xlsx')
@@ -27636,9 +27903,10 @@ function ihtPdfOzetle(ls){
   (ls||[]).forEach(l=>{
     const anahtar=l.matId?('k|@|'+(l.matSrc||'')+'|@|'+l.matId)
                          :('e|@|'+norm(l.code||'')+'|@|'+norm(l.ad||''));
-    if(!harita[anahtar]){ harita[anahtar]={ornek:l,miktar:0,hedefler:[],gorulen:{}}; sira.push(anahtar); }
+    if(!harita[anahtar]){ harita[anahtar]={ornek:l,miktar:0,hedefler:[],gorulen:{},satirlar:[]}; sira.push(anahtar); }
     const g=harita[anahtar];
     g.miktar+=ihtSayi(l.qty);
+    g.satirlar.push(l);   // Excel ozeti birlesen satirlarin sartname kodlarini ve sayisini buradan okur
     /* Hedef BINA ve KAT olarak ayri saklanir, birlesik metin olarak degil:
        sutunda katlar binaya gore kumelenip araliga dusurulecek (ihtOzetKatMetni),
        bunun icin parcalarin ayri durmasi gerekiyor. */
@@ -27650,7 +27918,7 @@ function ihtPdfOzetle(ls){
   });
   return sira.map(a=>{
     const g=harita[a];
-    return Object.assign({},g.ornek,{qty:g.miktar,_hedefler:g.hedefler});
+    return Object.assign({},g.ornek,{qty:g.miktar,_hedefler:g.hedefler,_satirlar:g.satirlar});
   });
 }
 
@@ -27697,8 +27965,9 @@ function ihtPdfSayfala(gruplar,yukseklikFn){
    Kutuphaneye BAGLI OLMAYAN satir (elle yazilmis) da calisir: kunye satirin
    kendi alanlarindan kurulur, kart bos yerine yazilani gosterir. */
 function ihtPdfKunye(l){
+  // agirlik: PDF'e basilan metin ("12,5 kg"); agirlikKg: Excel'e giden HAM deger (hesaplanabilsin)
   const k={ ad:l.ad||'', kod:l.code||'', kategori:'', marka:l.marka?[l.marka]:[],
-    standart:'', birim:l.birim||'', agirlik:'', tek:[], not:'', img:'' };
+    standart:'', birim:l.birim||'', agirlik:'', agirlikKg:'', tek:[], not:'', img:'' };
   if(!l.matId) return k;
   const src=l.matSrc||'';
   const ekle=(ad,deger)=>{ const v=String(deger==null?'':deger).trim(); if(v) k.tek.push({k:ad,v}); };
@@ -27710,6 +27979,7 @@ function ihtPdfKunye(l){
       k.marka=matBrandParts(m.brand);
       k.standart=m.standart||''; k.birim=m.unit||k.birim;
       k.agirlik=(m.weight!=null&&m.weight!=='')?fmtNum(m.weight)+' kg':'';
+      k.agirlikKg=(m.weight!=null&&m.weight!=='')?m.weight:'';
       k.kategori=m.cat||''; k.not=String(m.note||'').trim();
       k.img=m.img||m.img2||'';
       matTek(m).forEach(r=>ekle(r.k,r.v));
@@ -27733,6 +28003,7 @@ function ihtPdfKunye(l){
       k.ad=x.ad||k.ad; k.kod=x.kod||k.kod; k.marka=x.marka?matBrandParts(x.marka):[];
       k.birim=x.birim||k.birim; k.kategori=x.grup||''; k.img=x.img||x.img2||'';
       k.agirlik=(x.agirlik!=null&&x.agirlik!=='')?fmtNum(x.agirlik)+' kg':'';
+      k.agirlikKg=(x.agirlik!=null&&x.agirlik!=='')?x.agirlik:'';
       k.not=String(x.note||'').trim();
       ekle('Olcu',x.olcu); ekle('Madde',x.madde); ekle('Renk',x.renk); ekle('Barkod',x.barkod);
       return k;
@@ -27763,21 +28034,40 @@ function ihtPdfMarka(adlar){
    kullanimini gostermek daha dogru.
    Sira ilk gorulme sirasidir (satir sirasi kullanicinin emegidir, bkz.
    ihtPdfGrupla) ve her kod icin KAC URUN sayilir. */
-function ihtPdfSartnameler(x){
+// TEK SATIRIN sartname kodlari (tekil, ilk gorulme sirasi). PDF seridi ve Excel
+// sutunu ayni kurali okusun diye burada: ikisi ayri hesaplasaydi bina elemesi
+// birinde duzeltilip digerinde unutulurdu.
+function ihtSatirSartKodlari(l){
   if(typeof materialUsage!=='function'||typeof specGroupKey!=='function') return [];
+  if(!l||!l.matId||(l.matSrc&&l.matSrc!=='proje')) return [];
+  let kalemler=[]; try{ kalemler=materialUsage(l.matId)||[]; }catch(e){ return []; }
+  const bina=String(l.bina||'').trim();
+  if(bina){ const b=kalemler.filter(k=>String(k.bina||'')===bina); if(b.length) kalemler=b; }
+  const out=[];
+  kalemler.forEach(k=>{ const kod=String(specGroupKey(k)||'').trim(); if(kod&&!out.includes(kod)) out.push(kod); });
+  return out;
+}
+function ihtPdfSartnameler(x){
   const sira=[], harita={};
   ihtFilledLines(x).forEach(l=>{
-    if(!l||!l.matId||(l.matSrc&&l.matSrc!=='proje')) return;
-    let kalemler=[]; try{ kalemler=materialUsage(l.matId)||[]; }catch(e){ return; }
-    const bina=String(l.bina||'').trim();
-    if(bina){ const b=kalemler.filter(k=>String(k.bina||'')===bina); if(b.length) kalemler=b; }
-    kalemler.forEach(k=>{
-      const kod=String(specGroupKey(k)||'').trim(); if(!kod) return;
+    ihtSatirSartKodlari(l).forEach(kod=>{
       if(!harita[kod]){ harita[kod]=new Set(); sira.push(kod); }
       harita[kod].add(l.id||l.code||l.ad);
     });
   });
   return sira.map(kod=>({kod,urun:harita[kod].size}));
+}
+/* CIKTININ SARTNAME LISTESI (PDF seridi + Excel "Liste Bilgisi"): listede sartname
+   SECILDIYSE o kodlar, secilmediyse eskisi gibi urunlerden turetilenler (kullanici
+   karari). Urun sayisi her iki durumda turetimden okunur: secilen ama hicbir urunun
+   gecmedigi kod 0 ile gorunur - gizlenseydi secimin ciktiya yansimadigi sanilirdi.
+   Excel'in SATIR bazli sartname_kodu sutunu bundan ETKILENMEZ: o sutun urunu anlatir. */
+function ihtCiktiSartnameleri(x){
+  const turetilen=ihtPdfSartnameler(x);
+  const sec=ihtSartlar(x);
+  if(!sec.length) return turetilen;
+  const say=new Map(turetilen.map(s=>[s.kod,s.urun]));
+  return sec.map(kod=>({kod,urun:say.get(kod)||0}));
 }
 /* Seride kac kod yazilacagini SAYI degil KARAKTER BUTCESI belirler: kodlar
    birbirinden cok farkli uzunlukta olabiliyor (ortak onek ayrildiktan sonra
@@ -28093,7 +28383,7 @@ function ihtPdfHtml(x,kip){
   /* Sartname seridi butun sayfalarda AYNIDIR (liste geneli bir bilgi), o yuzden
      sayfa dongusunun disinda bir kez hesaplanir - materialUsage her satir icin
      butun kalem listesini tarar, sayfa basina tekrarlamak bosa is olurdu. */
-  const sartlar=ihtPdfSartnameler(x);
+  const sartlar=ihtCiktiSartnameleri(x);
   const sartSerit=(()=>{
     if(!sartlar.length) return '';
     const {onek,parcalar}=ihtSartKisalt(sartlar.map(sr=>sr.kod));
