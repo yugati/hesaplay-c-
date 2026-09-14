@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { requireAuth, signSession, SESSION_TTL_DEFAULT, SESSION_TTL_REMEMBER } from '../lib/auth.js'
 import { VARSAYILAN_ORG, orgKullanilabilir } from '../lib/org.js'
+import { tasariCoz } from '../lib/tasari.js'
 
 // Aktif oturumun kullanicisini tazeler (ör. baska bir admin yetkisini
 // degistirdiyse sayfa yenilemede yansisin diye arka planda cagrilir).
@@ -41,7 +42,25 @@ export default async function handler(req, res) {
     if (claims.sup && claims.org && claims.org !== evOrg && user.is_super) {
       if (await orgKullanilabilir(claims.org)) aktif = claims.org
     }
-    res.status(200).json({ user: safeUser, org: aktif, token: signSession(user, ttl, aktif), ttl })
+
+    /* AKTIF TASARI DA TAZELEMEDE KORUNUR - org ile birebir ayni gerekce.
+       Korunmazsa kullanici 20 dakikada bir sessizce kendi varsayilan projesine
+       geri atilirdi: ekrandaki siparisler degisir, sebebi gorunmez ve o sirada
+       acik olan bir form YANLIS PROJEYE kaydedilirdi.
+
+       Cozum aktif ORGANIZASYONA gore yapilir (tasariCoz): tasari kimlikleri
+       organizasyon icinde benzersiz oldugu icin, super yonetici baska bir
+       organizasyondayken elindeki tasari orada gecerli olmayabilir. O durumda
+       hedef organizasyonun ilk tasarisina duser - kendi organizasyonunun
+       projesiyle imzalayip bos bir uygulama gostermek yerine.
+
+       Tasari sonradan silinmis/askiya alinmissa da ayni yol calisir. */
+    const aktifTas = await tasariCoz(aktif, claims.tas, user)
+
+    res.status(200).json({
+      user: safeUser, org: aktif, tasari: aktifTas,
+      token: signSession(user, ttl, aktif, aktifTas), ttl,
+    })
   } catch (e) {
     console.error('me: kullanici sorgusu basarisiz', e)
     res.status(500).json({ error: 'Sunucu hatasi' })

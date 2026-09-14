@@ -83,8 +83,12 @@ export async function sbGetUserByUsername() {
     // __org: AKTIF organizasyon. Kullanicinin kendi org_id'sinden FARKLI olabilir -
     // super yonetici baska bir organizasyona gecmisse dogru cevap budur ve tazeleme
     // sonrasi da korunur (bkz. api/me.js).
-    const { user, token, ttl, org } = await authFetch('/api/me')
-    return user ? { ...user, __token: token, __ttl: ttl, __org: org } : null
+    // __tasari: AKTIF tasari (proje). Kullanicinin kendi varsayilan tasari_id'sinden
+    // FARKLI olabilir - baska bir projeye gecmisse dogru cevap budur ve tazeleme
+    // sonrasi da korunur (bkz. api/me.js). Korunmasaydi kullanici 20 dakikada bir
+    // sessizce varsayilan projesine geri atilirdi.
+    const { user, token, ttl, org, tasari } = await authFetch('/api/me')
+    return user ? { ...user, __token: token, __ttl: ttl, __org: org, __tasari: tasari } : null
   } catch (e) {
     // Token gecersiz/suresi dolmus ya da kullanici silinmis: gercekten
     // cikis yaptirilmali. Diger tum hatalar (ag, 5xx) yukari firlatilir ki
@@ -205,12 +209,46 @@ export async function sbOrgGecis(org) {
   })
 }
 
-// { org:{id, ad, aktif} } - yalnizca super yonetici
+// { org:{id, ad, aktif}, tasari:{id, ad, aktif} } - yalnizca super yonetici
+// Yeni organizasyon EN AZ BIR TASARIYLA doğar (api/org.js) - tasarisiz bir
+// organizasyona gecildiginde aktif tasari cozulemezdi.
 export async function sbOrgYeni(id, ad) {
   return authFetch('/api/org', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ op: 'yeni', id, ad }),
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tasarilar (proje katmani) - organizasyonun ALTINDAKI ikinci kapsam
+//
+// Ayri bir /api/tasari ucu YOK, hepsi /api/org uzerinden: Vercel Hobby plani
+// api/ altinda 12 fonksiyonla sinirli ve 11'i dolu (bkz. api/org.js basligi).
+//
+// Aktif tasari da TOKENDE durur; burasi yalnizca gecis ister. Gecis sunucudan
+// YENI BIR TOKEN dondurur - cagiran taraf onu window.AUTH_TOKEN'a yazip veriyi
+// bastan yuklemeli, yoksa ekranda onceki projenin verisi kalir.
+//
+// LISTE AYRI BIR UC DEGIL: sbOrgListesi() zaten { tasarilar, aktifTasari,
+// tasariYonetici } de donuyor - iki ayri istek atmamak icin tek yanitta birlesik.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// { token, tasari, ad, ttl } - organizasyondaki HERKESE acik
+export async function sbTasariGecis(tasari) {
+  return authFetch('/api/org', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op: 'tasariGecis', tasari }),
+  })
+}
+
+// { tasari:{id, ad, aktif} } - yalnizca yonetici (role==='admin')
+export async function sbTasariYeni(id, ad) {
+  return authFetch('/api/org', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op: 'tasariYeni', id, ad }),
   })
 }
 
@@ -259,8 +297,12 @@ async function veriSelect(table, opts = {}) {
 const ONBELLEK_DB = 'saha-onbellek'
 const ONBELLEK_DEPO = 'tablolar'
 // 2: anahtar artik ORGANIZASYONU da iceriyor (asagidaki onbellekAnahtar).
-// Surum artisi eski (organizasyonsuz) onbellegi tamamen gecersiz kilar.
-const ONBELLEK_SURUM = 2
+// 3: anahtar artik TASARIYI (proje) da iceriyor.
+// Surum artisi eski onbellegi tamamen gecersiz kilar - bu sefer sart: 2. surumde
+// yazilmis satirlar 'bykara|proje_items' anahtarindadir ve hangi projeye ait
+// olduklari bilinmiyor. Surum artirilmasaydi o satirlar yeni anahtarla
+// eslesmeyip sessizce oylece kalir, disk dolu tutardi.
+const ONBELLEK_SURUM = 3
 let _idb = null
 
 /* ONBELLEK ANAHTARI ORGANIZASYONU DA ICERIR.
@@ -271,13 +313,29 @@ let _idb = null
    sunucunun kimlik listesi digerinin satirlariyla eslesmedigi surece onbellekteki
    yabanci satirlar ekranda kalirdi.
 
-   window.AKTIF_ORG, authFetch'in window.AUTH_TOKEN'i okumasiyla ayni desen -
-   oturum bilgisi uygulamada tutulur, bu katman onu yalnizca okur. Org henuz
-   bilinmiyorsa ayri bir kova kullanilir: yanlis veri gostermektense o acilista
-   bir kez fazladan indirme yapilir. */
+   ANAHTAR TASARIYI DA ICERIR - ayni gerekcenin bir kat asagisi. Tasari olmadan
+   AKKUYU NGS'nin 'proje_items' onbellegi ikinci projenin verisi sanilirdi ve
+   uygulama YANLIS PROJENIN siparislerini gosterirdi. Artimli yukleme sunucudan
+   yalnizca DEGISEN satirlari istedigi icin hata kendiliginden de duzelmezdi:
+   sunucunun kimlik listesi digerinin satirlariyla eslesmedigi surece onbellekteki
+   yabanci satirlar ekranda kalirdi.
+
+   KUTUPHANE TABLOLARI DA AYNI ANAHTARI KULLANIR (companies, proje_materials,
+   alet_lib, gecici_lib). Bunlar organizasyon genelinde ORTAK, yani tasari
+   basina ayri kopya tutmak gereksiz bir indirme demek. Yine de ayrilmis
+   birakildi: yanlis olan tarafi yok (ayni veri iki kovada durur, ikisi de
+   dogru) ve tek bir istisna listesi tutmak, o listenin lib/tasari.js ile
+   ayrisma riskini getirirdi - sessizce yanlis veri gosteren bir hata,
+   birkac yuz satirlik fazladan indirmeden cok daha pahali.
+
+   window.AKTIF_ORG / window.AKTIF_TASARI, authFetch'in window.AUTH_TOKEN'i
+   okumasiyla ayni desen - oturum bilgisi uygulamada tutulur, bu katman onu
+   yalnizca okur. Kapsam henuz bilinmiyorsa ayri bir kova kullanilir: yanlis veri
+   gostermektense o acilista bir kez fazladan indirme yapilir. */
 function onbellekAnahtar(table) {
   const org = (typeof window !== 'undefined' && window.AKTIF_ORG) || 'bilinmeyen'
-  return org + '|' + table
+  const tasari = (typeof window !== 'undefined' && window.AKTIF_TASARI) || 'bilinmeyen'
+  return org + '|' + tasari + '|' + table
 }
 
 function idbAc() {

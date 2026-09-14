@@ -26,6 +26,8 @@ import {
   sbOrgListesi,
   sbOrgGecis,
   sbOrgYeni,
+  sbTasariGecis,
+  sbTasariYeni,
   // Core
   sbLoadAllData,
   sbMigrateLocalDB,
@@ -265,6 +267,9 @@ window.sbDavetKabul        = sbDavetKabul
 window.sbOrgListesi        = sbOrgListesi
 window.sbOrgGecis          = sbOrgGecis
 window.sbOrgYeni           = sbOrgYeni
+// Tasari (proje katmani) - liste sbOrgListesi yanitinda geliyor, ayri uc yok
+window.sbTasariGecis       = sbTasariGecis
+window.sbTasariYeni        = sbTasariYeni
 
 // ─── Core ────────────────────────────────────────────────────────────────────
 window.sbLoadAllData       = sbLoadAllData

@@ -427,6 +427,32 @@ header{display:flex;align-items:center;gap:12px;padding:0 20px;height:56px;backg
 .org-ayrac{height:1px;background:var(--line);margin:5px 2px}
 .org-bos{padding:10px 11px;font-size:12px;color:var(--dim)}
 
+/* -- tasari (proje) degistirici -- */
+/* Org degistiriciden GORSEL OLARAK AYRILIR ve bilerek: org kucuk bir ok
+   dugmesidir cunku tek kiracili kurulumda neredeyse hic kullanilmaz. Tasari ise
+   HER GUN degisebilen bir kapsamdir - yanlis projeye veri girmenin tek panzehiri
+   hangisinde oldugunu surekli gormek, o yuzden ADI ustunde yazili genis bir
+   dugmedir. Acilir menu org'un (.org-menu / .org-opt) stillerini paylasir:
+   ayni davranis iki kez tanimlanmasin. */
+/* flex:0 1 auto + min-width:0 : dugme yer KAPMAK yerine yer VERIR. Baslik dar
+   ekranda zaten sikisik (arama hapi, saat, tema, yedek dugmeleri); sabit genislikli
+   bir oge eklemek baslgi tasirir ve saga kaydirma cubugu cikarirdi. Bu haliyle
+   dugme once kendi adini kisaltir, ancak ondan sonra baskilarin yerini alir. */
+.tas-wrap{position:relative;display:none;align-items:center;margin-left:4px;flex:0 1 auto;min-width:0}
+.tas-wrap.acik{display:flex}
+.tas-btn{display:flex;align-items:center;gap:7px;height:26px;padding:0 8px 0 10px;border-radius:8px;min-width:0;
+  background:var(--panel2);border:1px solid var(--line);color:var(--ink);font-size:11.5px;font-weight:700;
+  letter-spacing:.3px;max-width:210px;transition:background .13s,color .13s,border-color .13s}
+.tas-btn:hover{background:var(--hover);border-color:var(--dim)}
+.tas-btn .tas-ad{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tas-btn svg{flex:none;color:var(--dim)}
+.tas-btn:hover svg{color:var(--ink)}
+/* Mobilde baslik zaten org adini (.hsub) ve saati gizliyor - bosalan yerin
+   tamamini almasin diye dugme burada daha da daralir. 88px, 6-8 harf + ok
+   demektir: proje adinin bas kismi tanimaya yeter. */
+@media(max-width:720px){ .tas-btn{max-width:112px} }
+@media(max-width:480px){ .tas-btn{max-width:88px;padding:0 6px 0 8px;gap:5px} }
+
 /* -- global arama tetikleyici (navbar) -- */
 .gsearch-pill{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);color:var(--dim);
   height:32px;padding:0 6px 0 11px;border-radius:8px;font-size:12px;min-width:190px;transition:border-color .15s,color .15s,background .15s;flex:0 1 auto}
@@ -3323,6 +3349,12 @@ datalist{display:none}
    dogru kurar; kutu 2400px'de durur - daha genisi tabloyu okunmaz kilar. */
 main:has(>.fat-form-wrap){max-width:none}
 .fat-form-wrap{max-width:2400px}
+/* Ihtiyac Listesi formu ayni sebeple genisletildi: 11 sutunlu malzeme tablosu
+   .tut-wrap'in 1240px kapagi altinda yatay kaydiriyordu (Not sutunu kirpiliyordu).
+   Fatura formuyla ayni teknik: main'in kapagi kalkar, wrap kendi (daha genis)
+   kapagini alir - tut-wrap'ten gelen margin:0 auto sayesinde yine ortali kalir. */
+main:has(>.iht-form-wrap){max-width:none}
+.iht-form-wrap{max-width:2400px}
 /* Menuyu kaldiran dugme kunye seridinin sagina yaslanir. Menunun yer kapladigi
    tek yer masaustu oldugu icin altinda gizlenir - orada basildiginda hicbir sey
    kazanilmaz, yalnizca kafa karistirirdi. */
@@ -3671,6 +3703,22 @@ main:has(>.fat-form-wrap){max-width:none}
         <div class="org-liste" id="orgListe"></div>
         <div class="org-ayrac"></div>
         <button class="org-opt" onclick="orgYeniAc()">+ Yeni Organizasyon</button>
+      </div>
+    </div>
+    <!-- TASARI (PROJE) DEGISTIRICI: organizasyon secildikten sonraki ikinci kapsam.
+         Org degistiricinin aksine HERKESTE gorunur - tasari secimi bir yetki
+         sinir degil, bir gezinti hareketidir (bkz. lib/tasari.js). Baslik
+         baglantisinin DISINDA duruyor; icinde olsaydi her tikta ana sayfaya gidilirdi. -->
+    <div class="tas-wrap" id="tasWrap">
+      <button class="tas-btn" id="tasBtn" title="Tasari (proje) degistir" aria-label="Tasari degistir" onclick="tasariMenuAc(event)">
+        <span class="tas-ad" id="tasAd">-</span>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="org-menu" id="tasMenu">
+        <input type="text" class="org-ara" id="tasAra" placeholder="Tasari ara..." autocomplete="off" oninput="tasariListeCiz()">
+        <div class="org-liste" id="tasListe"></div>
+        <div class="org-ayrac" id="tasAyrac"></div>
+        <button class="org-opt" id="tasYeniBtn" onclick="tasariYeniAc()">+ Yeni Tasari</button>
       </div>
     </div>
     <div class="spacer"></div>
@@ -4154,6 +4202,12 @@ function applyUserChrome(){
   // Organizasyon degistirici YALNIZCA super yoneticide. Normal kullanici kendi
   // organizasyonuna kilitli oldugu icin dugmeyi hic gormez (sunucu da oyle davranir).
   const ow=document.getElementById('orgWrap'); if(ow) ow.classList.toggle('acik', !!(CURRENT_USER&&CURRENT_USER.is_super));
+  /* Tasari degistirici HERKESTE gorunur (org'un aksine) - oturum acik oldugu
+     surece. Uzerinde aktif projenin adi yazar: yanlis projeye veri girmenin tek
+     panzehiri hangisinde oldugunu gormek. */
+  const tw=document.getElementById('tasWrap'); if(tw) tw.classList.toggle('acik', !!CURRENT_USER);
+  const ta=document.getElementById('tasAd'); if(ta) ta.textContent=tasariAdiGoster();
+  const tb=document.getElementById('tasBtn'); if(tb) tb.title='Tasari: '+tasariAdiGoster()+' - degistirmek icin tiklayin';
   // admin-only header butonlari (kullanicilar + yedek al/yukle)
   const ub=document.getElementById('usersBtn'); if(ub)ub.style.display=isAdmin()?'':'none';
   const aub=document.getElementById('auditBtn'); if(aub)aub.style.display=canAudit()?'':'none';
@@ -4285,9 +4339,140 @@ async function orgGecOnaysiz(id, ad){
     location.reload();
   }catch(e){ toast('Organizasyon degistirilemedi: '+(e.message||'bilinmeyen hata'),'err'); }
 }
-// Disari tiklaninca menu kapanir (tema menusuyle ayni desen)
+/* ═══════════════════════════════════════════════════════════════════════════
+   TASARI DEGISTIRICI (proje katmani)
+
+   Organizasyonun ALTINDAKI ikinci kapsam. Org degistiriciyle ayni desen:
+   aktif tasari TOKENDE durur, buradaki degiskenler yalnizca GOSTERIM ve
+   ONBELLEK ANAHTARI icindir (src/supabase.js onbellekAnahtar).
+
+   IKI ONEMLI FARK:
+   1. HERKES gecebilir - org degistirme super yoneticiye ozelken tasari secimi
+      normal bir gezinti hareketidir (alinan karar). Yeni tasari ACMAK yine de
+      yoneticiye ozeldir: her acilan tasari kalici bir kapsamdir.
+   2. Liste AYRI BIR ISTEK DEGIL - sbOrgListesi() yaniti tasarilari da tasiyor,
+      iki ayri gidis donus olmasin diye.
+
+   GECISTE SAYFA YENILENIR. DB'nin tamami bellekte ve onlarca ekran ona bagli;
+   yerinde degistirmek yerine oturum bilgisi yazilip location.reload() yapilir -
+   acilis yolu yeni tasarinin verisini bastan yukler. Onbellek de tasari bazli
+   oldugu icin onceki projenin satirlari sizmaz.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function tasariAdiGoster(){ return window.AKTIF_TASARI_AD || String(window.AKTIF_TASARI||'').toUpperCase().replace(/-/g,' ') || '-'; }
+
+/* Oturum bilgisini TEK YERDEN yazar - orgOturumYaz ile ayni gerekce: tasari da
+   localStorage'a girmeli, cunku sayfa yenilendiginde veri YUKLENMEDEN once
+   bilinmeli (onbellek anahtari ona bagli). Bilinmezse o acilista onbellek
+   isabetsiz kalir - yanlis veri degil, yalnizca bir kez fazladan indirme. */
+function tasariOturumYaz(tasari, ad){
+  if(tasari) window.AKTIF_TASARI=tasari;
+  if(ad) window.AKTIF_TASARI_AD=ad;
+  try{
+    const s=JSON.parse(localStorage.getItem('authSession')||'null');
+    if(s){ s.tasari=window.AKTIF_TASARI||''; s.tasariAd=window.AKTIF_TASARI_AD||'';
+           if(window.AUTH_TOKEN) s.token=window.AUTH_TOKEN;
+           localStorage.setItem('authSession', JSON.stringify(s)); }
+  }catch(e){}
+}
+
+async function tasariMenuAc(ev){
+  if(ev) ev.stopPropagation();
+  const m=document.getElementById('tasMenu'); if(!m) return;
+  if(m.classList.contains('open')){ m.classList.remove('open'); return; }
+  m.classList.add('open');
+  const ara=document.getElementById('tasAra'); if(ara){ ara.value=''; setTimeout(()=>ara.focus(),0); }
+  const el=document.getElementById('tasListe'); if(el) el.innerHTML='<div class="org-bos">Yukleniyor...</div>';
+  try{
+    _ORGLAR=await sbOrgListesi();
+    // Sunucunun soyledigi aktif tasari DOGRU olandir - istemcideki gosterim ondan tazelenir
+    if(_ORGLAR&&_ORGLAR.aktifTasari){
+      const a=(_ORGLAR.tasarilar||[]).find(t=>t.id===_ORGLAR.aktifTasari);
+      tasariOturumYaz(_ORGLAR.aktifTasari, a?a.ad:null); applyUserChrome();
+    }
+  }catch(e){
+    if(el) el.innerHTML='<div class="org-bos">Liste alinamadi</div>';
+    return;
+  }
+  tasariListeCiz();
+}
+
+function tasariListeCiz(){
+  const el=document.getElementById('tasListe'); if(!el||!_ORGLAR) return;
+  const q=((document.getElementById('tasAra')||{}).value||'').trim();
+  const liste=(_ORGLAR.tasarilar||[]).filter(t=>!q||matchText((t.ad||'')+' '+(t.id||''),q));
+  // "Yeni Tasari" YALNIZCA YONETICIDE gorunur - sunucu da oyle davranir
+  // (api/org.js op:'tasariYeni'). Gizlemek yerine gosterip 403 aldirmak,
+  // kullaniciya yapamayacagi bir isi teklif etmek olurdu.
+  const yonetici=!!(_ORGLAR&&_ORGLAR.tasariYonetici);
+  const yb=document.getElementById('tasYeniBtn'); if(yb) yb.style.display=yonetici?'':'none';
+  const ay=document.getElementById('tasAyrac'); if(ay) ay.style.display=yonetici?'':'none';
+  if(!liste.length){ el.innerHTML='<div class="org-bos">Eslesen tasari yok</div>'; return; }
+  el.innerHTML=liste.map(t=>`<button class="org-opt${t.id===window.AKTIF_TASARI?' on':''}" onclick="tasariGec('${esc(t.id)}')">${esc(t.ad||t.id)}<span class="org-kod">${esc(t.id)}</span></button>`).join('');
+}
+
+async function tasariGec(id){
+  const m=document.getElementById('tasMenu');
+  if(id===window.AKTIF_TASARI){ if(m)m.classList.remove('open'); return; }
+  const t=((_ORGLAR&&_ORGLAR.tasarilar)||[]).find(x=>x.id===id);
+  const ad=(t&&t.ad)||id;
+  if(!confirm('"'+ad+'" tasarisina gecilecek.\n\nSayfa yeniden yuklenecek; kaydedilmemis pencere varsa icerigi kaybolur.\n\nDevam edilsin mi?')) return;
+  await tasariGecUygula(id, ad);
+}
+
+// tasariGec'in onay sormayan hali: cagiran taraf onayi zaten aldi
+async function tasariGecUygula(id, ad){
+  try{
+    const r=await sbTasariGecis(id);
+    window.AUTH_TOKEN=r.token;
+    tasariOturumYaz(r.tasari, r.ad||ad);
+    // Gezinti durumu onceki tasariya ait (bina/sartname secimleri) - tasinmamali
+    try{ sessionStorage.removeItem('navState'); }catch(e){}
+    location.reload();
+  }catch(e){
+    toast('Tasari degistirilemedi: '+(e.message||'bilinmeyen hata'),'err');
+  }
+}
+
+function tasariYeniAc(){
+  const m=document.getElementById('tasMenu'); if(m) m.classList.remove('open');
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:460px">
+    <div class="modal-head"><h3>Yeni Tasari</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body">
+      <div class="frow"><label>Tasari Adi *</label>
+        <input id="tas_ad" placeholder="orn. SINOP NGS" oninput="const k=document.getElementById('tas_id'); if(!k.dataset.elle) k.value=orgKimlikOner(this.value)"></div>
+      <div class="frow"><label>Kimlik * <span class="t-meta">(kucuk harf, rakam ve tire - sonradan degistirilemez)</span></label>
+        <input id="tas_id" placeholder="orn. sinop-ngs" oninput="this.dataset.elle='1'"></div>
+      <p class="t-meta" style="margin:0">Yeni tasari <b>kutuphaneyi hazir bulur</b>: malzeme kunyesi, sirketler, alet kunyesi ve marka listesi organizasyon genelinde ortaktir. Yalnizca <b>is verisi</b> bos baslar: sartname, siparis, bina, bolum, rapor, saha, tutanak ve fatura.</p>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="tasariYeniKaydet()">Olustur</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  const inp=document.getElementById('tas_ad'); if(inp) setTimeout(()=>inp.focus(),0);
+}
+
+async function tasariYeniKaydet(){
+  const ad=(document.getElementById('tas_ad').value||'').trim();
+  const id=(document.getElementById('tas_id').value||'').trim();
+  if(!ad){ toast('Tasari adi gerekli','err'); return; }
+  if(!/^[a-z0-9][a-z0-9_-]{1,30}$/.test(id)){ toast('Kimlik kucuk harf/rakam ile baslamali, en az 2 karakter olmali','err'); return; }
+  try{
+    const r=await sbTasariYeni(id,ad);
+    closeModal();
+    toast('"'+ad+'" tasarisi olusturuldu');
+    _ORGLAR=null;
+    if(confirm('"'+ad+'" olusturuldu.\n\nSimdi bu tasariya gecilsin mi?')){
+      await tasariGecUygula(r.tasari.id, r.tasari.ad);
+    }
+  }catch(e){
+    toast(e.message||'Tasari olusturulamadi','err');
+  }
+}
+
+// Disari tiklaninca menuler kapanir (tema menusuyle ayni desen)
 document.addEventListener('click',ev=>{ const m=document.getElementById('orgMenu');
-  if(m&&m.classList.contains('open')&&!ev.target.closest('.org-wrap')) m.classList.remove('open'); });
+  if(m&&m.classList.contains('open')&&!ev.target.closest('.org-wrap')) m.classList.remove('open');
+  const t=document.getElementById('tasMenu');
+  if(t&&t.classList.contains('open')&&!ev.target.closest('.tas-wrap')) t.classList.remove('open'); });
 
 const PROJ_CATS=["Tava","Aydinlatma","Topraklama"];
 // ANA BASLIKLAR (yetkilendirme icin) - key + etiket
@@ -4404,6 +4589,12 @@ async function afterLogin(user, token, remember, opts){
      bagli (src/supabase.js onbellekAnahtar). Giriste aktif org her zaman
      kullanicinin kendi organizasyonudur; gecis ayri bir islem. */
   window.AKTIF_ORG=user.org_id||'bykara'; window.AKTIF_ORG_AD='';
+  /* AKTIF TASARI da ayni sebeple burada kurulur - onbellek anahtari org VE
+     tasariyi birlikte tasiyor. Giriste aktif tasari her zaman kullanicinin
+     kendi varsayilan projesidir; gecis ayri bir islem. Adi henuz bilinmiyor
+     (kullanici kaydinda yalnizca kimlik var) - basliktaki dugme once kimligi
+     gosterir, ilk menu acilisinda gercek ad yerine oturur. */
+  window.AKTIF_TASARI=user.tasari_id||'akkuyu-ngs'; window.AKTIF_TASARI_AD='';
   CURRENT_USER=user; window.CURRENT_USER=user;
   // kimlik dogrulandi, sira veri yuklemede: dugmede de o an inen tablonun adi yazilir
   if(btn) btn.textContent='Veriler yükleniyor...';
@@ -4422,7 +4613,7 @@ async function afterLogin(user, token, remember, opts){
   // "Beni Hatirla" isaretliyse oturum 30 gun, degilse 1 saat yasar; ttl oturumla
   // birlikte saklanir ki sayfa yenilemede uzatma ayni sureyle yapilsin
   const ttl=remember?SESSION_TTL_REMEMBER:SESSION_TTL_DEFAULT;
-  localStorage.setItem('authSession', JSON.stringify({user:user, token:token, expiresAt:Date.now()+ttl, ttl:ttl, org:window.AKTIF_ORG||'', orgAd:''}));
+  localStorage.setItem('authSession', JSON.stringify({user:user, token:token, expiresAt:Date.now()+ttl, ttl:ttl, org:window.AKTIF_ORG||'', orgAd:'', tasari:window.AKTIF_TASARI||'', tasariAd:''}));
   baslatOturumTazeleme(ttl); // token periyodik yenilensin - veri islemleri ona bagli
   if(screenEl){
     screenEl.classList.add('fade-out');
@@ -4467,7 +4658,7 @@ function logout(sebep){
   /* Cikis kaydi sunucuya BEKLENEREK gonderilir: hemen ardindan location.reload()
      var ve bekleme olmadan istek yarida kesilirdi. Hata yutulur (bkz. sbCikis) -
      log yazilamadi diye kullanici oturumda birakilmaz. */
-  const bitir=()=>{ localStorage.removeItem('authSession'); window.AUTH_TOKEN=null; window.AKTIF_ORG=null; window.AKTIF_ORG_AD=''; CURRENT_USER=null; window.CURRENT_USER=null; location.reload(); };
+  const bitir=()=>{ localStorage.removeItem('authSession'); window.AUTH_TOKEN=null; window.AKTIF_ORG=null; window.AKTIF_ORG_AD=''; window.AKTIF_TASARI=null; window.AKTIF_TASARI_AD=''; CURRENT_USER=null; window.CURRENT_USER=null; location.reload(); };
   if(window.AUTH_TOKEN&&window.sbCikis){ window.sbCikis(sebep).then(bitir,bitir); return; }
   bitir();
 }
@@ -4512,7 +4703,12 @@ function oturumTazeleUygula(fresh, ttl){
      organizasyona gecmisse tazelemede korunur (api/me.js); burada yok sayilsaydi
      20 dakikada bir sessizce kendi organizasyonuna donerdi. */
   const yeniOrg=fresh.__org;
-  const u={...fresh}; delete u.__token; delete u.__ttl; delete u.__org;
+  /* __tasari: sunucunun bildirdigi AKTIF tasari. Kullanici baska bir projeye
+     gecmisse tazelemede korunur (api/me.js); burada yok sayilsaydi 20 dakikada
+     bir sessizce varsayilan projesine donerdi - ekrandaki siparisler degisir,
+     sebebi gorunmez ve o sirada acik olan bir form YANLIS PROJEYE kaydedilirdi. */
+  const yeniTasari=fresh.__tasari;
+  const u={...fresh}; delete u.__token; delete u.__ttl; delete u.__org; delete u.__tasari;
   /* Karsilastirma ONCEKI KULLANICIYA degil, verinin INDIGI kapsama (YUKLU_SCOPE)
      karsi yapilir. Onceki kullaniciya bakilsaydi bant yalnizca degisimin oldugu
      tazelemede cikar, kullanici yenilemeden bir tur daha gecince kaybolurdu -
@@ -4521,7 +4717,15 @@ function oturumTazeleUygula(fresh, ttl){
   CURRENT_USER=u; window.CURRENT_USER=u;
   if(yeniToken) window.AUTH_TOKEN=yeniToken;
   if(yeniOrg&&yeniOrg!==window.AKTIF_ORG){ window.AKTIF_ORG=yeniOrg; window.AKTIF_ORG_AD=''; }
-  try{ localStorage.setItem('authSession', JSON.stringify({user:u, token:window.AUTH_TOKEN, expiresAt:Date.now()+(yeniTtl||3600000), ttl:yeniTtl, org:window.AKTIF_ORG||'', orgAd:window.AKTIF_ORG_AD||''})); }catch(e){}
+  /* TASARI DEGISTIYSE ONBELLEK ARTIK YANLIS KAPSAMA BAKIYOR. Bu ancak tasari
+     sunucuda silinmis/askiya alinmissa olur (api/me.js baska bir projeye
+     dusurur). Sayfa yenilenmeden veri degismez; kullaniciya haber verilir ki
+     yukleyip acik ekranin hangi projeye ait oldugunu sanmaya devam etmesin. */
+  if(yeniTasari&&yeniTasari!==window.AKTIF_TASARI){
+    window.AKTIF_TASARI=yeniTasari; window.AKTIF_TASARI_AD='';
+    try{ toast('Aktif tasari degisti - ekrani yenileyin','warn'); }catch(e){}
+  }
+  try{ localStorage.setItem('authSession', JSON.stringify({user:u, token:window.AUTH_TOKEN, expiresAt:Date.now()+(yeniTtl||3600000), ttl:yeniTtl, org:window.AKTIF_ORG||'', orgAd:window.AKTIF_ORG_AD||'', tasari:window.AKTIF_TASARI||'', tasariAd:window.AKTIF_TASARI_AD||''})); }catch(e){}
   applyUserChrome();
   /* Taze kullanici artik localStorage'da: sayfa yenilendiginde loadDB DOGRU
      kapsamla calisir. Tek yenileme yeter - eskiden ilk yenileme yalnizca
@@ -4626,7 +4830,7 @@ document.addEventListener('DOMContentLoaded', async function(){
     },230);
   }
   function showLogin(){ document.documentElement.classList.remove('booting'); lg.classList.remove('hidden'); warmLoginApi(); }
-  function saveSession(u,ttl,token){ ttl=ttl||SESSION_TTL_DEFAULT; localStorage.setItem('authSession', JSON.stringify({user:u, token:token, expiresAt:Date.now()+ttl, ttl:ttl, org:window.AKTIF_ORG||'', orgAd:window.AKTIF_ORG_AD||''})); }
+  function saveSession(u,ttl,token){ ttl=ttl||SESSION_TTL_DEFAULT; localStorage.setItem('authSession', JSON.stringify({user:u, token:token, expiresAt:Date.now()+ttl, ttl:ttl, org:window.AKTIF_ORG||'', orgAd:window.AKTIF_ORG_AD||'', tasari:window.AKTIF_TASARI||'', tasariAd:window.AKTIF_TASARI_AD||''})); }
   try {
     const sess=JSON.parse(raw);
     // token yoksa eski (guvenlik guncellemesinden onceki) oturumdur - artik
@@ -4640,6 +4844,12 @@ document.addEventListener('DOMContentLoaded', async function(){
        kullanicinin kendi organizasyonuna dusulur. */
     window.AKTIF_ORG=sess.org||(sess.user&&sess.user.org_id)||'bykara';
     window.AKTIF_ORG_AD=sess.orgAd||'';
+    /* Aktif tasari da oturumdan geri gelir - loadDB'den ONCE, ayni gerekceyle.
+       Tasari katmanindan once kaydedilmis oturumlarda alan yoktur; o oturumlar
+       kullanicinin varsayilan projesine, o da yoksa AKKUYU NGS'ye duser -
+       tasari katmanindan onceki tum veri oraya tasindi (migration_tasari_1.sql). */
+    window.AKTIF_TASARI=sess.tasari||(sess.user&&sess.user.tasari_id)||'akkuyu-ngs';
+    window.AKTIF_TASARI_AD=sess.tasariAd||'';
     // Önbellekten kullanıcıyı anında yükle (asagidaki tazeleme yanit vermezse
     // acilis bununla surer - yani onbellek hala "hicbir zaman beklenmeyen" yedek)
     CURRENT_USER=sess.user; window.CURRENT_USER=sess.user;
@@ -4770,7 +4980,10 @@ function playSectionTransition(){
 // Tek sartnameye kilitli olmasinin sebebi: yeni sablonda bina/bolum/sartname sutunu yok, ekran
 // baglamindan (PBINA/PCAT/PSPEC) alinir - birden fazla sartname ayni dosyada karisirsa yanlis atama olur.
 function updateBinaExcelFab(){
-  const inPanel = (PUSERS&&isAdmin()) || (PAUDIT&&isAdmin()) || PLIB || PDEF || PORD;
+  // render()'daki tam sayfa panel listesiyle ayni: acik bir "kata-page" gorunumu (Toplu Kalem
+  // Girisi, Kat Ata, Oda Metraji, Kod Defteri, Rapor Ice Aktarma...) kendi sabit alt cubugunu
+  // (kata-page-foot) sag altta gosterir - FAB ile ayni koseye denk gelip dugmelerin ustune biner.
+  const inPanel = (PUSERS&&isAdmin()) || (PAUDIT&&isAdmin()) || PLIB || PDEF || PORD || PCOMP || PEKIP || PNEWORD || PBINAY || PKATA || PODM || PSPECF || PRIMP || PINV || PTUT || PIHT || PFAT || PKODD || PTOPM || PTOPG || PARAC;
   const show = SEC==='proje' && !!PBINA && !!PSPEC && PSPEC!=='__all' && !inPanel;
   let imp=document.getElementById('binaExcelFabImport');
   let exp=document.getElementById('binaExcelFabExport');
@@ -26845,7 +27058,7 @@ function renderIhtiyacForm(){
   ihtFilledLines(x).filter(ihtHedefTam).forEach(l=>{ const k=l.bina+' · '+l.kat; grup[k]=(grup[k]||0)+1; });
   const hedefler=Object.keys(grup).sort((a,b)=>a.localeCompare(b,'tr',{numeric:true}))
     .map(k=>`<span class="iht-hedef">${esc(k)}<b>${fmtNum(grup[k])}</b></span>`).join('');
-  return `<div class="tut-wrap">
+  return `<div class="tut-wrap iht-form-wrap">
     <div class="sel-bc"><button onclick="ihtBackToList()">${icoArr('left')} Ihtiyac Listeleri</button> ${icoChevron()}
       <b>${esc(x.ad||'Yeni Liste')}</b></div>
     <div class="page-head"><h1>${x._yeni?'Yeni Ihtiyac Listesi':'Ihtiyac Listesi Duzenle'}</h1>
@@ -31569,9 +31782,15 @@ async function makeBackupEnvelope(){
      (sunucu tum sorgulari ona daraltiyor). Damga olmadan bir sirketin yedegi
      digerinin uzerine geri yuklenebilirdi - geri yukleme once mevcut veriyi
      siliyor, yani sessiz ve geri alinamaz bir karisma olurdu. */
+  /* TASARI DAMGASI: yedek yalnizca AKTIF TASARININ is verisidir (sunucu tum
+     sorgulari ona daraltiyor). Damga olmadan bir projenin yedegi digerinin
+     uzerine geri yuklenebilirdi - geri yukleme once mevcut veriyi siliyor, yani
+     sessiz ve GERI ALINAMAZ bir karisma olurdu. Org damgasi tek basina yetmez:
+     iki tasari da ayni organizasyondadir, org kontrolu ikisini de gecirirdi. */
   return { app:BACKUP_APP_ID, format:2, createdAt:new Date().toISOString(),
     user:CURRENT_USER?CURRENT_USER.username:'',
     org:window.AKTIF_ORG||'', orgAd:orgAdiGoster(),
+    tasari:window.AKTIF_TASARI||'', tasariAd:tasariAdiGoster(),
     counts:Object.fromEntries(backupCounts(DB).map(c=>[c.label,c.n])), data:DB };
 }
 function downloadJSON(obj,fname){
@@ -31644,6 +31863,19 @@ function importBackup(e){
       toast('Bu yedek "'+kaynak+'" organizasyonuna ait, su an "'+orgAdiGoster()+'" acik. Once ilgili organizasyona gecin.','err');
       return;
     }
+    /* TASARI KONTROLU - org kontrolunun bir kat asagisi ve ondan DAHA KRITIK:
+       iki tasari ayni organizasyondadir, yani yukaridaki kontrol ikisini de
+       gecirir. Bu olmadan AKKUYU NGS'nin yedegi ikinci projenin uzerine
+       yuklenir, o projenin tum verisi silinir ve geri alinamazdi.
+       Kural org'unkiyle ayni: damga varsa TUTMALI, damgasiz eski yedekler tek
+       proje donemine ait oldugu icin yalnizca AKKUYU NGS'ye yuklenebilir. */
+    const yedekTasari=(env&&env.app===BACKUP_APP_ID&&env.tasari)?env.tasari:'akkuyu-ngs';
+    const simdikiTasari=window.AKTIF_TASARI||'akkuyu-ngs';
+    if(yedekTasari!==simdikiTasari){
+      const kaynakT=(env&&env.tasariAd)||yedekTasari.toUpperCase().replace(/-/g,' ');
+      toast('Bu yedek "'+kaynakT+'" tasarisina ait, su an "'+tasariAdiGoster()+'" acik. Once ilgili tasariya gecin.','err');
+      return;
+    }
     openRestoreModal({file:f, env:(env&&env.app===BACKUP_APP_ID)?env:null, data});
   };
   r.readAsText(f);
@@ -31656,8 +31888,11 @@ function openRestoreModal(pr){
     return `<div class="bk-cmp"><span>${c.label}</span><b${diff}>${c.n.toLocaleString('tr-TR')}</b><i>${cC[i].n.toLocaleString('tr-TR')}</i></div>`;
   }).join('');
   const created=pr.env&&pr.env.createdAt?new Date(pr.env.createdAt).toLocaleString('tr-TR',{dateStyle:'medium',timeStyle:'short'}):null;
+  // Kaynak TASARI da yazilir: kullanici silmeyi onaylamadan once hangi projenin
+  // yedegine baktigini gormeli - org adi tek basina iki projeyi ayirmiyor.
   const metaTxt=fmtBytes(pr.file.size)+(created?' · '+created:'')+(pr.env&&pr.env.user?' · '+esc(pr.env.user):'')
-    +' · '+esc((pr.env&&pr.env.orgAd)||orgAdiGoster());
+    +' · '+esc((pr.env&&pr.env.orgAd)||orgAdiGoster())
+    +' · '+esc((pr.env&&pr.env.tasariAd)||tasariAdiGoster());
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:500px">
     <div class="modal-head"><h3>Yedekten Geri Yukle</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">

@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../../lib/supabaseAdmin.js'
 import { requireAdmin } from '../../lib/auth.js'
 import { hashPassword, sifreKurallari } from '../../lib/password.js'
 import { aktifOrg, VARSAYILAN_ORG } from '../../lib/org.js'
+import { aktifTasari } from '../../lib/tasari.js'
 import { denetimGorebilir, tokenKullanici } from '../../lib/yetki.js'
 import { adUyumlu } from '../../lib/adSutunu.js'
 
@@ -69,9 +70,19 @@ export default async function handler(req, res) {
            bu uctan verilemez - verilebilseydi herhangi bir sirket yoneticisi kendine
            butun organizasyonlari acan bir hesap yaratabilirdi. O bayrak yalnizca
            veritabanindan elle konur (bkz. migration_org_1.sql). */
+        /* tasari_id ACIKCA YAZILIR. migration_tasari_2.sql sutunun varsayilanini
+           dusuruyor (bir hatanin veriyi sessizce AKKUYU NGS'ye doldurmasini
+           engellemek icin), yani burada verilmezse insert NOT NULL ihlaliyle
+           doner. Deger, kullaniciyi OLUSTURAN yoneticinin aktif tasarisidir:
+           yonetici hangi projede calisiyorsa yeni kullanici da orada acilir.
+           Bir kilit degil, bir baslangic noktasi - herkes tasarilar arasinda
+           gecebilir (bkz. lib/tasari.js).
+           adUyumlu'nun DISINDA cozulur: o sarmalayici geri cagirmayi gerektiginde
+           ikinci kez calistiriyor ve geri cagirma senkron - icine await konamaz. */
+        const tasari = await aktifTasari(claims)
         // adUyumlu: users.ad sutunu henuz eklenmemisse kayit adsiz gecer (bkz. lib/adSutunu.js)
         const { data, error } = await adUyumlu(adDahil => {
-          const satir = { username, password: hashed, role, sections, buildings, permissions: izinler, tel: tel || '', email: email || '', meslek: meslek || '', org_id: org, is_super: false }
+          const satir = { username, password: hashed, role, sections, buildings, permissions: izinler, tel: tel || '', email: email || '', meslek: meslek || '', org_id: org, tasari_id: tasari, is_super: false }
           if (adDahil) satir.ad = ad || ''
           return supabaseAdmin.from('users').insert([satir]).select().single()
         })

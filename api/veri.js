@@ -3,6 +3,7 @@ import { requireAuth } from '../lib/auth.js'
 import { yetkiKontrol, denetimGorebilir } from '../lib/yetki.js'
 import { denetimYaz } from '../lib/denetim.js'
 import { VARSAYILAN_ORG } from '../lib/org.js'
+import { VARSAYILAN_TASARI, tasariFiltrelenir, tasariDamgalanir } from '../lib/tasari.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VERI ERISIM UCU (Asama 1)
@@ -26,9 +27,23 @@ import { VARSAYILAN_ORG } from '../lib/org.js'
 // gonderemez; gonderirse ezilir (bkz. lib/org.js). Tek bir kiraci varken bu
 // filtreler gorunur bir degisiklik yapmaz, cunku tum veri zaten 'bykara'dir.
 //
-// 'organizations' tablosu BILEREK asagidaki beyaz listede YOKTUR: kiraci listesini
-// buradan duzenleyebilmek, herhangi bir kullanicinin kendini baska organizasyona
-// tasiyabilmesi demek olurdu. O tablo yalnizca /api/org uzerinden yonetilir.
+// TASARI (PROJE KATMANI): organizasyonun ALTINDA ikinci bir daraltma. Is verisi
+// tasiyan tablolarda her sorgu AKTIF TASARIYA da daraltilir - okumada
+// .eq('tasari_id', tasari), yazmada satirlara tasari_id ZORLA yazilir. Org ile
+// birebir ayni desen, tek farki hangi tablolara uygulandigi:
+//   - TASARI_TABLOLARI  -> hem daraltilir hem damgalanir (bkz. lib/tasari.js)
+//   - ORTAK_TABLOLAR    -> DOKUNULMAZ. companies / proje_materials / alet_lib /
+//     gecici_lib KUTUPHANEDIR ve tum tasarilar ayni satirlari gorur (alinan
+//     karar: "kutuphane ortak, is verisi tasariya ozel"). Bu tablolara tasari
+//     filtresi eklemek, her projede 696 malzeme kunyesini yeniden girdirmek olurdu.
+//   - audit_log         -> damgalanir ama FILTRELENMEZ. Denetim kaydi org
+//     duzeyinde bir guvenlik defteridir; projeye gore bolunse, bir tasarida
+//     silme yapanin izi digerine bakan yoneticiden gizlenirdi.
+//
+// 'organizations' ve 'tasarilar' tablolari BILEREK asagidaki beyaz listede
+// YOKTUR: kiraci ya da proje listesini buradan duzenleyebilmek, herhangi bir
+// kullanicinin kendini baska organizasyona/projeye tasiyabilmesi demek olurdu.
+// Ikisi de yalnizca /api/org uzerinden yonetilir.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // id + data (JSONB) seklindeki varlik tablolari
@@ -55,17 +70,27 @@ const SIRA_SUTUNLARI = new Set(['created_at', 'id', 'sort_order', 'name', 'code'
 const ESLESME_SUTUNLARI = new Set(['id', 'key', 'name', 'code'])
 
 /* UPSERT CAKISMA HEDEFI ARTIK SUNUCUDA BELIRLENIR, istemciden gelmez.
-   Sebep: hedef sutunlar artik org_id iceriyor (migration_org_1.sql'deki
-   (org_id, id) / (org_id, key) benzersiz indeksleri). Istemcinin gonderdigi
-   'id' ya da 'key' hedefi kullanilsaydi bir kiracinin upsert'i BASKA kiracinin
-   ayni anahtarli satirini gunceller, yani ezerdi.
-   Listede olmayan tablolar varlik tablolaridir: (org_id, id). */
-const CAKISMA = {
-  app_settings: 'org_id,key',
-  saha_settings: 'org_id,key',
-  rapor_ekipler: 'org_id,name',
-  proje_buildings: 'org_id,code',
-  proje_sections: 'org_id,name',
+   Sebep: hedef sutunlar artik org_id ve tasari_id iceriyor (migration_org_1.sql
+   ve migration_tasari_1.sql'deki benzersiz indeksler). Istemcinin gonderdigi
+   'id' ya da 'key' hedefi kullanilsaydi bir kiracinin upsert'i BASKA kiracinin -
+   ya da ayni kiracinin BASKA PROJESININ - ayni anahtarli satirini gunceller,
+   yani ezerdi.
+
+   TASARI ozel tablolarda hedef tasari_id de tasir. Tasimasaydi: AKKUYU NGS'de
+   '00UYB' binasi varken ikinci tasarida ayni kodu yazmak, yeni satir eklemek
+   yerine AKKUYU NGS'nin binasini GUNCELLERDI - iki proje ayni satiri paylasir,
+   birinde yapilan degisiklik digerinde gorunurdu. */
+const CAKISMA_ANAHTAR = {
+  app_settings: 'key',
+  saha_settings: 'key',
+  rapor_ekipler: 'name',
+  proje_buildings: 'code',
+  proje_sections: 'name',
+}
+function cakismaHedefi(table) {
+  // Listede olmayan tablolar varlik tablolaridir: anahtar 'id'.
+  const anahtar = CAKISMA_ANAHTAR[table] || 'id'
+  return tasariFiltrelenir(table) ? `org_id,tasari_id,${anahtar}` : `org_id,${anahtar}`
 }
 
 /* SILME KAYDINDA gorunecek insan okunur tablo adlari. Denetim kaydini okuyan
@@ -123,19 +148,38 @@ export default async function handler(req, res) {
     // yonetici bir baska organizasyona GECMIS olabilir - kullanici satirindaki
     // org_id degil, tokendeki aktif org dogru cevaptir). Yoksa yine kullanici
     // satirindan okunur, boylece Asama 1 oncesi tokenler de calismaya devam eder.
-    let kullanici, org = null
+    /* TASARI da ayni yerden gelir: tokende 'tas' varsa O kullanilir (kullanici
+       baska bir tasariya GECMIS olabilir - kullanici satirindaki varsayilan
+       tasari_id degil, tokendeki aktif tasari dogru cevaptir). Yoksa yine
+       kullanici satirindan okunur, boylece tasari katmanindan ONCE imzalanmis
+       tokenler de calismaya devam eder: o oturumlar AKKUYU NGS'de kalir ve
+       token 20 dakikada bir tazelenirken alan kendiliginden yerine oturur. */
+    let kullanici, org = null, tasari = null
     if (claims.perms || claims.sections) {
       kullanici = { role: claims.role, sections: claims.sections || [], permissions: claims.perms || {} }
     }
     if (typeof claims.org === 'string' && claims.org) org = claims.org
-    if (!kullanici || !org) {
-      const { data } = await supabaseAdmin.from('users').select('role, sections, permissions, org_id').eq('id', claims.sub).maybeSingle()
+    if (typeof claims.tas === 'string' && claims.tas) tasari = claims.tas
+    if (!kullanici || !org || !tasari) {
+      const { data } = await supabaseAdmin.from('users').select('role, sections, permissions, org_id, tasari_id').eq('id', claims.sub).maybeSingle()
       if (!data) return hata(res, 401, 'Kullanici bulunamadi - yeniden giris yapin')
       kullanici = kullanici || { role: data.role, sections: data.sections || [], permissions: data.permissions || {} }
       org = org || data.org_id || VARSAYILAN_ORG
+      tasari = tasari || data.tasari_id || VARSAYILAN_TASARI
     }
     const izin = yetkiKontrol(kullanici, table, op, !!g.all)
     if (!izin.ok) return hata(res, izin.kod, izin.mesaj)
+
+    /* HER SORGUNUN KAPSAMI TEK YERDEN kurulur. Org filtresi HER tabloya, tasari
+       filtresi YALNIZCA is verisi tablolarina uygulanir - kutuphane (companies,
+       proje_materials, alet_lib, gecici_lib) ve denetim kaydi disarida kalir.
+       Elle tekrarlansaydi, yeni bir dal eklendiginde filtrelerden biri unutulur
+       ve o yol sessizce butun projelerin verisini gorurdu. */
+    const kapsa = (sorgu) => {
+      let x = sorgu.eq('org_id', org)
+      if (tasariFiltrelenir(table)) x = x.eq('tasari_id', tasari)
+      return x
+    }
 
     let q = supabaseAdmin.from(table)
 
@@ -143,7 +187,7 @@ export default async function handler(req, res) {
       // '*' kullanilir, 'id' DEGIL: app_settings / saha_settings anahtar-deger
       // tablolaridir ve id sutunlari yok - 'id' ile sayim orada hata veriyordu.
       // head:true oldugu icin satir tasinmaz, yalnizca sayi doner.
-      const { count, error } = await q.select('*', { count: 'exact', head: true }).eq('org_id', org)
+      const { count, error } = await kapsa(q.select('*', { count: 'exact', head: true }))
       if (error) throw error
       res.status(200).json({ count: count || 0 })
       return
@@ -175,7 +219,7 @@ export default async function handler(req, res) {
       // Sorgu her seferinde YENIDEN kurulur: PostgREST builder'i tek kullanimliktir,
       // sayfalama dongusunde ayni nesne tekrar kullanilamaz.
       const kur = () => {
-        let s = supabaseAdmin.from(table).select(kolon).eq('org_id', org)
+        let s = kapsa(supabaseAdmin.from(table).select(kolon))
         for (const o of (g.order || [])) s = s.order(o.col, { ascending: o.asc !== false })
         if (g.eq) s = s.eq(g.eq.col, g.eq.val)
         if (g.in) s = s.in(g.in.col, g.in.vals)
@@ -228,12 +272,16 @@ export default async function handler(req, res) {
       if (table === 'audit_log' && g.yedek && !denetimGorebilir(kullanici)) {
         return hata(res, 403, 'Denetim kaydini geri yuklemek icin denetim yetkisi gerekir')
       }
-      // org_id her satira ZORLA yazilir: istemci gondermis olsa bile ezilir.
+      /* org_id ve tasari_id her satira ZORLA yazilir: istemci gondermis olsa
+         bile ezilir. tasari_id yalnizca damgalanan tablolara eklenir - ortak
+         kutuphane tablolarinda o sutun YOKTUR, eklenirse yazma "column does not
+         exist" ile patlardi. */
       const govde = (table === 'audit_log' && !g.yedek) ? damgala(rows, claims) : rows
-      const satirlar = govde.map(r => ({ ...r, org_id: org }))
+      const damga = tasariDamgalanir(table) ? { org_id: org, tasari_id: tasari } : { org_id: org }
+      const satirlar = govde.map(r => ({ ...r, ...damga }))
       const { error } = op === 'insert'
         ? await q.insert(satirlar)
-        : await q.upsert(satirlar, { onConflict: CAKISMA[table] || 'org_id,id' })
+        : await q.upsert(satirlar, { onConflict: cakismaHedefi(table) })
       if (error) throw error
       res.status(200).json({ ok: true, n: satirlar.length })
       return
@@ -242,23 +290,30 @@ export default async function handler(req, res) {
     if (op === 'update') {
       if (!g.eq || !ESLESME_SUTUNLARI.has(g.eq.col)) return hata(res, 400, 'Gecersiz eslesme')
       if (!g.patch || typeof g.patch !== 'object') return hata(res, 400, 'Gecersiz guncelleme')
-      // org_id guncellenemez: bir kaydi baska organizasyona tasimak bu uctan yapilamaz.
+      /* org_id ve tasari_id guncellenemez: bir kaydi baska organizasyona ya da
+         baska projeye tasimak bu uctan yapilamaz. Yapilabilseydi, tek bir
+         'update' istegiyle bir tasarinin butun siparisleri digerine gecirilebilir
+         ve bu hicbir yerde silme/ekleme olarak gorunmezdi. */
       const yama = { ...g.patch }
       delete yama.org_id
-      const { error } = await q.update(yama).eq(g.eq.col, g.eq.val).eq('org_id', org)
+      delete yama.tasari_id
+      const { error } = await kapsa(q.update(yama).eq(g.eq.col, g.eq.val))
       if (error) throw error
       res.status(200).json({ ok: true })
       return
     }
 
     if (op === 'delete') {
-      // ORG FILTRESI HER DALDA: 'all' dahil hicbir silme kendi organizasyonunun
-      // disina cikamaz. Eskiden 'all' tabloyu komple bosaltiyordu - cok kiracili
-      // yapida bu, bir sirketin yoneticisinin TUM sirketlerin verisini silmesi
-      // demek olurdu. Artik en yikici islem bile kendi kiracisiyla sinirli.
-      // org_id filtresi tek basina gecerli bir silme kosuludur: 'all' bu haliyle
-      // "organizasyonun tum satirlari" demektir, tablonun tamami degil.
-      let d = q.delete().eq('org_id', org)
+      // ORG VE TASARI FILTRESI HER DALDA: 'all' dahil hicbir silme kendi
+      // organizasyonunun - ve is verisi tablolarinda kendi PROJESININ - disina
+      // cikamaz. Eskiden 'all' tabloyu komple bosaltiyordu; cok kiracili yapida
+      // bu, bir sirketin yoneticisinin TUM sirketlerin verisini silmesi demek
+      // olurdu. Tasari katmaniyla birlikte ayni koruma projeler arasinda da
+      // gecerli: AKKUYU NGS'de "Tumunu Sil" diyen kisi ikinci projenin
+      // siparislerine dokunamaz.
+      // Bu filtreler tek basina gecerli bir silme kosuludur: 'all' bu haliyle
+      // "bu projenin tum satirlari" demektir, tablonun tamami degil.
+      let d = kapsa(q.delete())
       if (!g.all) {
         if (g.in) {
           if (!ESLESME_SUTUNLARI.has(g.in.col)) return hata(res, 400, 'Izin verilmeyen eslesme sutunu')
@@ -288,6 +343,10 @@ export default async function handler(req, res) {
           user: claims.username, role: claims.role,
           action: g.all ? 'wipe' : 'delete',
           detail: ad + ' silindi - ' + kac + hedef,
+          // Hangi projede silindigi kayda gecer: denetim kaydi tasariya gore
+          // filtrelenmedigi icin, damga olmadan "hangi projenin binasi silindi"
+          // sorusunun cevabi kaybolurdu.
+          tasari: tasariFiltrelenir(table) ? tasari : '',
         })
       }
       res.status(200).json({ ok: true })
