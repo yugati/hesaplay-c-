@@ -26736,7 +26736,7 @@ function renderIhtiyacList(){
   const filtreVar=ihtFiltreVar();
   const segBtn=(deger,etiket,n)=>`<button class="${IHTV.durum===deger?'on':''}" onclick="setIhtDurum('${deger}')" title="${esc(etiket)}: ${fmtNum(n)} liste">${esc(etiket)}<i>${fmtNum(n)}</i></button>`;
   let rows='';
-  if(!list.length) rows=emptyRow(6,filtreVar?'Eslesen ihtiyac listesi yok':'Henuz ihtiyac listesi olusturulmadi',
+  if(!list.length) rows=emptyRow(7,filtreVar?'Eslesen ihtiyac listesi yok':'Henuz ihtiyac listesi olusturulmadi',
     filtreVar?'Filtreleri degistirin':'"Yeni Liste" ile sahada gereken malzemeleri toplamaya baslayin');
   else list.forEach(x=>{
     const tt=ihtTotals(x);
@@ -26750,6 +26750,10 @@ function renderIhtiyacList(){
       <td class="t-qty">${fmtNum(tt.kalem)} kalem <span style="color:var(--mute)">· ${fmtNum(tt.miktar)}</span>${
         tt.eksik?`<div class="iht-uyari" style="font-size:11px">&#9888; ${fmtNum(tt.eksik)} satirda hedef yok</div>`:''}</td>
       <td class="t-meta">${esc(hedef||'-')}</td>
+      <td style="text-align:center" title="${x.siparisGonderildi?'Siparis gonderildi':'Siparis henuz gonderilmedi'}">
+        <label class="chk" style="display:inline-flex;justify-content:center;margin:0;text-transform:none">
+          <input type="checkbox" style="width:auto;margin:0" ${x.siparisGonderildi?'checked':''} ${ihtCanEdit()?'':'disabled'}
+            onchange="ihtSiparisToggle('${x.id}',this.checked)"></label></td>
       <td><div class="row-actions">
         <button class="mini-btn" title="Listenin icerigini gor" onclick="openIhtiyacDetay('${x.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
         <button class="mini-btn" title="Excel'e aktar - satirlar + bina/kat ozeti" onclick="exportIhtiyacXlsx('${x.id}')">${icoXls()}</button>
@@ -26786,7 +26790,7 @@ function renderIhtiyacList(){
     </div>
     <div class="ord-sumline"><b>${fmtNum(list.length)}</b> liste gosteriliyor${filtreVar?` <span class="t-meta">· ${fmtNum(all.length)} kayit icinden suzuldu</span>`:''}</div>
     <div class="tablewrap"><table><thead><tr>
-      <th>Liste</th><th>Tarih</th><th>Bina</th><th>Icerik</th><th>Hedef</th><th></th>
+      <th>Liste</th><th>Tarih</th><th>Bina</th><th>Icerik</th><th>Hedef</th><th>Siparis</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
@@ -27063,7 +27067,7 @@ function newIhtiyac(){
   if(!ihtCanEdit()){ toast('Bu islem icin yetkiniz yok','err'); return; }
   const bina=IHTV.bina||'';   // liste ekranindaki bina filtresi on deger olur
   _IHT={ id:uid(), ad:'Ihtiyac Listesi - '+fmtDate(Date.now()), tarih:Date.now(),
-    bina, firmaId:ihtVarsayilanFirma(), durum:'acik', aciklama:'', lines:[ihtBlankLine(bina)],
+    bina, firmaId:ihtVarsayilanFirma(), durum:'acik', siparisGonderildi:false, aciklama:'', lines:[ihtBlankLine(bina)],
     olusturan:(CURRENT_USER&&CURRENT_USER.username)||'', olusturmaTs:Date.now(),
     guncelleyen:'', guncellemeTs:Date.now(), _yeni:true };
   IHTV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
@@ -27081,7 +27085,7 @@ function copyIhtiyac(id){
   if(!ihtCanEdit()){ toast('Bu islem icin yetkiniz yok','err'); return; }
   const x=(DB.ihtiyaclar||[]).find(y=>y.id===id); if(!x)return;
   const c=JSON.parse(JSON.stringify(x));
-  c.id=uid(); c.tarih=Date.now(); c.durum='acik'; c._yeni=true;
+  c.id=uid(); c.tarih=Date.now(); c.durum='acik'; c.siparisGonderildi=false; c._yeni=true;
   delete c.kod;   // kopya YENI bir belgedir: kaydedilince kendi kodunu alir
   c.ad=(x.ad||'Ihtiyac Listesi')+' (kopya)';
   c.olusturan=(CURRENT_USER&&CURRENT_USER.username)||''; c.olusturmaTs=Date.now();
@@ -27120,6 +27124,21 @@ async function ihtDurumToggle(id){
   window.__ihtiyacTableMissing=false;
   logAction('define','Ihtiyac listesi durumu: '+(kayit.ad||id)+' -> '+(kayit.durum==='tamam'?'tamamlandi':'acik'));
   render(); toast(kayit.durum==='tamam'?'Liste tamamlandi olarak isaretlendi':'Liste yeniden acildi');
+}
+// listeden tek tikla siparis gonderildi isaretlenir - forma girmeden
+async function ihtSiparisToggle(id,on){
+  if(!ihtCanEdit()){ toast('Bu islem icin yetkiniz yok','err'); return; }
+  const x=(DB.ihtiyaclar||[]).find(y=>y.id===id); if(!x)return;
+  const kayit=JSON.parse(JSON.stringify(x));
+  kayit.siparisGonderildi=!!on;
+  kayit.guncelleyen=(CURRENT_USER&&CURRENT_USER.username)||''; kayit.guncellemeTs=Date.now();
+  try{ await sbUpdateIhtiyacListesi(id,kayit); }
+  catch(e){ ihtYazHatasi(e,'guncellenemedi'); render(); return; }
+  const i=(DB.ihtiyaclar||[]).findIndex(y=>y.id===id);
+  if(i>=0) DB.ihtiyaclar[i]=kayit;
+  window.__ihtiyacTableMissing=false;
+  logAction('define','Ihtiyac listesi siparisi: '+(kayit.ad||id)+' -> '+(kayit.siparisGonderildi?'gonderildi':'gonderilmedi'));
+  render(); toast(kayit.siparisGonderildi?'Siparis gonderildi olarak isaretlendi':'Siparis isareti kaldirildi');
 }
 
 /* ---------- KAYDET ---------- */
