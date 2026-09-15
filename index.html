@@ -25904,14 +25904,23 @@ const TUT_ROWS_FIRST_ARA=10;      // ilk sayfa, arkasindan baska sayfa geliyorsa
 const TUT_ROWS_PER_PAGE=11;       // devam sayfasi, ayni zamanda son sayfaysa
 const TUT_ROWS_ARA=14;            // devam sayfasi, arkasindan baska sayfa geliyorsa
 
-/* TUTANAK TURLERI. Simdilik tek tur var; yeni tur eklemek icin bu listeye bir satir
-   yetiyor - tur penceresi, form, liste ve cikti hep buradan okuyor.
+/* TUTANAK TURLERI. Yeni tur eklemek icin bu listeye bir satir yetiyor - tur penceresi,
+   form ve liste hep buradan okuyor. Ciktinin basligi da baslikTr/baslikRu'dan gelir;
+   bos birakilirsa varsayilan "Malzeme Teslim" basligi kullanilir (bkz. tutBaslik).
+   "ic:true" ISARETLI TURLER SIRKET ICI SAYILIR: Taraflar karti tek firma + iki
+   calisan (ad soyad, gorev) olarak sadelesir, cikti metni de "X firmasi Y firmasina"
+   yerine "X firmasi bunyesinde A calisanindan B calisanina" diye kurulur - bkz.
+   tutIcMi, renderTutanakForm ve tutanakPrintHtml.
    Eski kayitlarda tur/iade alanlari yok; hepsi "Malzeme Teslim, iade yok" sayilir. */
 const TUT_TURLERI=[
-  {id:'teslim', tr:'Malzeme Teslim', ru:'Приёма-передачи материалов'}
+  {id:'teslim', tr:'Malzeme Teslim', ru:'Приёма-передачи материалов'},
+  {id:'ic', tr:'Sirket Ici Malzeme Teslimi', ru:'Внутренняя передача материалов', ic:true,
+   baslikTr:'ŞİRKET İÇİ MALZEME TESLİM TUTANAĞI', baslikRu:'АКТ О ВНУТРЕННЕЙ ПЕРЕДАЧЕ МАТЕРИАЛОВ'}
 ];
 function tutTurOf(t){ const id=(t&&t.tur)||TUT_TURLERI[0].id;
   return TUT_TURLERI.find(x=>x.id===id)||TUT_TURLERI[0]; }
+// sirket ici teslim mi: Taraflar karti ve cikti metni buna gore degisir
+function tutIcMi(t){ return !!tutTurOf(t).ic; }
 function tutIadeVar(t){ return !!(t&&t.iade); }
 /* Taraf firmasi. Alan serbest metin; yazilan ad Sirketler listesindeki bir kayda
    uyuyorsa firmaId de saklaniyor ve ad bundan sonra CANLI sirket kaydindan okunuyor.
@@ -26031,7 +26040,7 @@ function tutKodIpucu(t){
   if(tutKodOnek(t)) return 'Kaydedince bu kod verilir; o ana kadar degisebilir';
   return '<span style="color:var(--amber)">Teslim Eden firmasi Sirketler listesine bagli olmadigi icin kod uretilemiyor</span>';
 }
-function tutBlankLine(){ return {id:uid(),matId:'',matSrc:'',code:'',ad:'',marka:'',birim:'',qty:'',barkod:'',renk:''}; }
+function tutBlankLine(){ return {id:uid(),matId:'',matSrc:'',code:'',ad:'',marka:'',birim:'',qty:'',barkod:'',sirketKodu:''}; }
 /* SATIRIN FOTOGRAFI: kayitta yalnizca matId (+ yeni kayitlarda matSrc) durur, foto
    kutuphaneden okunur - tutanak kaydi kucuk kalir, kutuphanedeki foto degisirse cikti da
    guncellenir. matSrc'siz ESKI kayitlar proje kutuphanesinden gelmisti; orada bulunamazsa
@@ -26236,7 +26245,8 @@ function renderTutanakList(){
   else list.forEach(t=>{
     const tt=tutTotals(t);
     rows+=`<tr>
-      <td><span class="tut-no">${esc(t.no||'-')}</span>${tutIadeVar(t)
+      <td><span class="tut-no">${esc(t.no||'-')}</span>${tutIcMi(t)
+        ?`<span class="tut-iade" style="background:color-mix(in srgb,var(--violet) 16%,transparent);color:var(--violet);border-color:color-mix(in srgb,var(--violet) 42%,transparent)" title="${esc(tutTurOf(t).tr)} - firma kendi calisanlari arasinda">IC</span>`:''}${tutIadeVar(t)
         ?`<span class="tut-iade" title="${esc(tutTurOf(t).tr)} - ${esc(tutIadeOzet(t))}">IADE</span>`:''}${t.pdf
         ?`<span class="tut-iade" style="background:color-mix(in srgb,var(--blue) 16%,transparent);color:var(--blue)" title="Imzali/taranmis nusha yuklu: ${esc(t.pdf.name||'belge')}">PDF</span>`:''}</td>
       <td class="t-meta">${esc(fmtDate(t.tarih))}${tutIadeTarihi(t)
@@ -26385,6 +26395,23 @@ function tutSetIadeTarihVar(v){ if(!_TUT)return;
   _TUT.iadeTarih=v?(_TUT.iadeTarih||Date.now()):null; render(); }
 function tutSetIadeTarih(v){ if(!_TUT)return;
   _TUT.iadeTarih=v?new Date(v+'T12:00:00').getTime():null; render(); }
+// Tur secimi Taraflar kartinin duzenini (tek firma / iki firma) degistirir - iade gibi yeniden cizim ister
+function tutSetTur(v){ if(!_TUT)return; _TUT.tur=v;
+  const tur=TUT_TURLERI.find(x=>x.id===v);
+  if(tur&&tur.ic){       // sirket ici: alan tarafi eden ile ayni firmaya cekilir (iki firma karisik kalmasin)
+    if(!_TUT.alan)_TUT.alan={};
+    _TUT.alan.firma=(_TUT.eden||{}).firma||''; _TUT.alan.firmaId=(_TUT.eden||{}).firmaId||'';
+  }
+  render();
+}
+// Sirket ici tutanakta TEK firma girisi var, iki tarafa birden yazilir
+function tutSetIcFirma(v){ if(!_TUT)return;
+  if(!_TUT.eden)_TUT.eden={}; if(!_TUT.alan)_TUT.alan={};
+  _TUT.eden.firma=v; _TUT.alan.firma=v;
+  const c=(DB.companies||[]).find(x=>norm(x.ad)===norm(v));
+  _TUT.eden.firmaId=_TUT.alan.firmaId=c?c.id:'';
+  render();
+}
 function tutSetParty(side,k,v){ if(!_TUT)return; if(!_TUT[side])_TUT[side]={}; _TUT[side][k]=v;
   if(k==='firma'){
     // Yazilan ad listedeki bir sirkete uyuyorsa bag kurulur, uymuyorsa bag kalkar.
@@ -26417,7 +26444,7 @@ function tutLineRows(){
       <td style="width:80px"><input value="${esc(l.birim||'')}" placeholder="adet" onchange="tutSetLine(${i},'birim',this.value.trim())"></td>
       <td style="width:88px"><input class="num" value="${esc(l.qty==null?'':String(l.qty))}" placeholder="0" oninput="tutSetLine(${i},'qty',this.value);tutUpdateTotals()"></td>
       <td style="width:120px"><input value="${esc(l.barkod||'')}" placeholder="barkod / seri no" onchange="tutSetLine(${i},'barkod',this.value.trim())"></td>
-      <td style="width:90px"><input value="${esc(l.renk||'')}" placeholder="renk" onchange="tutSetLine(${i},'renk',this.value.trim())"></td>
+      <td style="width:100px"><input value="${esc(l.sirketKodu||'')}" placeholder="sirket kodu" onchange="tutSetLine(${i},'sirketKodu',this.value.trim())"></td>
       <td style="width:34px"><button class="mini-btn del" title="Satiri sil" onclick="tutRemoveLine(${i})">${icoTrash()}</button></td>
     </tr>`;
   }).join('');
@@ -26441,6 +26468,15 @@ function renderTutanakForm(){
     <div class="frow" style="margin-bottom:0"><label>Gorev / Должность</label>
       <input value="${esc((t[side]||{}).gorev||'')}" placeholder="gorev" onchange="tutSetParty('${side}','gorev',this.value.trim())"></div>
   </div>`;
+  // Sirket ici tutanakta taraf kutusunda firma yok - ikisi de ayni firmanin calisani
+  const partyIc=(side,baslikTr,baslikRu,cls)=>`<div class="tut-party ${cls}">
+    <h5>${baslikTr}<span>${baslikRu}</span></h5>
+    <div class="frow"><label>Ad Soyad / Ф.И.О.</label>
+      <input value="${esc((t[side]||{}).ad||'')}" placeholder="ad soyad" onchange="tutSetParty('${side}','ad',this.value.trim())"></div>
+    <div class="frow" style="margin-bottom:0"><label>Gorev / Должность</label>
+      <input value="${esc((t[side]||{}).gorev||'')}" placeholder="gorev" onchange="tutSetParty('${side}','gorev',this.value.trim())"></div>
+  </div>`;
+  const ic=tutIcMi(t);
   return `<div class="tut-wrap">${compList}
     <div class="sel-bc"><button onclick="tutBackToList()">${icoArr('left')} Tutanak Listesi</button> ${icoChevron()}
       <b>${esc(tutKodGoster(t)||'Yeni Tutanak')}</b></div>
@@ -26458,8 +26494,8 @@ function renderTutanakForm(){
           <input value="${esc(tutKodGoster(t)||'-')}" readonly tabindex="-1" style="font-family:Consolas,monospace;letter-spacing:.4px"></div>
         <div class="frow"><label>Tarih / Дата *<span class="bbal" tabindex="0">B<span>Kodun tarih bolumu buradan gelir</span></span></label>
           <input type="date" value="${tutISO(t.tarih)}" onchange="tutSetTarih(this.value)"></div>
-        <div class="frow"><label>Tur / Тип акта<span class="bbal" tabindex="0">B<span>Ciktinin iki dilli basligini belirler</span></span></label>
-          <select onchange="tutSet('tur',this.value)">
+        <div class="frow"><label>Tur / Тип акта<span class="bbal" tabindex="0">B<span>Ciktinin iki dilli basligini belirler; Sirket Ici secilirse Taraflar karti tek firmaya gore sadelesir</span></span></label>
+          <select onchange="tutSetTur(this.value)">
             ${TUT_TURLERI.map(x=>`<option value="${esc(x.id)}" ${tutTurOf(t).id===x.id?'selected':''}>${esc(x.tr)}</option>`).join('')}
           </select></div>
         <div class="frow"><label>Bina<span class="bbal" tabindex="0">B<span>Opsiyonel - yalniz kayit ve suzme icin, ciktida gecmez</span></span></label>
@@ -26483,13 +26519,27 @@ function renderTutanakForm(){
     </div>
 
     <div class="tut-card"><h4>Taraflar <i>Стороны</i></h4>
+      ${ic?`
+      <div class="frow" style="max-width:420px;margin-bottom:4px"><label>Firma / Компания</label>
+        <input list="tutCompList" value="${esc(tutFirma(t,'eden'))}" placeholder="firma unvani" onchange="tutSetIcFirma(this.value.trim())">
+        ${tutFirma(t,'eden')?`<div class="t-meta" style="margin-top:5px;font-size:11px">${tutFirmaBagli(t,'eden')
+          ?'<span style="color:var(--green)">✓ Sirketler listesine bagli</span> - sirket adi degisirse tutanakta da degisir'
+          :'Serbest metin - Sirketler listesinde boyle bir kayit yok'}</div>`:''}</div>
+      <p class="t-meta" style="margin:6px 0 12px;font-size:11.5px">Sirket ici teslimde tek
+        firma girilir, asagidaki iki kutu ayni firmanin <b>iki calisanidir</b>. Tutanak kodunun
+        firma harfleri ve ciktinin anteti de bu firmadan gelir; bunun icin firmanin
+        <b>Sirketler</b> listesinde kayitli olmasi gerekir.</p>
+      <div class="tut-parties">
+        ${partyIc('eden','Teslim Eden','СДАЛ','eden')}
+        ${partyIc('alan','Teslim Alan','ПРИНЯЛ','alan')}
+      </div>`:`
       <p class="t-meta" style="margin:-6px 0 12px;font-size:11.5px">Tutanak kodunun firma
         harfleri ve ciktinin anteti <b>Teslim Eden</b> firmasindan gelir; bunun icin
         firmanin <b>Sirketler</b> listesinde kayitli olmasi gerekir.</p>
       <div class="tut-parties">
         ${party('eden','Teslim Eden','СДАЛ','eden')}
         ${party('alan','Teslim Alan','ПРИНЯЛ','alan')}
-      </div>
+      </div>`}
     </div>
 
     <div class="tut-card">
@@ -26503,7 +26553,7 @@ function renderTutanakForm(){
         <th>Birim<span>ЕД. ИЗМ.</span></th>
         <th>Miktar<span>КОЛ-ВО</span></th>
         <th>Barkod / Seri No<span>ШТРИХ-КОД / СЕР. №</span></th>
-        <th>Renk<span>ЦВЕТ</span></th>
+        <th>Sirket Kodu<span>КОД КОМПАНИИ</span></th>
         <th></th>
       </tr></thead><tbody id="tutLinesBody">${tutLineRows()}</tbody></table></div>
       <div class="tut-addrow">
@@ -26557,7 +26607,7 @@ function openTutMatPick(){
       ${seg}
       <div class="frow"><input id="tutPickQ" data-guard="off" placeholder="Malzeme adi, urun kodu, marka veya barkod ara..." oninput="tutPickFilter()"></div>
       <div class="tut-pick" id="tutPickList">${tutPickRows('')}</div>
-      <p class="t-meta" style="margin-top:9px;font-size:11.5px">Tiklanan malzeme tutanak satirlarina eklenir; <b>urun kodu, ad, marka, birim, renk ve fotograf</b> kutuphaneden otomatik gelir. Miktar ve barkod / seri no alanlarini siz doldurursunuz. Pencere acik kalir - birden fazla malzeme ekleyebilirsiniz.</p>
+      <p class="t-meta" style="margin-top:9px;font-size:11.5px">Tiklanan malzeme tutanak satirlarina eklenir; <b>urun kodu, ad, marka, birim ve fotograf</b> kutuphaneden otomatik gelir. Miktar, barkod / seri no ve sirket kodu alanlarini siz doldurursunuz. Pencere acik kalir - birden fazla malzeme ekleyebilirsiniz.</p>
     </div>
     <div class="modal-foot"><button class="btn btn-add" onclick="closeModal()">Bitti</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
@@ -26621,7 +26671,7 @@ function tutPickAdd(src,matId){
   const m=tutKaynakBul(src,matId); if(!m){ toast('Malzeme bulunamadi','err'); return; }
   // matSrc satirda saklanir: fotograf ve sonraki her cozumleme dogru kutuphaneye gider
   const line={ id:uid(), matId:m.id, matSrc:m.src, code:m.kod||'', ad:m.ad||'',
-    marka:m.marka||'', birim:m.birim||'', qty:'', barkod:'', renk:m.renk||'' };
+    marka:m.marka||'', birim:m.birim||'', qty:'', barkod:'', sirketKodu:'' };
   // ilk tamamen bos satir varsa onu doldur, yoksa sona ekle
   const bosIdx=_TUT.lines.findIndex(l=>!String(l.ad||'').trim()&&!String(l.code||'').trim()&&!String(l.qty||'').trim());
   if(bosIdx>=0) _TUT.lines[bosIdx]=line; else _TUT.lines.push(line);
@@ -26781,7 +26831,8 @@ table.mt td.c{text-align:center}
 /* Miktar ASLA alt alta bolunmez: "1.001.479.778,5" gibi degerler tek satirda kalir
    (sutun bunun icin genisletildi, overflow-wrap:anywhere burada gecersiz). */
 table.mt td.r{text-align:right;font-weight:bold;white-space:nowrap;overflow-wrap:normal;word-wrap:normal}
-table.mt td.nm{font-weight:bold;color:#1f2937}
+table.mt td.nm{font-weight:normal;color:#1f2937}
+table.mt td.bir{font-size:5pt}
 table.mt td.im{padding:1mm;text-align:center;overflow:hidden}
 /* Urun fotograflari genelde YATAY/genis cekimler (kutuphanedeki kayit gibi) -
    object-fit:cover fazlaligi kirpip fotografin sadece dar bir dilimini
@@ -26887,19 +26938,20 @@ function tutPrintHead(A){
 function antetAltLogo(){
   return `<img class="ph-mark" src="${esc(location.origin+'/logo.png')}" alt="" onerror="this.style.display='none'">`;
 }
-function tutPrintFoot(sayfa,toplam){
-  return `<div class="ph-foot">${antetAltLogo()}<span>MALZEME TESLİM TUTANAĞI &nbsp;/&nbsp; АКТ ПРИЁМА-ПЕРЕДАЧИ МАТЕРИАЛОВ
+// basTr/basRu turden gelir (bkz. TUT_TURLERI) - verilmezse varsayilan "Malzeme Teslim" basligi basilir
+function tutPrintFoot(sayfa,toplam,basTr,basRu){
+  return `<div class="ph-foot">${antetAltLogo()}<span>${esc(basTr||'MALZEME TESLİM TUTANAĞI')} &nbsp;/&nbsp; ${esc(basRu||'АКТ ПРИЁМА-ПЕРЕДАЧИ МАТЕРИАЛОВ')}
     &nbsp;&nbsp;&nbsp;&nbsp; Sayfa / Стр. ${sayfa} / ${toplam}</span></div>`;
 }
 function tutPrintTableHead(){
   return `<colgroup>
       <col style="width:4%"><col style="width:7.5%"><col style="width:12%"><col style="width:28%">
-      <col style="width:11%"><col style="width:12.5%"><col style="width:8%"><col style="width:6.5%"><col style="width:10.5%">
+      <col style="width:11%"><col style="width:12.5%"><col style="width:12.5%"><col style="width:6.5%"><col style="width:6%">
     </colgroup>
     <thead><tr>
       <th>SIRA<i>№</i></th><th>GÖRSEL<i>ФОТО</i></th><th>ÜRÜN KODU<i>АРТИКУЛ</i></th>
       <th>MALZEME ADI VE ÖZELLİĞİ<i>НАИМЕНОВАНИЕ И ХАРАКТЕРИСТИКА</i></th>
-      <th>MARKA<i>БРЕНД</i></th><th>BARKOD / SERİ NO<i>ШТРИХ-КОД / СЕР. №</i></th><th>RENK<i>ЦВЕТ</i></th>
+      <th>MARKA<i>БРЕНД</i></th><th>BARKOD / SERİ NO<i>ШТРИХ-КОД / СЕР. №</i></th><th>ŞİRKET KODU<i>КОД КОМПАНИИ</i></th>
       <th>BİRİM<i>ЕД. ИЗМ.</i></th><th>MİKTAR<i>КОЛ-ВО</i></th>
     </tr></thead>`;
 }
@@ -26915,6 +26967,19 @@ function tutanakPrintHtml(t){
   const aF=alanFirma?`<b>${esc(alanFirma)}</b>`:'<span class="ph">[ TESLİM ALAN FİRMA ]</span>';
   const eR=edenFirma?`<b>${esc(edenFirma)}</b>`:'<span class="ph">[ ПЕРЕДАЮЩАЯ КОМПАНИЯ ]</span>';
   const aR=alanFirma?`<b>${esc(noktasiz(alanFirma))}</b>`:'<span class="ph">[ ПРИНИМАЮЩАЯ КОМПАНИЯ ]</span>';
+  /* SIRKET ICI TESLIM: giris metni "X firmasi Y firmasina" yerine "X firmasi bunyesinde
+     A calisanindan B calisanina" diye kurulur - iki taraf zaten ayni firmanin calisani. */
+  const ic=tutIcMi(t);
+  const edenAd=(t.eden||{}).ad||'', alanAd=(t.alan||{}).ad||'';
+  const eAt=edenAd?`<b>${esc(edenAd)}</b>`:'<span class="ph">[ TESLİM EDEN AD SOYAD ]</span>';
+  const aAt=alanAd?`<b>${esc(alanAd)}</b>`:'<span class="ph">[ TESLİM ALAN AD SOYAD ]</span>';
+  const eAr=edenAd?`<b>${esc(edenAd)}</b>`:'<span class="ph">[ Ф.И.О. ПЕРЕДАЮЩЕГО ]</span>';
+  const aAr=alanAd?`<b>${esc(alanAd)}</b>`:'<span class="ph">[ Ф.И.О. ПРИНИМАЮЩЕГО ]</span>';
+  const firmaTek=edenFirma||alanFirma;
+  const fTt=firmaTek?`<b>${esc(firmaTek)}</b>`:'<span class="ph">[ FİRMA ]</span>';
+  const fTr=firmaTek?`<b>${esc(firmaTek)}</b>`:'<span class="ph">[ КОМПАНИЯ ]</span>';
+  const basTr=tutTurOf(t).baslikTr||'MALZEME TESLİM TUTANAĞI';
+  const basRu=tutTurOf(t).baslikRu||'АКТ ПРИЁМА-ПЕРЕДАЧИ МАТЕРИАЛОВ';
   const d=t.tarih?new Date(t.tarih):null;
   const p2=n=>String(n).padStart(2,'0');
   const tarihTxt=(d&&!isNaN(d))?`${p2(d.getDate())} / ${p2(d.getMonth()+1)} / ${d.getFullYear()}`:'……… / ……… / 20………';
@@ -26946,8 +27011,8 @@ function tutanakPrintHtml(t){
       <td class="nm">${esc(l.ad||'')}</td>
       <td class="c">${esc(l.marka||'')}</td>
       <td class="c">${esc(l.barkod||'')}</td>
-      <td class="c">${esc(l.renk||'')}</td>
-      <td class="c">${esc(l.birim||'')}</td>
+      <td class="c">${esc(l.sirketKodu||'')}</td>
+      <td class="c bir">${esc(l.birim||'')}</td>
       <td class="r">${l.qty!==''&&l.qty!=null?esc(fmtNum(String(l.qty).replace(',','.'))):''}</td>
     </tr>`;
   };
@@ -27037,13 +27102,22 @@ function tutanakPrintHtml(t){
     const ust=ci===0?`
       <div class="ph-title">
         <h1>TUTANAK / АКТ</h1>
-        <p>MALZEME TESLİM TUTANAĞI • АКТ ПРИЁМА-ПЕРЕДАЧИ МАТЕРИАЛОВ</p>
+        <p>${esc(basTr)} • ${esc(basRu)}</p>
       </div>
       <div class="ph-meta">
         <div><b>Tutanak No / № акта:</b><span class="dot">${esc(t.no||'')}</span></div>
         <div><b>Tarih / Дата:</b><span class="dot" style="min-width:30mm">${tarihTxt}</span></div>
       </div>
       <div class="ph-cols">
+        ${ic?`
+        <div class="ph-col tr">
+          <p>İşbu tutanak, ${fTt} bünyesinde ${eAt} tarafından ${aAt} çalışanına şirket içi kullanım amacıyla teslim edilen malzemelere ilişkin olarak düzenlenmiştir.</p>
+          <p>Aşağıda cinsi, miktarı ve özellikleri belirtilen malzemeler eksiksiz ve sağlam şekilde teslim edilmiştir.</p>
+        </div>
+        <div class="ph-col ru">
+          <p>Настоящий акт составлен о материалах, переданных в рамках компании ${fTr} сотрудником ${eAr} сотруднику ${aAr} для внутреннего использования.</p>
+          <p>Материалы, вид, количество и характеристики которых указаны ниже, переданы в полном объёме и в исправном состоянии.</p>
+        </div>`:`
         <div class="ph-col tr">
           <p>İşbu tutanak ${eF} tarafından ${aF} firmasına teslim edilen malzemelere ilişkin olarak düzenlenmiştir.</p>
           <p>Aşağıda cinsi, miktarı ve özellikleri belirtilen malzemeler eksiksiz ve sağlam şekilde teslim edilmiştir.</p>
@@ -27051,7 +27125,7 @@ function tutanakPrintHtml(t){
         <div class="ph-col ru">
           <p>Настоящий акт составлен в отношении материалов, переданных компанией ${eR} компании ${aR}.</p>
           <p>Материалы, вид, количество и характеристики которых указаны ниже, переданы в полном объёме и в исправном состоянии.</p>
-        </div>
+        </div>`}
       </div>
       ${iadeSerit}`:'';
     // Devam sayfalari tek baslarina dolasabildigi icin bantta tutanak numarasi da yazar
@@ -27063,7 +27137,7 @@ function tutanakPrintHtml(t){
       <table class="mt">${tutPrintTableHead()}<tbody>${trs}${totRow}</tbody></table>
       ${(son&&!notAyriSayfa)?notKutu(aciklama):''}
       ${imzaSerit(son&&!notAyriSayfa)}
-      ${tutPrintFoot(ci+1,toplamSayfa)}
+      ${tutPrintFoot(ci+1,toplamSayfa,basTr,basRu)}
     </div>`;
   }).join('');
 
@@ -27072,7 +27146,7 @@ function tutanakPrintHtml(t){
     <div class="ph-bar">AÇIKLAMALAR &nbsp;<i>| &nbsp;ПРИМЕЧАНИЯ${pi>0?` &nbsp;(devam / продолжение${t.no?' · '+esc(t.no):''})`:''}</i></div>
     ${notKutu(parca)}
     ${imzaSerit(pi===notParcalari.length-1)}
-    ${tutPrintFoot(chunks.length+pi+1,toplamSayfa)}
+    ${tutPrintFoot(chunks.length+pi+1,toplamSayfa,basTr,basRu)}
   </div>`).join('');
 
   const baslik=`Tutanak ${t.no||''} - ${fmtDate(t.tarih)}`.trim();
