@@ -321,7 +321,7 @@ let _idb = null
    yabanci satirlar ekranda kalirdi.
 
    KUTUPHANE TABLOLARI DA AYNI ANAHTARI KULLANIR (companies, proje_materials,
-   alet_lib, gecici_lib). Bunlar organizasyon genelinde ORTAK, yani tasari
+   alet_lib, gecici_lib, katalog). Bunlar organizasyon genelinde ORTAK, yani tasari
    basina ayri kopya tutmak gereksiz bir indirme demek. Yine de ayrilmis
    birakildi: yanlis olan tarafi yok (ayni veri iki kovada durur, ikisi de
    dogru) ve tek bir istisna listesi tutmak, o listenin lib/tasari.js ile
@@ -877,6 +877,20 @@ export async function sbUpdateFatura(id, e) { return sbUpdateEntity('faturalar',
 export async function sbDeleteFatura(id) { return sbDeleteEntity('faturalar', id) }
 export async function sbWipeFaturaData() { await sbDeleteAll('faturalar') }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Katalog — Ihtiyac Listesi sayfasinin icindeki, o sistemden bagimsiz alt bolum.
+// Malzeme Kutuphanesi'nden secilen bir urune ozellik (marka/model/olcu/malzeme)
+// eklenir. ORTAK tablodur (bkz. lib/tasari.js ORTAK_TABLOLAR) - kaynagi
+// (proje_materials) da ortak oldugu icin tasariya ozel degildir.
+// Tablo migration_katalog.sql ile kurulur; kurulmamissa acilis kilitlenmesin
+// diye yukleme hataya toleranslidir (gunluk_isler / ihtiyac_listeleri ile ayni desen).
+// ─────────────────────────────────────────────────────────────────────────────
+export async function sbGetKatalog() { return sbGetAll('katalog') }
+export async function sbInsertKatalogUrun(e) { return sbInsertEntity('katalog', e) }
+export async function sbUpdateKatalogUrun(id, e) { return sbUpdateEntity('katalog', id, e) }
+export async function sbDeleteKatalogUrun(id) { return sbDeleteEntity('katalog', id) }
+export async function sbWipeKatalogData() { await sbDeleteAll('katalog') }
+
 export async function sbGetCompanies() { return sbGetAll('companies') }
 export async function sbInsertCompany(e) { return sbInsertEntity('companies', e) }
 export async function sbUpdateCompany(id, e) { return sbUpdateEntity('companies', id, e) }
@@ -1090,6 +1104,13 @@ export async function sbLoadAllData(scope) {
       if (typeof window !== 'undefined') window.__ihtiyacTableMissing = true
       return []
     })
+    /* KATALOG Ihtiyac Listesi sayfasinin ICINDE gorunur, o yuzden ayni kosulla
+       yuklenir. Tablo migration_katalog.sql ile kurulur; kurulmamissa TUM
+       yuklemeyi kilitlememesi icin hataya toleransli. */
+    tasks.katalog = sbGetAll('katalog').catch(() => {
+      if (typeof window !== 'undefined') window.__katalogTableMissing = true
+      return []
+    })
   }
   if (needCompanies) tasks.companies = sbGetAll('companies').catch(() => [])
   /* DENETIM KAYDI ACILISTA YUKLENMEZ (kota).
@@ -1141,6 +1162,7 @@ export async function sbLoadAllData(scope) {
     tutanaklar: r.tutanaklar || [],
     gunlukIsler: r.gunlukIsler || [],
     ihtiyaclar: r.ihtiyaclar || [],
+    katalog: r.katalog || [],
     alet: { items: r.aletItems || [], lib: r.aletLib || [] },
     saha: {
       bg: (r.sahaSettings && r.sahaSettings.bg) || null,
@@ -1225,6 +1247,8 @@ export async function sbMigrateLocalDB(localDB) {
     push('Ihtiyac Listeleri', sbInsertEntities('ihtiyac_listeleri', localDB.ihtiyaclar))
   if (localDB.faturalar?.length)
     push('Faturalar', sbInsertEntities('faturalar', localDB.faturalar))
+  if (localDB.katalog?.length)
+    push('Katalog', sbInsertEntities('katalog', localDB.katalog))
   if (localDB.gecici?.lib?.length)
     push('Gecici Elektrik Kutuphanesi', sbInsertEntities('gecici_lib', localDB.gecici.lib))
   if (localDB.gecici?.moves?.length)
@@ -1298,7 +1322,7 @@ export async function sbWipeAllData() {
     'proje_bina_modelleri', 'proje_lokasyonlar', 'proje_alternatives', 'companies',
     'alet_items', 'alet_lib', 'saha_panels', 'saha_lines', 'saha_sockets',
     'rapor_entries', 'tutanaklar', 'gecici_lib', 'gecici_moves', 'gecici_orders',
-    'gunluk_isler', 'ihtiyac_listeleri', 'faturalar',
+    'gunluk_isler', 'ihtiyac_listeleri', 'faturalar', 'katalog',
   ]
   await Promise.allSettled([
     ...textIdTables.map(t => sbDeleteAll(t)),

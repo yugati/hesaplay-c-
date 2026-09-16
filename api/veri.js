@@ -53,7 +53,7 @@ const VARLIK_TABLOLARI = new Set([
   'rapor_entries', 'gecici_lib', 'gecici_moves', 'gecici_orders',
   'proje_sartnames', 'proje_materials', 'proje_specs', 'proje_items',
   'proje_orders', 'proje_alternatives', 'proje_bina_modelleri', 'proje_lokasyonlar',
-  'gunluk_isler', 'ihtiyac_listeleri', 'faturalar',
+  'gunluk_isler', 'ihtiyac_listeleri', 'faturalar', 'katalog',
   'audit_log',
 ])
 // anahtar/deger ve basit liste tablolari
@@ -104,7 +104,7 @@ const TABLO_ADI = {
   proje_sartnames: 'Sartname', proje_materials: 'Malzeme', proje_specs: 'Spesifikasyon',
   proje_items: 'Siparis satiri', proje_orders: 'Siparis', proje_alternatives: 'Alternatif',
   proje_bina_modelleri: 'Bina modeli', proje_lokasyonlar: 'Lokasyon',
-  gunluk_isler: 'Gunluk is', ihtiyac_listeleri: 'Ihtiyac listesi', faturalar: 'Fatura',
+  gunluk_isler: 'Gunluk is', ihtiyac_listeleri: 'Ihtiyac listesi', faturalar: 'Fatura', katalog: 'Katalog kaydi',
   app_settings: 'Ayar', saha_settings: 'Saha ayari', rapor_ekipler: 'Ekip',
   proje_buildings: 'Bina', proje_sections: 'Bolum',
 }

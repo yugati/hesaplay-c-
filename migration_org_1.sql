@@ -82,7 +82,7 @@ DECLARE
     'rapor_entries','gecici_lib','gecici_moves','gecici_orders',
     'proje_sartnames','proje_materials','proje_specs','proje_items',
     'proje_orders','proje_alternatives','proje_bina_modelleri','proje_lokasyonlar',
-    'gunluk_isler','ihtiyac_listeleri','audit_log'
+    'gunluk_isler','ihtiyac_listeleri','katalog','audit_log'
   ];
   -- anahtar/değer ve basit liste tabloları (api/veri.js DIGER_TABLOLAR)
   diger TEXT[] := ARRAY['app_settings','saha_settings','rapor_ekipler','proje_buildings','proje_sections'];
@@ -124,7 +124,7 @@ DECLARE
     'rapor_entries','gecici_lib','gecici_moves','gecici_orders',
     'proje_sartnames','proje_materials','proje_specs','proje_items',
     'proje_orders','proje_alternatives','proje_bina_modelleri','proje_lokasyonlar',
-    'gunluk_isler','ihtiyac_listeleri','audit_log'
+    'gunluk_isler','ihtiyac_listeleri','katalog','audit_log'
   ];
 BEGIN
   FOREACH t IN ARRAY varlik LOOP
