@@ -26384,7 +26384,7 @@ async function saveAletOrder(){
 /* Liste filtreleri TEK yerden uretilir: TUTV uc ayri noktada sifirlaniyor
    (openTutanak / closeTutanak / burasi) - alan eklendiginde biri unutulursa
    filtre "yapisan" bir deger tasirdi. */
-function tutVarsayilanV(){ return { mode:'list', q:'', from:'', to:'', eden:'', alan:'', bina:'', iade:'', pdf:'' }; }
+function tutVarsayilanV(){ return { mode:'list', q:'', from:'', to:'', eden:'', alan:'', bina:'', iade:'', pdf:'', durum:'' }; }
 let TUTV=tutVarsayilanV();   // liste / form
 let _TUT=null;                    // duzenlenen tutanak taslagi (kaydedilene kadar bellekte)
 /* Sayfa basina malzeme satiri. Kapasite iki seye bagli:
@@ -26430,6 +26430,13 @@ function tutFirmaBagli(t,side){
 function tutIadeTarihi(t){ return (tutIadeVar(t)&&t.iadeTarih)?t.iadeTarih:null; }
 function tutIadeOzet(t){ if(!tutIadeVar(t)) return 'iade yok';
   const d=tutIadeTarihi(t); return d?('iade var - '+fmtDate(d)):'iade var - tarih belirtilmedi'; }
+/* TASLAK: kod verilmemis, yarim kalmis tutanak - Fatura'nin durum:taslak/kesin
+   deseniyle ayni (bkz. fatDurumu). Eski/durum'suz kayitlar KESIN sayilir - alan
+   sonradan eklendi, yoklugu taslak degil tamamlanmis kayit anlamina gelir. KOD
+   BIR KEZ verilip degismedigi icin (bkz. saveTutanak) kesinlesmis bir tutanak
+   asla taslaga geri donmez; taslak->kesin gecisi tek yonludur. */
+function tutDurumu(t){ return (t&&t.durum==='taslak')?'taslak':'kesin'; }
+function tutTaslakMi(t){ return tutDurumu(t)==='taslak'; }
 
 function openTutanak(){
   if(!canSee('rapor')){ toast('Bu bolume erisim yetkiniz yok','err'); return; }
@@ -26530,7 +26537,7 @@ function tutSonrakiKod(t){
 function tutKodGoster(t){ return (t&&t.no)||tutSonrakiKod(t)||''; }
 function tutKodIpucu(t){
   if(t&&t.no) return 'Kod verildi - tarih ya da firma degisse bile ayni kalir';
-  if(tutKodOnek(t)) return 'Kaydedince bu kod verilir; o ana kadar degisebilir';
+  if(tutKodOnek(t)) return 'Kesinlestirince bu kod verilir; taslak olarak kaydederken kod verilmez, o ana kadar degisebilir';
   return '<span style="color:var(--amber)">Teslim Eden firmasi Sirketler listesine bagli olmadigi icin kod uretilemiyor</span>';
 }
 function tutBlankLine(){ return {id:uid(),matId:'',matSrc:'',code:'',ad:'',marka:'',birim:'',qty:'',barkod:'',sirketKodu:''}; }
@@ -26671,10 +26678,11 @@ function setTutQ(v){ TUTV.q=v; render(); }
    ve artik FILTRELENMIS kumeyi anlatiyor. */
 function setTutF(k,v){ TUTV[k]=v; render(); }
 function clearTutF(){ const m=TUTV.mode; TUTV=tutVarsayilanV(); TUTV.mode=m; render(); }
-function tutAnyF(){ return !!(TUTV.q||TUTV.from||TUTV.to||TUTV.eden||TUTV.alan||TUTV.bina||TUTV.iade||TUTV.pdf); }
+function tutAnyF(){ return !!(TUTV.q||TUTV.from||TUTV.to||TUTV.eden||TUTV.alan||TUTV.bina||TUTV.iade||TUTV.pdf||TUTV.durum); }
 // aramada tutanagin ICINDEKI malzeme satirlari da taranir (eski davranis korundu)
 function tutAraMetin(t){
   return [t.no,tutFirma(t,'eden'),tutFirma(t,'alan'),t.bina,tutTurOf(t).tr,tutIadeOzet(t),
+    tutTaslakMi(t)?'taslak':'',
     ...((t.lines||[]).map(l=>(l.ad||'')+' '+(l.code||'')))].join(' ');
 }
 function tutFiltrele(all){
@@ -26691,6 +26699,7 @@ function tutFiltrele(all){
     if(f.iade==='yok' &&  tutIadeVar(t)) return false;
     if(f.pdf==='var'  && !t.pdf) return false;
     if(f.pdf==='yok'  &&  t.pdf) return false;
+    if(f.durum && tutDurumu(t)!==f.durum) return false;
     return true;
   });
 }
@@ -26704,6 +26713,7 @@ function renderTutanakList(){
   const now=new Date(), ayBasi=new Date(now.getFullYear(),now.getMonth(),1).getTime();
   // ozet sayilari FILTRELENMIS kumeyi anlatir - "su an ekranda ne var" sorusunun cevabi
   const buAy=list.filter(t=>(t.tarih||0)>=ayBasi).length;
+  const taslakSayisi=list.filter(tutTaslakMi).length;
   const toplamKalem=list.reduce((s,t)=>s+tutTotals(t).kalem,0);
   const edenler=tutSecenekler(all,t=>tutFirma(t,'eden'));
   const alanlar=tutSecenekler(all,t=>tutFirma(t,'alan'));
@@ -26725,6 +26735,10 @@ function renderTutanakList(){
       <option value="">Tumu</option>
       <option value="var" ${TUTV.pdf==='var'?'selected':''}>PDF yuklu</option>
       <option value="yok" ${TUTV.pdf==='yok'?'selected':''}>PDF eksik</option></select></div>
+    <div class="ord-f"><label>Kayit Durumu</label><select onchange="setTutF('durum',this.value)" title="Taslak: kod verilmemis, yarim kalmis tutanak">
+      <option value="">Tumu</option>
+      <option value="taslak" ${TUTV.durum==='taslak'?'selected':''}>Taslak</option>
+      <option value="kesin" ${TUTV.durum==='kesin'?'selected':''}>Kesinlesmis</option></select></div>
     <div class="ord-f" style="flex:none;margin-left:auto;justify-content:flex-end"><label>&nbsp;</label>
       <div style="display:flex;gap:9px;flex-wrap:wrap">
         ${anyF?`<button class="btn btn-ghost" style="padding:8px 14px" onclick="clearTutF()">Filtreyi Temizle</button>`:''}
@@ -26738,7 +26752,8 @@ function renderTutanakList(){
   else list.forEach(t=>{
     const tt=tutTotals(t);
     rows+=`<tr>
-      <td><span class="tut-no">${esc(t.no||'-')}</span>${tutIcMi(t)
+      <td><span class="tut-no">${esc(t.no||'-')}</span>${tutTaslakMi(t)
+        ?`<span class="tut-iade" style="background:color-mix(in srgb,var(--amber) 16%,transparent);color:var(--amber);border-color:color-mix(in srgb,var(--amber) 42%,transparent)" title="Taslak - kod verilmemis, yarim kalmis tutanak">TASLAK</span>`:''}${tutIcMi(t)
         ?`<span class="tut-iade" style="background:color-mix(in srgb,var(--violet) 16%,transparent);color:var(--violet);border-color:color-mix(in srgb,var(--violet) 42%,transparent)" title="${esc(tutTurOf(t).tr)} - firma kendi calisanlari arasinda">IC</span>`:''}${tutIadeVar(t)
         ?`<span class="tut-iade" title="${esc(tutTurOf(t).tr)} - ${esc(tutIadeOzet(t))}">IADE</span>`:''}${t.pdf
         ?`<span class="tut-iade" style="background:color-mix(in srgb,var(--blue) 16%,transparent);color:var(--blue)" title="Imzali/taranmis nusha yuklu: ${esc(t.pdf.name||'belge')}">PDF</span>`:''}</td>
@@ -26762,7 +26777,7 @@ function renderTutanakList(){
       <p class="page-sub">Malzeme teslim tutanagi · АКТ ПРИЁМА-ПЕРЕДАЧИ МАТЕРИАЛОВ · iki dilli (TR/RU) A4 cikti</p></div>
     ${tutMissingWarn()}
     ${filterbar}
-    <div class="ord-sumline"><b>${fmtNum(list.length)}</b> tutanak · <b>${fmtNum(toplamKalem)}</b> kalem · bu ay <b>${fmtNum(buAy)}</b>${anyF?` <span class="t-meta">(${fmtNum(all.length)} kayit icinden filtrelendi)</span>`:''}</div>
+    <div class="ord-sumline"><b>${fmtNum(list.length)}</b> tutanak · <b>${fmtNum(toplamKalem)}</b> kalem · bu ay <b>${fmtNum(buAy)}</b>${taslakSayisi?` · <b style="color:var(--amber)">${fmtNum(taslakSayisi)}</b> taslak`:''}${anyF?` <span class="t-meta">(${fmtNum(all.length)} kayit icinden filtrelendi)</span>`:''}</div>
     <div class="tablewrap"><table><thead><tr>
       <th>Tutanak Kodu</th><th>Tarih</th><th>Teslim Eden</th><th>Teslim Alan</th><th>Bina</th><th>Icerik</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>
@@ -26828,8 +26843,8 @@ function tutTurDevam(){
 function newTutanak(sec){
   if(!guard('define',{mod:'rapor'}))return;
   sec=sec||{};
-  // no BOS acilir: kod, form acilirken degil KAYIT aninda uretilir (bkz. saveTutanak)
-  _TUT={ id:uid(), no:'', tarih:Date.now(), bina:'',
+  // no BOS acilir: kod, form acilirken degil KESINLESTIRME aninda uretilir (bkz. saveTutanak)
+  _TUT={ id:uid(), no:'', tarih:Date.now(), bina:'', durum:'taslak',
     tur:sec.tur||TUT_TURLERI[0].id, iade:!!sec.iade, iadeTarih:sec.iadeTarih||null,
     eden:{firma:'',ad:'',gorev:''}, alan:{firma:'',ad:'',gorev:''},
     lines:[tutBlankLine()], aciklama:'',   // TEK bos satir: gerekince "Bos Satir" ile eklenir
@@ -26854,12 +26869,12 @@ function copyTutanak(id){
   if(!guard('define',{mod:'rapor'}))return;
   const t=(DB.tutanaklar||[]).find(x=>x.id===id); if(!t)return;
   const c=JSON.parse(JSON.stringify(t));
-  c.id=uid(); c.no=''; c.tarih=Date.now(); c._yeni=true;   // kod kaydederken yeniden uretilir
+  c.id=uid(); c.no=''; c.tarih=Date.now(); c._yeni=true; c.durum='taslak';   // kod kesinlestirince yeniden uretilir
   delete c.pdf;   // imzali nusha ASLINA aittir - kopya yeni bir tutanaktir
   c.createdBy=(CURRENT_USER&&CURRENT_USER.username)||''; c.createdAt=Date.now(); c.updatedAt=Date.now();
   (c.lines||[]).forEach(l=>l.id=uid());
   _TUT=c; TUTV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
-  toast('Tutanak kopyalandi - tarih bugune alindi, kod kaydedince verilir');
+  toast('Tutanak kopyalandi - tarih bugune alindi, kod kesinlestirince verilir');
 }
 async function delTutanak(id){
   if(!guard('delete',{mod:'rapor'}))return;
@@ -26973,7 +26988,7 @@ function renderTutanakForm(){
   return `<div class="tut-wrap">${compList}
     <div class="sel-bc"><button onclick="tutBackToList()">${icoArr('left')} Tutanak Listesi</button> ${icoChevron()}
       <b>${esc(tutKodGoster(t)||'Yeni Tutanak')}</b></div>
-    <div class="page-head"><h1>${t._yeni?'Yeni Tutanak':'Tutanak Duzenle'}</h1>
+    <div class="page-head"><h1>${t._yeni?'Yeni Tutanak':'Tutanak Duzenle'}${tutTaslakMi(t)?' <span class="sdraft-badge">TASLAK</span>':''}</h1>
       <p class="page-sub">Alanlari doldurun, "Yazdir" ile sablona birebir uyan iki dilli A4 ciktiyi alin.</p></div>
     ${tutMissingWarn()}
 
@@ -27072,8 +27087,9 @@ function renderTutanakForm(){
     <div class="kata-page-foot">
       <button class="btn btn-ghost" style="margin-right:auto" onclick="tutCancelForm()">${icoArr('left')} Vazgec</button>
       <button class="btn btn-ghost" onclick="printTutanak(null)" title="Kaydetmeden onizleme/cikti al">${icoTutPrint()} Yazdir</button>
-      <button class="btn btn-add" onclick="saveTutanak(false)">Kaydet</button>
-      <button class="btn btn-order" onclick="saveTutanak(true)">Kaydet ve Yazdir</button>
+      ${tutTaslakMi(t)?`<button class="btn btn-ghost" onclick="saveTutanak(false,false)" title="Kod verilmeden, yarim haliyle saklar - malzeme satiri ya da kod zorunlulugu yok">Taslak Kaydet</button>`:''}
+      <button class="btn btn-add" onclick="saveTutanak(false,true)">${tutTaslakMi(t)?'Tutanagi Kesinlestir':'Kaydet'}</button>
+      <button class="btn btn-order" onclick="saveTutanak(true,true)">${tutTaslakMi(t)?'Kesinlestir ve Yazdir':'Kaydet ve Yazdir'}</button>
     </div>
   </div>`;
 }
@@ -27173,22 +27189,35 @@ function tutPickAdd(src,matId){
 }
 
 /* ---------- KAYDET ---------- */
-async function saveTutanak(andPrint){
+/* kesin=false -> TASLAK kaydi (Fatura'nin fatKaydet(kesin) ile ayni desen - bkz.
+   tutTaslakMi). Kod uretilmez/dogrulanmaz, malzeme satiri zorunlu degil: taslak
+   bir belge degil, yarim kalmis bir nottur. Butun bu kontroller KESINLESTIRMEDE
+   (kesin=true, varsayilan) calisir - "Kaydet" / "Kaydet ve Yazdir" hep kesinlestirir,
+   "Taslak Kaydet" ise kesin=false gonderir. */
+async function saveTutanak(andPrint,kesin=true){
   if(!guard('define',{mod:'rapor'}))return;
   if(!_TUT)return;
-  /* KOD BIR KEZ verilir, bir daha DEGISMEZ: belge numarasi kimliktir - sonradan
-     tarih/firma degisince kaysaydi elde basili duran cikti ile kayit ayrisirdi.
-     Uretim KAYIT aninda, form acilirken degil: iki kullanici ayni anda form acsa
-     ikisi de ayni numarayi gorur, ikincisi kaydederken carpardi.
-     Eski TSL-... kayitlari kendi numaralarini korur (no dolu geldigi icin). */
-  const no=String(_TUT.no||'').trim()||tutSonrakiKod(_TUT);
-  if(!no){ toast('Tutanak kodu uretilemedi - "Teslim Eden" firmasini Sirketler listesindeki adiyla secin','err'); return; }
-  if((DB.tutanaklar||[]).some(x=>x.id!==_TUT.id && norm(x.no||'')===norm(no))){
-    toast('Bu tutanak numarasi zaten kullaniliyor','err'); return; }
-  if(!tutFilledLines(_TUT).length){ toast('En az bir malzeme satiri girin','err'); return; }
+  let no=String(_TUT.no||'').trim();
+  if(kesin){
+    /* KOD BIR KEZ verilir, bir daha DEGISMEZ: belge numarasi kimliktir - sonradan
+       tarih/firma degisince kaysaydi elde basili duran cikti ile kayit ayrisirdi.
+       Uretim KESINLESTIRME aninda, form acilirken degil: iki kullanici ayni anda
+       form acsa ikisi de ayni numarayi gorur, ikincisi kesinlestirirken carpardi.
+       Eski TSL-... kayitlari kendi numaralarini korur (no dolu geldigi icin). */
+    no=no||tutSonrakiKod(_TUT);
+    if(!no){ toast('Tutanak kodu uretilemedi - "Teslim Eden" firmasini Sirketler listesindeki adiyla secin','err'); return; }
+    if((DB.tutanaklar||[]).some(x=>x.id!==_TUT.id && norm(x.no||'')===norm(no))){
+      toast('Bu tutanak numarasi zaten kullaniliyor','err'); return; }
+    if(!tutFilledLines(_TUT).length){ toast('En az bir malzeme satiri girin','err'); return; }
+  } else {
+    no='';   // taslakta kod ELLE de otomatik de verilmez - kesinlestirmede uretilir
+    // taslak icin en azindan bir tutamak olmali - tamamen bos bir taslak kaydetmenin anlami yok
+    if(!tutFilledLines(_TUT).length && !String(tutFirma(_TUT,'eden')||'').trim()){
+      toast('Taslak icin en az Teslim Eden firmasini veya bir malzeme satiri girin','err'); return; }
+  }
   // kayitta duran eski PDF: yalnizca yazma BASARILI olursa kovadan alinir
-  const eskiPdfYol=((DB.tutanaklar||[]).find(x=>x.id===_TUT.id)||{}).pdf;
-  const eskiYol=(eskiPdfYol&&eskiPdfYol.path)||'';
+  const eskiKayit=(DB.tutanaklar||[]).find(x=>x.id===_TUT.id)||null;
+  const eskiYol=(eskiKayit&&eskiKayit.pdf&&eskiKayit.pdf.path)||'';
   if(!_TUT.tur) _TUT.tur=TUT_TURLERI[0].id;
   _TUT.iade=!!_TUT.iade;
   if(!_TUT.iade) _TUT.iadeTarih=null;   // iade kapaliyken tarih kaydedilmez
@@ -27200,6 +27229,8 @@ async function saveTutanak(andPrint){
   /* Kod YALNIZCA kayda islenir, taslaga degil: yazma basarisiz olursa taslak
      kodsuz kalir ve kullanici tarihi/firmayi duzeltince dogru kod uretilir. */
   kayit.no=no;
+  // KESINLESMIS bir tutanak asla taslaga donmez; taslak, kesinlesene kadar taslak kalir
+  kayit.durum=kesin?'kesin':'taslak';
   /* Yazma DENENIR. Eskiden window.__tutanakTableMissing bayragina bakilip pesinen
      reddediliyordu; o bayrak sayfa yuklenirken alinan anlik bir durum ve SQL bu arada
      calistirilmis olabiliyor - yani kaydedilebilecek tutanaklar geri cevriliyordu.
@@ -27224,10 +27255,12 @@ async function saveTutanak(andPrint){
   window.__tutanakTableMissing=false;               // yazabildiysek uyari bandi kalksin
   const yeniYol=(kayit.pdf&&kayit.pdf.path)||'';
   if(eskiYol&&eskiYol!==yeniYol&&window.sbBelgeSil) window.sbBelgeSil(eskiYol);
-  logAction('define',(yeni?'Tutanak olusturuldu: ':'Tutanak guncellendi: ')+kayit.no);
+  logAction('define',(kesin?'':'[TASLAK] ')+(yeni?'Tutanak olusturuldu: ':'Tutanak guncellendi: ')+(kayit.no||'(kod yok)'));
   const id=kayit.id;
   tutBackToList();
-  toast(yeni?'Tutanak kaydedildi':'Tutanak guncellendi');
+  toast(kesin
+    ? (eskiKayit&&tutTaslakMi(eskiKayit)?'Tutanak kesinlesti':(yeni?'Tutanak kaydedildi':'Tutanak guncellendi'))
+    : 'Taslak olarak kaydedildi - kod kesinlestirince verilir');
   if(andPrint) setTimeout(()=>printTutanak(id),120);
 }
 
