@@ -31561,11 +31561,28 @@ function fatOzelKodEslesir(u,q){
   if(!k) return false;
   return (u.ozelKodlar||[]).some(c=>((typeof ktopKey==='function')?ktopKey(c):String(c||'').toLowerCase()).indexOf(k)>=0);
 }
+/* RAKAM ICEREN SORGU KOD ARAMASIDIR: matchText'in harf-sirasi (subsequence)
+   yedegi ona UYGULANMAZ. O yedek "4033128"i, "CL-M-CW-400-3000 ... 122538"
+   satirinda 4-0-3-3-1-2-8 sirayla gectigi icin eslesmis sayiyordu - aranan urun
+   bu firmadan hic alinmamisken liste alakasiz satirlarla dolu gorunuyor, asil
+   cevap (bkz. fatAlinmamisAra) gozden kaciyordu. Rakamsiz (ad) aramada yedek
+   kalir: orada yazim hatasini affetmesi ise yarar.
+   Kod aramasi yine de kati degil: kelimeler sirasiz aranir, tire/bosluk/alt
+   cizgi farki ktopKey ile silinir ("CH100 HDG 4015" = "CH100HDG4015"). */
+function fatKodSorgusu(q){ return /\d/.test(String(q||'')); }
 // Formda ve mutabakatta TEK arama kurali - ikisi ayrisamasin
 function fatAramaEslesir(u,q){
   if(!q) return true;
-  if(matchText([u.ad,u.code,u.binalar.join(' '),u.bolumler.join(' '),
-    u.sartnameler.join(' '),u.firmalar.join(' ')].join(' '),q)) return true;
+  const alanlar=[u.ad,u.code,u.binalar.join(' '),u.bolumler.join(' '),
+    u.sartnameler.join(' '),u.firmalar.join(' ')];
+  if(!fatKodSorgusu(q)){ if(matchText(alanlar.join(' '),q)) return true; }
+  else{
+    const hay=norm(alanlar.join(' '));
+    const par=norm(q).trim().split(/\s+/).filter(Boolean);
+    if(par.length&&par.every(p=>hay.indexOf(p)>=0)) return true;
+    const kq=fatKodAnahtar(norm(q));
+    if(kq&&alanlar.some(a=>fatKodAnahtar(norm(a)).indexOf(kq)>=0)) return true;
+  }
   return fatOzelKodEslesir(u,q);
 }
 /* Satirda gosterilecek ozel kod ozeti. Liste uzun olabilir (ayni urun yuzlerce
