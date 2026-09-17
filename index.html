@@ -3881,7 +3881,10 @@ let DB=null;
 function blankDB(){
   const lib = SEED.map(s=>({
     id:uid(), kod:s.c, ad:s.a, grup:s.g, marka:s.m, unit:s.u||'ADET',
-    barkod:s.bc, renk:s.r, bakiye:Number(s.b)||0, parca:Number(s.p)||0, img:null
+    // s.b (SEED'deki acilis bakiyesi) BILEREK OKUNMAZ: bakiye artik kunyede
+    // saklanmiyor, hareketlerden turetiliyor (bkz. geciciBakiye). Yeni kurulum
+    // dolu kunye + sifir stokla baslar; stok ilk irsaliye ile girer.
+    barkod:s.bc, renk:s.r, parca:Number(s.p)||0, img:null
   }));
   return { companies:[], tutanaklar:[], proje:{items:[],specs:[],buildings:[],orders:[],materials:[],sections:[],sartnames:[],binaModelleri:[],lokasyonlar:[],alternatives:[]}, gecici:{lib:lib, moves:[], orders:[]}, alet:{items:[],lib:[]}, saha:{bg:SAHA_DEFAULT_BG, bgName:'GP_oll_area-1.pdf', panels:[], lines:[], sockets:[]}, meta:{created:Date.now(),seeded:true,tavaSeed:false,tavaSeedV:4,specWipeV:1,matLibV:1} };
 }
@@ -5264,7 +5267,7 @@ function render(){
     if(!PSPEC){ mainYaz(m,renderSpekSecim()); wireToolbar(); return; }
     mainYaz(m,projeFilterBar()+projeSubnav()+(TAB==='spec'?renderSpec():TAB==='log'?renderProjeLog():renderProjeOrders()));
   }
-  else if(SEC==='gecici') mainYaz(m,geciciSubnav()+(TAB==='orders'?renderOrders():renderLibrary()));
+  else if(SEC==='gecici') mainYaz(m,geciciSubnav()+(TAB==='orders'?renderOrders():TAB==='moves'?renderMoves():renderLibrary()));
   else if(SEC==='alet') mainYaz(m,renderAletler());
   else if(SEC==='saha') mainYaz(m,renderSaha());
   else if(SEC==='rapor'){ mainYaz(m,renderRapor()); wireToolbar(); return; }
@@ -9332,13 +9335,13 @@ let _matSel=new Set();
 // Kutuphane yapisal filtre paneli (Tum Siparisler ile ayni desen).
 // scope: 'proje' = sartname malzemeleri, 'gecici' = Mobilizasyon (Gecici Elektrik) kutuphanesi.
 // Iki kapsam AYRI listelerdir, birbirine karismaz; kapsam degisince filtreler sifirlanir.
-let MATF={scope:'proje',cat:'',brand:'',unit:'',tag:'',img:'',renk:'',cins:'',bak:''};
+let MATF={scope:'proje',cat:'',brand:'',unit:'',tag:'',img:'',renk:'',cins:''};
 function setMatF(k,v){ MATF[k]=v; render(); }
 function setMatScope(s){ if(MATF.scope===s)return;
-  MATF={scope:s,cat:'',brand:'',unit:'',tag:'',img:'',renk:'',cins:'',bak:''};
+  MATF={scope:s,cat:'',brand:'',unit:'',tag:'',img:'',renk:'',cins:''};
   _matUsageFilter='all'; _matSel.clear(); _markaSel.clear(); SEARCH=''; render(); }
-function clearMatF(){ MATF={scope:MATF.scope,cat:'',brand:'',unit:'',tag:'',img:'',renk:'',cins:'',bak:''}; _matUsageFilter='all'; SEARCH=''; render(); }
-function matAnyF(){ return !!(SEARCH||MATF.cat||MATF.brand||MATF.unit||MATF.tag||MATF.img||MATF.renk||MATF.cins||MATF.bak||_matUsageFilter!=='all'); }
+function clearMatF(){ MATF={scope:MATF.scope,cat:'',brand:'',unit:'',tag:'',img:'',renk:'',cins:''}; _matUsageFilter='all'; SEARCH=''; render(); }
+function matAnyF(){ return !!(SEARCH||MATF.cat||MATF.brand||MATF.unit||MATF.tag||MATF.img||MATF.renk||MATF.cins||_matUsageFilter!=='all'); }
 // marka alani coklu deger tutabilir ("BEMIS / VIKO" veya satir satir) - filtre parcalara bakar
 /* KAYITLI MARKA ADLARININ ANAHTAR KUMESI. matBrandParts her malzeme satirinda cagriliyor -
    her cagrida marka listesini taramak yerine kume bir kez kurulur. Liste her yazildiginda
@@ -10172,9 +10175,18 @@ function matScopeBar(){
     ${(canSee('kutuphane')||canSee('proje')||canSee('gecici')||canSee('alet'))?`<button class="${MATF.scope==='marka'?'on':''}" onclick="setMatScope('marka')" title="Marka listesi - ustteki uc kutuphanenin ORTAK marka sozlugu">Marka</button>`:''}
   </div>`;
 }
-// Mobilizasyon kapsami: gecici elektrik kutuphanesi ayni yapisal filtre paneliyle listelenir.
-// Kayitlarin kaynagi DB.gecici.lib'dir; duzenleme/stok islemleri gecici modulun kendi
-// fonksiyonlarina (libMove/libDetail/openLibModal) baglanir, yetkiler de oradan gelir.
+/* Mobilizasyon kapsami: gecici elektrik kutuphanesi ayni yapisal filtre paneliyle listelenir.
+   Kayitlarin kaynagi DB.gecici.lib'dir; duzenleme gecici modulun kendi fonksiyonlarina
+   (libDetail/openLibModal) baglanir, yetkiler de oradan gelir.
+
+   BURADA BAKIYE YOKTUR. Bu ekran KUTUPHANEDIR: malzemenin ne oldugunu soyler, ambarda
+   kac tane oldugunu soylemez. Iki nedeni var:
+     1) gecici_lib ORTAK tablodur (tum tasarilar ayni satirlari gorur), bakiye ise
+        tasariya ozel bir sayidir - kutuphane satirinda gosterilse hangi projenin
+        bakiyesi oldugu belirsiz kalirdi.
+     2) Stok girisi/cikisi Gecici Elektrik bolumunun isidir; giris yalnizca
+        Siparis / Irsaliye ile yapilir (bkz. geciciBakiye aciklamasi).
+   Bakiye, hareketler ve sahaya sevk: Gecici Elektrik > Ambar Stok / Hareketler. */
 function matLibGeciciFiltered(){
   let lib=((DB.gecici&&DB.gecici.lib)||[]).slice();
   // arama IKINCI DILI de kapsar: kullanici Rusca adi ya da malzeme cinsini yazarak da bulabilsin
@@ -10186,10 +10198,6 @@ function matLibGeciciFiltered(){
     if(MATF.cins && (x.cins||'')!==MATF.cins) return false;
     if(MATF.img==='var' && !x.img) return false;
     if(MATF.img==='yok' && x.img) return false;
-    const b=Number(x.bakiye)||0;
-    if(MATF.bak==='stok' && b<=0) return false;
-    if(MATF.bak==='az' && !(b>0&&b<=5)) return false;
-    if(MATF.bak==='yok' && b>0) return false;
     return true;
   });
   lib.sort((a,b)=>(a.grup||'').localeCompare(b.grup||'','tr')||(a.ad||'').localeCompare(b.ad||'','tr'));
@@ -10210,7 +10218,6 @@ function renderMaterialLibGecici(){
     <div class="ord-f"><label>Marka</label><select onchange="setMatF('brand',this.value)"><option value="">Tumu</option>${brands.map(b=>`<option value="${esc(b)}" ${MATF.brand===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div>
     ${renks.length?`<div class="ord-f"><label>Renk</label><select onchange="setMatF('renk',this.value)"><option value="">Tumu</option>${renks.map(r=>`<option value="${esc(r)}" ${MATF.renk===r?'selected':''}>${esc(r)}</option>`).join('')}</select></div>`:''}
     ${cinsler.length?`<div class="ord-f"><label>Malzeme Cinsi</label><select onchange="setMatF('cins',this.value)"><option value="">Tumu</option>${cinsler.map(c=>`<option value="${esc(c)}" ${MATF.cins===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>`:''}
-    <div class="ord-f"><label>Bakiye</label><select onchange="setMatF('bak',this.value)"><option value="">Tumu</option><option value="stok" ${MATF.bak==='stok'?'selected':''}>Stokta olan</option><option value="az" ${MATF.bak==='az'?'selected':''}>Azalan (&le;5)</option><option value="yok" ${MATF.bak==='yok'?'selected':''}>Tukenen</option></select></div>
     <div class="ord-f"><label>Fotograf</label><select onchange="setMatF('img',this.value)"><option value="">Tumu</option><option value="var" ${MATF.img==='var'?'selected':''}>Foto ekli</option><option value="yok" ${MATF.img==='yok'?'selected':''}>Foto eksik</option></select></div>
     ${anyF?`<div class="ord-f" style="justify-content:flex-end"><label>&nbsp;</label><button class="btn btn-ghost" style="padding:8px 14px" onclick="clearMatF()">Filtreyi Temizle</button></div>`:''}
   </div>`;
@@ -10225,30 +10232,25 @@ function renderMaterialLibGecici(){
   </div>`;
   let rows='';
   if(libAll.length===0){
-    rows=`<tr><td colspan="8"><div class="empty" style="padding:30px"><p>${anyF?'Eslesen malzeme yok':'Mobilizasyon kutuphanesi bos'}</p><span style="font-size:12px">Gecici Elektrik bolumunden malzeme ekleyin</span></div></td></tr>`;
+    rows=`<tr><td colspan="7"><div class="empty" style="padding:30px"><p>${anyF?'Eslesen malzeme yok':'Mobilizasyon kutuphanesi bos'}</p><span style="font-size:12px">Gecici Elektrik bolumunden malzeme ekleyin</span></div></td></tr>`;
   } else {
     lib.forEach(x=>{
-      const b=Number(x.bakiye)||0;
-      const cls=b<=0?'zero':b<=5?'low':'ok';
       const thumb=x.img?`<img class="thumb" src="${x.img}" onclick="lightbox(${lbCall([x.img,x.img2])})">`:phThumb();
       const dot=x.renk?`<span class="color-dot" style="background:${renkHex(x.renk)}"></span>`:'';
       rows+=`<tr><td>${thumb}</td>
         <td><div class="t-name">${esc(x.ad)}</div>${x.adRu?`<div class="t-name-ru">${esc(x.adRu)}</div>`:''}<div class="t-code">${esc(x.kod||'-')}</div></td>
         <td><span class="grp-tag">${esc(x.grup||'-')}</span></td>
         <td class="t-meta">${esc(x.marka||'-')}</td>
-        <td class="t-meta">${dot}${esc(x.renk||'-')}${x.cins?`<div class="t-cins">${esc(x.cins)}</div>`:''}</td>
-        <td><span class="bal ${cls}">${fmtNum(b)}</span> <span class="t-meta">${esc(x.unit||'')}</span>${Number(x.parca)>0?`<div class="t-cins">paket ici ${fmtNum(x.parca)}</div>`:''}</td>
+        <td class="t-meta">${dot}${esc(x.renk||'-')}${x.cins?`<div class="t-cins">${esc(x.cins)}</div>`:''}${Number(x.parca)>0?`<div class="t-cins">paket ici ${fmtNum(x.parca)}</div>`:''}</td>
         <td class="t-meta">${esc(x.barkod||'-')}</td>
         <td><div class="row-actions">
-          ${canCreate('gecici')||canUpdate('gecici')?`<button class="mini-btn in" title="Stok Gir" onclick='libMove("${x.id}","in")'>${icoArr('down')}</button>
-          <button class="mini-btn out" title="Stok Cikar" onclick='libMove("${x.id}","out")'>${icoArr('up')}</button>`:''}
-          <button class="mini-btn" title="Gecmis & Duzenle" onclick='libDetail("${x.id}")'><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></button>
+          <button class="mini-btn" title="Kunye & Hareketler" onclick='libDetail("${x.id}")'><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></button>
         </div></td></tr>`;
     });
   }
   return `<div class="sel-wrap" style="max-width:none">
     <div class="sel-bc"><button onclick="closeMaterialLib()">${icoArr('left')} Binalara Don</button></div>
-    <div class="sel-head"><h2>Malzeme Kutuphanesi</h2><p>Mobilizasyon (Gecici Elektrik) kutuphanesi - proje malzemelerinden ayri tutulur, stok bakiyesiyle izlenir</p></div>
+    <div class="sel-head"><h2>Malzeme Kutuphanesi</h2><p>Mobilizasyon (Gecici Elektrik) kutuphanesi - proje malzemelerinden ayri tutulur. Yalnizca KUNYE: bakiye, hareketler ve sahaya sevk <b>Gecici Elektrik</b> bolumundedir</p></div>
     ${matScopeBar()}
     <div class="matlib-filterbar">
     <div class="toolbar">${searchBox('Ad, kod, barkod veya marka ara...')}
@@ -10258,7 +10260,7 @@ function renderMaterialLibGecici(){
     <div style="margin-top:10px">${filterbar}</div>
     ${pgbar}
     </div>
-    <div class="tablewrap"><table><thead><tr><th></th><th>Malzeme / Kod</th><th>Grup</th><th>Marka</th><th>Renk</th><th>Bakiye</th><th>Barkod</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tablewrap"><table><thead><tr><th></th><th>Malzeme / Kod</th><th>Grup</th><th>Marka</th><th>Renk</th><th>Barkod</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
 /* ===================================================================
@@ -11317,13 +11319,12 @@ function topmAfterRender(){
 
    NEDEN AYRI SAYFA/STATE: iki kutuphanenin ALANLARI ayni degil. Proje
    malzemesi kod/marka/etiket/varyant/agirlik tasir, ambar kalemi ise
-   grup / renk / barkod / BAKIYE tasir ve bakiyesiyle izlenir (bkz.
-   renderLibrary). Ayni sayfayi iki kayit tipine zorlamak yerine kutu
+   grup / renk / cins / paket ici adet tasir (bkz. renderLibrary). Ayni
+   sayfayi iki kayit tipine zorlamak yerine kutu
    icerigi kendi modaliyla birebir tutuldu; CSS (.topm-*) ortak.
 
    EKLEME-ONLY, BILEREK: bu sayfa mevcut kaydi GUNCELLEMEZ. Kutuphanede
-   ayni STOK KODU varsa kutu hata verir, ustune yazmaz. Mevcut kalemin
-   bakiyesini degistirmek Stok Gir/Cikar isidir.
+   ayni STOK KODU varsa kutu hata verir, ustune yazmaz.
 
    KIMLIK = STOK KODU: ad / marka / model / renk / olcu / teknik ozellik
    birebir ayni olsa bile kod farkliysa AYRI urundur (bkz. _topgImza) -
@@ -11332,15 +11333,19 @@ function topmAfterRender(){
    libId ile baglanir (bkz. orderLibCoz); ada gore cozmek ayni adli iki
    kalemde hep ilkini secer, ikincisi sessizce bosta kalirdi.
 
-   BASLANGIC BAKIYESI HAREKET URETMEZ: tek malzeme eklemedeki davranisin
-   aynisi (bkz. saveLib yeni kayit dali). Hareket kaydi yalnizca Stok
-   Gir/Cikar ve siparis donusumunde olusur.
+   BAKIYE YOK: bu sayfa yalnizca KUNYE tanimlar. "Baslangic Bakiyesi" alani
+   kaldirildi - stok girisinin tek kapisi Siparis / Irsaliye'dir ve bakiye
+   hareketlerden turetilir (bkz. geciciBakiye). Yuklenen dosyada bakiye
+   sutunu varsa okunur ama ALINMAZ; kac kalemde bakiye yazdigi kullaniciya
+   bildirilir ki dolu bir dosya sessizce yutulmus olmasin.
 
    DURUM: her kutu kendi state'ini tasir; alan yazicilari yalnizca state'e
    dokunur, kutu yeniden cizilmez (yoksa her tusta imlec kayardi).
    =================================================================== */
 let _TOPG=null;
-function _topgBosSatir(){ return {ad:'',adRu:'',kod:'',grup:'',marka:'',unit:'',renk:'',cins:'',barkod:'',bakiye:'',parca:'',
+/* BAKIYE ALANI YOK: bu sayfa yalnizca KUNYE tanimlar. Stok girisi belgeye
+   baglidir, tek kapisi Gecici Elektrik > Siparis / Irsaliye'dir (bkz. geciciBakiye). */
+function _topgBosSatir(){ return {ad:'',adRu:'',kod:'',grup:'',marka:'',unit:'',renk:'',cins:'',barkod:'',parca:'',
   standart:'',weight:'',tags:'',altCodes:'',note:'',note2:'',tek:[],img:null,img2:null,err:'',not:'',uyari:''}; }
 /* unit BOS baslar - kutu "ADET" placeholder'ini gosterir, kullanici yazmazsa
    kaydederken varsayilir (bkz. asagidaki kayit adimi). Kutuya gercek deger
@@ -11351,7 +11356,7 @@ function topgSatirDolu(r){
     ||String(r.marka||'').trim()||String(r.renk||'').trim()||String(r.cins||'').trim()||String(r.barkod||'').trim()
     ||String(r.standart||'').trim()||String(r.weight||'').trim()||String(r.tags||'').trim()
     ||String(r.altCodes||'').trim()||String(r.note||'').trim()||String(r.note2||'').trim()
-    ||String(r.bakiye==null?'':r.bakiye).trim()||r.img||r.img2);
+    ||String(r.parca==null?'':r.parca).trim()||r.img||r.img2);
 }
 function topgRenkler(){
   return [...new Set([...(((DB.gecici&&DB.gecici.lib)||[]).map(x=>(x.renk||'').trim()).filter(Boolean)),
@@ -11506,7 +11511,6 @@ function topgYapistirUygula(){
     TOPG_YAPISTIR_SUTUN.forEach((k,ix)=>{
       const v=String(h[ix]==null?'':h[ix]).trim(); if(!v)return;
       if(k==='img'||k==='img2') r[k]=/^https?:\/\//i.test(v)?v:null;
-      else if(k==='bakiye'){ const c=_topgBakiyeHucre(v); r.bakiye=c.bakiye; if(c.parca) r.parca=c.parca; }
       else r[k]=(k==='parca')?_topgSayiHucre(v):v;
     });
     f.rows.push(r);
@@ -11549,13 +11553,11 @@ function topgSablonIndir(){
     ['','3X2,5 TTR KABLO','Paket Ici Adet','100']]);
   wsOz['!cols']=TOPG_OZ_GENIS.slice();
   XLSX.utils.book_append_sheet(wb,wsOz,'Ozellikler');
-  /* AMBAR STOK sayfasi: bakiye kunye bilgisi DEGILDIR - kutuphane urunu tanimlar,
-     depodaki miktar ayri veridir. Bos birakilirsa kalem 0 bakiye ile eklenir. */
-  const wsSt=XLSX.utils.aoa_to_sheet([TOPG_STOK_BASLIK.slice(),
-    ['BC1-3505-2011','5X32A ERKEK FIS 380V IP44','ADET',86],
-    ['','3X2,5 TTR KABLO','METRE',250]]);
-  wsSt['!cols']=TOPG_STOK_GENIS.slice();
-  XLSX.utils.book_append_sheet(wb,wsSt,'Ambar Stok');
+  /* SABLONDA "AMBAR STOK" SAYFASI YOKTUR. Bu sayfa bir zamanlar acilis bakiyesi
+     icin vardi; bakiye artik kunyeye girilmiyor (yalnizca Siparis / Irsaliye ile
+     girer, bkz. geciciBakiye) ve okuyucu da almiyor. Okunmayan bir sayfayi
+     sablonda birakmak, doldurmasi bosuna olan bir alana davet etmek olurdu.
+     Ambar Excel RAPORU'nda sayfa durmaya devam eder - orasi cikti, giris degil. */
   /* GRUPLAR: Grup sutununa yazilabilecek MEVCUT degerler. Proje tarafindaki
      "Bolum"un aksine grup SERBESTTIR (yeni grup yazilabilir) - liste yalnizca
      ayni grubun iki farkli yazimla (SIGORTA / Sigortalar) bolunmemesi icindir. */
@@ -11572,8 +11574,13 @@ function topgSablonIndir(){
     ['0) BU DOSYA YALNIZCA YENI MALZEME EKLER. Mevcut bir kalemi guncellemez,'],
     ['   silmez, bakiyesini degistirmez. Kutuphanede zaten olan bir STOK KODU'],
     ['   yuklemeden sonra kutusunda hata olarak isaretlenir ve eklenmez; diger'],
-    ['   satirlar eklenir. Mevcut kalemin bakiyesini degistirmek icin Stok Gir /'],
-    ['   Stok Cikar dugmelerini kullanin.'],
+    ['   satirlar eklenir.'],
+    [''],
+    ['0b) BAKIYE BU DOSYADAN GIRILMEZ. Bu sablon malzemeyi TANIMLAR, ambardaki'],
+    ['   miktara dokunmaz. Stok girisinin tek yolu Gecici Elektrik bolumundeki'],
+    ['   "Siparis / Irsaliye" ekranidir; cikis ise "Sahaya Sevk" ile yapilir.'],
+    ['   Dosyada bir Bakiye sutunu bulunursa okunur ama alinmaz - yukleme'],
+    ['   sonunda kac kalemde bakiye yazdigi size bildirilir.'],
     [''],
     ['1) Sadece "Yeni Malzemeler" sayfasini doldurun. Her satir bir yeni malzeme'],
     ['   olur. Baslik satirini silmeyin, sutun adlarini degistirmeyin. Sutun'],
@@ -11763,6 +11770,11 @@ function _topgEkSayfalariUygula(wb,kutular){
     }
   }
 
+  /* "Ambar Stok" sekmesi ARTIK BAKIYE ALMAZ. Sayfa yine okunur, cunku ayni
+     satirlarda BIRIM ve PAKET ICI ADET de duruyor ve ikisi de kunye bilgisidir.
+     Bakiyeli satirlar yalnizca SAYILIR; cagiran fonksiyon bu sayiyi kullaniciya
+     "N kalemdeki BAKIYE alinmadi" diye bildirir. Sessizce yutulmasi, dolu bir
+     dosya yukleyip hicbir sey olmadigini gormek demek olurdu. */
   const stRows=_topgEkSayfa(wb,['Ambar Stok','AmbarStok','Stok','Bakiye']);
   if(stRows){
     const h=_topgBaslikSatiri(stRows), pick=_hdrMap(stRows[h]||[]);
@@ -11773,7 +11785,7 @@ function _topgEkSayfalariUygula(wb,kutular){
         const row=stRows[i]||[]; const al=ix=>ix>=0?String(row[ix]==null?'':row[ix]).trim():'';
         const r=bul(al(iKod),al(iAd)); if(!r) continue;
         const bak=_topgBakiyeHucre(al(iBak));
-        if(bak.bakiye!==''){ r.bakiye=bak.bakiye; stokSayi++; }
+        if(bak.bakiye!=='' && Number(bak.bakiye)!==0) stokSayi++;
         if(bak.parca && !String(r.parca||'').trim()) r.parca=bak.parca;
         const brm=al(iBrm); if(brm && !String(r.unit||'').trim()) r.unit=brm;
       }
@@ -11821,7 +11833,7 @@ function topgExcelDosya(e){
     /* Her satir tam bir form kutusu acar: cok satirli dosya tarayiciyi zorlar.
        Sinir koymak yerine ne olacagi soylenip karar kullaniciya birakilir. */
     if(veri.length>200 && !confirm(veri.length+' satir bulundu - hepsi ayri malzeme kutusu olarak acilacak ve sayfa yavaslayabilir.\n\nDevam edilsin mi?')) return;
-    let eklenen=0, atlanan=0;
+    let eklenen=0, atlanan=0, atlananBakiye=0;
     veri.forEach(row=>{
       const al=ix=>ix>=0?_crTemiz(row[ix]).trim():'';
       const ad=_crTemiz(iAd>=0?row[iAd]:'').trim();   // cok satirli hucre KORUNUR (iki dilli ad)
@@ -11844,10 +11856,15 @@ function topgExcelDosya(e){
       r.standart=_topgYerTutucu(al(iStd)); r.weight=_topgSayiHucre(al(iWgt));
       r.tags=_topgYerTutucu(al(iTags)); r.altCodes=_topgYerTutucu(al(iAlt));
       r.note=_topgYerTutucu(al(iNot)); r.note2=_topgYerTutucu(al(iNot2));
+      /* BAKIYE SUTUNU OKUNUR AMA KUTUYA YAZILMAZ: stok girisi yalnizca
+         Siparis / Irsaliye ile yapilir. Sessizce yutmamak icin sayilir ve
+         sonunda kullaniciya kac kalemde bakiye yazdigi soylenir. Hucre
+         "1(250)" bicimindeyse parantez ici PAKET ICI ADET'tir ve o KUNYE
+         bilgisidir - o alinmaya devam eder. */
       const bak=_topgBakiyeHucre(al(iBak));
-      r.bakiye=bak.bakiye;
+      if(bak.bakiye!=='' && Number(bak.bakiye)!==0) atlananBakiye++;
       r.parca=_topgSayiHucre(al(iPar))||bak.parca;
-      if(bak.bolundu) r.not='Bakiye "'+al(iBak)+'" olarak yaziliydi: '+bak.bakiye+' '+(al(iUnit)||'ADET')+' bakiye, paket ici '+bak.parca+' adet olarak ayrildi';
+      if(bak.bolundu) r.not='Hucre "'+al(iBak)+'" olarak yaziliydi: paket ici '+bak.parca+' adet olarak alindi, bakiye ALINMADI (stok girisi Siparis / Irsaliye ile yapilir)';
       const im=al(iImg), im2=al(iImg2);
       r.img=/^https?:\/\//i.test(im)?im:null;         // gomulu/base64 gorsel hucreye sigmaz
       r.img2=/^https?:\/\//i.test(im2)?im2:null;
@@ -11859,9 +11876,10 @@ function topgExcelDosya(e){
     if(!f.rows.length) f.rows.push(_topgBosSatir());
     const hata=topgOnDenetim();                     // hatayi kaydede basmadan gorsun
     topgDraw();
+    const bakToplam=atlananBakiye+(ek.stok||0);
     const ekNot=(atlanan?', '+atlanan+' satir atlandi':'')
       +(ek.oz?', '+ek.oz+' kalemin ozellikleri okundu':'')
-      +(ek.stok?', '+ek.stok+' kalemin bakiyesi okundu':'');
+      +(bakToplam?', '+bakToplam+' kalemdeki BAKIYE alinmadi (stok girisi Siparis / Irsaliye ile yapilir)':'');
     if(hata) toast(eklenen+' malzeme kutusu olusturuldu'+ekNot+' - '+hata+' kutuda hata var','err');
     else toast(eklenen+' malzeme kutusu olusturuldu'+ekNot);
   }catch(err){ console.error(err); toast('Excel okunamadi: '+((err&&err.message)||err),'err'); } };
@@ -11915,8 +11933,6 @@ function _topgSatirCoz(r,i,gorulen){
   const barkod=String(r.barkod||'').trim();
   if(!ad) return {err:'Malzeme adi zorunlu'};
   // virgullu ondalik ('12,5') her yoldan kabul edilir - Excel'de oldugu gibi elle girisde de
-  const bakRaw=_topgSayiHucre(r.bakiye);
-  if(bakRaw!=='' && isNaN(Number(bakRaw))) return {err:'Bakiye sayisal olmali (orn. 86 ya da 12,5)'};
   const parRaw=_topgSayiHucre(r.parca);
   if(parRaw!=='' && isNaN(Number(parRaw))) return {err:'Paket ici adet sayisal olmali'};
   const lib=(DB.gecici&&DB.gecici.lib)||[];
@@ -11931,7 +11947,7 @@ function _topgSatirCoz(r,i,gorulen){
   // 1) KUTUPHANEYE karsi
   const dup=lib.find(x=>_topgImza(x)===imza);
   if(dup) return {err: kod
-    ? 'Kutuphanede zaten var: "'+dup.ad+'" ayni "'+kod+'" stok kodunu tasiyor - ayni stok kodu iki ayri kaleme verilemez. Bakiyesini degistirmek icin kutuphane satirindaki Stok Gir / Stok Cikar dugmesini kullanin'
+    ? 'Kutuphanede zaten var: "'+dup.ad+'" ayni "'+kod+'" stok kodunu tasiyor - ayni stok kodu iki ayri kaleme verilemez. Bu kaleme stok girmek icin Gecici Elektrik > Siparis / Irsaliye ekranini kullanin'
     : 'Kutuphanede zaten var: '+dup.ad+(dup.marka?' ('+dup.marka+')':'')+' - stok kodu bos oldugu icin ad ve marka kimlik sayildi. Ayri bir urunse stok kodunu yazin'};
   const libAdAyni=lib.find(x=>kk(x.ad)===aAd);
   if(libAdAyni) uyarilar.push('Kutuphanedeki "'+libAdAyni.ad+'" ile ayni adli, stok kodu farkli ('+kodMet(libAdAyni)+' / '+kodMet(r)+') - ayri kalem olarak eklenecek');
@@ -11956,7 +11972,7 @@ function _topgSatirCoz(r,i,gorulen){
     standart:String(r.standart||'').trim(),weight:wRaw!==''?Number(wRaw):null,
     tags:parseTagsCell(r.tags),altCodes:parseTagsCell(r.altCodes),note:String(r.note||'').trim(),note2:String(r.note2||'').trim(),
     tek:(Array.isArray(r.tek)?r.tek:[]).filter(t=>t&&(String(t.k||'').trim()||String(t.v||'').trim())),
-    bakiye:bakRaw!==''?Number(bakRaw):0,parca:parRaw!==''?Number(parRaw):0,img:lnk(r.img),img2:lnk(r.img2),
+    parca:parRaw!==''?Number(parRaw):0,img:lnk(r.img),img2:lnk(r.img2),
     createdAt:simdi,updatedAt:simdi}};
 }
 // TUMUNU EKLE: gecerli kutular tek istekte yazilir, hatali kutular sayfada kalir
@@ -12043,13 +12059,12 @@ function topgCardHtml(i){
     <div class="frow two">
       <div><label>Malzeme Cinsi</label><input list="topgCinsList" value="${esc(r.cins)}" placeholder="orn. BAKIR" oninput="topgIn(${i},'cins',this.value)"></div>
       <div><label>Paket Ici Adet</label>
-        <input type="number" step="any" min="0" title="Birim PAKET ise bir paketin icindeki adet - bakiye paket sayisidir" value="${esc(r.parca)}" placeholder="0" oninput="topgIn(${i},'parca',this.value)"></div>
+        <input type="number" step="any" min="0" title="Birim PAKET ise bir paketin icindeki adet" value="${esc(r.parca)}" placeholder="0" oninput="topgIn(${i},'parca',this.value)"></div>
     </div>
     <div class="frow"><label>Diger Ozellikler <span class="t-meta">(her satir "Ozellik: Deger")</span></label>
       <textarea rows="2" placeholder="Koruma Sinifi: IP44" oninput="topgTekIn(${i},this.value)">${esc((r.tek||[]).map(t=>t.k+': '+t.v).join('\n'))}</textarea></div>
-    <div class="lib-boluk"><b>Ambar</b><span>depodaki miktar</span></div>
-    <div class="frow"><label>Baslangic Bakiyesi</label>
-      <input type="number" step="any" title="Kalemin acilis bakiyesi - stok HAREKETI uretmez (tek malzeme eklemedeki davranisin aynisi)" value="${esc(r.bakiye)}" placeholder="0" oninput="topgIn(${i},'bakiye',this.value)"></div>
+    <!-- AMBAR BOLUGU KALDIRILDI: acilis bakiyesi diye bir sey yok artik. Stok
+         yalnizca Siparis / Irsaliye ile girer (bkz. geciciBakiye). -->
     <div class="frow two">
       <div><label>Urun Fotografi</label>${topgImgHtml(i,1)}</div>
       <div><label>Fotograf 2 <span class="t-meta">(opsiyonel)</span></label>${topgImgHtml(i,2)}</div>
@@ -12058,10 +12073,10 @@ function topgCardHtml(i){
 }
 function renderTopluGeciciPage(){
   const f=_TOPG; if(!f) return '';
-  const geriYazi=f.src==='kutuphane'?'Malzeme Kutuphanesi':'Ambar Kutuphanesi';
+  const geriYazi=f.src==='kutuphane'?'Malzeme Kutuphanesi':'Ambar Stok';
   const savedHtml=f.saved.length?`<div class="specf-saved"><div class="specf-saved-h">Bu oturumda eklenenler (${f.saved.length})</div>${f.saved.map(id=>{
       const m=((DB.gecici&&DB.gecici.lib)||[]).find(x=>x.id===id); if(!m)return '';
-      return `<div class="specf-saved-row"><b style="flex:1;min-width:0">${esc(m.ad)}</b><span class="m">${[m.kod,m.marka,m.grup].filter(Boolean).map(x=>esc(String(x))).join(' · ')} · bakiye: ${fmtNum(m.bakiye)}</span><button class="mini-btn" title="Gecmis & Duzenle" onclick="libDetail('${m.id}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></button></div>`;
+      return `<div class="specf-saved-row"><b style="flex:1;min-width:0">${esc(m.ad)}</b><span class="m">${[m.kod,m.marka,m.grup].filter(Boolean).map(x=>esc(String(x))).join(' · ')}</span><button class="mini-btn" title="Kunye & Hareketler" onclick="libDetail('${m.id}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></button></div>`;
     }).join('')}</div>`:'';
   return `<div class="kata-page topm-page">
     <div class="sel-bc"><button onclick="closeTopluGeciciPage()">${icoArr('left')} ${geriYazi}</button> ${icoChevron()} <b>Toplu Malzeme Ekleme</b></div>
@@ -12081,7 +12096,7 @@ function renderTopluGeciciPage(){
     </div>
     <div class="topm-cards topg-cards" id="topgCards">${f.rows.map((r,i)=>topgCardHtml(i)).join('')}</div>
     ${savedHtml}
-    <p class="specf-note">Bu sayfa yalnizca YENI malzeme ekler: kutuphanede zaten olan bir <b>stok kodu</b> kutuda hata verir, uzerine yazmaz (ayni ad farkli stok koduyla serbesttir, barkod tekrari yalnizca uyarir) - mevcut kalemin bakiyesini degistirmek icin kutuphane satirindaki <b>Stok Gir / Stok Cikar</b>, kunyesini degistirmek icin <b>Gecmis &amp; Duzenle</b> dugmesini kullanin. Yuklenen Excel dosyasi da dogrudan kutuphaneye yazilmaz; once kutulara donusur, kayit yalnizca <b>Tumunu Ekle</b> ile yapilir. Baslangic bakiyesi stok hareketi olusturmaz.</p>
+    <p class="specf-note">Bu sayfa yalnizca YENI malzeme ekler: kutuphanede zaten olan bir <b>stok kodu</b> kutuda hata verir, uzerine yazmaz (ayni ad farkli stok koduyla serbesttir, barkod tekrari yalnizca uyarir) - mevcut kalemin kunyesini degistirmek icin <b>Kunye &amp; Hareketler</b> dugmesini kullanin. Yuklenen Excel dosyasi da dogrudan kutuphaneye yazilmaz; once kutulara donusur, kayit yalnizca <b>Tumunu Ekle</b> ile yapilir.<br><b>BAKIYE BURADA GIRILMEZ:</b> bu sayfa malzemeyi TANIMLAR, miktara dokunmaz. Stok girisi yalnizca <b>Gecici Elektrik &gt; Siparis / Irsaliye</b> ile yapilir; yukledigin dosyada bakiye sutunu varsa okunur ama alinmaz, kac kalemde bakiye yazdigi size bildirilir.</p>
     <div class="kata-page-foot">
       <button class="btn btn-ghost" style="margin-right:auto" onclick="closeTopluGeciciPage()">${icoArr('left')} Geri Don</button>
       <button class="btn btn-ghost" onclick="topgAddRow()">${icoPlus()} Kutu Ekle</button>
@@ -14665,10 +14680,61 @@ function renderProjeStock(){
 }
 
 /* ---------- GECICI (ambar/kutuphane) ---------- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   BAKIYE ARTIK KUNYEDE DEGIL, HAREKET DEFTERINDE
+
+   Eskiden bakiye gecici_lib satirinin icinde (data.bakiye) dururdu. Ama
+   gecici_lib ORTAK bir tablodur - tum tasarilar AYNI satirlari gorur
+   (bkz. lib/tasari.js ORTAK_TABLOLAR). gecici_moves ve gecici_orders ise
+   TASARIYA OZELDIR. Bu ikisi bir arada su hatayi uretiyordu: SINOP NGS'de
+   girilen bir siparis AKKUYU NGS'nin bakiyesini de artiriyor, ama siparis
+   yalnizca SINOP'ta gorunuyordu - bakiye ile hareket defteri birbirini
+   tutmuyordu.
+
+   Cozum: bakiye SAKLANMAZ, aktif tasarinin hareketlerinden TURETILIR.
+     bakiye = toplam(giris) - toplam(cikis)
+   DB.gecici.moves zaten tasariya gore suzulmus geldigi icin tasari ayrimi
+   kendiliginden dogru olur ve bakiye hareket defteriyle asla ayrisamaz.
+
+   GIRISIN TEK KAPISI SIPARIS/IRSALIYEDIR (bkz. saveOrder). Eskiden bakiye
+   bes ayri yerden yazilabiliyordu - "Stok Gir" dugmesi, malzeme formundaki
+   Bakiye alani, Toplu Ekle'deki Baslangic Bakiyesi ve onun Excel'deki
+   "Ambar Stok" sayfasi. Hepsi kaldirildi: kunye ekranlari artik yalnizca
+   malzemeyi TANIMLAR, miktara hic dokunmaz.
+
+   Kunye satirlarindaki eski `bakiye` alani OLU VERIDIR; hicbir yer okumaz
+   (hepsi 0 oldugu icin donusturulecek veri de yoktu). saveLib kaydettigi
+   satirdan alani temizler.
+   ═══════════════════════════════════════════════════════════════════════════ */
+/* libId -> bakiye haritasi. Hareket defteri BIR kez gezilir; 700 kalemlik bir
+   listede kalem basina gezilse O(kalem x hareket) olurdu.
+
+   ONBELLEK: tutanak secicisi ve Ctrl+K bakiyeyi kalem basina sorar, yani ayni
+   render icinde yuzlerce cagri gelir. Harita, hareket dizisinin KIMLIGI ve
+   UZUNLUGU degismedikce yeniden kurulmaz. Bu iki olcut yeterlidir cunku dizinin
+   degistigi dort yerin hepsi ya push eder (uzunluk degisir) ya da filter ile
+   yeni dizi atar (kimlik degisir) - bkz. doMove / saveOrder / delLib / delOrder. */
+let _gBakCache=null, _gBakRef=null, _gBakLen=-1;
+function geciciBakiyeHaritasi(){
+  const mv=(DB&&DB.gecici&&DB.gecici.moves)||[];
+  if(_gBakCache && _gBakRef===mv && _gBakLen===mv.length) return _gBakCache;
+  const h=new Map();
+  mv.forEach(m=>{
+    const q=Number(m.qty)||0;
+    h.set(m.libId,(h.get(m.libId)||0)+(m.type==='in'?q:-q));
+  });
+  _gBakCache=h; _gBakRef=mv; _gBakLen=mv.length;
+  return h;
+}
+/* Tek kalemin bakiyesi - detay penceresi, secici ve Ctrl+K icin. */
+function geciciBakiye(libId){ return geciciBakiyeHaritasi().get(libId)||0; }
+const gBak=(h,x)=>h.get(x.id)||0;
 function geciciSubnav(){
+  const hrk=((DB.gecici&&DB.gecici.moves)||[]).length;
   return `<div class="subnav">
-    <button class="${TAB==='stok'?'on':''}" onclick="setTab('stok')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-14L4 7m8 4v10M4 7v10l8 4"/></svg>Ambar Kutuphanesi <span class="badge">${DB.gecici.lib.length}</span></button>
-    <button class="${TAB==='orders'?'on':''}" onclick="setTab('orders')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 2h6l1 3h3a1 1 0 011 1v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a1 1 0 011-1h3z"/><path d="M9 12l2 2 4-4"/></svg>Siparis / Fatura <span class="badge">${DB.gecici.orders.length}</span></button>
+    <button class="${TAB==='stok'?'on':''}" onclick="setTab('stok')" title="Ambardaki kalemler ve bakiyeleri - bakiye hareketlerden turetilir"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-14L4 7m8 4v10M4 7v10l8 4"/></svg>Ambar Stok <span class="badge">${DB.gecici.lib.length}</span></button>
+    <button class="${TAB==='moves'?'on':''}" onclick="setTab('moves')" title="Bakiyeyi olusturan butun giris ve cikislar - her satirin dayandigi belge ile"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Hareketler <span class="badge">${hrk}</span></button>
+    <button class="${TAB==='orders'?'on':''}" onclick="setTab('orders')" title="Bakiyenin TEK giris kapisi - irsaliye/fatura ile stok girisi"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 2h6l1 3h3a1 1 0 011 1v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a1 1 0 011-1h3z"/><path d="M9 12l2 2 4-4"/></svg>Siparis / Irsaliye <span class="badge">${DB.gecici.orders.length}</span></button>
   </div>`;
 }
 function libGroups(){ return [...new Set(DB.gecici.lib.map(x=>x.grup).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr')); }
@@ -14710,7 +14776,7 @@ function libFiltered(bakDahil){
     if(LIBF.img==='var' && !x.img) return false;
     if(LIBF.img==='yok' && x.img) return false;
     if(bakDahil && LIBF.bak){
-      const b=Number(x.bakiye)||0;
+      const b=geciciBakiye(x.id);
       if(LIBF.bak==='stok' && b<=5) return false;
       if(LIBF.bak==='az' && !(b>0&&b<=5)) return false;
       if(LIBF.bak==='yok' && b>0) return false;
@@ -14725,16 +14791,17 @@ function renderLibrary(){
   const taban=libFiltered(false);          // bakiye segmenti disindaki filtreler
   const lib=libFiltered(true);             // ekranda gorunen liste
   const anyF=libAnyF();
+  const bakH=geciciBakiyeHaritasi();
   const sayac={ hepsi:taban.length,
-    stok:taban.filter(x=>(Number(x.bakiye)||0)>5).length,
-    az:taban.filter(x=>{const b=Number(x.bakiye)||0;return b>0&&b<=5;}).length,
-    yok:taban.filter(x=>(Number(x.bakiye)||0)<=0).length };
-  const gosterilenAdet=lib.reduce((s,x)=>s+(Number(x.bakiye)||0),0);
+    stok:taban.filter(x=>gBak(bakH,x)>5).length,
+    az:taban.filter(x=>{const b=gBak(bakH,x);return b>0&&b<=5;}).length,
+    yok:taban.filter(x=>gBak(bakH,x)<=0).length };
+  const gosterilenAdet=lib.reduce((s,x)=>s+gBak(bakH,x),0);
   let rows='';
-  if(lib.length===0) rows=emptyRow(8,anyF?'Eslesen malzeme yok':'Kutuphanede kayit yok',
-    anyF?'Filtreleri degistirin veya temizleyin':'"Malzeme Ekle" ile ilk kunyeyi olusturun');
+  if(lib.length===0) rows=emptyRow(8,anyF?'Eslesen malzeme yok':'Ambarda kayit yok',
+    anyF?'Filtreleri degistirin veya temizleyin':'"Malzeme Ekle" ile ilk kunyeyi olusturun - bakiye sonra "Siparis / Irsaliye" ile girilir');
   else lib.forEach(x=>{
-    const b=Number(x.bakiye)||0;
+    const b=gBak(bakH,x);
     const cls=b<=0?'zero':b<=5?'low':'ok';
     const thumb=x.img?`<img class="thumb" src="${x.img}" onclick="lightbox(${lbCall([x.img,x.img2])})">`:phThumb();
     const dot=x.renk?`<span class="color-dot" style="background:${renkHex(x.renk)}"></span>`:'';
@@ -14746,9 +14813,8 @@ function renderLibrary(){
       <td><span class="bal ${cls}">${fmtNum(b)}</span> <span class="t-meta">${esc(x.unit||'')}</span>${Number(x.parca)>0?`<div class="t-cins">paket ici ${fmtNum(x.parca)}</div>`:''}</td>
       <td class="t-meta">${esc(x.barkod||'-')}</td>
       <td><div class="row-actions">
-        ${canCreate('gecici')||canUpdate('gecici')?`<button class="mini-btn in" title="Stok Gir" onclick='libMove("${x.id}","in")'>${icoArr('down')}</button>
-        <button class="mini-btn out" title="Stok Cikar" onclick='libMove("${x.id}","out")'>${icoArr('up')}</button>`:''}
-        <button class="mini-btn" title="Gecmis & Duzenle" onclick='libDetail("${x.id}")'><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></button>
+        ${canCreate('gecici')||canUpdate('gecici')?`<button class="mini-btn out" title="Sahaya Sevk / Cikar - stok GIRISI yalnizca Siparis / Irsaliye ile yapilir" onclick='libMove("${x.id}","out")'>${icoArr('up')}</button>`:''}
+        <button class="mini-btn" title="Hareketler & Duzenle" onclick='libDetail("${x.id}")'><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></button>
       </div></td></tr>`;
   });
   const grps=libGroups(), markalar=libMarkalar(), renkler=libRenkler(), cinsler=libCinsler();
@@ -14764,7 +14830,7 @@ function renderLibrary(){
   </div>`;
   return `<div class="toolbar">${searchBox('Ad, kod, barkod veya marka ara...')}
       <button class="btn btn-grid" onclick="exportLibExcel()">${icoXls()} Excel Raporu</button>
-      ${canCreate('gecici')?`<button class="btn btn-order" onclick="openOrderModal()">${icoDoc()} Siparis / Fatura Gir</button>
+      ${canCreate('gecici')?`<button class="btn btn-order" title="Bakiyenin TEK giris kapisi - irsaliye/fatura ile stok girisi" onclick="openOrderModal()">${icoDoc()} Siparis / Irsaliye Gir</button>
       <button class="btn btn-grid" title="Toplu Malzeme Ekleme - her kutu bir yeni malzeme; Excel sablonu indirip toplu yukleyebilirsiniz" onclick="openTopluGeciciPage()">${icoPlus()} Toplu Ekle</button>
       <button class="btn btn-add" onclick="openLibModal()">${icoPlus()} Malzeme Ekle</button>`:''}</div>`
     +filterbar
@@ -14775,8 +14841,90 @@ function renderLibrary(){
       ${segBtn('yok','Tukenen',sayac.yok,'Bakiyesi sifir (veya eksi) olan kalemler')}
     </div>`
     +`<div class="ord-sumline"><b>${fmtNum(lib.length)}</b> kalem gosteriliyor · toplam bakiye <b>${fmtNum(gosterilenAdet)}</b>${
-      anyF?` <span class="t-meta">· ${fmtNum(tumu.length)} kalem icinden suzuldu</span>`:''}</div>`
+      anyF?` <span class="t-meta">· ${fmtNum(tumu.length)} kalem icinden suzuldu</span>`:''} <span class="t-meta">· bakiye <b>Hareketler</b> sekmesindeki giris/cikislardan hesaplanir</span></div>`
     +`<div class="tablewrap"><table><thead><tr><th></th><th>Malzeme / Kod</th><th>Grup</th><th>Marka</th><th>Renk</th><th>Bakiye</th><th>Barkod</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HAREKETLER - bakiyenin dayanagi
+
+   Bakiye artik saklanmadigi, hareketlerden TURETILDIGI icin (bkz. geciciBakiye)
+   "bu sayi nereden cikti" sorusunun cevabi da bir ekranda durmak zorunda.
+   Eskiden hareket defteri hicbir listede yoktu; yalnizca tek kalemin detay
+   penceresinde ve Excel raporunun bir sayfasinda gorunuyordu.
+
+   Her satir bir belgeye dayanir: GIRIS satirlarinda belge irsaliye/fatura
+   numarasidir (saveOrder move.order'a yazar), CIKIS satirlarinda sahaya sevk
+   aciklamasidir. Filtre dili Siparis ekraniyla ayni (.ord-filterbar).
+   ═══════════════════════════════════════════════════════════════════════════ */
+let GMVF={tip:'',from:'',to:'',belge:''};
+function setGMvF(k,v){ GMVF[k]=v; render(); }
+function gmvAnyF(){ return !!(SEARCH||GMVF.tip||GMVF.from||GMVF.to||GMVF.belge); }
+function clearGMvF(){ GMVF={tip:'',from:'',to:'',belge:''}; SEARCH=''; render(); }
+/* Hareket satirlarini kunyeyle birlestirir. Kunyesi SILINMIS hareket de listede
+   kalir - defterden dusmemesi gerekir, yoksa bakiye ile liste ayrisir. */
+function geciciHareketler(){
+  const libH=new Map(((DB.gecici&&DB.gecici.lib)||[]).map(x=>[x.id,x]));
+  return ((DB.gecici&&DB.gecici.moves)||[]).map(m=>{
+    const x=libH.get(m.libId)||null;
+    return { m, x, ad:x?(x.ad||''):'(silinmis kunye)', kod:x?(x.kod||''):'',
+             unit:x?(x.unit||''):'', grup:x?(x.grup||''):'', marka:x?(x.marka||''):'',
+             belge:String(m.order||'').trim() };
+  });
+}
+function gmvBelgeler(){
+  return [...new Set(geciciHareketler().map(h=>h.belge).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+}
+function gmvFiltered(){
+  let hs=geciciHareketler();
+  if(SEARCH) hs=hs.filter(h=>matchText([h.ad,h.kod,h.belge,h.grup,h.marka,h.unit].filter(Boolean).join(' '),SEARCH));
+  const fromT=GMVF.from?new Date(GMVF.from+'T00:00:00').getTime():null;
+  const toT  =GMVF.to  ?new Date(GMVF.to  +'T23:59:59').getTime():null;
+  hs=hs.filter(h=>{
+    if(GMVF.tip && h.m.type!==GMVF.tip) return false;
+    if(GMVF.belge && h.belge!==GMVF.belge) return false;
+    const t=Number(h.m.date)||0;
+    if(fromT!=null && t<fromT) return false;
+    if(toT!=null && t>toT) return false;
+    return true;
+  });
+  hs.sort((a,b)=>(Number(b.m.date)||0)-(Number(a.m.date)||0));
+  return hs;
+}
+function renderMoves(){
+  const tumu=geciciHareketler();
+  const hs=gmvFiltered();
+  const anyF=gmvAnyF();
+  const giren=hs.filter(h=>h.m.type==='in').reduce((s,h)=>s+(Number(h.m.qty)||0),0);
+  const cikan=hs.filter(h=>h.m.type!=='in').reduce((s,h)=>s+(Number(h.m.qty)||0),0);
+  let rows='';
+  if(hs.length===0) rows=emptyRow(5,anyF?'Eslesen hareket yok':'Henuz stok hareketi yok',
+    anyF?'Filtreleri degistirin veya temizleyin':'Stok girisi "Siparis / Irsaliye" ile yapilir - ilk irsaliyeyi girdiginizde hareketler burada listelenir');
+  else hs.forEach(h=>{
+    const giris=h.m.type==='in';
+    const q=Number(h.m.qty)||0;
+    rows+=`<tr><td class="t-meta">${fmtDate(h.m.date)}</td>
+      <td><div class="t-name">${esc(h.ad)}</div><div class="t-code">${esc(h.kod||'-')}</div></td>
+      <td><span class="cat-tag" style="background:${giris?'var(--green)':'var(--red)'}22;color:${giris?'var(--green)':'var(--red)'}">${giris?'GIRIS':'CIKIS'}</span></td>
+      <td class="t-qty" style="color:${giris?'var(--green)':'var(--red)'}">${giris?'+':'-'}${fmtNum(q)} <span class="t-meta" style="font-weight:400">${esc(h.unit)}</span></td>
+      <td class="t-meta">${h.belge?esc(h.belge):'-'}</td></tr>`;
+  });
+  const belgeler=gmvBelgeler();
+  const filterbar=`<div class="ord-filterbar">
+    <div class="ord-f"><label>Tarih Araligi</label><div class="ord-f-dates">
+      <input type="date" value="${esc(GMVF.from)}" onchange="setGMvF('from',this.value)"><span class="t-meta">-</span>
+      <input type="date" value="${esc(GMVF.to)}" onchange="setGMvF('to',this.value)"></div></div>
+    <div class="ord-f"><label>Hareket</label><select onchange="setGMvF('tip',this.value)"><option value="">Tumu</option><option value="in" ${GMVF.tip==='in'?'selected':''}>Giris (siparis)</option><option value="out" ${GMVF.tip==='out'?'selected':''}>Cikis (sahaya sevk)</option></select></div>
+    ${belgeler.length?`<div class="ord-f"><label>Belge</label><select onchange="setGMvF('belge',this.value)"><option value="">Tumu</option>${belgeler.map(b=>`<option value="${esc(b)}" ${GMVF.belge===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div>`:''}
+    ${anyF?`<div class="ord-f" style="flex:0 0 auto;min-width:0;justify-content:flex-end"><label>&nbsp;</label><button class="iht-reset" style="padding:9px 13px;white-space:nowrap" onclick="clearGMvF()">Filtreleri temizle</button></div>`:''}
+  </div>`;
+  return `<div class="toolbar">${searchBox('Malzeme, kod veya belge no ara...')}
+      ${exportBtns('gecici_hareketler')}
+      ${canCreate('gecici')?`<button class="btn btn-order" title="Bakiyenin TEK giris kapisi - irsaliye/fatura ile stok girisi" onclick="openOrderModal()">${icoDoc()} Siparis / Irsaliye Gir</button>`:''}</div>`
+    +filterbar
+    +`<div class="ord-sumline"><b>${fmtNum(hs.length)}</b> hareket · giren <b style="color:var(--green)">+${fmtNum(giren)}</b> · cikan <b style="color:var(--red)">-${fmtNum(cikan)}</b> · net <b>${fmtNum(giren-cikan)}</b>${
+      anyF?` <span class="t-meta">· ${fmtNum(tumu.length)} hareket icinden suzuldu</span>`:''}</div>`
+    +`<div class="tablewrap"><table><thead><tr><th>Tarih</th><th>Malzeme / Kod</th><th>Hareket</th><th>Miktar</th><th>Belge</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 /* ---- SIPARIS / FATURA: SUTUN BAZLI FILTRE ----
@@ -14821,7 +14969,7 @@ function renderOrders(){
   const anyF=gordAnyF();
   let rows='';
   if(orders.length===0) rows=emptyRow(6,anyF?'Eslesen siparis yok':'Henuz siparis girilmedi',
-    anyF?'Filtreleri degistirin veya temizleyin':'"Siparis / Fatura Gir" ile baslayin');
+    anyF?'Filtreleri degistirin veya temizleyin':'"Siparis / Irsaliye Gir" ile baslayin - ambara giren her kalem buradan girer');
   else orders.forEach(o=>{
     const adet=o.lines.reduce((s,l)=>s+(Number(l.qty)||0),0);
     rows+=`<tr><td class="t-meta">${fmtDate(o.date)}</td>
@@ -14849,7 +14997,7 @@ function renderOrders(){
   const gPdf=orders.filter(o=>o.pdf).length;
   return `<div class="toolbar">${searchBox('Siparis no, tedarikci veya malzeme ara...')}
       ${exportBtns('siparisler')}
-      ${canCreate('gecici')?`<button class="btn btn-order" onclick="openOrderModal()">${icoDoc()} Siparis / Fatura Gir</button>`:''}</div>`
+      ${canCreate('gecici')?`<button class="btn btn-order" title="Bakiyenin TEK giris kapisi - irsaliye/fatura ile stok girisi" onclick="openOrderModal()">${icoDoc()} Siparis / Irsaliye Gir</button>`:''}</div>`
     +filterbar
     +`<div class="ord-sumline"><b>${fmtNum(orders.length)}</b> siparis · <b>${fmtNum(gKalem)}</b> kalem · <b>${fmtNum(gAdet)}</b> adet · <b>${fmtNum(gPdf)}</b> belgeli${
       anyF?` <span class="t-meta">· ${fmtNum(tumu.length)} siparis icinden suzuldu</span>`:''}</div>`
@@ -17209,7 +17357,7 @@ const WIPE_CATS=[
   {key:'alet',   label:'El Aletleri',               detail:'Alet zimmet/depo kayitlari (Mekanik kutuphanesi KALIR)', group:'Diger Moduller'},
   {key:'alet_lib',label:'Mekanik (Alet) Kutuphanesi', detail:'Alet kunyeleri tamamen silinir - zimmet kayitlari kalir ama kunyesiz gorunur', group:'Diger Moduller'},
   {key:'saha',   label:'Santiye Sahasi',            detail:'Pano, hat, priz ve saha ayarlari', group:'Diger Moduller'},
-  {key:'gecici', label:'Gecici Elektrik Ambari',    detail:'Kutuphane, hareket ve siparisler', group:'Diger Moduller'},
+  {key:'gecici', label:'Gecici Elektrik Ambari',    detail:'Ambar stok, hareketler ve irsaliyeler', group:'Diger Moduller'},
   {key:'rapor',  label:'Saha Raporu',               detail:'Gunluk rapor kayitlari ve ekip listesi', group:'Diger Moduller'},
   {key:'tutanak',label:'Tutanaklar',                detail:'Malzeme teslim tutanaklari (TR/RU) tamamen silinir', group:'Diger Moduller'},
   {key:'gunluk', label:'Gunluk Isler',              detail:'Takvimli gorev kayitlari (denetim notlari dahil), gunluk yazilar ve kisa raporlar tamamen silinir', group:'Diger Moduller'},
@@ -19740,8 +19888,9 @@ function openLibModal(id){ if(!canEdit('gecici')) return; modalImg=null; const x
     </div>
     <div class="frow"><label>Diger Ozellikler <span class="t-meta">(her satir "Ozellik: Deger" - orn. Koruma Sinifi: IP44)</span></label>
       <textarea id="l_tek" rows="3" placeholder="Koruma Sinifi: IP44&#10;Gerilim: 380V">${x?esc((x.tek||[]).map(t=>t.k+': '+t.v).join('\n')):''}</textarea></div>
-    <div class="lib-boluk"><b>Ambar</b><span>depodaki miktar - kunye bilgisi degildir</span></div>
-    <div class="frow"><label>${x?'Bakiye':'Baslangic Bakiyesi'}</label><input id="l_bakiye" type="number" step="any" value="${x?x.bakiye:0}"></div>
+    <!-- AMBAR BOLUGU KALDIRILDI: bakiye artik kunyede saklanmaz, hareketlerden
+         turetilir (bkz. geciciBakiye). Bu form yalnizca malzemeyi TANIMLAR; miktar
+         Gecici Elektrik > Siparis / Irsaliye ile girer, Sahaya Sevk ile cikar. -->
     <div class="frow"><label>Urun Fotografi <span class="t-meta">(dosya secin veya internetten resim linki yapistirin)</span></label>
       <div class="drop ${x&&x.img?'has':''}" id="lImgDrop" onclick="document.getElementById('lImgInput').click()">${x&&x.img?`<img class="img-prev" src="${x.img}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div>
       <input type="file" id="lImgInput" accept="image/*" class="hidden" onchange="pickImg(event,'lImgDrop')">
@@ -19768,18 +19917,17 @@ async function saveLib(id){ const ad=document.getElementById('l_ad').value.trim(
   if(!al('l_img2Url') && modalImg2 && /^https?:\/\//i.test(modalImg2)) modalImg2=null;
   const wRaw=al('l_weight');
   if(wRaw!==''&&isNaN(Number(wRaw))){toast("Agirlik sayisal olmali","err");return;}
-  const data={ad,adRu:al('l_adru'),kod:al('l_kod'),grup:al('l_grup'),marka:al('l_marka'),unit:al('l_unit')||'ADET',renk:al('l_renk'),cins:al('l_cins'),barkod:al('l_barkod'),bakiye:Number(document.getElementById('l_bakiye').value)||0,parca:Number(al('l_parca'))||0,
+  const data={ad,adRu:al('l_adru'),kod:al('l_kod'),grup:al('l_grup'),marka:al('l_marka'),unit:al('l_unit')||'ADET',renk:al('l_renk'),cins:al('l_cins'),barkod:al('l_barkod'),parca:Number(al('l_parca'))||0,
     standart:al('l_standart'),weight:wRaw!==''?Number(wRaw):null,tags:parseTagsCell(al('l_tags')),altCodes:parseTagsCell(al('l_altcodes')),note:al('l_note'),note2:al('l_note2'),
     tek:_libTekOku(al('l_tek')),
     img:modalImg,img2:modalImg2};
   if(id){
-    const x=DB.gecici.lib.find(i=>i.id===id); const oldBal=x.bakiye; Object.assign(x,data,{updatedAt:Date.now()});
-    const ops=[sbUpdateGeciciLibItem(id,{...x})];
-    if(data.bakiye!==oldBal){
-      const move={id:uid(),libId:id,type:data.bakiye>oldBal?'in':'out',qty:Math.abs(data.bakiye-oldBal),date:Date.now(),order:'Manuel duzeltme'};
-      DB.gecici.moves.push(move); ops.push(sbInsertGeciciMove(move));
-    }
-    await Promise.all(ops);
+    const x=DB.gecici.lib.find(i=>i.id===id); Object.assign(x,data,{updatedAt:Date.now()});
+    /* ESKI KAYITLARDAKI OLU ALAN: bakiye bir zamanlar bu satirda saklaniyordu.
+       Artik hicbir yer okumuyor; kaydederken temizlenir ki veriye bakan kisi
+       iki farkli dogruluk kaynagi sanmasin. */
+    delete x.bakiye;
+    await sbUpdateGeciciLibItem(id,{...x});
   } else {
     const now=Date.now();
     const entity={id:uid(),...data,createdAt:now,updatedAt:now};
@@ -19791,25 +19939,35 @@ async function saveLib(id){ const ad=document.getElementById('l_ad').value.trim(
 }
 
 /* ---------- stock in/out ---------- */
+/* SAHAYA SEVK (CIKIS). Bu pencere artik YALNIZCA cikis icindir: stok GIRISI
+   belgeye baglidir ve tek kapisi Siparis / Irsaliye'dir (bkz. saveOrder).
+   type parametresi geriye uyum icin duruyor - 'in' ile cagrilirsa reddedilir,
+   boylece unutulmus bir dugme sessizce bakiye sismesi uretemez. */
 function libMove(id,type){ const x=DB.gecici.lib.find(i=>i.id===id); if(!x)return;
-  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal"><div class="modal-head"><h3>${type==='in'?'Stok Girisi':'Stok Cikisi'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
-    <div style="margin-bottom:14px"><div class="t-name">${esc(x.ad)}</div><div class="t-code">${esc(x.kod||'')} - Mevcut: <b style="color:var(--ink)">${fmtNum(x.bakiye)} ${esc(x.unit||'')}</b></div></div>
+  if(type==='in'){ toast('Stok girisi yalnizca Siparis / Irsaliye ile yapilir','err'); return; }
+  const mevcut=geciciBakiye(id);
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal"><div class="modal-head"><h3>Sahaya Sevk / Stok Cikisi</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <div style="margin-bottom:14px"><div class="t-name">${esc(x.ad)}</div><div class="t-code">${esc(x.kod||'')} - Mevcut: <b style="color:var(--ink)">${fmtNum(mevcut)} ${esc(x.unit||'')}</b></div></div>
     <div class="frow two"><div><label>Miktar *</label><input id="mv_qty" type="number" step="any" placeholder="0" autofocus></div><div><label>Tarih</label><input id="mv_date" type="date"></div></div>
-    <div class="frow"><label>${type==='in'?'Siparis / Fatura No':'Aciklama / Cikis Yeri'}</label><input id="mv_ord" placeholder="${type==='in'?'SIP-2026-...':'orn. A Blok sahasi'}"></div>
-  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn ${type==='in'?'btn-add':'btn-order'}" onclick="doMove('${id}','${type}')">${type==='in'?'Stok Ekle':'Stok Dus'}</button></div></div></div>`;
+    <div class="frow"><label>Aciklama / Cikis Yeri</label><input id="mv_ord" placeholder="orn. A Blok sahasi"></div>
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-order" onclick="doMove('${id}','out')">Stok Dus</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   document.getElementById('mv_date').value=new Date().toISOString().slice(0,10);
 }
 async function doMove(id,type){ const x=DB.gecici.lib.find(i=>i.id===id); const q=Number(document.getElementById('mv_qty').value);
   if(!guard('stock',{bina:PBINA}))return;
+  if(type==='in'){ toast('Stok girisi yalnizca Siparis / Irsaliye ile yapilir','err'); return; }
   if(!q||q<=0){toast("Gecerli miktar girin","err");return;}
-  if(type==='out'&&q>x.bakiye){ if(!confirm("Cikis miktari bakiyeden fazla. Devam edilsin mi? (bakiye eksiye duser)"))return; }
-  x.bakiye+=type==='in'?q:-q;
-  const move={id:uid(),libId:id,type,qty:q,date:new Date(document.getElementById('mv_date').value||Date.now()).getTime(),order:document.getElementById('mv_ord').value.trim()};
+  const mevcut=geciciBakiye(id);
+  if(q>mevcut){ if(!confirm("Cikis miktari bakiyeden fazla. Devam edilsin mi? (bakiye eksiye duser)"))return; }
+  /* KUNYE SATIRINA DOKUNULMAZ: bakiye orada saklanmaz, yalnizca hareket yazilir
+     (bkz. geciciBakiye). Boylece ortak kutuphane satiri tasarilar arasinda
+     kirlenmez ve bakiye ile defter ayrisamaz. */
+  const move={id:uid(),libId:id,type:'out',qty:q,date:new Date(document.getElementById('mv_date').value||Date.now()).getTime(),order:document.getElementById('mv_ord').value.trim()};
   DB.gecici.moves.push(move);
-  await Promise.all([sbUpdateGeciciLibItem(id,{...x}),sbInsertGeciciMove(move)]);
-  logAction('stock','Mobilizasyon '+(type==='in'?'stok girisi: +':'stok cikisi: -')+fmtNum(q)+' '+(x.unit||'')+' - '+x.ad+' (yeni bakiye '+fmtNum(x.bakiye)+')');
-  closeModal(); render(); toast(type==='in'?"Stok girisi yapildi":"Stok cikisi yapildi");
+  await sbInsertGeciciMove(move);
+  logAction('stock','Mobilizasyon sahaya sevk: -'+fmtNum(q)+' '+(x.unit||'')+' - '+x.ad+' (yeni bakiye '+fmtNum(geciciBakiye(id))+')');
+  closeModal(); render(); toast("Stok cikisi yapildi");
 }
 function libDetail(id){ const x=DB.gecici.lib.find(i=>i.id===id); if(!x)return;
   const admin=canEdit('gecici');
@@ -19820,11 +19978,10 @@ function libDetail(id){ const x=DB.gecici.lib.find(i=>i.id===id); if(!x)return;
     ${x.adRu?`<div class="t-name-ru" style="margin:-6px 0 12px">${esc(x.adRu)}</div>`:''}
     <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
       ${x.img?`<img src="${x.img}" style="width:90px;height:90px;border-radius:10px;object-fit:contain;background:#fff;border:1px solid var(--line);cursor:pointer" onclick="lightbox(${lbCall([x.img,x.img2])})">`:''}
-      <div class="stat" style="flex:1;min-width:140px"><div class="strip" style="background:var(--grid)"></div><div class="lbl">Guncel Bakiye</div><div class="val">${fmtNum(x.bakiye)} <span style="font-size:14px;color:var(--mute)">${esc(x.unit||'')}</span></div><div class="sub">${[x.kod,x.barkod,x.cins,Number(x.parca)>0?('paket ici '+fmtNum(x.parca)):''].filter(Boolean).map(esc).join(' - ')}</div></div>
+      <div class="stat" style="flex:1;min-width:140px"><div class="strip" style="background:var(--grid)"></div><div class="lbl">Guncel Bakiye <span style="text-transform:none;font-weight:400">(${moves.length} hareketten)</span></div><div class="val">${fmtNum(geciciBakiye(id))} <span style="font-size:14px;color:var(--mute)">${esc(x.unit||'')}</span></div><div class="sub">${[x.kod,x.barkod,x.cins,Number(x.parca)>0?('paket ici '+fmtNum(x.parca)):''].filter(Boolean).map(esc).join(' - ')}</div></div>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:16px">
-      ${canCreate('gecici')||canUpdate('gecici')?`<button class="btn btn-add" style="flex:1" onclick="closeModal();libMove('${id}','in')">${icoArr('down')} Stok Gir</button>
-      <button class="btn btn-order" style="flex:1" onclick="closeModal();libMove('${id}','out')">${icoArr('up')} Stok Cikar</button>`:''}
+      ${canCreate('gecici')||canUpdate('gecici')?`<button class="btn btn-order" style="flex:1" title="Stok GIRISI yalnizca Siparis / Irsaliye ile yapilir" onclick="closeModal();libMove('${id}','out')">${icoArr('up')} Sahaya Sevk / Cikar</button>`:''}
       ${canUpdate('gecici')?`<button class="btn btn-ghost" onclick="closeModal();openLibModal('${id}')">Duzenle</button>`:''}
       ${canDelete('gecici')?`<button class="mini-btn del" onclick="delLib('${id}')">${icoTrash()}</button>`:''}
     </div>
@@ -19979,7 +20136,7 @@ function renderOrderLines(){ const c=document.getElementById('olines'); if(!c)re
     const coz=orderLibCoz(l);
     const info=!l.ad?'':(coz.belirsiz
       ? `<div class="lib-match match-warn">Bu adi tasiyan ${coz.aday} ayri kalem var (stok kodlari farkli) - hangisi oldugunu arama kutusundan secin</div>`
-      : (coz.x?`<div class="lib-match match-found">Kutuphanede var - bakiyeye eklenir (mevcut: ${fmtNum(coz.x.bakiye)}${coz.x.kod?' &middot; '+esc(coz.x.kod):''})</div>`
+      : (coz.x?`<div class="lib-match match-found">Kutuphanede var - bakiyeye eklenir (mevcut: ${fmtNum(geciciBakiye(coz.x.id))}${coz.x.kod?' &middot; '+esc(coz.x.kod):''})</div>`
               :`<div class="lib-match match-new">Yeni malzeme - kutuphaneye eklenecek</div>`));
     return `<div class="oline">
       <div class="ac-wrap"><input id="ol_ad_${i}" placeholder="Malzeme adi (ara...)" value="${esc(l.ad)}" autocomplete="off" onfocus="acGecici(${i})"></div>
@@ -19989,7 +20146,8 @@ function renderOrderLines(){ const c=document.getElementById('olines'); if(!c)re
       ${info}</div>`;
   }).join('');
 }
-function geciciLibSrc(){ return DB.gecici.lib.map(x=>({ad:x.ad,alt:[x.adRu,x.kod,x.grup,x.marka,x.barkod,x.cins].filter(Boolean).join(' '),sub:[x.kod,x.grup,x.marka].filter(Boolean).join(' · ')+' · bakiye: '+fmtNum(x.bakiye),obj:x})); }
+function geciciLibSrc(){ const h=geciciBakiyeHaritasi();
+  return DB.gecici.lib.map(x=>({ad:x.ad,alt:[x.adRu,x.kod,x.grup,x.marka,x.barkod,x.cins].filter(Boolean).join(' '),sub:[x.kod,x.grup,x.marka].filter(Boolean).join(' · ')+' · bakiye: '+fmtNum(gBak(h,x)),obj:x})); }
 function acGecici(i){ const el=document.getElementById('ol_ad_'+i);
   acOpen(el, geciciLibSrc(), (it,isNew)=>{ orderLines[i].ad=it.ad;
     orderLines[i].libId=(!isNew&&it.obj)?it.obj.id:'';        // ada degil, secilen kaleme baglanir
@@ -20023,13 +20181,19 @@ async function saveOrder(){
      sisirirdi. Kullanici arama kutusundan kalemi secince libId dolar ve belirsizlik biter. */
   const belirsiz=valid.find(l=>orderLibCoz(l).belirsiz);
   if(belirsiz){ toast('"'+belirsiz.ad+'" adini tasiyan birden fazla kalem var (stok kodlari farkli) - satirdaki arama kutusundan hangisi oldugunu secin','err'); return; }
-  const savedLines=[], newLibItems=[], updatedLibItems=[], newMoves=[]; let added=0,updated=0;
+  const savedLines=[], newLibItems=[], newMoves=[]; let added=0,updated=0;
+  /* BAKIYE KUNYEYE YAZILMAZ. Siparis yalnizca GIRIS HAREKETI uretir; bakiye o
+     hareketlerden turetilir (bkz. geciciBakiye). Eskiden burada x.bakiye+=q
+     yapiliyordu ve gecici_lib ORTAK tablo oldugu icin bir tasarida girilen
+     siparis butun tasarilarin bakiyesini artiriyordu. Ayrica mevcut kalemler
+     icin artik kunye guncellemesi de gitmez - siparis basina N adet yazma
+     isteginden N adedi ortadan kalkar. */
   valid.forEach(l=>{
     const q=Number(l.qty);
     let x=orderLibCoz(l).x;
-    if(x){ x.bakiye=(Number(x.bakiye)||0)+q; updatedLibItems.push(x); updated++; }
+    if(x){ updated++; }
     else { const sim=Date.now();
-      x={id:uid(),ad:l.ad.trim(),adRu:'',kod:'',grup:'',marka:ted,unit:l.unit.trim()||'ADET',renk:'',cins:'',barkod:'',bakiye:q,parca:0,
+      x={id:uid(),ad:l.ad.trim(),adRu:'',kod:'',grup:'',marka:ted,unit:l.unit.trim()||'ADET',renk:'',cins:'',barkod:'',parca:0,
          standart:'',weight:null,tags:[],altCodes:[],note:'',img:null,img2:null,createdAt:sim,updatedAt:sim};
       DB.gecici.lib.push(x); newLibItems.push(x); added++; }
     const move={id:uid(),libId:x.id,type:'in',qty:q,date,order:no};
@@ -20049,7 +20213,6 @@ async function saveOrder(){
   DB.gecici.orders.push(order);
   await Promise.all([
     ...(newLibItems.length?[sbInsertGeciciLibItems(newLibItems)]:[]),
-    ...updatedLibItems.map(x=>sbUpdateGeciciLibItem(x.id,{...x})),
     sbInsertGeciciMoves(newMoves),
     sbInsertGeciciOrder(order)
   ]);
@@ -20088,12 +20251,14 @@ function openOrderPdf(id){ const o=DB.gecici.orders.find(x=>x.id===id); acPdf(o&
 async function delOrder(id){ const o=DB.gecici.orders.find(x=>x.id===id); if(!o)return;
   if(!confirm("Bu siparis silinsin mi? Eklenen stoklar bakiyeden geri dusulecek."))return;
   const moveIdsToDelete=DB.gecici.moves.filter(m=>m.order===o.no).map(m=>m.id);
-  const libUpdates=[];
-  o.lines.forEach(l=>{ const x=DB.gecici.lib.find(i=>i.id===l.libId); if(x){ x.bakiye=(Number(x.bakiye)||0)-(Number(l.qty)||0); libUpdates.push(x); } });
+  /* BAKIYEYI GERI ALMAK ICIN AYRI BIR ISLEM GEREKMEZ: bakiye hareketlerden
+     turetildigi icin siparisin hareketlerini silmek bakiyeyi kendiliginden
+     eski haline dondurur (bkz. geciciBakiye). Eskiden burada kunye satirlarindan
+     elle dusulurdu; hareket silme ile bakiye dusumu ayri iki yazma oldugu icin
+     biri basarisiz olursa defter ile bakiye ayrisabiliyordu. */
   await Promise.all([
     sbDeleteGeciciOrder(id),
-    sbDeleteGeciciMovesByIds(moveIdsToDelete),
-    ...libUpdates.map(x=>sbUpdateGeciciLibItem(x.id,{...x}))
+    sbDeleteGeciciMovesByIds(moveIdsToDelete)
   ]);
   DB.gecici.moves=DB.gecici.moves.filter(m=>!(m.order===o.no));
   DB.gecici.orders=DB.gecici.orders.filter(x=>x.id!==id);
@@ -20145,7 +20310,8 @@ function exportLibExcel(){
   XLSX.utils.book_append_sheet(wb,wsOz,"Ozellikler");
   // AMBAR STOK sekmesi - kutuphane kunyesi degil, depodaki miktar
   const stokRows=[TOPG_STOK_BASLIK.slice()];
-  sirali.forEach(x=>stokRows.push([x.kod||'',x.ad||'',x.unit||'',Number(x.bakiye)||0]));
+  const bakH=geciciBakiyeHaritasi();
+  sirali.forEach(x=>stokRows.push([x.kod||'',x.ad||'',x.unit||'',gBak(bakH,x)]));
   const wsSt=XLSX.utils.aoa_to_sheet(stokRows); wsSt['!cols']=TOPG_STOK_GENIS.slice();
   XLSX.utils.book_append_sheet(wb,wsSt,"Ambar Stok");
   // hareketler sayfasi
@@ -20175,7 +20341,7 @@ function aletArananMetin(x){ const k=aletKunye(x);
   return [k.ad,k.kod,k.marka,k.barkod,k.renk,k.olcu,k.madde,k.grup,x.seri,x.zimkod,x.zimmet,x.konum,x.note].filter(Boolean).join(' '); }
 // El Aletleri ekranindan kutuphaneye atlama (kutuphane ekraninin Mekanik kapsami)
 function openAletLib(){ if(!canSee('alet')){toast('Yetkiniz yok','err');return;}
-  MATF={scope:'alet',cat:'',brand:'',unit:'',tag:'',img:'',renk:'',bak:''}; _matUsageFilter='all'; _matSel.clear(); _matPage=0; openMaterialLib(); }
+  MATF={scope:'alet',cat:'',brand:'',unit:'',tag:'',img:'',renk:''}; _matUsageFilter='all'; _matSel.clear(); _matPage=0; openMaterialLib(); }
 
 /* FILTRE PANELI: bolumun ustundeki dev sayac kartlari kaldirildi - dort kutu ekranin
    yarisini yiyor, hicbir soruyu cevaplamiyordu. Yerine kutuphane/siparis ekranlarindaki
@@ -26561,7 +26727,7 @@ function tutNormProje(m){ return {src:'proje',id:m.id,ad:m.name||'',kod:m.code||
   ara:[m.name,m.code,(m.altCodes||[]).join(' '),m.brand,m.standart].filter(Boolean).join(' ')}; }
 function tutNormGecici(x){ return {src:'gecici',id:x.id,ad:x.ad||'',kod:x.kod||'',
   marka:x.marka||'',birim:x.unit||'',renk:x.renk||'',img:x.img||'',
-  ek:[x.grup,x.renk,x.cins,fmtNum(Number(x.bakiye)||0)+' bakiye'].filter(Boolean).join(' · '),
+  ek:[x.grup,x.renk,x.cins,fmtNum(geciciBakiye(x.id))+' bakiye'].filter(Boolean).join(' · '),
   ara:[x.ad,x.adRu,x.kod,x.marka,x.grup,x.barkod,x.cins].filter(Boolean).join(' ')}; }
 function tutNormAlet(x){ return {src:'alet',id:x.id,ad:x.ad||'',kod:x.kod||'',
   marka:x.marka||'',birim:x.birim||'',renk:x.renk||'',img:x.img||'',
@@ -33611,7 +33777,8 @@ function cmdkSearch(q){
     ['Sirketler','Tedarikci ve firma kayitlari','Modul','proje',()=>{switchSection('proje'); openCompanies();}],
     ['Ekipler','Gunluk saha raporu ekip listesi','Modul','proje',()=>{switchSection('proje'); openEkipler();}],
     ['Bolum & Sartname','Bolumler, sartname kodlari ve tanimlar','Modul','proje',()=>{switchSection('proje'); openDefinitions();}],
-    ['Gecici Elektrik','Ambar kutuphanesi ve gecici siparisler','Modul','gecici',()=>{switchSection('gecici'); setTab('stok');}],
+    ['Gecici Elektrik','Ambar stok, hareketler ve irsaliyeler','Modul','gecici',()=>{switchSection('gecici'); setTab('stok');}],
+    ['Gecici Elektrik - Hareketler','Bakiyeyi olusturan giris ve cikislar','Modul','gecici',()=>{switchSection('gecici'); setTab('moves');}],
     ['El Aletleri','Alet, seri no, marka ve zimmet arama','Modul','alet',()=>{switchSection('alet');}],
     ['Santiye Sahasi','Pano, kablo ve seyyar priz plani','Modul','saha',()=>{switchSection('saha');}],
     ['Gunluk Saha Raporu','Islenen kalemler, ekip, vardiya, tarih','Modul','rapor',()=>{switchSection('rapor');}]
@@ -33637,7 +33804,7 @@ function cmdkSearch(q){
       const cats=materialAllCats(m).join(' ');
       cmdkAdd(out,{kind:'Urun',name:m.name||m.code||'Urun',
         meta:[m.code,m.brand,cats,m.unit].filter(Boolean).join(' / '),
-        go:()=>{ switchSection('proje'); openMaterialLib(); SEARCH=m.code||m.name||''; MATF={scope:'proje',cat:'',brand:'',unit:'',tag:'',img:'',renk:'',bak:''}; render(); }},
+        go:()=>{ switchSection('proje'); openMaterialLib(); SEARCH=m.code||m.name||''; MATF={scope:'proje',cat:'',brand:'',unit:'',tag:'',img:'',renk:''}; render(); }},
         q,[m.name,m.code,(m.altCodes||[]).join(' '),m.brand,m.cat,m.unit,m.note,m.note2,m.standart,(m.tags||[]).join(' '),cats,'urun malzeme kutuphane']);
     });
     (DB.proje.items||[]).filter(it=>!it.is_deleted).forEach(it=>cmdkAdd(out,{kind:it.type==='out'?'Cikis':(it.type==='iade'?'Iade':'Hareket'),
@@ -33660,7 +33827,7 @@ function cmdkSearch(q){
   }
   if(DB&&DB.gecici&&cmdkCan('gecici')){
     (DB.gecici.lib||[]).forEach(x=>cmdkAdd(out,{kind:'Gecici',name:x.ad||x.kod||'Gecici malzeme',
-      meta:[x.kod,x.grup,x.marka,fmtNum(x.bakiye)+' '+(x.unit||'')].filter(Boolean).join(' / '),
+      meta:[x.kod,x.grup,x.marka,fmtNum(geciciBakiye(x.id))+' '+(x.unit||'')].filter(Boolean).join(' / '),
       go:()=>{ switchSection('gecici'); TAB='stok'; SEARCH=x.kod||x.ad||''; render(); }},
       q,[x.ad,x.adRu,x.kod,x.grup,x.marka,x.barkod,x.renk,x.cins,x.unit,'gecici elektrik ambar stok']));
     (DB.gecici.orders||[]).forEach(o=>cmdkAdd(out,{kind:'Gecici Siparis',name:o.no||'Siparis',
