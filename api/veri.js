@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { requireAuth } from '../lib/auth.js'
-import { yetkiKontrol, denetimGorebilir } from '../lib/yetki.js'
+import { yetkiKontrol, denetimGorebilir, faturaYazmaKontrol, faturaGovdeSabitle } from '../lib/yetki.js'
 import { denetimYaz } from '../lib/denetim.js'
 import { VARSAYILAN_ORG } from '../lib/org.js'
 import { VARSAYILAN_TASARI, tasariFiltrelenir, tasariDamgalanir } from '../lib/tasari.js'
@@ -183,6 +183,18 @@ export default async function handler(req, res) {
 
     let q = supabaseAdmin.from(table)
 
+    /* FATURA SAHIPLIGI: yonetici disindaki kullanici yalnizca KENDI actigi, kilitsiz
+       faturaya yazar (kural: lib/yetki.js faturaYazmaKontrol). Modul izni yukarida
+       gecti; burada kaydin KENDISINE bakilir, bu yuzden guncelleme ve silmede once
+       mevcut satir okunur. Yalnizca id ile tek kayit hedeflenebilir - toplu yol
+       (in / upsert) sahiplik tek tek dogrulanamadigi icin yoneticiye kalir. */
+    const faturaSahipligi = table === 'faturalar' && kullanici.role !== 'admin'
+    const faturaEski = async (id) => {
+      const { data, error } = await kapsa(supabaseAdmin.from('faturalar').select('data')).eq('id', id).maybeSingle()
+      if (error) throw error
+      return data ? data.data : null
+    }
+
     if (op === 'count') {
       // '*' kullanilir, 'id' DEGIL: app_settings / saha_settings anahtar-deger
       // tablolaridir ve id sutunlari yok - 'id' ile sayim orada hata veriyordu.
@@ -276,7 +288,15 @@ export default async function handler(req, res) {
          bile ezilir. tasari_id yalnizca damgalanan tablolara eklenir - ortak
          kutuphane tablolarinda o sutun YOKTUR, eklenirse yazma "column does not
          exist" ile patlardi. */
-      const govde = (table === 'audit_log' && !g.yedek) ? damgala(rows, claims) : rows
+      let govde = (table === 'audit_log' && !g.yedek) ? damgala(rows, claims) : rows
+      if (faturaSahipligi) {
+        if (op !== 'insert') return hata(res, 403, 'Toplu fatura yazimi yalnizca yoneticiye acik')
+        for (const r of rows) {
+          const k = faturaYazmaKontrol(kullanici, claims.username, 'insert', null, r && r.data)
+          if (!k.ok) return hata(res, k.kod, k.mesaj)
+        }
+        govde = rows.map(r => ({ ...r, data: faturaGovdeSabitle(kullanici, claims.username, 'insert', null, r.data) }))
+      }
       const damga = tasariDamgalanir(table) ? { org_id: org, tasari_id: tasari } : { org_id: org }
       const satirlar = govde.map(r => ({ ...r, ...damga }))
       const { error } = op === 'insert'
@@ -297,6 +317,13 @@ export default async function handler(req, res) {
       const yama = { ...g.patch }
       delete yama.org_id
       delete yama.tasari_id
+      if (faturaSahipligi) {
+        if (g.eq.col !== 'id' || !yama.data) return hata(res, 400, 'Fatura yalnizca kimligiyle ve govdesiyle guncellenebilir')
+        const eski = await faturaEski(g.eq.val)
+        const k = faturaYazmaKontrol(kullanici, claims.username, 'update', eski, yama.data)
+        if (!k.ok) return hata(res, k.kod, k.mesaj)
+        yama.data = faturaGovdeSabitle(kullanici, claims.username, 'update', eski, yama.data)
+      }
       const { error } = await kapsa(q.update(yama).eq(g.eq.col, g.eq.val))
       if (error) throw error
       res.status(200).json({ ok: true })
@@ -313,6 +340,11 @@ export default async function handler(req, res) {
       // siparislerine dokunamaz.
       // Bu filtreler tek basina gecerli bir silme kosuludur: 'all' bu haliyle
       // "bu projenin tum satirlari" demektir, tablonun tamami degil.
+      if (faturaSahipligi) {
+        if (g.all || g.in || !g.eq || g.eq.col !== 'id') return hata(res, 403, 'Toplu fatura silme yalnizca yoneticiye acik')
+        const k = faturaYazmaKontrol(kullanici, claims.username, 'delete', await faturaEski(g.eq.val), null)
+        if (!k.ok) return hata(res, k.kod, k.mesaj)
+      }
       let d = kapsa(q.delete())
       if (!g.all) {
         if (g.in) {

@@ -4,7 +4,7 @@ import { aktifOrg } from '../lib/org.js'
 import { adUyumlu } from '../lib/adSutunu.js'
 
 // GET /api/kisiler - aktif organizasyondaki kullanicilarin GOSTERIM dizini:
-// [{ username, ad, meslek }]
+// [{ username, ad, meslek, yonetici }]
 //
 // NEDEN AYRI BIR UC: /api/users yalnizca YONETICIYE acik (requireAdmin) ve butun
 // kaydi doner - rol, izinler, telefon, e-posta. Oysa "olusturan kisi" adi her
@@ -27,10 +27,13 @@ export default async function handler(req, res) {
     // adUyumlu: users.ad sutunu henuz eklenmemisse dizin yalnizca unvani tasir,
     // ekranlarda giris adi gorunmeye devam eder (bkz. lib/adSutunu.js)
     const { data, error } = await adUyumlu(adDahil =>
-      supabaseAdmin.from('users').select(adDahil ? 'username, ad, meslek' : 'username, meslek').eq('org_id', org))
+      supabaseAdmin.from('users').select(adDahil ? 'username, ad, meslek, role' : 'username, meslek, role').eq('org_id', org))
     if (error) throw error
     res.status(200).json((data || []).map(u => ({
       username: u.username, ad: u.ad || '', meslek: u.meslek || '',
+      // Rolun kendisi (izinler dahil) DEGIL, yalnizca bu bayrak: Fatura Kontrol listesi
+      // faturayi acan kisinin adini yalnizca yonetici DISINDAKILER icin gosterir.
+      yonetici: u.role === 'admin',
     })))
   } catch (e) {
     console.error('kisiler GET basarisiz', e)
