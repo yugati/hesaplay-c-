@@ -19,7 +19,7 @@ import { adUyumlu } from '../lib/adSutunu.js'
 export default async function handler(req, res) {
   if (req.method !== 'GET') { res.status(405).json({ error: 'Method not allowed' }); return }
 
-  const claims = requireAuth(req)
+  const claims = await requireAuth(req)
   if (!claims) { res.status(401).json({ error: 'Oturum gecersiz' }); return }
 
   try {

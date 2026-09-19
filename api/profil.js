@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js'
-import { requireAuth } from '../lib/auth.js'
+import { requireAuth, signSession, yenilenenTtl } from '../lib/auth.js'
+import { surumBelirle } from '../lib/oturum.js'
 import { verifyPassword, hashPassword, sifreKurallari } from '../lib/password.js'
 import { girisKilitli, hataliDeneme, basariliGiris, istekIp } from '../lib/girisKoruma.js'
 import { denetimYaz } from '../lib/denetim.js'
@@ -22,7 +23,7 @@ import { adUyumlu } from '../lib/adSutunu.js'
 export default async function handler(req, res) {
   if (req.method !== 'PUT') { res.status(405).json({ error: 'Method not allowed' }); return }
 
-  const claims = requireAuth(req)
+  const claims = await requireAuth(req)
   if (!claims) { res.status(401).json({ error: 'Oturum gecersiz' }); return }
 
   const { ad, tel, email, mevcutSifre, yeniSifre } = req.body || {}
@@ -42,6 +43,7 @@ export default async function handler(req, res) {
   const org = user.org_id || VARSAYILAN_ORG
   const update = {}
   const degisenler = []
+  let yeniSurum = null   // sifre degisirse: diger oturumlari kapatan yeni sayac
 
   if (ad !== undefined) {
     const yeniAd = String(ad).trim()
@@ -89,7 +91,10 @@ export default async function handler(req, res) {
         const kalan = d.kilitSn >= 60 ? Math.ceil(d.kilitSn / 60) + ' dakika' : d.kilitSn + ' saniye'
         res.status(429).json({ error: 'Cok fazla hatali deneme. ' + kalan + ' sonra tekrar deneyin.' })
       } else {
-        res.status(401).json({ error: 'Mevcut sifre hatali' })
+        /* 403, 401 DEGIL: istemci (src/supabase.js authFetch) 401'i "oturum dustu"
+           sayip kullaniciyi login ekranina atar - yanlis yazilmis bir mevcut sifre
+           oturumu bitirmemeli. */
+        res.status(403).json({ error: 'Mevcut sifre hatali' })
       }
       return
     }
@@ -105,6 +110,16 @@ export default async function handler(req, res) {
     }
     update.password = await hashPassword(yeniSifre)
     degisenler.push('sifre')
+    /* SIFRE DEGISINCE DIGER TUM OTURUMLAR KAPANIR: sifre degistirmenin en yaygin
+       sebebi hesabin baskasinda olabilecegi suphesidir - eski sifreyle acilmis
+       oturumlar yasamaya devam ederse degisiklik bir sey korumaz. Sayac sifreyle
+       AYNI guncellemede artar (biri olmadan digeri olmaz) ve bu cihaza yeni
+       sayacli taze token doner. Sutun henuz eklenmemisse (migration_oturum_surumu.sql)
+       satirda alan yoktur: atlanir, sifre degisikligi bozulmaz. */
+    if ('oturum_surumu' in user) {
+      yeniSurum = (Number(user.oturum_surumu) || 0) + 1
+      update.oturum_surumu = yeniSurum
+    }
   }
 
   if (!degisenler.length) { const s = { ...user }; delete s.password; res.status(200).json(s); return }
@@ -119,14 +134,20 @@ export default async function handler(req, res) {
       return supabaseAdmin.from('users').update(govde).eq('id', user.id).select().single()
     })
     if (error) throw error
+    if (yeniSurum !== null) surumBelirle(user.id, yeniSurum)   // kendi istegimiz reddedilmesin
     const safe = { ...data }; delete safe.password
     /* DENETIM KAYDI SUNUCUDA YAZILIR. Sifre degisikligi hesap devrinin en kritik
        anidir; tarayiciya birakilsaydi konsolu acan biri iz birakmadan degistirebilirdi
        (bkz. lib/denetim.js). Yeni sifre ELBETTE yazilmaz - yalnizca "degisti" bilgisi. */
     await denetimYaz(org, {
       user: user.username, role: user.role, action: 'profil', ip: istekIp(req),
-      detail: 'Kendi profilini guncelledi: ' + degisenler.join(', '),
+      detail: 'Kendi profilini guncelledi: ' + degisenler.join(', ') + (yeniSurum !== null ? ' (diger oturumlar kapatildi)' : ''),
     })
+    if (yeniSurum !== null) {
+      const ttl = yenilenenTtl(claims)
+      res.status(200).json({ ...safe, token: signSession(data, ttl, claims.org, claims.tas), ttl })
+      return
+    }
     res.status(200).json(safe)
   } catch (e) {
     console.error('profil PUT basarisiz', e)

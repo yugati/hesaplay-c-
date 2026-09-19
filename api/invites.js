@@ -14,7 +14,7 @@ const ROL_AD = { admin: 'Yonetici', izleyici: 'Izleyici', saha_personeli: 'Saha 
 // api/users.js deseni: tek dosya (Vercel Hobby'nin 12 fonksiyon siniri), id
 // vercel.json rewrite'i ile ?id= olarak gelir (bkz. o dosyadaki not).
 export default async function handler(req, res) {
-  const claims = requireAdmin(req)
+  const claims = await requireAdmin(req)
   if (!claims) { res.status(403).json({ error: 'Yetkiniz yok' }); return }
 
   const idParam = req.query.id

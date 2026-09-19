@@ -85,7 +85,7 @@ function rastgele() {
 }
 
 export default async function handler(req, res) {
-  const claims = requireAuth(req)
+  const claims = await requireAuth(req)
   if (!claims) { res.status(401).json({ error: 'Oturum gecersiz' }); return }
 
   const org = await aktifOrg(claims)

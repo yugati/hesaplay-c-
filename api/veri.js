@@ -130,7 +130,7 @@ function hata(res, kod, mesaj) { res.status(kod).json({ error: mesaj }); return 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return hata(res, 405, 'Method not allowed')
 
-  const claims = requireAuth(req)
+  const claims = await requireAuth(req)
   if (!claims) return hata(res, 401, 'Oturum gecersiz')
 
   const g = req.body || {}

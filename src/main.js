@@ -52,6 +52,7 @@ import {
   sbInsertAuditLog,
   sbGetAuditLog,
   sbCikis,
+  sbDigerOturumlariKapat,
   // Alet
   sbGetAletItems,
   sbInsertAletItem,
@@ -296,6 +297,7 @@ window.sbSetSetting        = sbSetSetting
 window.sbInsertAuditLog    = sbInsertAuditLog
 window.sbGetAuditLog       = sbGetAuditLog
 window.sbCikis             = sbCikis
+window.sbDigerOturumlariKapat = sbDigerOturumlariKapat
 
 // ─── Alet ────────────────────────────────────────────────────────────────────
 window.sbGetAletItems      = sbGetAletItems

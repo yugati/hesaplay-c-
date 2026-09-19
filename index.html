@@ -4913,10 +4913,20 @@ function baslatOturumTazeleme(ttl){
 /* Sunucu tokeni reddettiginde (401) cagrilir - src/supabase.js authFetch'ten.
    Tek sefer calisir: onlarca paralel istek ayni anda 401 alabilir. */
 let _oturumDustuGosterildi=false;
+/* "Diger oturumlari kapat" (digerOturumlariKapat) suresince true: sunucu sayaci
+   arttirdiktan sonra yeni token istemciye ulasana kadar bu cihazin kendi
+   istekleri de 401 alabilir - o 401 bu cihazi da disari atmamali. */
+let _oturumDegisiyor=false;
 window.oturumDustu=function(){
-  if(_oturumDustuGosterildi) return; _oturumDustuGosterildi=true;
-  try{ toast('Oturum suresi doldu - yeniden giris yapmaniz gerekiyor','err'); }catch(e){}
-  setTimeout(()=>{ try{ localStorage.removeItem('authSession'); }catch(e){} location.reload(); }, 2200);
+  if(_oturumDustuGosterildi||_oturumDegisiyor) return; _oturumDustuGosterildi=true;
+  try{ toast('Oturumunuz sonlandi (suresi doldu ya da baska bir yerden kapatildi) - yeniden giris yapin','err'); }catch(e){}
+  setTimeout(()=>{
+    /* AYNI TARAYICIDAKI baska bir sekme oturumu yenilemis/degistirmis olabilir
+       (localStorage ortak): onun taze tokenini silmeyelim, yenileme onu alsin. */
+    try{ const s=JSON.parse(localStorage.getItem('authSession')||'null'); if(!s||s.token===window.AUTH_TOKEN) localStorage.removeItem('authSession'); }
+    catch(e){ try{ localStorage.removeItem('authSession'); }catch(_){} }
+    location.reload();
+  }, 2200);
 };
 // giris/oturum acildiginda #app'i yumusak fade-in ile gosterir (login/loading ekranlariyla capraz gecis)
 function showAppFade(){
@@ -8263,7 +8273,7 @@ function openUserModal(id){
   const permMatrix=ALL_SECTIONS.map(s=>{ const mp=existingPerms[s]||{}; return `<tr><td style="font-weight:600;padding:4px 8px;min-width:140px;font-size:12px">${esc(SECTION_LABELS[s]||s)}</td><td style="text-align:center;padding:4px 8px"><input type="checkbox" class="uperm" data-mod="${s}" data-act="read" ${mp.read?'checked':''}></td><td style="text-align:center;padding:4px 8px"><input type="checkbox" class="uperm" data-mod="${s}" data-act="create" ${mp.create?'checked':''}></td><td style="text-align:center;padding:4px 8px"><input type="checkbox" class="uperm" data-mod="${s}" data-act="update" ${mp.update?'checked':''}></td><td style="text-align:center;padding:4px 8px"><input type="checkbox" class="uperm" data-mod="${s}" data-act="delete" ${mp.delete?'checked':''}></td></tr>`; }).join('');
   const roleOpts=Object.keys(ROLES).map(r=>`<option value="${r}" ${u&&u.role===r?'selected':''}>${esc(ROLES[r])}</option>`).join('');
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${u?'Kullanici Duzenle':'Yeni Kullanici'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
-    <div class="frow two"><div><label>Kullanici Adi *</label><input id="u_name" value="${u?esc(u.username):''}" placeholder="orn. ahmet" ${u?'readonly style="opacity:.6"':''}></div><div><label>Sifre ${u?'':'*'}</label><input type="password" id="u_pass" value="" placeholder="${u?'Degistirmek icin yeni sifre girin':'sifre'}" autocomplete="new-password"></div></div>
+    <div class="frow two"><div><label>Kullanici Adi *</label><input id="u_name" value="${u?esc(u.username):''}" placeholder="orn. ahmet" ${u?'readonly style="opacity:.6"':''}></div><div><label>Sifre ${u?'':'*'}</label><input type="password" id="u_pass" value="" placeholder="${u?'Degistirmek icin yeni sifre girin':'sifre'}"${u?' title="Sifre degisince bu kullanicinin tum acik oturumlari kapanir"':''} autocomplete="new-password"></div></div>
     <div class="frow two"><div><label>Telefon <span class="t-meta">(opsiyonel)</span></label><input id="u_tel" value="${u?esc(u.tel||''):''}" placeholder="+90 ..."></div><div><label>E-posta <span class="t-meta">(opsiyonel)</span></label><input id="u_email" value="${u?esc(u.email||''):''}" placeholder="ornek@..."></div></div>
     <div class="frow two"><div><label>Gorunen Ad <span class="t-meta">(opsiyonel)</span></label><input id="u_ad" value="${u?esc(u.ad||''):''}" maxlength="60" placeholder="orn. Babur Yilmaz"></div>
       <div><label>Meslek / Unvan <span class="t-meta">(opsiyonel)</span></label><input id="u_meslek" value="${u?esc(u.meslek||''):''}" placeholder="orn. Saha Muhendisi"></div></div>
@@ -8370,7 +8380,16 @@ async function saveUser(id){
     if(id){
       const payload={role,sections,buildings,permissions,tel,email,meslek,ad};
       if(pass) payload.password=pass; // bos birakilirsa mevcut sifre degismez
-      updated=await sbUpdateUser(id,payload);
+      /* Sifre degisince o kullanicinin TUM oturumlari kapanir. Yonetici KENDI
+         sifresini degistiriyorsa sunucu bu cihaza yeni token verir; arada giden
+         bir istek 401 alip kendini de atmasin diye oturumDustu bastirilir. */
+      const kendiSifre=!!(pass&&CURRENT_USER&&CURRENT_USER.id===id);
+      if(kendiSifre) _oturumDegisiyor=true;
+      try{
+        const {__token,__ttl,...guncel}=await sbUpdateUser(id,payload);
+        yeniTokenYerlestir(__token,__ttl);
+        updated=guncel;
+      } finally { _oturumDegisiyor=false; }
       if(CURRENT_USER&&CURRENT_USER.id===id){ CURRENT_USER=updated; window.CURRENT_USER=updated; }
     } else {
       updated=await sbCreateUser({username:name,password:pass,role,sections,buildings,permissions,tel,email,meslek,ad});
@@ -8441,13 +8460,47 @@ function openProfilModal(){
       <div><label>E-posta</label><input id="pf_email" value="${esc(u.email||'')}" placeholder="ornek@..."></div></div>
     ${u.meslek?`<div class="frow"><label>Meslek / Unvan <span class="ibi ibi-sol" tabindex="0">i<span>Unvani yonetici tanimlar.</span></span></label><input value="${esc(u.meslek)}" readonly style="opacity:.6"></div>`:''}
     <div style="border-top:1px solid var(--line);margin:16px 0 4px"></div>
-    <div class="frow"><label style="color:var(--mute)">Sifre Degistir <span class="ibi ibi-sol" tabindex="0">i<span>Degistirmek istemiyorsaniz bos birakin.</span></span></label></div>
+    <div class="frow"><label style="color:var(--mute)">Sifre Degistir <span class="ibi ibi-sol" tabindex="0">i<span>Degistirmek istemiyorsaniz bos birakin. Sifre degisince diger cihaz ve tarayicilardaki oturumlariniz kapanir; bu cihazdaki acik kalir.</span></span></label></div>
     <div class="frow"><label>Mevcut Sifre</label><input type="password" id="pf_eski" value="" autocomplete="current-password" placeholder="simdiki sifreniz"></div>
     <div class="frow two"><div><label>Yeni Sifre</label><input type="password" id="pf_yeni" value="" autocomplete="new-password" placeholder="en az 8 karakter"></div>
       <div><label>Yeni Sifre (Tekrar)</label><input type="password" id="pf_yeni2" value="" autocomplete="new-password" placeholder="tekrar girin"></div></div>
+    <div style="border-top:1px solid var(--line);margin:16px 0 4px"></div>
+    <div class="frow"><label style="color:var(--mute)">Acik Oturumlar <span class="ibi ibi-sol" tabindex="0">i<span>Hesabiniz baska cihaz ya da tarayicilarda acik kaldiysa (kayip telefon, ortak bilgisayar) oradaki oturumlari kapatir. Bu cihazdaki oturumunuz acik kalir; Kaydet'e basmaniz gerekmez.</span></span></label>
+      <button class="btn btn-ghost" type="button" id="pf_digerOturum" onclick="digerOturumlariKapat()">Diger Tum Oturumlari Kapat</button></div>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveProfil()">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   const el=document.getElementById('pf_ad'); if(el) setTimeout(()=>el.focus(),0);
+}
+/* BU CIHAZ OTURUMDA KALIR. Sunucu sayaci arttirir (api/cikis.js), diger tum
+   tokenler bir sonraki isteklerinde reddedilir ve oturumDustu ile login ekranina
+   duser. Cevapla gelen YENI token hemen yerlestirilir - eski token artik gecersiz.
+   Islem suresince oturumDustu bastirilir (_oturumDegisiyor): bu cihazin arada
+   giden istegi 401 alirsa kullanici kendi cihazindan da atilmasin. */
+async function digerOturumlariKapat(){
+  if(!confirm('Hesabinizin baska cihaz ve tarayicilarda acik olan tum oturumlari kapatilacak.\n\nBu cihazdaki oturumunuz acik kalir. Devam edilsin mi?')) return;
+  const btn=document.getElementById('pf_digerOturum'); if(btn) btn.disabled=true;
+  _oturumDegisiyor=true;
+  let r;
+  try{ r=await sbDigerOturumlariKapat(); }
+  catch(e){
+    _oturumDegisiyor=false; if(btn) btn.disabled=false;
+    if(e.status===401){ window.oturumDustu(); return; }   // bu cihazin kendi oturumu da gecersiz
+    toast(e.message||'Oturumlar kapatilamadi','err'); return;
+  }
+  yeniTokenYerlestir(r.token,r.ttl);
+  _oturumDegisiyor=false; if(btn) btn.disabled=false;
+  toast('Diger tum oturumlar kapatildi');
+}
+/* Sunucu bu cihaza YENI sayacli taze token verdiginde (diger oturumlari kapat,
+   sifre degistirme) hemen yerlestirilir - eski token artik reddedilir. localStorage
+   da guncellenir: sayfa yenilenince eski tokenle acilip login ekranina dusmesin. */
+function yeniTokenYerlestir(token,ttl){
+  if(!token) return;
+  window.AUTH_TOKEN=token;
+  try{
+    const sess=JSON.parse(localStorage.getItem('authSession')||'null');
+    if(sess){ sess.token=token; if(ttl){ sess.ttl=ttl; sess.expiresAt=Date.now()+ttl; } localStorage.setItem('authSession',JSON.stringify(sess)); }
+  }catch(e){}
 }
 async function saveProfil(){
   const ad=(document.getElementById('pf_ad').value||'').trim();
@@ -8466,13 +8519,19 @@ async function saveProfil(){
     if(yeni!==yeni2){toast('Yeni sifreler birbirini tutmuyor','err');return;}
     if(yeni.length<8){toast('Yeni sifre en az 8 karakter olmali','err');return;}
   }
+  /* SIFRE DEGISINCE sunucu diger tum oturumlari kapatir ve bu cihaza yeni token
+     verir. Arada bu cihazin giden bir istegi 401 alirsa kullanici kendi
+     cihazindan da atilmasin diye oturumDustu bastirilir (bkz. _oturumDegisiyor). */
+  if(sifreIstendi) _oturumDegisiyor=true;
   try{
     const payload={ad,tel,email};
     if(sifreIstendi){ payload.mevcutSifre=eski; payload.yeniSifre=yeni; }
-    const updated=await sbProfilGuncelle(payload);
+    const {__token,__ttl,...updated}=await sbProfilGuncelle(payload);
+    yeniTokenYerlestir(__token,__ttl); _oturumDegisiyor=false;
     /* Oturumdaki kullaniciyi da tazele: ust cubuk adi buradan okur ve sayfa
        yenilenince localStorage'daki kopya kullanilir - guncellenmezse ad eski
-       haliyle geri gelir. Token DEGISMEZ: gorunen ad tokende tasinmaz. */
+       haliyle geri gelir. Token yalnizca SIFRE degisince yenilenir (yukarida):
+       gorunen ad tokende tasinmaz. */
     CURRENT_USER=updated; window.CURRENT_USER=updated;
     try{
       const sess=JSON.parse(localStorage.getItem('authSession')||'null');
@@ -8481,8 +8540,9 @@ async function saveProfil(){
     await kisiDizinYukle();
     if(isAdmin()&&PUSERS){ try{ SB_USERS=await sbGetAllUsers(); }catch(e){} }
     closeModal(); applyUserChrome(); render();
-    toast(sifreIstendi?'Bilgileriniz ve sifreniz guncellendi':'Bilgileriniz guncellendi');
+    toast(sifreIstendi?('Bilgileriniz ve sifreniz guncellendi'+(__token?' - diger cihazlardaki oturumlar kapatildi':'')):'Bilgileriniz guncellendi');
   }catch(e){
+    _oturumDegisiyor=false;
     toast(e.message||'Guncelleme basarisiz','err');
   }
 }

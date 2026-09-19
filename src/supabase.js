@@ -32,7 +32,10 @@ async function authFetch(path, opts = {}) {
     // uygulama calisir gorunup her islemde sessizce hata verirdi; kullaniciya
     // acikca haber verilir (index.html oturumDustu). /api/login'in 401'i buraya
     // dusmez - orada henuz token yoktur.
-    if (res.status === 401 && token && typeof window !== 'undefined' && window.oturumDustu) {
+    // Token bu istek gonderildikten SONRA degistiyse (tazeleme ya da "diger oturumlari
+    // kapat" yeni token verdi) 401 bayat tokene aittir - oturum dusmus DEGILDIR.
+    if (res.status === 401 && token && typeof window !== 'undefined' && window.oturumDustu
+        && window.AUTH_TOKEN === token) {
       window.oturumDustu()
     }
     const err = new Error(body.error || `Istek basarisiz (${res.status})`)
@@ -74,6 +77,19 @@ export async function sbCikis(sebep) {
   } catch (e) { /* cikis her halukarda yapilir */ }
 }
 
+/* DIGER TUM OTURUMLARI KAPAT (api/cikis.js). Hesabin baska cihaz/tarayicilarda
+   acik olan oturumlari gecersiz olur, BU oturum acik kalir: sunucu yeni sayacli
+   taze bir token dondurur ({token, ttl}) ve cagiran onu HEMEN kullanmalidir -
+   eski token artik reddedilir. sbCikis'in aksine hata YUTULMAZ: kullanici islemin
+   sonucunu bilmek zorunda. */
+export async function sbDigerOturumlariKapat() {
+  return authFetch('/api/cikis', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ digerleri: true }),
+  })
+}
+
 // Aktif oturum tokeniyle (window.AUTH_TOKEN) kendi kaydini tazeler (arka plan
 // yenileme icin - cagirandan once token atanmis olmali).
 // Kullaniciyi tazeler ve YENI bir oturum tokeni getirir: {user, token, ttl}
@@ -110,24 +126,35 @@ export async function sbCreateUser({ username, password, role, sections, buildin
   })
 }
 
+/* Yonetici KENDI sifresini degistirdiyse sunucu bu cihaza yeni sayacli taze token da
+   verir ({...kullanici, token, ttl}) - eski token artik gecersiz. Kullanici
+   nesnesine karismasin diye __token/__ttl olarak ayrilir (sbGetUserByUsername ile
+   ayni ad); cagiran onu yerlestirmelidir. Baskasinin sifresinde bu alanlar gelmez. */
+function tokenAyir(govde) {
+  const { token, ttl, ...kullanici } = govde || {}
+  return token ? { ...kullanici, __token: token, __ttl: ttl } : kullanici
+}
+
 export async function sbUpdateUser(id, { password, role, sections, buildings, permissions, tel, email, meslek, ad }) {
-  return authFetch(`/api/users/${encodeURIComponent(id)}`, {
+  return tokenAyir(await authFetch(`/api/users/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password, role, sections, buildings, permissions, tel, email, meslek, ad }),
-  })
+  }))
 }
 
 /* KENDI HESABI - gorunen ad / telefon / e-posta / sifre (api/profil.js).
    sbUpdateUser'dan AYRI durur cunku o uc YONETICI ister; burasi her kullanicinin
    kendi kaydina, tokendeki kimlikle gider. Sifre degisikliginde mevcutSifre
-   zorunludur - acik kalmis bir ekranin hesabi devralmasini engeller. */
+   zorunludur - acik kalmis bir ekranin hesabi devralmasini engeller.
+   Sifre degisince diger tum oturumlar kapanir ve bu cihaza taze token gelir:
+   donen nesnede __token/__ttl bulunur (bkz. tokenAyir) ve cagiran yerlestirmelidir. */
 export async function sbProfilGuncelle({ ad, tel, email, mevcutSifre, yeniSifre }) {
-  return authFetch('/api/profil', {
+  return tokenAyir(await authFetch('/api/profil', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ad, tel, email, mevcutSifre, yeniSifre }),
-  })
+  }))
 }
 
 /* KISI DIZINI - [{username, ad, meslek}]. Gorunen adi ve unvani COZMEK icin

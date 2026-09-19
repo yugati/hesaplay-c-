@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js'
-import { requireAdmin } from '../lib/auth.js'
+import { requireAdmin, signSession, yenilenenTtl } from '../lib/auth.js'
+import { oturumlariKapat } from '../lib/oturum.js'
 import { hashPassword, sifreKurallari } from '../lib/password.js'
 import { aktifOrg, VARSAYILAN_ORG } from '../lib/org.js'
 import { aktifTasari } from '../lib/tasari.js'
@@ -24,7 +25,7 @@ import { adUyumlu } from '../lib/adSutunu.js'
 // doner ve parametre 'id' degil '[...id]' adiyla gelir. 14 Eylul 2026'da canli
 // bu yuzden bozuldu (Kullanici Yonetimi "Istek basarisiz (404)").
 export default async function handler(req, res) {
-  const claims = requireAdmin(req)
+  const claims = await requireAdmin(req)
   if (!claims) { res.status(403).json({ error: 'Yetkiniz yok' }); return }
 
   const idParam = req.query.id
@@ -193,6 +194,21 @@ export default async function handler(req, res) {
       })
       if (error) throw error
       const safe = { ...data }; delete safe.password
+      /* SIFRE DEGISTIYSE HEDEF KULLANICININ TUM ACIK OTURUMLARI KAPANIR: yonetici
+         sifreyi genellikle hesabin ele gecirildiginden suphelenildiginde ya da
+         calisan ayrilirken sifirlar - eski sifreyle acilmis oturum yasamaya
+         devam ederse sifirlamanin anlami kalmaz. Sayac artirma BASARISIZ olsa
+         (sutun yok) sifre degisikligi yine gecerli kalir (bkz. lib/oturum.js).
+         Yonetici KENDI sifresini degistiriyorsa kendi oturumu da dusmesin diye
+         yeni sayacli taze token doner. */
+      if (password) {
+        const yeniSurum = await oturumlariKapat(id)
+        if (yeniSurum !== null && id === claims.sub) {
+          const ttl = yenilenenTtl(claims)
+          res.status(200).json({ ...safe, token: signSession({ ...data, oturum_surumu: yeniSurum }, ttl, claims.org, claims.tas), ttl })
+          return
+        }
+      }
       res.status(200).json(safe)
     } catch (e) {
       console.error('users PUT basarisiz', e)
