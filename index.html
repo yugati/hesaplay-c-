@@ -1030,6 +1030,7 @@ tbody tr:hover{background:var(--hover)}
 .katp-sec span{font-family:var(--mono);font-weight:600;color:var(--dim)}
 .katp-odalar{display:flex;flex-wrap:wrap;gap:6px}
 .katp-oda{font-size:11px;font-weight:600;padding:3px 10px;border-radius:7px;background:var(--panel2);border:1px solid var(--line);color:var(--ink)}
+.katp-oda-kul{font-style:normal;font-weight:500;color:var(--mute);margin-left:4px}
 .katp-grp{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel)}
 .katp-grp-h{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--panel2);border-bottom:1px solid var(--line);font-size:11.5px;font-weight:700}
 .katp-grp-h .t-meta{margin-left:auto;font-family:var(--mono)}
@@ -1375,6 +1376,7 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .lokw-name{flex:1;min-width:120px;font-size:13px;font-weight:600;cursor:text;word-break:break-word}
 .lokw-cnt{font-size:10.5px;color:var(--dim);font-family:var(--mono);flex:0 0 auto}
 .lokw-use{font-size:10px;color:var(--mute);font-family:var(--mono);flex:0 0 auto;white-space:nowrap}
+.lokw-kul{font-size:11.5px;color:var(--mute);flex:0 1 auto;min-width:0;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lokw-kot{width:92px;background:var(--panel);border:1px solid var(--line);color:var(--ink);padding:4px 8px;border-radius:7px;font-size:11.5px;font-family:var(--mono);text-align:right;outline:none;flex:0 0 auto}
 .lokw-kot:focus{border-color:var(--blue)}
 .lokw-name-inp{flex:1;min-width:140px;background:var(--panel);border:1px solid var(--amber);color:var(--ink);padding:6px 10px;border-radius:8px;font-size:13px;outline:none}
@@ -1428,6 +1430,9 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .fw-row{display:flex;align-items:center;gap:6px;min-width:0}
 .fw-kot{font-size:9px;font-family:var(--mono);color:var(--blue);background:color-mix(in srgb,var(--blue) 12%,transparent);border-radius:5px;padding:1px 5px;flex-shrink:0}
 .fw-use{font-size:9px;font-family:var(--mono);color:var(--mute);flex-shrink:0}
+/* oda kullanim amaci: akis dugumunun ikinci satirinda, sigmazsa ... ile kisalir (tam metin dugum ipucunda) */
+.fw-kul{font-size:10px;color:var(--mute);flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fw-lbl{display:block;font-size:10.5px;color:var(--mute);margin:9px 0 3px}
 /* sartname-kat kapsami: kat dugumundeki sartname rozeti + kat panelindeki sartname satirlari */
 .fw-sart{display:inline-flex;align-items:center;gap:3px;font-size:9px;font-family:var(--mono);font-weight:700;color:var(--amber);background:color-mix(in srgb,var(--amber) 14%,transparent);border-radius:5px;padding:1.5px 5px;flex-shrink:0}
 .fw-sart.clk{cursor:pointer;transition:background .12s,color .12s}
@@ -13398,7 +13403,7 @@ function renderLokWorkspace(bina){
   const q=norm(LOKW.q||'').trim();
   let visible=null;
   if(q){ visible=new Set();
-    loks.forEach(l=>{ if(norm(l.name).indexOf(q)>=0){
+    loks.forEach(l=>{ if(norm(l.name+' '+lokKullanim(l)).indexOf(q)>=0){
       lokSubtreeIds(l.id).forEach(id=>visible.add(id));
       let p=l,g=0; while(p&&g++<10){ visible.add(p.id); p=p.parentId?getLok(p.parentId):null; }
     } });
@@ -13426,11 +13431,13 @@ function renderLokWorkspace(bina){
             <button class="btn btn-add" style="padding:6px 12px" onclick="lokwRenameSubmit('${esc(bina)}','${l.id}')">Kaydet</button>
             <button class="mini-btn" title="Vazgec (Esc)" onclick="lokwCancelEdit()">x</button>`
           :`<b class="lokw-name" title="Yeniden adlandirmak icin cift tiklayin" ondblclick="lokwStartEdit('${l.id}')">${esc(l.name)}</b>`}
+        ${!editing&&l.level==='oda'&&lokKullanim(l)?`<span class="lokw-kul" title="Kullanim amaci${l.alan!=null?' · '+esc(lokAlanTxt(l.alan))+' m2':''}">${esc(lokKullanim(l))}${l.alan!=null?` · ${esc(lokAlanTxt(l.alan))} m2`:''}</span>`:''}
         ${kids.length?`<span class="lokw-cnt">${kids.length} alt</span>`:''}
         ${useLbl?`<span class="lokw-use" title="Bu dala bagli kayitlar (alt lokasyonlar dahil)">${useLbl}</span>`:''}
         ${l.level==='kat'?`<input class="lokw-kot" value="${l.kot!=null?esc(l.kot):''}" placeholder="kot" title="Kat kotu - gunluk rapor girisinde otomatik dolar" onchange="lokwSetKot('${l.id}',this.value)">`:''}
         <div class="lokw-actions">
           ${childLevels.map(cl=>`<button class="mini-btn" style="width:auto;padding:0 7px;font-size:10px" title="${lokLevelLabel(cl)} ekle" onclick="lokwStartAdd('${l.id}','${cl}')">+ ${lokLevelLabel(cl)}</button>`).join('')}
+          ${l.level==='oda'||l.level==='kat'?`<button class="mini-btn" style="width:auto;padding:0 7px;font-size:10px" title="${l.level==='oda'?'Kullanim amaci / alan / not':'Kat notu'}" onclick="openLokBilgiModal('${l.id}')">${l.level==='oda'?'Bilgi':'Not'}</button>`:''}
           <button class="mini-btn" title="Yeniden adlandir" onclick="lokwStartEdit('${l.id}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
           <button class="mini-btn" title="Dali kopyala (alt lokasyonlarla birlikte)" onclick="lokwDuplicate('${esc(bina)}','${l.id}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
           <button class="mini-btn del" title="Sil" onclick="lokwDelete('${esc(bina)}','${l.id}')">${icoTrash()}</button>
@@ -13463,7 +13470,7 @@ function renderLokWorkspace(bina){
     <button class="btn btn-add" onclick="lokwStartAdd('','${levels[0]}')">${icoPlus()} ${lokLevelLabel(levels[0])} Ekle</button>
   </div>`;
   const tree=`<div class="lokw-tree">${rows.join('')||`<div class="empty" style="padding:26px"><p>${q?'Aramayla eslesen lokasyon yok':'Henuz lokasyon tanimlanmadi'}</p><span style="font-size:12px">${q?'Arama kutusunu temizleyin':'"'+lokLevelLabel(levels[0])+' Ekle" ile baslayin'+(levels[0]==='kat'?' veya Hizli Kat Uret kullanin':'')}</span></div>`}
-    <p class="lokw-hint">Cift tik: yeniden adlandir · Enter: ekle/kaydet · Esc: vazgec. Ekleme kutusu acik kalir, arka arkaya hizli giris yapilabilir. Kopyala butonu dali tum alt lokasyonlariyla cogaltir. Bagli metraj/alim/montaj kaydi olan dallar silinemez.</p>
+    <p class="lokw-hint">Cift tik: yeniden adlandir · Enter: ekle/kaydet · Esc: vazgec. Ekleme kutusu acik kalir, arka arkaya hizli giris yapilabilir. Kopyala butonu dali tum alt lokasyonlariyla cogaltir. Bagli metraj/alim/montaj kaydi olan dallar silinemez. "Bilgi" dugmesi odanin kullanim amacini / alanini / notunu, "Not" dugmesi kat notunu girer; toplu giris icin Akis gorunumundeki "Toplu Kurulum" (Excel) kullanilir.</p>
   </div>`;
   return `<div class="sel-wrap" style="max-width:1000px">${bc}${head}
     <div class="lokw-top">${stats}</div>
@@ -13560,6 +13567,7 @@ async function lokwDuplicate(bina,id){
   const copy=(node,parentId,newName)=>{
     const n={id:uid(),bina,parentId,level:node.level,name:newName};
     if(node.kot!=null)n.kot=node.kot;
+    LOK_BILGI_ALANLARI.forEach(f=>{ if(node[f]!=null&&String(node[f]).trim()!=='') n[f]=node[f]; }); // oda bilgisi kopyada kaybolmasin
     nodes.push(n);
     lokChildren(bina,node.id).forEach(c=>copy(c,n.id,c.name));
   };
@@ -13572,6 +13580,43 @@ async function lokwDuplicate(bina,id){
 }
 // silme: modal'daki lokDelete'in bagli-veri korumasi ve onayi aynen gecerli
 async function lokwDelete(bina,id){ await lokDelete(bina,id); render(); }
+/* ===== ODA / KAT BILGISI: kullanim amaci, alan (m2), not =====================================
+   Dugumde serbest JSON (proje_lokasyonlar.data) - MIGRATION YOK; alani olmayan eski dugum
+   "girilmemis" demektir. Toplu Kurulum sablonunun Odalar sayfasi ayni alanlari doldurur;
+   burasi tek tek duzenleme yoludur (akis paneli + genis kirilim alani penceresi).
+   pfx: giris kutularinin onek'i ('fwb_' panel, 'lbm_' pencere). Bos deger alani kaldirir. */
+function openLokBilgiModal(id){
+  const l=getLok(id); if(!l)return;
+  if(!guard('define',{bina:l.bina}))return;
+  const oda=l.level==='oda';
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal"><div class="modal-head"><h3>${esc(lokLevelLabel(l.level))} Bilgisi</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <p class="t-meta" style="margin-bottom:12px">${esc(l.bina)} / ${esc(lokPath(id))}</p>
+    ${oda?`<div class="frow"><label>Kullanim Amaci</label><input id="lbm_kul" value="${esc(l.kullanim||'')}" placeholder="orn. Elektrik odasi, Vestibul, Depo, Koridor"></div>
+    <div class="frow"><label>Alan (m2)</label><input id="lbm_alan" inputmode="decimal" value="${l.alan!=null?esc(lokAlanTxt(l.alan)):''}" placeholder="orn. 18,5"></div>`:''}
+    <div class="frow"><label>Not</label><textarea id="lbm_not" rows="3">${esc(l.not||'')}</textarea></div>
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="lokBilgiKaydet('${l.id}','lbm_')">Kaydet</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(()=>{ const el=document.getElementById(oda?'lbm_kul':'lbm_not'); if(el)el.focus(); },50);
+}
+async function lokBilgiKaydet(id,pfx){
+  const l=getLok(id); if(!l)return;
+  if(!guard('define',{bina:l.bina}))return;
+  const oku=k=>{ const el=document.getElementById(pfx+k); return el?String(el.value||'').trim():null; }; // null = bu yuzeyde yok
+  const kul=oku('kul'), alanRaw=oku('alan'), nt=oku('not');
+  const yeni={...l};
+  if(kul!==null){ if(kul) yeni.kullanim=kul; else delete yeni.kullanim; }
+  if(nt!==null){ if(nt) yeni.not=nt; else delete yeni.not; }
+  if(alanRaw!==null){
+    if(alanRaw===''){ delete yeni.alan; }
+    else{ const a=_bulkNum(alanRaw); if(!(a>=0)||!isFinite(a)){ toast('Alan sayi olmali (orn. 18,5)','err'); return; } yeni.alan=a; }
+  }
+  if(JSON.stringify(yeni)===JSON.stringify(l)){ if(pfx==='lbm_')closeModal(); toast('Degisiklik yok'); return; }
+  await sbUpdateProjeLokasyon(id,yeni);
+  Object.keys(l).forEach(k=>{ if(!(k in yeni)) delete l[k]; }); Object.assign(l,yeni);
+  logAction('define','Lokasyon bilgisi: '+l.bina+' / '+lokPath(id)+(l.kullanim?' - '+l.kullanim:''));
+  if(pfx==='lbm_')closeModal();
+  toast('Bilgi kaydedildi'); render();
+}
 async function lokwGenKats(bina){
   if(!guard('define',{bina}))return;
   const n=parseInt(document.getElementById('lokwg_n').value,10);
@@ -13947,9 +13992,9 @@ function renderBinaFlow(){
     const shared=lokIsShared(l);
     const sharedNames=shared?lokParentIds(l).map(p=>{const x=p?getLok(p):null;return x?x.name:'';}).filter(Boolean):[];
     const sharedTip=shared?'Ayni oda '+sharedNames.length+' parcaya bagli: '+sharedNames.join(' + '):'';
-    return `<div class="floww-node lok ${sel?'sel':''}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:${lc}" onclick="event.stopPropagation();flowSel('${l.id}')" title="${esc(lokPath(l.id))}${uTxt?' · '+esc(uTxt):''}${srtTip?' · '+esc(srtTip):''}${sharedTip?' · '+esc(sharedTip):''}">
+    return `<div class="floww-node lok ${sel?'sel':''}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:${lc}" onclick="event.stopPropagation();flowSel('${l.id}')" title="${esc(lokPath(l.id))}${l.level==='oda'&&lokKullanim(l)?' · '+esc(lokKullanim(l))+(l.alan!=null?' · '+esc(lokAlanTxt(l.alan))+' m2':''):''}${uTxt?' · '+esc(uTxt):''}${srtTip?' · '+esc(srtTip):''}${sharedTip?' · '+esc(sharedTip):''}">
       <div class="fw-row"><span class="lokw-lvl" style="--lc:${lc}">${lokLevelLabel(l.level).toUpperCase()}</span><span class="fw-name" style="flex:1">${esc(l.name)}</span>${shared?`<span class="fw-shared" title="${esc(sharedTip)}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M10 13a5 5 0 007.07 0l2.83-2.83a5 5 0 00-7.07-7.07L11.5 4.5"/><path d="M14 11a5 5 0 00-7.07 0L4.1 13.83a5 5 0 007.07 7.07L12.5 19.5"/></svg>${sharedNames.length}</span>`:''}${srts.length&&FLOWW.exp[l.id]?copyBtn(srts.map(s=>s.code).join('\n'),srts.length+' sartname kodu'):''}${srts.length?`<span class="fw-sart clk ${FLOWW.exp[l.id]?'on':''}" onclick="event.stopPropagation();flowToggleSrt('${l.id}')" title="Sartname dalini ac/kapat - kat altinda sartnameler, onlarin altinda ozel no'lar cikar"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>${srts.length}</span>`:''}</div>
-      <div class="fw-row" style="margin-top:3px">${l.level==='kat'&&l.kot!=null&&l.kot!==''?`<span class="fw-kot">Kot ${esc(l.kot)}</span>`:''}${uTxt?`<span class="fw-use">${uTxt}</span>`:''}</div>
+      <div class="fw-row" style="margin-top:3px">${l.level==='kat'&&l.kot!=null&&l.kot!==''?`<span class="fw-kot">Kot ${esc(l.kot)}</span>`:''}${l.level==='oda'&&lokKullanim(l)?`<span class="fw-kul">${esc(lokKullanim(l))}</span>`:''}${uTxt?`<span class="fw-use">${uTxt}</span>`:''}</div>
     </div>`;
   }).join('');
   return `<div class="sel-wrap" style="max-width:none">
@@ -13967,8 +14012,8 @@ function renderBinaFlow(){
       </div>
       <button class="btn btn-ghost" onclick="flowFit()">Sigdir</button>
       <span style="flex:1"></span>
-      ${can('define')?`<button class="btn btn-ghost" onclick="openBulkSetupModal()" title="Excel ile bina + katlar + odalar + oda ici proje kodlu malzemeleri tek seferde kur">${icoXls()} Toplu Kurulum</button>`:''}
-      ${can('define')?`<button class="btn btn-ghost" onclick="openBulkUndoModal()" title="Bir toplu kurulumun ekledigi kat/oda/kalem/malzemeleri geri al">${icoTrash()} Kurulumu Geri Al</button>`:''}
+      ${can('define')?`<button class="btn btn-ghost" onclick="openBulkSetupModal()" title="Excel ile bina + katlar + odalar (kullanim amaciyla) + oda ici ozel no'lu malzemeleri tek seferde kur">${icoXls()} Toplu Kurulum</button>`:''}
+      ${can('define')?`<button class="btn btn-ghost" onclick="openBulkUndoModal()" title="Bir toplu kurulumun ekledigi kat/oda/kalem/malzemeleri geri al (bagli kaydi olanlar silinmez)">${icoTrash()} Kurulumu Geri Al</button>`:''}
       ${can('define')?`<button class="btn btn-add" onclick="openBinaModal()">${icoPlus()} Bina Ekle</button>`:''}
     </div>
     <div class="floww-wrap">
@@ -14165,12 +14210,29 @@ function flowLokPanel(l){
       <p class="fw-path" style="margin-bottom:6px">Oda birden fazla ${esc(lokLevelLabel(pl).toLowerCase())} kesitini birlikte tamamliyorsa ikinci kopya acmayin - buradan baglayin.</p>
       <div class="fw-inline"><select class="fw-inp" id="fw_link">${cands.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select><button class="btn btn-add" style="padding:7px 12px" onclick="flowLinkParent('${l.id}')">Bagla</button></div>`:''}`;
   }
+  // ODA / KAT BILGISI: kullanim amaci, alan (m2), not - yetkili kisi panelden duzenler, digerleri okur
+  let bilgiHtml='';
+  if(l.level==='oda'){
+    const alanTxt=l.alan!=null?lokAlanTxt(l.alan):'';
+    bilgiHtml=`<div class="fw-sec">Oda Bilgisi</div>`+(d
+      ?`<label class="fw-lbl">Kullanim amaci</label><input class="fw-inp" id="fwb_kul" value="${esc(l.kullanim||'')}" placeholder="orn. Elektrik odasi, Vestibul, Depo" onkeydown="if(event.key==='Enter')lokBilgiKaydet('${l.id}','fwb_')">
+        <label class="fw-lbl">Alan (m2)</label><input class="fw-inp" id="fwb_alan" inputmode="decimal" value="${esc(alanTxt)}" placeholder="orn. 18,5" onkeydown="if(event.key==='Enter')lokBilgiKaydet('${l.id}','fwb_')">
+        <label class="fw-lbl">Not</label><input class="fw-inp" id="fwb_not" value="${esc(l.not||'')}" onkeydown="if(event.key==='Enter')lokBilgiKaydet('${l.id}','fwb_')">
+        <button class="btn btn-add" style="width:100%;margin-top:9px" onclick="lokBilgiKaydet('${l.id}','fwb_')">Bilgiyi Kaydet</button>`
+      :`<div class="fw-stat"><span>Kullanim amaci</span><b>${lokKullanim(l)?esc(lokKullanim(l)):'—'}</b></div><div class="fw-stat"><span>Alan (m2)</span><b>${l.alan!=null?esc(lokAlanTxt(l.alan)):'—'}</b></div>${l.not?`<p class="fw-path" style="margin-top:6px">${esc(l.not)}</p>`:''}`);
+  } else if(l.level==='kat'&&(d||l.not)){
+    bilgiHtml=`<div class="fw-sec">Kat Notu</div>`+(d
+      ?`<div class="fw-inline"><input class="fw-inp" id="fwb_not" value="${esc(l.not||'')}" placeholder="serbest not" onkeydown="if(event.key==='Enter')lokBilgiKaydet('${l.id}','fwb_')"><button class="btn btn-add" style="padding:7px 12px" onclick="lokBilgiKaydet('${l.id}','fwb_')">Kaydet</button></div>`
+      :`<p class="fw-path">${esc(l.not)}</p>`);
+  }
   return `<h3><span class="lokw-lvl" style="--lc:${lc};vertical-align:2px">${lokLevelLabel(l.level).toUpperCase()}</span> ${esc(l.name)}</h3>
     <div class="fw-path">${esc(b)} / ${esc(lokPath(l.id))}${lokIsShared(l)?' <span class="fw-shared" style="vertical-align:1px">'+lokParentIds(l).length+' parca</span>':''}</div>
+    ${l.level==='oda'&&lokKullanim(l)?`<div class="fw-path" style="color:var(--ink);font-weight:600">${esc(lokKullanim(l))}</div>`:''}
     <div class="fw-stat"><span>Alt lokasyon</span><b>${kids.length}</b></div>
     <div class="fw-stat"><span>Metraj dagilimi</span><b>${u.metraj}</b></div>
     <div class="fw-stat"><span>Alim kaydi</span><b>${u.alim}</b></div>
     <div class="fw-stat"><span>Montaj kaydi</span><b>${u.montaj}</b></div>
+    ${bilgiHtml}
     ${srtHtml}
     ${sharedHtml}
     ${d?`<div class="fw-sec">Yeniden Adlandir</div>
@@ -14203,81 +14265,261 @@ async function enableAksLevel(bina){
   toast('Aks / Bolge acildi - artik katlarin altina aks ekleyebilirsiniz');
   render();
 }
-/* ===== TOPLU KURULUM (EXCEL): bina -> katlar -> odalar -> oda ici proje kodlu malzemeler =====
-   Tek calisma kitabiyla butun yapi kurulur: "Katlar" sayfasi kat+kot+bagli sartnameler,
-   "Odalar" sayfasi kat altindaki oda kodlari, "Malzemeler" sayfasi oda ici yerlestirmeler
-   (proje kodu = Poz No, urun kutuphaneden bulunur/olusturulur, adetler oda bazinda
-   lokTargets dagilimina yazilir => akis diyagrami ve tum ilerleme zinciri kendiliginden calisir).
-   Ayni proje kodu birden fazla odada gecerse TEK kalem olur, adetler odalara dagitilir.
-   Mevcut kat/oda/kalem atlanir - ayni dosya iki kez yuklense de mukerrer olusmaz. */
+/* ===== TOPLU KURULUM (EXCEL): bina -> kat -> (aks / fragment) -> oda -> malzeme ============
+   Tek calisma kitabiyla butun yapi kurulur:
+     "Katlar"      kat + kot + not + kapsayan sartnameler
+     "Odalar"      katlarin odalari: KULLANIM AMACI (oda ne ise yarar), alan, not; binanin kirilim
+                   zincirinde varsa AKS / FRAGMENT sutunlariyla (oda dogru parcanin altina oturur)
+     "Malzemeler"  oda / kat ici yerlestirmeler (OZEL NO = sistematik takip no; urun kutuphaneden
+                   bulunur ya da olusturulur, adetler oda bazinda lokTargets dagilimina yazilir)
+   Ayni ozel no birden fazla odada gecerse TEK kalem olur, adetler odalara dagitilir.
+
+   KURALLAR (her biri bir hatadan dogdu - bkz. dosyanin altindaki testler):
+   - KAT ADI TOLERANSLI eslesir (bulkKatKey): "1", "1.KAT", "Kat 1" ayni kattir. Onceden "1.KAT"
+     binadaki "1" katinin yanina ikinci bir kat aciyordu.
+   - Oda numarasi KAT BAZINDA tekildir (lokInsertNames ile ayni kural): "Oda 1" iki katta ayri
+     odalardir. Onceden bina genelinde tekil sayiliyor, ikinci kattaki "Oda 1" sessizce atlaniyordu.
+   - ODA ADI / KULLANIM AMACI artik dugumde saklanir (l.kullanim, l.alan, l.not - serbest JSON,
+     migration yok). Eski sablonda "bilgi amacli" denip hic okunmuyordu.
+   - Kurulan KALEMIN kat/kot alani yazilir (Kat Ata ile ayni kural). Yazilmayinca kalem Kat
+     Paneli'nde "Kat bilgisi girilmemis" altina dusuyor, akista "0 bu katta" gorunuyordu.
+   - Mevcut kayit silinmez/atlanmaz-bozulmaz: dolu hucre, kayitta o alan BOSSA yazilir; FARKLI
+     bir deger varsa onizlemede "fark" olarak gorunur, yalniz "ustune yaz" secilirse degisir.
+   - Yazma HATA FIRLATAN katmandan gecer (SB_STRICT): guardedSafe hatayi yutuyordu, yarim kalan
+     kurulum "Kurulum tamam" diyordu. Geri alma kaydi yazmadan ONCE saklanir, kalicilik
+     hatasinda kurulum durur ve kullaniciya yarim kaldigi soylenir.
+   - Hata/uyari satir numarasi EXCEL'deki gercek satirdir (bos satirlar sayilir). */
 let _BULK=null;
 let _BULKUNDO=null;
-function openBulkSetupModal(){
+
+/* ---- yardimcilar ---- */
+// "1", "1.KAT", "1. Kat", "Kat 1", "1 kat" -> ayni kat ('n:1'); digerleri ('CATI') yalniz harf/bosluk
+// farkina duyarsiz ('s:cati'). Kat Paneli'nin katpKey kuralinin ("kat 1" yazimini da kapsayan) kardesi.
+function bulkKatKey(ad){
+  const s=norm(ad).trim().replace(/\s+/g,' ');
+  const m=s.match(/^(?:kat\s*)?(-?\d{1,3})(?:\s*\.?\s*kat)?$/);
+  return m?'n:'+parseInt(m[1],10):'s:'+s;
+}
+// virgullu ondalik ("18,5") kabul eder; gecersizse NaN
+function _bulkNum(v){
+  if(typeof v==='number') return v;
+  const s=String(v==null?'':v).trim().replace(/\s+/g,'');
+  if(s==='') return NaN;
+  return Number(s.replace(',','.'));
+}
+function _bulkHucre(row,ix){ return ix>=0&&row[ix]!=null?String(row[ix]).trim():''; }
+function _bulkBosSatir(row){ return !row||!row.some(c=>String(c==null?'':c).trim()!==''); }
+// sayfayi ADIYLA bulur (bulanik eslesme YOK: ORNEK / LISTELER sayfalari yanlislikla okunmasin).
+// Donen rows[0] baslik satiridir; Excel satir no = r0 + i + 1.
+function _bulkSayfa(wb,adlar){
+  const f=s=>norm(s).replace(/[^a-z0-9]/g,'');
+  const hedef=adlar.map(f);
+  const ad=(wb.SheetNames||[]).find(n=>hedef.indexOf(f(n))>=0);
+  if(!ad) return null;
+  const ws=wb.Sheets[ad];
+  let rows=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:true,defval:''});
+  let r0=0; try{ r0=ws['!ref']?XLSX.utils.decode_range(ws['!ref']).s.r:0; }catch(e){}
+  const hi=rows.findIndex(r=>!_bulkBosSatir(r));
+  if(hi<0) return {ad,rows:[],r0};
+  return {ad,rows:rows.slice(hi),r0:r0+hi};
+}
+// kat dugumunun kalemlere yazilan kat/kot degeri: saveKatAta ile AYNI kural
+// (kat no varsa o, yoksa kot, o da yoksa ad) - boylece Kat Paneli ve akis ayni kata cozer
+function bulkKatDegeri(kn){
+  const no=parseKatNo(kn.name);
+  const kot=(kn.kot!=null&&kn.kot!=='')?ktopKotFmt(kn.kot):'';
+  return {kat:no!=null?String(no):(kot||String(kn.name||'')),kot};
+}
+// oda / kat ek bilgisi alanlari (dugumde serbest JSON): kullanim amaci, alan (m2), not
+const BULK_ALAN_AD={kullanim:'Kullanim amaci',alan:'Alan (m2)',not:'Not',kot:'Kot'};
+function _bulkBinaBilgi(bina){
+  if(!bina||!projBuildings().includes(bina)) return null;
+  const loks=binaLoklar(bina), cfg=binaGiris(bina);
+  return {parcali:binaParcali(bina),levels:(cfg.levels&&cfg.levels.length)?cfg.levels:LOK_DEFAULT_LEVELS,
+    kat:loks.filter(l=>l.level==='kat').length,oda:loks.filter(l=>l.level==='oda').length,
+    kullanimli:loks.filter(l=>l.level==='oda'&&String(l.kullanim||'').trim()).length};
+}
+function _bulkVarsayilanBina(){
+  const s=(typeof FLOWW==='object'&&FLOWW)?FLOWW.sel:null;
+  if(s&&String(s).slice(0,2)==='b:') return String(s).slice(2);
+  const l=s?getLok(s):null; return l?l.bina:'';
+}
+
+/* ---- pencere ---- */
+function openBulkSetupModal(preBina,yeniAd){
   if(!guard('define'))return;
-  _BULK=null;
+  _BULK=null; closeModal();
   const binas=projBuildings();
+  const sec=(preBina&&(preBina==='__new'||binas.includes(preBina)))?preBina:(_bulkVarsayilanBina()||binas[0]||'__new');
+  const bi=sec==='__new'?null:_bulkBinaBilgi(sec);
+  const engel=bi&&!bi.parcali;
+  const durum=sec==='__new'
+    ?`Yeni bina kurulacak: kirilim zinciri dosyada kullandiginiz seviyelere gore (Kat &gt; Oda, varsa Aks / Fragment) otomatik belirlenir. Yeni binada henuz sartname olmadigi icin Malzemeler sayfasi kullanilamaz.`
+    :(bi?(bi.parcali
+      ?`Kirilim zinciri: <b>${bi.levels.map(lokLevelLabel).join(' &gt; ')}</b> · ${bi.kat} kat, ${bi.oda} oda${bi.oda?` (${bi.kullanimli} tanesinin kullanim amaci girili)`:''}.`
+      :`<span style="color:var(--amber)">Bu bina "Tum Giris" modelinde - kat/oda kurulumu icin once <b>Giris Modeli</b>'ni Parcali yapin (rapor girisinde Kat zorunlu hale gelir). Malzemeler sayfasindaki oda/kat'siz (bina geneli) satirlar yine kurulabilir.</span>`):'');
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal"><div class="modal-head"><h3>Toplu Kurulum (Excel)</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
-    <p style="font-size:12px;color:var(--mute);margin-bottom:12px">Tek Excel dosyasiyla binanin katlarini, katlarin odalarini ve odalara/katlara yerlestirilmis proje kodlu malzemeleri (orn. prohodkalar) kurar. Sartname kodunu bilmeniz gerekmez: BOLUM (orn. Tava) + KAT bilgisinden dogru sartname otomatik bulunur. Once sablonu indirin, doldurun, sonra buraya yukleyin. Mevcut kayitlar atlanir - ayni dosyayi tekrar yuklemek zarar vermez.</p>
-    <div class="frow"><label>Bina *</label><select id="bs_bina" onchange="document.getElementById('bs_newWrap').style.display=this.value==='__new'?'block':'none'">
-      ${binas.map(b=>`<option>${esc(b)}</option>`).join('')}<option value="__new">+ Yeni bina olustur</option></select></div>
-    <div class="frow" id="bs_newWrap" style="display:none"><label>Yeni Bina Kodu</label><input id="bs_newBina" placeholder="orn. 00UYB"></div>
-    <div class="frow"><label>Excel Dosyasi</label>
+    <p style="font-size:12px;color:var(--mute);margin-bottom:12px;line-height:1.55">Tek Excel dosyasiyla binanin <b>katlarini</b>, katlardaki <b>odalari (kullanim amaciyla birlikte)</b> ve odalara / katlara yerlestirilen <b>ozel no'lu malzemeleri</b> kurar. Sartname kodunu bilmeniz gerekmez: BOLUM (orn. Tava) + KAT bilgisinden dogru sartname otomatik bulunur. Mevcut kayit silinmez; ayni dosyayi tekrar yuklemek mukerrer kayit olusturmaz. Yuklemeden sonra <b>onizleme</b> gelir - siz onaylamadan hicbir sey yazilmaz.</p>
+    <div class="frow"><label>Bina *</label><select id="bs_bina" onchange="openBulkSetupModal(this.value,(document.getElementById('bs_newBina')||{}).value)">
+      ${binas.map(b=>`<option ${b===sec?'selected':''}>${esc(b)}</option>`).join('')}<option value="__new" ${sec==='__new'?'selected':''}>+ Yeni bina olustur</option></select></div>
+    <div class="frow" id="bs_newWrap" style="display:${sec==='__new'?'block':'none'}"><label>Yeni Bina Kodu</label><input id="bs_newBina" placeholder="orn. 00UYB" value="${esc(yeniAd||'')}"></div>
+    ${durum?`<p style="font-size:11.5px;color:var(--mute);margin:-4px 0 12px;line-height:1.5">${durum}</p>`:''}
+    <div class="frow"><label>1) Sablon</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost" title="Bos sablon: yalniz basliklar, ORNEK, LISTELER ve OKUBENI sayfalariyla" onclick="downloadBulkTemplate(false)">${icoXls()} Bos Sablon Indir</button>
+        ${bi&&bi.parcali&&(bi.kat||bi.oda)?`<button class="btn btn-ghost" title="Binadaki mevcut kat ve odalar Katlar / Odalar sayfalarina doldurulur - kullanim amaclarini Excel'de girip geri yukleyin" onclick="downloadBulkTemplate(true)">${icoXls()} Mevcut Yapiyla Dolu Sablon</button>`:''}
+      </div></div>
+    <div class="frow"><label>2) Doldurulmus Dosya</label>
       <div class="drop" onclick="document.getElementById('bs_file').click()">${icoXls()}<div style="margin-top:6px">Doldurulmus sablonu secin (.xlsx)</div></div>
       <input type="file" id="bs_file" accept=".xlsx,.xls" class="hidden" onchange="bulkSetupFile(event)">
     </div>
-  </div><div class="modal-foot"><button class="btn btn-ghost" style="margin-right:auto" onclick="downloadBulkTemplate()">${icoXls()} Sablon Indir</button><button class="btn btn-ghost" onclick="closeModal()">Iptal</button></div></div></div>`;
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
 }
-function downloadBulkTemplate(){
+
+/* ---- sablon ---- */
+function downloadBulkTemplate(dolu){
+  const bina=(document.getElementById('bs_bina')||{}).value||'';
+  const mevcut=(bina&&bina!=='__new'&&projBuildings().includes(bina))?bina:'';
+  const bi=mevcut?_bulkBinaBilgi(mevcut):null;
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
-    ['KAT','KOT','SARTNAMELER (virgulle, opsiyonel)'],
-    ['1.KAT','0','AKU.0179.00UYB.0.EK.TB0002, AKU.0130.00UYB.0.EM.TB0002'],
-    ['2.KAT','4200',''],
-    ['CATI','','']
-  ]),'Katlar');
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
-    ['KAT','ODA KODU','ODA ADI (opsiyonel - bilgi amacli)'],
-    ['1.KAT','00UYB10R001','Vestibul'],
-    ['1.KAT','00UYB10R002','Elektrik odasi'],
-    ['2.KAT','00UYB11R001','Koridor']
-  ]),'Odalar');
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
-    ['OZEL NO (ops.)','ODA KODU (ops.)','KAT (ops. - oda yoksa)','BOLUM (orn. Tava)','URUN ADI / GECIS ISMI','URUN KODU (opsiyonel)','ADET','SARTNAME KODU (ops. - bolum varsa otomatik)','BIRIM (opsiyonel)'],
-    ['00UYB12EM0044','','1.KAT','Tava','SRE-UO(1)ASVS-ZKD-D25-C4','','1','','adet'],
-    ['00UYB12EM0051','00UYB10R001','','Tava','SRE-UL(1)ASVS-ZSD-100x100-C4','','1','','adet'],
-    ['00UYB12EM0052','','2.KAT','','SRE-UL(1)ASVS-ZSD-150x150-C4','','2','AKU.0130.00UYB.0.EM.TB0002','adet']
-  ]),'Malzemeler');
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
+  const sayfa=(rows,genis,filtre)=>{ const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=genis.map(w=>({wch:w}));
+    if(filtre) ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:Math.max(rows.length-1,0),c:genis.length-1}})};
+    return ws; };
+  const katBaslik=['KAT *','KOT','SARTNAMELER (virgulle)','NOT'];
+  const odaBaslik=['KAT *','AKS / BOLGE','FRAGMENT','ODA KODU *','KULLANIM AMACI','ALAN (m2)','NOT'];
+  const malBaslik=['OZEL NO','POZ NO','URUN ADI / GECIS ISMI *','URUN KODU','ADET *','BIRIM','KAT','ODA KODU','BOLUM','SARTNAME KODU'];
+  const chainMetin=bi&&bi.parcali?bi.levels.map(lokLevelLabel).join(' > '):'Kat > (Aks) > (Fragment) > Oda';
+  // 1) OKUBENI - ilk sayfa
+  XLSX.utils.book_append_sheet(wb,sayfa([
     ['TOPLU KURULUM SABLONU - NASIL KULLANILIR'],
+    [mevcut?('Bina: '+mevcut+'   |   Hazirlanma: '+new Date().toLocaleDateString('tr-TR')+(dolu?'   |   MEVCUT YAPIYLA DOLU SABLON':'')):('Genel sablon   |   Hazirlanma: '+new Date().toLocaleDateString('tr-TR'))],
+    ['Kirilim zinciri: '+chainMetin],
     [''],
-    ['1) Katlar sayfasi: her satir bir kat. KOT bos birakilabilir. SARTNAMELER sutununa'],
-    ['   virgulle sartname kodlari yazarsaniz kat o sartnamelerin kapsamina eklenir.'],
-    ['2) Odalar sayfasi: her satir bir oda. KAT sutunu Katlar sayfasindaki adla ayni olmali.'],
-    ['3) Malzemeler sayfasi: her satir bir yerlestirme (orn. prohodka). OZEL NO ayni olan'],
-    ['   satirlar tek kaleme birlesir, adetler odalara/katlara dagitilir. URUN ADI kutuphanede'],
-    ['   aranir (cift dilli adin tek yarisi da yeter, orn. sadece SRE-... kismi); yoksa yeni'],
-    ['   malzeme olarak eklenir. OZEL NO, ayni urunden cok oldugunda kullanilan sistematik'],
-    ['   takip numarasidir (POZ NO DEGIL - poz tekillik kuralina takilmaz); raporcular sahada'],
-    ['   bu no ile arayip bulur. Gercek poz varsa ayri POZ NO sutunu ekleyebilirsiniz.'],
-    ['4) SARTNAME: kodu biliyorsaniz SARTNAME KODU sutununa yazin. Bilmiyorsaniz BOLUM'],
-    ['   (orn. Tava, Topraklama, Aydinlatma) yazmaniz yeter: sistem KAT + BOLUM bilgisinden'],
-    ['   dogru sartnameyi kendisi bulur (orn. 1.KAT + Tava -> 1-5 Tava sartnamesi). Ayni'],
-    ['   bolumde birden fazla aday varsa satir hata listesinde kodlariyla gosterilir.'],
-    ['5) ODA KODU bossa KAT sutunu yazilabilir: yerlestirme dogrudan kata baglanir (odalar'],
-    ['   henuz girilmediyse kat bazli calisma). Ikisi de bossa kalem bina geneli olur.'],
-    ['6) Mevcut kat/oda/kalem atlanir - dosyayi guncelleyip tekrar yukleyebilirsiniz.']
-  ]),'OKUBENI');
-  XLSX.writeFile(wb,'toplu_kurulum_sablonu.xlsx');
+    ['BU DOSYA NE YAPAR'],
+    ['  Bir binanin KATLARINI, katlardaki ODALARI (ne ise yaradiklariyla birlikte) ve odalara / katlara'],
+    ['  yerlestirilen MALZEMELERI (ozel no ile takip edilen kalemler) tek seferde kurar.'],
+    ['  Mevcut hicbir kayit SILINMEZ. Bos hucre hicbir seyi silmez.'],
+    [''],
+    ['ADIMLAR'],
+    ['  1) Yalnizca gereken sayfalari doldurun: Katlar, Odalar, Malzemeler. Ustteki sayfa alttakinin kaynagidir:'],
+    ['     Odalar sayfasindaki KAT, Katlar sayfasinda ya da binada bulunmali; Malzemeler sayfasindaki ODA KODU,'],
+    ['     Odalar sayfasinda ya da binada bulunmali.'],
+    ['  2) Toplu Kurulum penceresinde binayi secip dosyayi yukleyin. Bu asamada VERITABANINA HICBIR SEY YAZILMAZ.'],
+    ['  3) Onizlemeyi okuyun: yeni kayitlar, guncellenecek alanlar, uyarilar ve hatali satirlar (Excel satir'],
+    ['     numarasiyla) listelenir. Hatali satirlar atlanir, kalanlar kurulur.'],
+    ['  4) "Kur" ile onaylayin. Yanlis olduysa "Kurulumu Geri Al" ile geri alabilirsiniz.'],
+    [''],
+    ['SAYFALAR VE SUTUNLAR   (* = zorunlu)'],
+    [''],
+    ['  KATLAR'],
+    ['    KAT *                 Kat adi. "1", "1.KAT", "1. Kat" ve "Kat 1" AYNI kattir: binada "1" varsa yenisi acilmaz.'],
+    ['    KOT                   Kat kotu, sayi (orn. 4200). Binadaki mevcut katlarda hangi birim kullaniliyorsa onu yazin.'],
+    ['    SARTNAMELER           Bu katin kapsamina eklenecek sartname kodlari, virgulle ayrilmis (opsiyonel).'],
+    ['    NOT                   Serbest not (opsiyonel).'],
+    [''],
+    ['  ODALAR'],
+    ['    KAT *                 Odanin bulundugu kat (Katlar sayfasinda ya da binada bulunan bir kat).'],
+    ['    AKS / BOLGE           Opsiyonel. YALNIZ binanin kirilim zincirinde Aks varsa yazilir.'],
+    ['    FRAGMENT              Opsiyonel. YALNIZ zincirde Fragment varsa yazilir. Bossa oda dogrudan kata (ya da aksa) baglanir.'],
+    ['    ODA KODU *            Odanin kodu / numarasi. AYNI KATTA tek olmali; baska katta ayni kod ayri bir oda sayilir.'],
+    ['    KULLANIM AMACI        Odanin ne ise yaradigi (orn. Elektrik odasi, Vestibul, Depo, Koridor, Pompa odasi).'],
+    ['    ALAN (m2)             Sayi (orn. 18,5). Opsiyonel.'],
+    ['    NOT                   Serbest not (opsiyonel).'],
+    [''],
+    ['  MALZEMELER   (her satir bir yerlestirme)'],
+    ['    OZEL NO               Ayni urunden cok oldugunda kullanilan sistematik takip numarasi (POZ NO DEGIL). Ayni OZEL NO'],
+    ['                          birden fazla satirda gecerse TEK kalem olur, adetler odalara / katlara dagitilir.'],
+    ['    POZ NO                Opsiyonel. Gercek poz numarasi varsa yazilir.'],
+    ['    URUN ADI / GECIS ISMI *  Urunun adi. Kutuphanede aranir (cift dilli adin tek yarisi da yeter); yoksa yeni malzeme eklenir.'],
+    ['    URUN KODU             Opsiyonel. Yazarsaniz kutuphanede once kodla aranir.'],
+    ['    ADET *                Sayi. Ondalik icin virgul ya da nokta kullanilabilir.'],
+    ['    BIRIM                 Opsiyonel (adet, m, m2, kg, takim ...). Bossa urunun kutuphane birimi kullanilir.'],
+    ['    KAT / ODA KODU        Yerlestirmenin yeri. ODA KODU varsa oda; yoksa KAT yazilirsa dogrudan kata baglanir. Ikisi de'],
+    ['                          bossa kalem bina geneli olur. Ayni oda kodu birden fazla katta varsa KAT sutununu da yazin.'],
+    ['    BOLUM / SARTNAME KODU Sartname kodunu biliyorsaniz SARTNAME KODU yazin. Bilmiyorsaniz BOLUM (orn. Tava) yeter: sistem'],
+    ['                          KAT + BOLUM bilgisinden sartnameyi kendisi bulur. Birden fazla aday varsa satir hata verir,'],
+    ['                          adaylar kodlariyla listelenir.'],
+    [''],
+    ['MEVCUT KAYITLAR NASIL ISLENIR'],
+    ['  - Dosyadaki DOLU hucre, kayitta o alan BOSSA yazilir (orn. odanin kullanim amaci).'],
+    ['  - Kayitta zaten FARKLI bir deger varsa onizlemede "Fark" olarak listelenir ve korunur. Onizlemedeki'],
+    ['    "Dosyadaki degerler mevcut kayitlarin ustune yazilsin" secilirse guncellenir (eski deger geri alinabilir).'],
+    ['  - Mevcut kalemlere yerlestirme EKLENMEZ: ayni sartname + ozel no + poz + urun varsa kalem "mevcut" sayilip atlanir.'],
+    ['  - "Mevcut Yapiyla Dolu Sablon", binadaki kat ve odalari Katlar / Odalar sayfalarina doldurur: kullanim amaclarini'],
+    ['    Excel\'de toplu girip geri yukleyebilirsiniz.'],
+    [''],
+    ['SIK YAPILAN HATALAR'],
+    ['  - ORNEK sayfasindaki satirlari Katlar / Odalar / Malzemeler sayfalarina kopyalamak (o sayfa okunmaz, yalniz gorunum icindir).'],
+    ['  - Sayfa adlarini (Katlar, Odalar, Malzemeler) ya da ilk satirdaki baslik adlarini degistirmek. Sutun SIRASI onemsizdir.'],
+    ['  - Excel\'in kodlari sayiya cevirmesi: 00UYB10R001 gibi kodlar metin kalir; "+4.200" gibi degerler sayiya donusebilir.'],
+    ['  - Yeni binada Malzemeler sayfasini doldurmak: yeni binanin henuz sartnamesi yoktur, once sartnameleri tanimlayin.'],
+    ['  - Tum Giris modelindeki binada kat / oda girmek: once binayi Parcali Giris modeline alin.'],
+    ['  - Ayni satiri iki kez yazmak: ikincisi "zaten listelenmis" uyarisiyla yok sayilir.']
+  ],[118]),'OKUBENI');
+  // 2) Katlar / Odalar / Malzemeler: yalniz baslik (dolu sablonda mevcut yapi)
+  const katSatir=[katBaslik], odaSatir=[odaBaslik];
+  if(dolu&&mevcut){
+    binaKatlar(mevcut).forEach(k=>katSatir.push([k.name,k.kot!=null?k.kot:'',katSartnameleri(mevcut,k.id).map(s=>s.code).join(', '),k.not||'']));
+    const katSira=new Map(binaKatlar(mevcut).map((k,i)=>[k.id,i]));
+    binaLoklar(mevcut).filter(l=>l.level==='oda').map(o=>({o,k:lokKatOf(o.id)})).sort((a,b)=>{
+      const ka=a.k?katSira.get(a.k.id):1e9, kb=b.k?katSira.get(b.k.id):1e9;
+      return ka!==kb?ka-kb:String(a.o.name).localeCompare(String(b.o.name),'tr',{numeric:true}); })
+    .forEach(({o,k})=>{
+      let aks='',frag=''; let n=o.parentId?getLok(o.parentId):null, g=0;
+      while(n&&n.level!=='kat'&&g++<6){ if(n.level==='fragment'&&!frag) frag=n.name; else if(n.level==='aks'&&!aks) aks=n.name; n=n.parentId?getLok(n.parentId):null; }
+      odaSatir.push([k?k.name:'',aks,frag,o.name,o.kullanim||'',o.alan!=null?o.alan:'',o.not||'']); });
+  }
+  XLSX.utils.book_append_sheet(wb,sayfa(katSatir,[16,10,46,30],true),'Katlar');
+  XLSX.utils.book_append_sheet(wb,sayfa(odaSatir,[16,16,16,20,38,11,30],true),'Odalar');
+  XLSX.utils.book_append_sheet(wb,sayfa([malBaslik],[18,14,42,16,9,9,14,18,20,34],true),'Malzemeler');
+  // 3) ORNEK - okunmaz; ornek satirlar veri sayfalarinda DURMAZ (silinmezse gercek kayit olurlardi)
+  XLSX.utils.book_append_sheet(wb,sayfa([
+    ['ORNEK - BU SAYFA OKUNMAZ. Satirlari kopyalayip ilgili sayfaya (Katlar / Odalar / Malzemeler) yapistirabilirsiniz.'],
+    [''],
+    ['KATLAR sayfasi ornegi'],
+    katBaslik,
+    ['1.KAT',0,'AKU.0179.00UYB.0.EK.TB0002, AKU.0130.00UYB.0.EM.TB0002','Ana giris kati'],
+    ['2.KAT',4200,'',''],
+    ['CATI','','',''],
+    [''],
+    ['ODALAR sayfasi ornegi'],
+    odaBaslik,
+    ['1.KAT','','','00UYB10R001','Vestibul',24.5,''],
+    ['1.KAT','','','00UYB10R002','Elektrik odasi',18,'Ana pano burada'],
+    ['2.KAT','','F-5','00UYB11R001','Koridor','','Fragment yalniz zincirde varsa'],
+    [''],
+    ['MALZEMELER sayfasi ornegi'],
+    malBaslik,
+    ['00UYB12EM0044','','SRE-UO(1)ASVS-ZKD-D25-C4','',1,'adet','1.KAT','','Tava',''],
+    ['00UYB12EM0051','','SRE-UL(1)ASVS-ZSD-100x100-C4','',1,'adet','','00UYB10R001','Tava',''],
+    ['00UYB12EM0052','','SRE-UL(1)ASVS-ZSD-150x150-C4','',2,'adet','2.KAT','','','AKU.0130.00UYB.0.EM.TB0002']
+  ],[16,16,16,30,38,11,14,18,20,34]),'ORNEK');
+  // 4) LISTELER - gecerli degerler (binaya ozel)
+  const bolumler=(DB.proje.sections||[]).slice().sort((a,b)=>String(a).localeCompare(String(b),'tr'));
+  const sartnameler=mevcut?(DB.proje.sartnames||[]).filter(x=>x.bina===mevcut).sort((a,b)=>String(a.code).localeCompare(String(b.code),'tr')):[];
+  const katlar=mevcut?binaKatlar(mevcut):[];
+  const birimler=['adet','m','m2','m3','kg','takim','set','ruloda'];
+  const n=Math.max(bolumler.length,sartnameler.length,katlar.length,birimler.length);
+  const listeRows=[['BOLUM (birebir yazin)','','SARTNAME KODU','BOLUMU','ADI','KAPSADIGI KATLAR','','MEVCUT KAT','KOT','ODA SAYISI','','BIRIM']];
+  for(let i=0;i<n;i++){
+    const s=sartnameler[i], k=katlar[i];
+    listeRows.push([bolumler[i]||'','',s?s.code:'',s?(s.section||''):'',s?(s.name&&s.name!==s.code?s.name:''):'',s?sartKatIds(s).map(id=>(getLok(id)||{}).name).filter(Boolean).join(', '):'','',
+      k?k.name:'',k?(k.kot!=null?k.kot:''):'',k?binaLoklar(mevcut).filter(l=>l.level==='oda'&&(lokKatOf(l.id)||{}).id===k.id).length:'','',birimler[i]||'']);
+  }
+  XLSX.utils.book_append_sheet(wb,sayfa(listeRows,[24,3,34,20,30,30,3,14,10,11,3,10]),'LISTELER');
+  XLSX.writeFile(wb,'toplu_kurulum_sablonu'+(mevcut?'_'+mevcut.replace(/[^\w.-]+/g,'_'):'')+(dolu?'_dolu':'')+'.xlsx');
   toast('Sablon indirildi');
 }
+
+/* ---- dosyayi oku ---- */
 function bulkSetupFile(e){
   const f=e.target.files[0]; if(!f)return;
   const sel=document.getElementById('bs_bina').value;
   const isNew=sel==='__new';
   const bina=isNew?(document.getElementById('bs_newBina').value||'').trim():sel;
   if(!bina){ toast('Bina secin veya yeni bina kodu girin','err'); e.target.value=''; return; }
-  if(isNew&&DB.proje.buildings.includes(bina)){ toast('Bu bina zaten var - listeden secin','err'); e.target.value=''; return; }
+  if(isNew&&projBuildings().some(b=>norm(b)===norm(bina))){ toast('Bu bina zaten var - listeden secin','err'); e.target.value=''; return; }
   const r=new FileReader();
   r.onload=ev=>{ try{
     const wb=XLSX.read(ev.target.result,{type:'binary'});
@@ -14286,106 +14528,235 @@ function bulkSetupFile(e){
   }catch(err){ console.error(err); toast('Excel okunamadi: '+(err.message||err),'err'); } };
   r.readAsBinaryString(f);
 }
+
+/* ---- ayristirici: dosya -> kurulum plani (hicbir sey yazmaz) ---- */
 function _bulkParse(wb,bina,isNew){
-  const p={bina,isNew,kats:[],odas:[],specs:[],sartKat:new Map(),errors:[],skip:{kat:0,oda:0,spec:0}};
-  const exKats=isNew?[]:binaLoklar(bina).filter(l=>l.level==='kat');
-  const exOdas=isNew?[]:binaLoklar(bina).filter(l=>l.level==='oda');
-  const katByName=new Map(exKats.map(k=>[norm(k.name),{id:k.id,exists:true}]));
-  const odaByKod=new Map(exOdas.map(o=>[norm(o.name),{id:o.id,exists:true,katId:(lokKatOf(o.id)||{}).id||null}]));
+  const p={bina,isNew,kats:[],aks:[],frags:[],odas:[],specs:[],sartKat:new Map(),patches:[],
+    errors:[],warns:[],notes:[],skip:{kat:0,oda:0,spec:0},levels:null,over:false,blok:'',sayfaVar:{}};
+  const E=(s,r,m)=>p.errors.push({s,r,m}), W=(s,r,m)=>p.warns.push({s,r,m}), N=(s,r,m)=>p.notes.push({s,r,m});
+  const parcaliOk=isNew||binaParcali(bina);
+  const cfg=isNew?null:binaGiris(bina);
+  const chain=isNew?['kat','aks','fragment','oda']:((cfg.levels&&cfg.levels.length)?cfg.levels:LOK_DEFAULT_LEVELS);
+  const has=lv=>chain.indexOf(lv)>=0;
+  const used={aks:false,fragment:false};
+  const loks=isNew?[]:binaLoklar(bina);
   const sarts=(DB.proje.sartnames||[]).filter(x=>x.bina===bina);
   const srByCode=new Map(sarts.map(x=>[norm(x.code),x]));
-  // SARTNAME COZUMU: kod verildiyse kodla (bolum verildiyse ayni bolumdeki tercih edilir);
-  // kod yoksa BOLUM + KAT kapsamindan bulunur (orn. 1.KAT + Tava -> "1-5 Tava" sartnamesi).
-  // Kapsam belirsizse veya bolumde birden fazla adaydan secilemiyorsa hata satiri uretilir.
+  const sartEnt=sr=>{ let e=p.sartKat.get(sr.id); if(!e){ e={sr,katIds:new Set(),odaIds:new Set()}; p.sartKat.set(sr.id,e); } return e; };
+  // --- kat indeksi: birebir ad, sonra tolerans (1 = 1.KAT = Kat 1) ---
+  const katById=new Map(), katExact=new Map(), katKey=new Map();
+  const addKat=(node,exists)=>{ const e={id:node.id,node,exists};
+    katById.set(node.id,e); katExact.set(norm(node.name),e);
+    const k=bulkKatKey(node.name); if(!katKey.has(k)) katKey.set(k,[]); katKey.get(k).push(e); return e; };
+  loks.filter(l=>l.level==='kat').forEach(l=>addKat(l,true));
+  const findKat=ad=>{ const s=String(ad==null?'':ad).trim(); if(!s) return null;
+    const ex=katExact.get(norm(s)); if(ex) return {e:ex};
+    const arr=katKey.get(bulkKatKey(s))||[];
+    if(arr.length===1) return {e:arr[0],mapped:true};
+    if(arr.length>1) return {amb:arr};
+    return null; };
+  const noted=new Set();
+  const notEsle=(sayfa,rn,ad,ent)=>{ const k=norm(ad)+'>'+ent.id; if(noted.has(k)) return; noted.add(k);
+    N(sayfa,rn,'"'+ad+'" -> binadaki "'+ent.node.name+'" kati olarak eslendi (yeni kat acilmadi)'); };
+  // --- aks / fragment indeksi: ebeveyn + seviye + ad ---
+  const araIdx=new Map(); const araKey=(pid,lv,ad)=>pid+'|'+lv+'|'+norm(ad);
+  loks.filter(l=>l.level==='aks'||l.level==='fragment').forEach(l=>lokParentIds(l).filter(Boolean).forEach(pid=>{
+    const k=araKey(pid,l.level,l.name); if(!araIdx.has(k)) araIdx.set(k,{id:l.id,node:l,exists:true}); }));
+  // --- oda indeksi: KAT BAZINDA tekil (lokInsertNames ile ayni kural) ---
+  const odaByKat=new Map(), odaByCode=new Map();
+  const addOda=(node,katId,exists,rn)=>{ const e={id:node.id,node,katId,exists,rn:rn||null}; const k=norm(node.name);
+    if(!odaByKat.has(katId)) odaByKat.set(katId,new Map()); odaByKat.get(katId).set(k,e);
+    if(!odaByCode.has(k)) odaByCode.set(k,[]); odaByCode.get(k).push(e); return e; };
+  loks.filter(l=>l.level==='oda').forEach(l=>{ const kk=lokKatOf(l.id); addOda(l,kk?kk.id:'',true); });
+  // --- mevcut kayda alan yazma: bos -> "doldur", farkli -> "fark" (yalniz ustune yaz secilirse) ---
+  const bosMu=v=>v==null||String(v).trim()==='';
+  const yama=(ent,f,val,etiket,sayfa,rn)=>{
+    if(bosMu(val)) return;
+    const cur=ent.node[f]; const dolu=!bosMu(cur);
+    if(dolu&&(f==='kot'||f==='alan'?Number(cur)===Number(val):String(cur).trim()===String(val).trim())) return;
+    const onceki=p.patches.findIndex(x=>x.id===ent.node.id&&x.f===f);
+    if(onceki>=0){ const o=p.patches[onceki];
+      if(String(o.a)!==String(val)) W(sayfa,rn,etiket+' - '+BULK_ALAN_AD[f]+' iki satirda farkli yazilmis ("'+o.a+'" / "'+val+'"): son satir gecerli');
+      p.patches.splice(onceki,1); }
+    p.patches.push({id:ent.node.id,ref:ent.node,f,b:dolu?cur:null,a:val,kind:dolu?'diff':'fill',etiket}); };
+  // planli (bu dosyada yeni acilan) dugume alan yazma: bos degilse yazar, cakisirsa uyarir
+  const yeniAlan=(node,f,val,etiket,sayfa,rn)=>{ if(bosMu(val)) return;
+    if(bosMu(node[f])){ node[f]=val; return; }
+    if((f==='alan'?Number(node[f])!==Number(val):String(node[f]).trim()!==String(val).trim()))
+      W(sayfa,rn,etiket+' - '+BULK_ALAN_AD[f]+' onceki satirdakinden farkli ("'+node[f]+'" / "'+val+'"): ilk satir korundu'); };
+
+  // ================= KATLAR =================
+  const ks=_bulkSayfa(wb,['Katlar','Kat','Floors']);
+  const kotBirimUyari=(()=>{ const ex=loks.filter(l=>l.level==='kat'&&l.kot!=null&&l.kot!==''&&Math.abs(Number(l.kot))>=1000); return ex.length>=2; })();
+  if(ks&&ks.rows.length>1){
+    const nVeri=ks.rows.slice(1).filter(r=>!_bulkBosSatir(r)).length; p.sayfaVar.kat=nVeri;
+    if(!parcaliOk){ if(nVeri) E('Katlar',ks.r0+1,'bu bina "Tum Giris" modelinde - kat kurulumu yapilamaz ('+nVeri+' satir atlandi). Once Giris Modeli\'ni Parcali yapin'); }
+    else{
+    const pk=_hdrMap(ks.rows[0]); const iK=pk('kat','kat adi','floor'), iKot=pk('kot','elevation'), iS=pk('sartnameler','sartname'), iN=pk('not','aciklama');
+    if(iK<0) E('Katlar',ks.r0+1,'KAT sutunu bulunamadi (ilk satirda "KAT" basligi olmali)');
+    else{
+      const goruldu=new Map(); // kat id -> ilk satir
+      for(let i=1;i<ks.rows.length;i++){ const row=ks.rows[i]; if(_bulkBosSatir(row))continue;
+        const rn=ks.r0+i+1;
+        const nm=_bulkHucre(row,iK);
+        if(!nm){ E('Katlar',rn,'KAT bos'); continue; }
+        const kotRaw=_bulkHucre(row,iKot); let kot=null;
+        if(kotRaw!==''){ kot=_bulkNum(row[iKot]); if(!isFinite(kot)){ E('Katlar',rn,'KOT sayi olmali ("'+kotRaw+'")'); continue; } }
+        const r=findKat(nm); if(r&&r.amb){ E('Katlar',rn,'"'+nm+'" binadaki '+r.amb.length+' kata birden uyuyor ('+r.amb.map(x=>'"'+x.node.name+'"').join(', ')+') - tam adini yazin'); continue; }
+        const srCodes=_bulkHucre(row,iS).split(/[,;\n]/).map(s=>s.trim()).filter(Boolean);
+        const srs=[];
+        srCodes.forEach(c=>{ const sr=srByCode.get(norm(c)); if(!sr){ E('Katlar',rn,'"'+c+'" sartnamesi bu binada tanimli degil'); return; } srs.push(sr); });
+        const notv=_bulkHucre(row,iN);
+        let ent;
+        if(r){ ent=r.e; if(r.mapped) notEsle('Katlar',rn,nm,ent); }
+        else{
+          const node={id:uid(),bina,parentId:null,level:'kat',name:nm};
+          ent=addKat(node,false); ent.rn=rn; p.kats.push(node);
+        }
+        if(goruldu.has(ent.id)){ W('Katlar',rn,'"'+nm+'" kati '+goruldu.get(ent.id)+'. satirda zaten listelenmis - bu satir yok sayildi'); continue; }
+        goruldu.set(ent.id,rn);
+        if(ent.exists){ p.skip.kat++; yama(ent,'kot',kot,'Kat "'+ent.node.name+'"','Katlar',rn); yama(ent,'not',notv,'Kat "'+ent.node.name+'"','Katlar',rn); }
+        else{ if(kot!=null) ent.node.kot=kot; if(notv!=='') ent.node.not=notv; }
+        if(kot!=null&&kot!==0&&kotBirimUyari&&Math.abs(kot)<100) W('Katlar',rn,'"'+nm+'" KOT '+kot+' - binadaki katlar 1000 ve uzeri degerlerle (mm) girilmis; birim uyusmuyor olabilir');
+        srs.forEach(sr=>sartEnt(sr).katIds.add(ent.id));
+      }
+    }
+    }
+  }
+  // ================= ODALAR =================
+  const os=_bulkSayfa(wb,['Odalar','Oda','Rooms']);
+  if(os&&os.rows.length>1){
+    const nVeri=os.rows.slice(1).filter(r=>!_bulkBosSatir(r)).length; p.sayfaVar.oda=nVeri;
+    if(!parcaliOk){ if(nVeri) E('Odalar',os.r0+1,'bu bina "Tum Giris" modelinde - oda kurulumu yapilamaz ('+nVeri+' satir atlandi). Once Giris Modeli\'ni Parcali yapin'); }
+    else if(!has('oda')){ if(nVeri) E('Odalar',os.r0+1,'bu binanin kirilim zincirinde Oda seviyesi yok ('+chain.map(lokLevelLabel).join(' > ')+') - '+nVeri+' satir atlandi'); }
+    else{
+    const po=_hdrMap(os.rows[0]);
+    const iK=po('kat','floor'), iAks=po('aks','bolge'), iFr=po('fragment'), iKod=po('oda kodu','oda_kodu','room','kod');
+    const iKul=po('kullanim amaci','kullanim','oda adi','amac');
+    let iAlan=po('alan (m2)','alan m2','alan','area'); if(iAlan===iKul) iAlan=-1;
+    const iN=po('not','aciklama');
+    if(iKod<0) E('Odalar',os.r0+1,'ODA KODU sutunu bulunamadi (ilk satirda "ODA KODU" basligi olmali)');
+    else for(let i=1;i<os.rows.length;i++){ const row=os.rows[i]; if(_bulkBosSatir(row))continue;
+      const rn=os.r0+i+1;
+      const kod=_bulkHucre(row,iKod), katNm=_bulkHucre(row,iK), aksNm=_bulkHucre(row,iAks), frNm=_bulkHucre(row,iFr);
+      if(!kod){ E('Odalar',rn,'ODA KODU bos'); continue; }
+      const kul=_bulkHucre(row,iKul), notv=_bulkHucre(row,iN), alanRaw=_bulkHucre(row,iAlan);
+      let alan=null;
+      if(alanRaw!==''){ alan=_bulkNum(row[iAlan]); if(!(alan>=0)||!isFinite(alan)){ E('Odalar',rn,'ALAN sayi olmali ("'+alanRaw+'")'); continue; } }
+      // KAT: yazilmadiysa oda kodu binada TEK bir odaya aitse o oda kullanilir (yalniz bilgi guncelleme icin)
+      let kat=null;
+      if(katNm){ const r=findKat(katNm);
+        if(r&&r.amb){ E('Odalar',rn,'"'+katNm+'" binadaki '+r.amb.length+' kata birden uyuyor - tam adini yazin'); continue; }
+        if(!r){ E('Odalar',rn,'"'+katNm+'" kati bulunamadi (Katlar sayfasina ekleyin)'); continue; }
+        kat=r.e; if(r.mapped) notEsle('Odalar',rn,katNm,kat);
+      } else {
+        const c=odaByCode.get(norm(kod))||[];
+        if(c.length===1&&katById.get(c[0].katId)) kat=katById.get(c[0].katId);
+        else { E('Odalar',rn,c.length>1?'KAT bos ve "'+kod+'" odasi '+c.length+' katta var - KAT yazin':'KAT bos'); continue; }
+      }
+      if(aksNm&&!has('aks')){ E('Odalar',rn,'AKS / BOLGE yazilmis ama bu binanin kirilim zincirinde Aks yok ('+chain.map(lokLevelLabel).join(' > ')+') - Giris Modeli\'nden acin ya da sutunu bos birakin'); continue; }
+      if(frNm&&!has('fragment')){ E('Odalar',rn,'FRAGMENT yazilmis ama bu binanin kirilim zincirinde Fragment yok ('+chain.map(lokLevelLabel).join(' > ')+') - Giris Modeli\'nden acin ya da sutunu bos birakin'); continue; }
+      const km=odaByKat.get(kat.id); const ex=km&&km.get(norm(kod));
+      const et='Oda "'+kod+'"';
+      // istenen ebeveyn (kat > aks > fragment) - MEVCUT dugumleri bulur, OLUSTURMAZ (oda zaten varsa bos ara dugum acilmasin)
+      const bakParent=()=>{ let pid=kat.id;
+        if(aksNm){ const e=araIdx.get(araKey(pid,'aks',aksNm)); if(!e) return null; pid=e.id; }
+        if(frNm){ const e=araIdx.get(araKey(pid,'fragment',frNm)); if(!e) return null; pid=e.id; }
+        return pid; };
+      if(ex){
+        const istenen=(aksNm||frNm)?bakParent():kat.id;
+        if(!ex.exists){ // bu dosyada daha once acilmis
+          W('Odalar',rn,'"'+kod+'" odasi bu katta '+ex.rn+'. satirda zaten listelenmis - bu satirin bilgileri yalniz bos alanlari doldurur'+(((aksNm||frNm)&&istenen!==ex.node.parentId)?'; farkli parca yazilmis, ilk satirdaki parca korundu':''));
+          yeniAlan(ex.node,'kullanim',kul,et,'Odalar',rn); yeniAlan(ex.node,'alan',alan,et,'Odalar',rn); yeniAlan(ex.node,'not',notv,et,'Odalar',rn);
+          continue; }
+        p.skip.oda++;
+        if((aksNm||frNm)&&!(istenen&&lokHasParent(ex.node,istenen)))
+          W('Odalar',rn,'"'+kod+'" odasi zaten "'+lokPath(ex.id)+'" altinda - parca baglantisi degistirilmedi (panelden "Baska Parcaya Da Bagla" kullanin)');
+        yama(ex,'kullanim',kul,et,'Odalar',rn); yama(ex,'alan',alan,et,'Odalar',rn); yama(ex,'not',notv,et,'Odalar',rn);
+        continue;
+      }
+      // yeni oda: ara seviyeler (yoksa olusturulur)
+      let parent=kat;
+      const ara=(lv,ad)=>{ const k=araKey(parent.id,lv,ad); let e=araIdx.get(k);
+        if(!e){ const node={id:uid(),bina,parentId:parent.id,level:lv,name:ad}; e={id:node.id,node,exists:false};
+          araIdx.set(k,e); (lv==='aks'?p.aks:p.frags).push(node); used[lv]=true; }
+        parent=e; };
+      if(aksNm) ara('aks',aksNm);
+      if(frNm) ara('fragment',frNm);
+      const baska=(odaByCode.get(norm(kod))||[]);
+      if(baska.length) W('Odalar',rn,'"'+kod+'" kodu binada baska katta da var ('+baska.slice(0,3).map(x=>'"'+lokPath(x.id)+'"').join(', ')+') - yanlis KAT yazmis olabilirsiniz; bu katta yeni oda acilacak');
+      const node={id:uid(),bina,parentId:parent.id,level:'oda',name:kod};
+      if(kul!=='') node.kullanim=kul; if(alan!=null) node.alan=alan; if(notv!=='') node.not=notv;
+      p.odas.push(node); addOda(node,kat.id,false,rn);
+    }
+    }
+  }
+  // ================= MALZEMELER =================
   const resolveSr=(srKod,bolum,katId)=>{
+    const kapsar=(x,kid)=>(x.katIds||[]).includes(kid)||((p.sartKat.get(x.id)||{katIds:new Set()}).katIds.has(kid));
     if(srKod){
       let list=sarts.filter(x=>norm(x.code)===norm(srKod));
       if(bolum){ const f=list.filter(x=>norm(x.section||'')===norm(bolum)); if(f.length) list=f; }
-      return list.length?{sr:list[0]}:{err:`"${srKod}" sartnamesi bu binada tanimli degil`};
+      return list.length?{sr:list[0]}:{err:'"'+srKod+'" sartnamesi bu binada tanimli degil'};
     }
     if(!bolum) return {err:'SARTNAME KODU veya BOLUM sutunundan biri dolu olmali'};
     const inSec=sarts.filter(x=>norm(x.section||'')===norm(bolum));
     if(!inSec.length){
       const secs=(DB.proje.sections||[]);
       return {err:secs.some(s=>norm(s)===norm(bolum))
-        ?`"${bolum}" bolumunde bu binada sartname yok (once Tanimlar'dan ekleyin)`
-        :`"${bolum}" bolumu tanimli degil (mevcut: ${secs.join(', ')||'-'})`};
+        ?'"'+bolum+'" bolumunde bu binada sartname yok (once Tanimlar\'dan ekleyin)'
+        :'"'+bolum+'" bolumu tanimli degil (mevcut: '+(secs.join(', ')||'-')+')'};
     }
     if(katId){
-      const cover=inSec.filter(x=>(x.katIds||[]).includes(katId));
+      const cover=inSec.filter(x=>kapsar(x,katId));
       if(cover.length===1) return {sr:cover[0]};
-      if(cover.length>1) return {err:`bu kati ${cover.length} sartname kapsiyor (${cover.map(x=>x.code).join(', ')}) - SARTNAME KODU yazin`};
+      if(cover.length>1) return {err:'bu kati '+cover.length+' sartname kapsiyor ('+cover.map(x=>x.code).join(', ')+') - SARTNAME KODU yazin'};
     }
     if(inSec.length===1) return {sr:inSec[0]};
-    return {err:`"${bolum}" bolumunde ${inSec.length} sartname var (${inSec.map(x=>x.code).join(', ')}) - SARTNAME KODU yazin`};
+    return {err:'"'+bolum+'" bolumunde '+inSec.length+' sartname var ('+inSec.map(x=>x.code).join(', ')+') - SARTNAME KODU yazin'};
   };
-  // --- Katlar ---
-  const kRows=_sheetRows(wb,['Katlar','Kat','Floors']);
-  if(kRows&&kRows.length>1){
-    const pk=_hdrMap(kRows[0]); const iK=pk('kat','kat adi','floor'), iKot=pk('kot','elevation'), iS=pk('sartnameler','sartname');
-    for(let i=1;i<kRows.length;i++){ const row=kRows[i]; if(!row)continue;
-      const nm=iK>=0?String(row[iK]??'').trim():''; if(!nm)continue;
-      const srCodes=(iS>=0?String(row[iS]??''):'').split(',').map(s=>s.trim()).filter(Boolean);
-      srCodes.forEach(c=>{ const sr=srByCode.get(norm(c));
-        if(!sr){ p.errors.push(`Katlar ${i+1}. satir: "${c}" sartnamesi bu binada tanimli degil`); return; }
-        if(!p.sartKat.has(sr.id)) p.sartKat.set(sr.id,{sr,katNames:[],odaIds:[]});
-        p.sartKat.get(sr.id).katNames.push(norm(nm));
-      });
-      if(katByName.has(norm(nm))){ p.skip.kat++; continue; }
-      const kotRaw=iKot>=0?String(row[iKot]??'').trim():'';
-      const node={id:uid(),bina,parentId:null,level:'kat',name:nm};
-      if(kotRaw!==''&&isFinite(Number(kotRaw))) node.kot=Number(kotRaw);
-      p.kats.push(node); katByName.set(norm(nm),{id:node.id,exists:false});
-    }
-  }
-  // --- Odalar ---
-  const oRows=_sheetRows(wb,['Odalar','Oda','Rooms']);
-  if(oRows&&oRows.length>1){
-    const po=_hdrMap(oRows[0]); const iK=po('kat','floor'), iKod=po('oda kodu','oda_kodu','room','kod');
-    for(let i=1;i<oRows.length;i++){ const row=oRows[i]; if(!row)continue;
-      const kod=iKod>=0?String(row[iKod]??'').trim():''; if(!kod)continue;
-      const katNm=iK>=0?String(row[iK]??'').trim():'';
-      const kat=katByName.get(norm(katNm));
-      if(!kat){ p.errors.push(`Odalar ${i+1}. satir: "${katNm||'(bos)'}" kati bulunamadi (Katlar sayfasina ekleyin)`); continue; }
-      if(odaByKod.has(norm(kod))){ p.skip.oda++; continue; }
-      const node={id:uid(),bina,parentId:kat.id,level:'oda',name:kod};
-      p.odas.push(node); odaByKod.set(norm(kod),{id:node.id,exists:false,katId:kat.id});
-    }
-  }
-  // --- Malzemeler ---
-  const mRows=_sheetRows(wb,['Malzemeler','Malzeme','Materials']);
-  if(mRows&&mRows.length>1){
-    const pm=_hdrMap(mRows[0]);
+  const ms=_bulkSayfa(wb,['Malzemeler','Malzeme','Materials']);
+  if(ms&&ms.rows.length>1){
+    p.sayfaVar.mal=ms.rows.slice(1).filter(r=>!_bulkBosSatir(r)).length;
+    const pm=_hdrMap(ms.rows[0]);
     // "OZEL NO" = sistematik takip no (poz DEGIL). Eski dosyalardaki "PROJE KODU" da ozel no'ya eslenir.
-    const iOzel=pm('ozel no','ozel_no','ozelno','özel no','proje kodu','ozel'), iPoz=pm('poz no','poz'), iOda=pm('oda kodu','oda'), iMKat=pm('kat'), iBol=pm('bolum','section'), iAd=pm('urun adi','gecis ismi','ad','name'),
-          iKod=pm('urun kodu'), iAdet=pm('adet','miktar','quantity'), iSr=pm('sartname kodu','sartname'), iBirim=pm('birim','unit');
+    const iOzel=pm('ozel no','ozel_no','ozelno','proje kodu','ozel'), iPoz=pm('poz no','poz'), iOda=pm('oda kodu','oda'), iMKat=pm('kat'), iBol=pm('bolum','section'),
+          iAd=pm('urun adi','gecis ismi','ad','name'), iKod=pm('urun kodu'), iAdet=pm('adet','miktar','quantity'), iSr=pm('sartname kodu','sartname'), iBirim=pm('birim','unit');
+    if(iAd<0) E('Malzemeler',ms.r0+1,'URUN ADI sutunu bulunamadi (ilk satirda "URUN ADI / GECIS ISMI" basligi olmali)');
+    else if(iAdet<0) E('Malzemeler',ms.r0+1,'ADET sutunu bulunamadi (ilk satirda "ADET" basligi olmali)');
+    else{
     const groups=new Map();
-    for(let i=1;i<mRows.length;i++){ const row=mRows[i]; if(!row)continue;
-      const ozelNo=iOzel>=0?String(row[iOzel]??'').trim():''; const poz=iPoz>=0?String(row[iPoz]??'').trim():''; const ad=iAd>=0?String(row[iAd]??'').trim():'';
-      if(!ozelNo&&!poz&&!ad)continue;
-      const odaKod=iOda>=0?String(row[iOda]??'').trim():'';
-      const katNm=iMKat>=0?String(row[iMKat]??'').trim():'';
-      const srKod=iSr>=0?String(row[iSr]??'').trim():'';
-      const bolum=iBol>=0?String(row[iBol]??'').trim():'';
-      const adet=Number(iAdet>=0?row[iAdet]:1)||0;
-      if(!ad){ p.errors.push(`Malzemeler ${i+1}. satir: urun adi bos`); continue; }
-      const oda=odaKod?odaByKod.get(norm(odaKod)):null;
-      if(odaKod&&!oda){ p.errors.push(`Malzemeler ${i+1}. satir: "${odaKod}" odasi bulunamadi (Odalar sayfasina ekleyin)`); continue; }
-      // ODA yoksa KAT'a baglanabilir: odalar henuz girilmemis binada kat bazli yerlestirme
-      const kat=(!oda&&katNm)?katByName.get(norm(katNm)):null;
-      if(!oda&&katNm&&!kat){ p.errors.push(`Malzemeler ${i+1}. satir: "${katNm}" kati bulunamadi (Katlar sayfasina ekleyin)`); continue; }
-      if(!(adet>0)){ p.errors.push(`Malzemeler ${i+1}. satir: gecersiz adet`); continue; }
-      // satirin kati (sartname cozumu icin): oda verildiyse odanin kati, yoksa dogrudan KAT sutunu
+    for(let i=1;i<ms.rows.length;i++){ const row=ms.rows[i]; if(_bulkBosSatir(row))continue;
+      const rn=ms.r0+i+1;
+      const ozelNo=_bulkHucre(row,iOzel), poz=_bulkHucre(row,iPoz), ad=_bulkHucre(row,iAd);
+      const odaKod=_bulkHucre(row,iOda), katNm=_bulkHucre(row,iMKat), srKod=_bulkHucre(row,iSr), bolum=_bulkHucre(row,iBol);
+      if(!ad){ E('Malzemeler',rn,'URUN ADI bos'); continue; }
+      const adetRaw=_bulkHucre(row,iAdet); const adet=_bulkNum(row[iAdet]);
+      if(!(adet>0)||!isFinite(adet)){ E('Malzemeler',rn,adetRaw===''?'ADET bos':'ADET pozitif sayi olmali ("'+adetRaw+'")'); continue; }
+      // yer: ODA KODU (KAT ile daraltilabilir) ya da yalniz KAT (kata bagli); ikisi de bossa bina geneli
+      let oda=null, kat=null;
+      if((odaKod||katNm)&&!parcaliOk){ E('Malzemeler',rn,'bu bina "Tum Giris" modelinde - kat/oda yerlestirmesi yapilamaz (KAT ve ODA KODU bos birakin ya da binayi Parcali yapin)'); continue; }
+      if(katNm){ const r=findKat(katNm);
+        if(r&&r.amb){ E('Malzemeler',rn,'"'+katNm+'" binadaki '+r.amb.length+' kata birden uyuyor - tam adini yazin'); continue; }
+        if(!r){ E('Malzemeler',rn,'"'+katNm+'" kati bulunamadi (Katlar sayfasina ekleyin)'); continue; }
+        kat=r.e; if(r.mapped) notEsle('Malzemeler',rn,katNm,kat); }
+      if(odaKod){
+        const cand=odaByCode.get(norm(odaKod))||[];
+        const list=kat?cand.filter(c=>c.katId===kat.id):cand;
+        if(!list.length){ E('Malzemeler',rn,cand.length
+          ?'"'+odaKod+'" odasi "'+kat.node.name+'" katinda degil (bulundugu kat: '+cand.slice(0,3).map(c=>'"'+((katById.get(c.katId)||{node:{name:'?'}}).node.name)+'"').join(', ')+')'
+          :'"'+odaKod+'" odasi bulunamadi (Odalar sayfasina ekleyin)'); continue; }
+        if(list.length>1){ E('Malzemeler',rn,'"'+odaKod+'" odasi '+list.length+' katta var ('+list.map(c=>'"'+((katById.get(c.katId)||{node:{name:'?'}}).node.name)+'"').join(', ')+') - KAT sutununu da yazin'); continue; }
+        oda=list[0]; }
       const rowKatId=oda?(oda.katId||null):(kat?kat.id:null);
       const res=resolveSr(srKod,bolum,rowKatId);
-      if(res.err){ p.errors.push(`Malzemeler ${i+1}. satir: ${res.err}`); continue; }
+      if(res.err){ E('Malzemeler',rn,res.err); continue; }
       const sr=res.sr;
-      const kod=iKod>=0?String(row[iKod]??'').trim():'';
-      const birim=iBirim>=0?String(row[iBirim]??'').trim():'';
+      const kod=_bulkHucre(row,iKod), birim=_bulkHucre(row,iBirim);
       // gruplama kimligi: ozel no varsa onunla (poz'un tekillik kurallarina takilmaz), yoksa poz
-      const gk=sr.id+'¦o:'+norm(ozelNo)+'¦p:'+norm(poz)+'¦'+matKey(kod,ad);
+      const gk=sr.id+'|o:'+norm(ozelNo)+'|p:'+norm(poz)+'|'+matKey(kod,ad);
       if(!groups.has(gk)) groups.set(gk,{sr,ozelNo,poz,ad,kod,birim,rows:[]});
-      groups.get(gk).rows.push({odaId:oda?oda.id:(kat?kat.id:null),isOda:!!oda,odaKod,adet});
+      groups.get(gk).rows.push({odaId:oda?oda.id:(kat?kat.id:null),isOda:!!oda,katId:rowKatId,adet,rn});
     }
     groups.forEach(g=>{
       // ayni bina+sartname+(ozel no/poz)'da ayni urun zaten varsa atla; urun kutuphanede cift
@@ -14397,124 +14768,249 @@ function _bulkParse(wb,bina,isNew){
         &&matKey(s.code,s.name)===gKey&&(s.ozelNo||'').trim().toLowerCase()===gOzel&&(s.poz||'').trim().toLowerCase()===gPoz);
       if(exists){ p.skip.spec++; return; }
       p.specs.push(g);
-      if(!p.sartKat.has(g.sr.id)) p.sartKat.set(g.sr.id,{sr:g.sr,katNames:[],odaIds:[],katDirect:[]});
-      const ent=p.sartKat.get(g.sr.id); if(!ent.katDirect)ent.katDirect=[];
+      const ent=sartEnt(g.sr);
       g.rows.forEach(r=>{ if(!r.odaId)return;
-        if(r.isOda){ if(!ent.odaIds.includes(r.odaId)) ent.odaIds.push(r.odaId); }
-        else { if(!ent.katDirect.includes(r.odaId)) ent.katDirect.push(r.odaId); } });
+        if(r.isOda){ ent.odaIds.add(r.odaId); if(r.katId) ent.katIds.add(r.katId); }
+        else ent.katIds.add(r.odaId); });
     });
+    }
   }
-  p._katByName=katByName; p._odaByKod=odaByKod;
+  if(isNew){ p.levels=['kat',used.aks?'aks':null,used.fragment?'fragment':null,'oda'].filter(Boolean); }
+  p._katById=katById;
   return p;
 }
+
+/* ---- onizleme ---- */
+function bulkSetOver(v){ if(_BULK){ _BULK.over=!!v; renderBulkPreview(); } }
+function _bulkMsg(x){ return x.s+' '+x.r+'. satir: '+x.m; }
+function _bulkSeciliPatch(p){ return p.patches.filter(x=>x.kind==='fill'||p.over); }
 function renderBulkPreview(){
   const p=_BULK; if(!p)return;
   closeModal();
+  const secili=_bulkSeciliPatch(p);
+  const farkN=p.patches.filter(x=>x.kind==='diff').length;
+  const araN=p.aks.length+p.frags.length;
   const newMatCount=[...new Set(p.specs.filter(g=>!findMaterialLoose(g.kod,g.ad)).map(g=>matKey(g.kod,g.ad)))].length;
+  const kayit=p.kats.length+araN+p.odas.length+p.specs.length+secili.length;
   // hangi sartnameye kac kalem baglandi - kullanici "1-5 Tava'ya 37 kalem" diye dogrulayabilsin
   const srCounts=new Map();
   p.specs.forEach(g=>{ const k=(g.sr.section?g.sr.section+' · ':'')+g.sr.code; srCounts.set(k,(srCounts.get(k)||0)+1); });
-  const srHtml=srCounts.size?`<div class="matd-sec">Sartname Dagilimi <span>${srCounts.size}</span></div>
-    <div style="max-height:110px;overflow-y:auto;font-size:11.5px">${[...srCounts.entries()].map(([k,n])=>`<div style="display:flex;justify-content:space-between;padding:2px 0;gap:10px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(k)}</span><b style="flex-shrink:0">${n} kalem</b></div>`).join('')}</div>`:'';
-  const errHtml=p.errors.length?`<div class="matd-sec" style="color:var(--red)">Hatali Satirlar <span>${p.errors.length}</span></div>
-    <div style="max-height:130px;overflow-y:auto;font-size:11.5px;color:var(--red)">${p.errors.slice(0,25).map(e=>`<div style="padding:2px 0">${esc(e)}</div>`).join('')}${p.errors.length>25?`<div>+ ${p.errors.length-25} hata daha</div>`:''}</div>
-    <p style="font-size:11px;color:var(--mute)">Hatali satirlar atlanir, kalanlar kurulur. Duzeltip ayni dosyayi tekrar yukleyebilirsiniz.</p>`:'';
+  const bolum=(baslik,n,renk,govde)=>`<div class="matd-sec"${renk?` style="color:${renk}"`:''}>${baslik} <span>${n}</span></div>${govde}`;
+  const liste=(items,renk,max)=>`<div style="max-height:130px;overflow-y:auto;font-size:11.5px${renk?`;color:${renk}`:''}">${items.slice(0,max).map(t=>`<div style="padding:2px 0">${esc(t)}</div>`).join('')}${items.length>max?`<div>+ ${items.length-max} tane daha</div>`:''}</div>`;
+  const srHtml=srCounts.size?bolum('Sartname Dagilimi',srCounts.size,'',`<div style="max-height:110px;overflow-y:auto;font-size:11.5px">${[...srCounts.entries()].map(([k,n])=>`<div style="display:flex;justify-content:space-between;padding:2px 0;gap:10px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(k)}</span><b style="flex-shrink:0">${n} kalem</b></div>`).join('')}</div>`):'';
+  const yamaTxt=x=>`${x.etiket} · ${BULK_ALAN_AD[x.f]}: ${x.b!=null?'"'+x.b+'" -> ':''}"${x.a}"`;
+  const yamaHtml=p.patches.length?bolum('Mevcut Kayitlarda Guncellenecek Alanlar',secili.length+(farkN&&!p.over?' + '+farkN+' fark':''),'',
+      liste(p.patches.filter(x=>x.kind==='fill'||p.over).map(x=>(x.kind==='fill'?'[bos alan doldurulur] ':'[UZERINE YAZILIR] ')+yamaTxt(x)),'',30)
+      +(farkN&&!p.over?liste(p.patches.filter(x=>x.kind==='diff').map(x=>'[fark - korunuyor] '+yamaTxt(x)),'var(--amber)',30):'')
+      +(farkN?`<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;margin:8px 0 2px;cursor:pointer"><input type="checkbox" ${p.over?'checked':''} onchange="bulkSetOver(this.checked)" style="margin-top:2px"><span>Dosyadaki degerler mevcut kayitlarin <b>ustune yazilsin</b> (${farkN} fark) - eski degerler "Kurulumu Geri Al" ile geri gelir</span></label>`:'')):'';
+  const noteHtml=p.notes.length?bolum('Eslesen Adlar',p.notes.length,'',liste(p.notes.map(_bulkMsg),'var(--mute)',8)):'';
+  const warnHtml=p.warns.length?bolum('Uyarilar',p.warns.length,'var(--amber)',liste(p.warns.map(_bulkMsg),'var(--amber)',20)):'';
+  const errHtml=p.errors.length?bolum('Hatali Satirlar (atlanacak)',p.errors.length,'var(--red)',liste(p.errors.map(_bulkMsg),'var(--red)',25)
+    +`<p style="font-size:11px;color:var(--mute);margin-top:4px">Hatali satirlar atlanir, kalanlar kurulur. Duzeltip ayni dosyayi tekrar yukleyebilirsiniz - mevcut kayitlar mukerrer olusmaz.</p>`):'';
   const stat=(n,l)=>`<div><b>${n}</b><span>${l}</span></div>`;
+  const kurulacak=kayit>0;
   const html=`<div class="modal-bg"><div class="modal"><div class="modal-head"><h3>Kurulum Onizleme - ${esc(p.bina)}${p.isNew?' (yeni bina)':''}</h3><button class="mini-btn" onclick="_BULK=null;closeModal()">x</button></div><div class="modal-body">
-    <div class="matd-stats" style="grid-template-columns:repeat(2,1fr)">
+    <div class="matd-stats" style="grid-template-columns:repeat(3,1fr)">
       ${stat(p.kats.length,'yeni kat'+(p.skip.kat?` (${p.skip.kat} mevcut)`:''))}
       ${stat(p.odas.length,'yeni oda'+(p.skip.oda?` (${p.skip.oda} mevcut)`:''))}
       ${stat(p.specs.length,'yeni kalem'+(p.skip.spec?` (${p.skip.spec} mevcut)`:''))}
+      ${araN?stat(araN,'yeni aks / fragment'):''}
       ${stat(newMatCount,'kutuphaneye yeni urun')}
+      ${stat(secili.length,'guncellenecek alan')}
     </div>
-    ${srHtml}
+    ${p.isNew&&p.levels?`<p style="font-size:12px;color:var(--mute)">Yeni binanin kirilim zinciri: <b>${p.levels.map(lokLevelLabel).join(' &gt; ')}</b></p>`:''}
+    ${yamaHtml}${srHtml}
     ${p.sartKat.size?`<p style="font-size:12px;color:var(--mute)">${p.sartKat.size} sartnamenin kat/oda kapsami guncellenecek.</p>`:''}
-    ${errHtml}
-    ${(p.kats.length+p.odas.length+p.specs.length)?'':'<p style="color:var(--amber);font-size:12.5px">Kurulacak yeni kayit yok - her sey zaten mevcut veya sayfalar bos.</p>'}
-  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="_BULK=null;closeModal()">Iptal</button>
-    ${(p.kats.length+p.odas.length+p.specs.length)?`<button class="btn btn-add" id="bs_apply" onclick="applyBulkSetup()">Kur (${p.kats.length+p.odas.length+p.specs.length} kayit)</button>`:''}
+    ${noteHtml}${warnHtml}${errHtml}
+    ${kurulacak?'':'<p style="color:var(--amber);font-size:12.5px">Kurulacak yeni kayit yok - her sey zaten mevcut, sayfalar bos ya da tum satirlar hatali.</p>'}
+  </div><div class="modal-foot">
+    ${(p.errors.length||p.warns.length||p.notes.length)?`<button class="btn btn-ghost" style="margin-right:auto" title="Hata, uyari ve eslesen adlari Excel olarak indir" onclick="bulkRaporIndir()">${icoXls()} Rapor (.xlsx)</button>`:''}
+    <button class="btn btn-ghost" onclick="_BULK=null;closeModal()">Iptal</button>
+    ${kurulacak?`<button class="btn btn-add" id="bs_apply" onclick="applyBulkSetup()">Kur (${kayit} kayit)</button>`:''}
   </div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
+}
+function bulkRaporIndir(){
+  const p=_BULK; if(!p)return;
+  const rows=[['TUR','SAYFA','SATIR (Excel)','MESAJ']];
+  p.errors.forEach(x=>rows.push(['HATA - satir atlandi',x.s,x.r,x.m]));
+  p.warns.forEach(x=>rows.push(['UYARI',x.s,x.r,x.m]));
+  p.notes.forEach(x=>rows.push(['ESLESME',x.s,x.r,x.m]));
+  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:22},{wch:14},{wch:14},{wch:110}];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Rapor');
+  XLSX.writeFile(wb,'toplu_kurulum_rapor_'+String(p.bina).replace(/[^\w.-]+/g,'_')+'.xlsx');
+}
+
+/* ---- kurulum ---- */
+// GERI-AL kaydi listesi. Kalicilik BASARISIZSA false doner (cagiran taraf kullaniciya soyler).
+function bulkBatchesGet(){ return (DB.meta&&DB.meta.bulkBatches)||[]; }
+async function bulkBatchSave(list){
+  if(!DB.meta)DB.meta={};
+  DB.meta.bulkBatches=list;
+  try{ await sbSetSetting('bulkBatches',list); return true; }
+  catch(e){ console.warn('bulkBatches kaydedilemedi:',e); return false; }
 }
 async function applyBulkSetup(){
   const p=_BULK; if(!p)return;
   if(!guard('define',{bina:p.isNew?undefined:p.bina}))return;
+  const S=window.SB_STRICT;
+  if(!S){ toast('Kalicilik katmani yuklenemedi - sayfayi yenileyin','err'); return; }
   const btn=document.getElementById('bs_apply'); if(btn){btn.disabled=true;btn.textContent='Kuruluyor...';}
+  const secili=_bulkSeciliPatch(p);
+  const beforeIds=new Set(DB.proje.materials.map(m=>m.id));
+  let matlarKalici=false, newMats=[];
   try{
-    if(p.isNew){
-      await sbInsertProjeBuilding(p.bina); DB.proje.buildings.push(p.bina);
-      await setBinaGiris(p.bina,{model:'parcali',levels:['kat','oda']});
-    }
-    // 1) lokasyonlar (kat + oda)
-    const nodes=[...p.kats,...p.odas];
-    for(const n of nodes){ await sbInsertProjeLokasyon(n); DB.proje.lokasyonlar.push(n); }
-    // 2) malzemeler + kalemler
-    const beforeIds=new Set(DB.proje.materials.map(m=>m.id));
+    // ---- 1) bellekte hazirla (henuz hicbir sey yazilmadi) ----
+    // mevcut dugum guncellemeleri KOPYA uzerinde: kalicilik basarili olana dek canli nesne degismez
+    const yamali=new Map();
+    secili.forEach(x=>{ let c=yamali.get(x.id); if(!c){ c={...x.ref}; yamali.set(x.id,c); } c[x.f]=x.a; });
+    const katNode=id=>yamali.get(id)||((p._katById.get(id)||{}).node);
     const newSpecs=[];
     p.specs.forEach(g=>{
       const mt=findMaterialLoose(g.kod,g.ad)||ensureMaterial({code:g.kod,name:g.ad,unit:g.birim||'adet',cat:g.sr.section});
-      const lokTargets=g.rows.filter(r=>r.odaId).map(r=>({lokId:r.odaId,target:r.adet}));
+      const lt=new Map(); g.rows.forEach(r=>{ if(r.odaId) lt.set(r.odaId,(lt.get(r.odaId)||0)+r.adet); });
+      const lokTargets=[...lt.entries()].map(([lokId,target])=>({lokId,target}));
       const target=g.rows.reduce((s,r)=>s+r.adet,0);
-      newSpecs.push({id:uid(),cat:g.sr.section,name:mt.name,code:mt.code,brand:mt.brand||'',target,
+      const spec={id:uid(),cat:g.sr.section,name:mt.name,code:mt.code,brand:mt.brand||'',target,
         unit:g.birim||mt.unit||'adet',bina:p.bina,grup:g.sr.code,poz:g.poz||'',ozelNo:g.ozelNo||'',standart:mt.standart||'',
         weight:mt.weight!=null?mt.weight:null,tags:(mt.tags||[]).slice(),img:mt.img||null,matId:mt.id,
-        openQty:false,lokTargets});
+        openQty:false,lokTargets};
+      // KAT/KOT: tum yerlesimler TEK kata dusuyorsa yazilir (Kat Ata ile ayni kural). Yazilmayinca kalem
+      // Kat Paneli'nde "Kat bilgisi girilmemis" altina dusuyor, akista "bu katta" sayilmiyordu.
+      const ks=[...new Set(g.rows.map(r=>r.katId).filter(Boolean))];
+      if(ks.length===1){ const kn=katNode(ks[0]); if(kn){ const kv=bulkKatDegeri(kn); if(kv.kat) spec.kat=kv.kat; if(kv.kot) spec.kot=kv.kot; } }
+      newSpecs.push(spec);
     });
-    const newMats=DB.proje.materials.filter(m=>!beforeIds.has(m.id));
-    if(newMats.length) await sbInsertProjeMaterials(newMats);
-    if(newSpecs.length){ await sbInsertProjeSpecs(newSpecs); DB.proje.specs.push(...newSpecs); }
-    // GERI-AL icin: kapsam DEGISMEDEN once ilgili sartnamelerin kat/oda halini fotografla -
-    // boylece kurulum geri alinirsa katIds/odalar tam olarak eski haline dondurulur.
-    const sartBefore=[...p.sartKat.values()].map(({sr})=>({id:sr.id,katIds:(sr.katIds||[]).slice(),odalar:(sr.odalar||[]).slice()}));
-    // 3) sartname kat/oda kapsamlari: Katlar sayfasindaki atamalar + yerlestirmelerden turetilen
-    // kapsamlar (oda -> odanin KATI da kapsanir ki rapor girisinde kat secilince sartname otomatik dolsun)
-    for(const {sr,katNames,odaIds,katDirect} of p.sartKat.values()){
-      let changed=false;
-      const addKat=(kid)=>{ if(kid&&!(sr.katIds||[]).includes(kid)){ sr.katIds=[...(sr.katIds||[]),kid]; changed=true; } };
-      katNames.forEach(kn=>{ const k=p._katByName.get(kn); if(k) addKat(k.id); });
-      (katDirect||[]).forEach(addKat);
-      odaIds.forEach(oid=>{
-        if(!(sr.odalar||[]).includes(oid)){ sr.odalar=[...(sr.odalar||[]),oid]; changed=true; }
-        const k=lokKatOf(oid); if(k) addKat(k.id);
-      });
-      if(changed) await sbUpdateProjeSartname(sr.id,{...sr});
+    newMats=DB.proje.materials.filter(m=>!beforeIds.has(m.id));
+    // sartname kapsam plani: yalniz GERCEKTEN eklenecekler (geri alma yalniz bunlari kaldirir)
+    const sartPlan=[];
+    p.sartKat.forEach(({sr,katIds,odaIds})=>{
+      const addKat=[...katIds].filter(id=>!(sr.katIds||[]).includes(id));
+      const addOda=[...odaIds].filter(id=>!(sr.odalar||[]).includes(id));
+      if(addKat.length||addOda.length) sartPlan.push({sr,addKat,addOda,before:{id:sr.id,katIds:(sr.katIds||[]).slice(),odalar:(sr.odalar||[]).slice()}});
+    });
+    // ---- 2) GERI-AL kaydi YAZMADAN ONCE saklanir: kalicilik yarida kesilirse eklenenler yine geri alinabilir ----
+    const batch={id:uid(),ts:Date.now(),user:(CURRENT_USER&&CURRENT_USER.username)||'?',bina:p.bina,isNew:!!p.isNew,v:2,partial:true,
+      katIds:p.kats.map(n=>n.id),araIds:[...p.aks,...p.frags].map(n=>n.id),odaIds:p.odas.map(n=>n.id),
+      specIds:newSpecs.map(s=>s.id),matIds:newMats.map(m=>m.id),
+      sartBefore:sartPlan.map(x=>x.before),sartAdded:sartPlan.map(x=>({id:x.sr.id,katIds:x.addKat,odalar:x.addOda})),
+      patched:secili.map(x=>({id:x.id,f:x.f,b:x.b,a:x.a}))};
+    if(!await bulkBatchSave([...bulkBatchesGet(),batch].slice(-10))){
+      newMats.forEach(m=>{ const i=DB.proje.materials.indexOf(m); if(i>=0)DB.proje.materials.splice(i,1); });
+      throw new Error('geri alma kaydi saklanamadi - hicbir sey yazilmadi, tekrar deneyin');
     }
-    // GERI-AL kaydi: bu kurulumun urettigi TUM id'ler + sartname foto. Son 10 kurulum saklanir.
-    const batch={id:uid(),ts:Date.now(),user:(CURRENT_USER&&CURRENT_USER.username)||'?',bina:p.bina,isNew:!!p.isNew,
-      katIds:p.kats.map(n=>n.id),odaIds:p.odas.map(n=>n.id),specIds:newSpecs.map(s=>s.id),matIds:newMats.map(m=>m.id),sartBefore};
-    await bulkBatchSave([...bulkBatchesGet(),batch].slice(-10));
-    logAction('define',`Toplu kurulum: ${p.bina} - ${p.kats.length} kat, ${p.odas.length} oda, ${newSpecs.length} kalem${newMats.length?`, ${newMats.length} yeni urun`:''}`);
+    // ---- 3) kalici yazma (hata FIRLATAN katman) ----
+    if(p.isNew){
+      await S.insertBuilding(p.bina); DB.proje.buildings.push(p.bina);
+      await setBinaGiris(p.bina,{model:'parcali',levels:p.levels||['kat','oda']});
+    }
+    const nodes=[...p.kats,...p.aks,...p.frags,...p.odas];
+    if(nodes.length){ await S.insertLokasyonlar(nodes); DB.proje.lokasyonlar.push(...nodes); }
+    if(yamali.size){ const list=[...yamali.values()]; await S.upsertLokasyonlar(list); list.forEach(c=>{ const cur=getLok(c.id); if(cur)Object.assign(cur,c); }); }
+    if(newMats.length){ await S.insertMaterials(newMats); }
+    matlarKalici=true;
+    if(newSpecs.length){ await S.insertSpecs(newSpecs); DB.proje.specs.push(...newSpecs); }
+    for(const {sr,addKat,addOda} of sartPlan){
+      const next={...sr,katIds:[...(sr.katIds||[]),...addKat],odalar:[...(sr.odalar||[]),...addOda]};
+      await S.updateSartname(sr.id,next); sr.katIds=next.katIds; sr.odalar=next.odalar;
+    }
+    batch.partial=false; await bulkBatchSave(bulkBatchesGet().slice());
+    logAction('define',`Toplu kurulum: ${p.bina} - ${p.kats.length} kat, ${p.aks.length+p.frags.length?(p.aks.length+p.frags.length)+' aks/fragment, ':''}${p.odas.length} oda, ${newSpecs.length} kalem${newMats.length?`, ${newMats.length} yeni urun`:''}${secili.length?`, ${secili.length} alan guncellendi`:''}`);
     _BULK=null; closeModal(); render();
-    toast(`Kurulum tamam: ${p.kats.length} kat, ${p.odas.length} oda, ${newSpecs.length} kalem eklendi`);
-  }catch(err){ console.error(err); toast('Kurulum hatasi: '+(err.message||err),'err'); if(btn){btn.disabled=false;btn.textContent='Kur';} }
+    toast(`Kurulum tamam: ${p.kats.length} kat, ${p.odas.length} oda, ${newSpecs.length} kalem eklendi${secili.length?`, ${secili.length} alan guncellendi`:''}`);
+  }catch(err){
+    console.error(err);
+    if(!matlarKalici) newMats.forEach(m=>{ const i=DB.proje.materials.indexOf(m); if(i>=0)DB.proje.materials.splice(i,1); });
+    toast('KURULUM YARIM KALDI: '+(err.message||err)+' - sayfayi yenileyin; eklenenler "Kurulumu Geri Al" ile temizlenebilir, ayni dosya tekrar yuklenebilir (mevcutlar atlanir)','err');
+    if(btn){btn.disabled=true;btn.textContent='Yarim kaldi - sayfayi yenileyin';}
+    render();
+  }
 }
+
 /* ============ TOPLU KURULUM GERI AL ============
-   Iki yol: (1) KAYITLI batch - kurulum sirasinda uretilen tum id'ler + sartname fotografi
-   saklandigindan kat/oda/kalem/malzeme silinir ve sartname kapsami TAM eski haline doner.
-   (2) YENIDEN YAPILANDIRMA - eski (kayitsiz) kurulumlar icin: binadaki oda dugumleri + o
-   odalara yerlestirilmis poz kodlu kalemler + yalniz bu kalemlerce kullanilan malzemeler
-   tespit edilir. Her iki yolda da SILMEDEN once onizleme + baglantili stok/rapor uyarisi. */
-function bulkBatchesGet(){ return (DB.meta&&DB.meta.bulkBatches)||[]; }
-async function bulkBatchSave(list){ if(!DB.meta)DB.meta={}; DB.meta.bulkBatches=list; try{ await sbSetSetting('bulkBatches',list); }catch(e){ console.warn('bulkBatches kaydedilemedi:',e); } }
-// silinecek kalemlere bagli stok girisi / siparis satiri / saha raporu sayilari (uyari icin)
-function bulkSpecRefs(specIds){ const set=new Set(specIds);
-  const items=(DB.proje.items||[]).filter(it=>set.has(it.specId)).length;
-  const ordLines=(DB.proje.orders||[]).reduce((n,o)=>n+(o.lines||[]).filter(l=>set.has(l.specId)).length,0);
-  const raps=rEntries().filter(e=>set.has(e.specId)).length;
-  return {items,ordLines,raps,any:items+ordLines+raps>0};
+   Iki yol: (1) KAYITLI batch - kurulum sirasinda uretilen tum id'ler + sartnameye EKLENENLER +
+   mevcut kayitlarda yazilan alanlar saklanir. (2) YENIDEN YAPILANDIRMA - eski (kayitsiz)
+   kurulumlar icin: binadaki oda dugumleri + o odalara yerlestirilmis poz / ozel no'lu kalemler +
+   yalniz bu kalemlerce kullanilan malzemeler tespit edilir.
+
+   Iki yolda da SILMEDEN once onizleme + onay. Silme KORUYUCUDUR (lokDelete ile ayni ilke):
+   - montaj / alim / siparis / metraj kaydi bagli olan dugum, ozel kod tanimli kat, ve ALTINDA
+     kurulumla eklenmemis dugum bulunan ebeveyn SILINMEZ, "korunacak" olarak listelenir;
+   - siparis / stok / rapor / alternatif bagli kalem SILINMEZ (eskiden "bosta kalir" uyarisiyla
+     silinirdi ve kayitlar kalemsiz kaliyordu);
+   - kurulumdan sonra baska kalemde de kullanilan malzeme SILINMEZ;
+   - sartname kapsamindan yalniz kurulumun EKLEDIKLERI cikarilir (tam fotograf geri yuklemek,
+     kurulumdan sonra elle yapilan atamalari ezerdi);
+   - mevcut kayitlarda yazilan alan yalniz HALA kurulumdaki degerdeyse eski haline doner;
+   - yeni bina yalniz baska hicbir kaydi kalmadiysa silinir. */
+// tek geciste: bagli kayit iceren kalem ve dugum kimlikleri
+function _bulkBagIndeks(){
+  const spec=new Set(), lok=new Set();
+  (DB.proje.items||[]).forEach(it=>{ if(it.is_deleted)return;
+    if(it.specId) spec.add(it.specId);
+    itemLokPaylari(it).forEach(pp=>{ if(pp.lokId) lok.add(pp.lokId); }); });
+  (DB.proje.orders||[]).forEach(o=>{ if(o.is_deleted)return; (o.lines||[]).forEach(l=>{
+    if(l.specId) spec.add(l.specId);
+    if(l.lokId) lok.add(l.lokId);
+    (l.ozelPay||[]).forEach(pp=>{ if(pp.lokId) lok.add(pp.lokId); }); }); });
+  (DB.proje.alternatives||[]).forEach(a=>{ if(a.specId) spec.add(a.specId); });
+  rEntries().forEach(e=>{ if(e.specId) spec.add(e.specId); if(e.lokId) lok.add(e.lokId); });
+  return {spec,lok};
 }
-// kayitsiz kurulum icin plan: bina + oda dugumleri + poz kodlu oda yerlestirmeleri + yalniz-bu-kalemlerce kullanilan malzemeler
+function _bulkBinaBosMu(bina){
+  return !binaLoklar(bina).length
+    &&!(DB.proje.specs||[]).some(s=>!s.is_deleted&&s.bina===bina)
+    &&!(DB.proje.items||[]).some(i=>!i.is_deleted&&i.bina===bina)
+    &&!(DB.proje.orders||[]).some(o=>!o.is_deleted&&o.bina===bina)
+    &&!(DB.proje.sartnames||[]).some(x=>x.bina===bina)
+    &&!(DB.proje.alternatives||[]).some(a=>a.bina===bina)
+    &&!(DB.proje.binaModelleri||[]).some(m=>m.bina===bina)
+    &&!rEntries().some(e=>e.bina===bina);
+}
+// ham istek -> silinecek / korunacak plani (ekranda gosterilen ile uygulanan AYNI nesnedir)
+function _bulkUndoPlanla(raw){
+  const bina=raw.bina, idx=_bulkBagIndeks();
+  const specAd=(raw.specIds||[]).filter(id=>DB.proje.specs.some(s=>s.id===id&&!s.is_deleted));
+  const delSpec=specAd.filter(id=>!idx.spec.has(id));
+  const keptSpec=specAd.filter(id=>idx.spec.has(id));
+  const silSpec=new Set(delSpec);
+  // silinmeyecek baska kalemlerin metraj dagilimi da dugumu "bagli" yapar
+  const lokRef=new Set(idx.lok);
+  (DB.proje.specs||[]).forEach(s=>{ if(s.is_deleted||silSpec.has(s.id))return; (s.lokTargets||[]).forEach(t=>{ if(t.lokId) lokRef.add(t.lokId); }); });
+  const aday=[...(raw.odaIds||[]),...(raw.araIds||[]),...(raw.katIds||[])].filter(id=>getLok(id));
+  const del=new Set(aday), kept=new Map();
+  const koru=(id,sebep)=>{ if(del.delete(id)) kept.set(id,sebep); };
+  aday.forEach(id=>{
+    if(lokRef.has(id)) koru(id,'bagli montaj / alim / siparis / metraj kaydi var');
+    else if(lokKodlari(getLok(id)).length) koru(id,'Kod Defteri\'nde kod tanimli'); });
+  // silinmeyen bir cocuk varsa (korunan ya da kurulumla eklenmemis) ebeveyni de kalir
+  let ch=true;
+  while(ch){ ch=false;
+    binaLoklar(bina).forEach(l=>{ if(del.has(l.id))return;
+      lokParentIds(l).forEach(pid=>{ if(pid&&del.has(pid)){ koru(pid,'altindaki "'+l.name+'" dugumu korunuyor'); ch=true; } }); }); }
+  const delMat=[], keptMat=[];
+  (raw.matIds||[]).forEach(mid=>{ if(!getMaterial(mid))return;
+    (materialUsage(mid).every(s=>silSpec.has(s.id))?delMat:keptMat).push(mid); });
+  const lvN=lv=>[...del].filter(id=>(getLok(id)||{}).level===lv).length;
+  return {bina,isNew:!!raw.isNew,batchId:raw.batchId||null,recon:!!raw.recon,
+    delLok:[...del],keptLok:[...kept.entries()],delSpec,keptSpec,delMat,keptMat,
+    katN:lvN('kat'),araN:lvN('aks')+lvN('fragment'),odaN:lvN('oda'),
+    patched:raw.patched||[],sartAdded:raw.sartAdded||null,sartRestore:raw.sartRestore||null};
+}
+// kayitsiz kurulum icin: bina + oda dugumleri + poz / ozel no'lu oda yerlestirmeleri + yalniz-bu-kalemlerce kullanilan malzemeler
 function bulkUndoReconstructPlan(bina){
   const odas=binaLoklar(bina).filter(l=>l.level==='oda');
   const odaSet=new Set(odas.map(o=>o.id));
-  const specs=DB.proje.specs.filter(s=>!s.is_deleted && s.bina===bina && (s.poz||'').trim() && (s.lokTargets||[]).some(t=>odaSet.has(t.lokId)));
+  const specs=DB.proje.specs.filter(s=>!s.is_deleted&&s.bina===bina&&((s.poz||'').trim()||(s.ozelNo||'').trim())&&(s.lokTargets||[]).some(t=>odaSet.has(t.lokId)));
   const specIds=new Set(specs.map(s=>s.id));
-  const matIds=[...new Set(specs.map(s=>s.matId).filter(Boolean))].filter(mid=>{ const u=materialUsage(mid); return u.length && u.every(s=>specIds.has(s.id)); });
-  return {bina,isNew:false,katIds:[],odaIds:[...odaSet],specIds:[...specIds],matIds,sartStripOdas:[...odaSet],reconstruct:true};
+  const matIds=[...new Set(specs.map(s=>s.matId).filter(Boolean))].filter(mid=>{ const u=materialUsage(mid); return u.length&&u.every(s=>specIds.has(s.id)); });
+  return _bulkUndoPlanla({bina,isNew:false,odaIds:[...odaSet],specIds:[...specIds],matIds,recon:true});
 }
-// kayitli batch icin plan (tam geri alma: sartname kapsami fotograftan restore edilir)
-function bulkUndoBatchPlan(b){ return {bina:b.bina,isNew:b.isNew,katIds:(b.katIds||[]).slice(),odaIds:(b.odaIds||[]).slice(),
-  specIds:(b.specIds||[]).slice(),matIds:(b.matIds||[]).slice(),sartRestore:b.sartBefore||[],batchId:b.id}; }
+// kayitli batch icin plan
+function bulkUndoBatchPlan(b){
+  return _bulkUndoPlanla({bina:b.bina,isNew:!!b.isNew,katIds:b.katIds,araIds:b.araIds,odaIds:b.odaIds,specIds:b.specIds,matIds:b.matIds,
+    patched:b.patched,sartAdded:b.sartAdded,sartRestore:b.sartAdded?null:(b.sartBefore||[]),batchId:b.id});
+}
 function openBulkUndoModal(preBina){
   if(!guard('define'))return;
   const batches=bulkBatchesGet().slice().reverse(); // en yeni ustte
@@ -14527,14 +15023,13 @@ function bulkUndoSetMode(m){ _BULKUNDO.mode=m; if(m==='recon'&&!_BULKUNDO.reconB
 function bulkUndoSetBina(b){ _BULKUNDO.bina=b; renderBulkUndoModal(); }
 function bulkUndoSetBatch(id){ const b=_BULKUNDO.batches.find(x=>x.id===id); if(b){ _BULKUNDO.bina=b.bina; _BULKUNDO.batchId=id; } renderBulkUndoModal(); }
 function _bulkUndoCurrentPlan(){
+  if(!_BULKUNDO) return null;
   if(_BULKUNDO.mode==='batch'){ const b=_BULKUNDO.batches.find(x=>x.id===(_BULKUNDO.batchId||(_BULKUNDO.batches[0]&&_BULKUNDO.batches[0].id))); return b?bulkUndoBatchPlan(b):null; }
   return _BULKUNDO.bina?bulkUndoReconstructPlan(_BULKUNDO.bina):null;
 }
 function renderBulkUndoModal(){
   closeModal();
   const u=_BULKUNDO; const plan=_bulkUndoCurrentPlan();
-  const refs=plan?bulkSpecRefs(plan.specIds):null;
-  const matCount=plan?(plan.matIds||[]).length:0;
   const modeTabs=`<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
     ${u.batches.length?`<button class="def-sec-chip ${u.mode==='batch'?'on':''}" onclick="bulkUndoSetMode('batch')">Kayitli Kurulumlar (${u.batches.length})</button>`:''}
     <button class="def-sec-chip ${u.mode==='recon'?'on':''}" onclick="bulkUndoSetMode('recon')">Bina Tarayarak</button>
@@ -14543,70 +15038,100 @@ function renderBulkUndoModal(){
   if(u.mode==='batch'){
     const curId=u.batchId||(u.batches[0]&&u.batches[0].id);
     body=`<div class="frow"><label>Geri alinacak kurulum</label><select onchange="bulkUndoSetBatch(this.value)">
-      ${u.batches.map(b=>`<option value="${b.id}" ${b.id===curId?'selected':''}>${esc(fmtDT(b.ts))} · ${esc(b.bina)} · ${(b.specIds||[]).length} kalem, ${(b.odaIds||[]).length} oda</option>`).join('')}
+      ${u.batches.map(b=>`<option value="${b.id}" ${b.id===curId?'selected':''}>${esc(fmtDT(b.ts))} · ${esc(b.bina)} · ${(b.specIds||[]).length} kalem, ${(b.odaIds||[]).length} oda${b.partial?' · YARIM KALDI':''}</option>`).join('')}
     </select></div>`;
   } else {
     if(!u.reconBinas.length){ body=`<p style="color:var(--amber);font-size:12.5px">Oda yerlestirmesi olan bina bulunamadi - geri alinacak kurulum yok.</p>`; }
     else body=`<div class="frow"><label>Bina</label><select onchange="bulkUndoSetBina(this.value)">
       ${u.reconBinas.map(b=>`<option ${b===u.bina?'selected':''}>${esc(b)}</option>`).join('')}</select></div>
-      <p style="font-size:11.5px;color:var(--mute)">Bu binadaki tum oda dugumleri, o odalara yerlestirilmis poz kodlu kalemler ve yalniz bu kalemlerce kullanilan malzemeler kaldirilir. Kat dugumleri ve elle girdiginiz sartname kat kapsami korunur.</p>`;
+      <p style="font-size:11.5px;color:var(--mute)">Bu binadaki <b>tum oda dugumleri</b> (kullanim amaci girilmis olanlar dahil), o odalara yerlestirilmis poz / ozel no'lu kalemler ve yalniz bu kalemlerce kullanilan malzemeler kaldirilir. Kat dugumleri ve elle girdiginiz sartname kat kapsami korunur.</p>`;
   }
   const stat=(n,l,c)=>`<div><b style="${c?`color:${c}`:''}">${n}</b><span>${l}</span></div>`;
-  const preview=plan?`<div class="matd-stats" style="grid-template-columns:repeat(3,1fr);margin-top:6px">
-      ${stat(plan.odaIds.length,'oda silinecek')}
-      ${stat(plan.specIds.length,'kalem silinecek')}
-      ${stat(matCount,'malzeme silinecek')}
+  let preview='<p style="color:var(--amber)">Silinecek kayit bulunamadi.</p>';
+  let canApply=false;
+  if(plan){
+    const toplam=plan.delLok.length+plan.delSpec.length+plan.delMat.length;
+    canApply=toplam>0||(plan.patched||[]).length>0||!!(plan.sartAdded||plan.sartRestore);
+    const yol=id=>{ const l=getLok(id); return l?(lokPath(id)+' ('+lokLevelLabel(l.level)+')'):id; };
+    preview=`<div class="matd-stats" style="grid-template-columns:repeat(3,1fr);margin-top:6px">
+      ${plan.katN?stat(plan.katN,'kat silinecek'):''}
+      ${plan.araN?stat(plan.araN,'aks / fragment silinecek'):''}
+      ${stat(plan.odaN,'oda silinecek')}
+      ${stat(plan.delSpec.length,'kalem silinecek')}
+      ${stat(plan.delMat.length,'malzeme silinecek')}
+      ${(plan.patched||[]).length?stat(plan.patched.length,'alan eski haline doner'):''}
     </div>
-    ${plan.katIds&&plan.katIds.length?`<p style="font-size:11.5px;color:var(--mute)">+ ${plan.katIds.length} kat dugumu da silinecek (bu kurulumla eklenmisti).</p>`:''}
-    ${refs&&refs.any?`<div class="matd-sec" style="color:var(--red)">Dikkat - Bagli Kayitlar</div>
-      <p style="font-size:12px;color:var(--red)">Silinecek kalemlerin ${refs.items?`${refs.items} stok girisi, `:''}${refs.ordLines?`${refs.ordLines} siparis satiri, `:''}${refs.raps?`${refs.raps} saha raporu `:''}kaydi var. Kalemler silinince bu kayitlar bir kaleme baglanamaz. Devam etmeden once bunlari kontrol edin.</p>`:`<p style="font-size:12px;color:var(--green)">Silinecek kalemlere bagli stok/siparis/rapor kaydi yok - guvenle geri alinabilir.</p>`}`:'<p style="color:var(--amber)">Silinecek kayit bulunamadi.</p>';
-  const canApply=plan&&(plan.odaIds.length+plan.specIds.length+matCount)>0;
+    ${plan.keptLok.length||plan.keptSpec.length||plan.keptMat.length?`<div class="matd-sec" style="color:var(--green)">Korunacak (silinmeyecek) <span>${plan.keptLok.length+plan.keptSpec.length+plan.keptMat.length}</span></div>
+      <div style="max-height:120px;overflow-y:auto;font-size:11.5px">
+        ${plan.keptLok.slice(0,12).map(([id,s])=>`<div style="padding:2px 0">${esc(yol(id))} <span style="color:var(--mute)">- ${esc(s)}</span></div>`).join('')}
+        ${plan.keptLok.length>12?`<div>+ ${plan.keptLok.length-12} dugum daha</div>`:''}
+        ${plan.keptSpec.length?`<div style="padding:2px 0">${plan.keptSpec.length} kalem <span style="color:var(--mute)">- siparis / stok / rapor / alternatif kaydi bagli</span></div>`:''}
+        ${plan.keptMat.length?`<div style="padding:2px 0">${plan.keptMat.length} malzeme <span style="color:var(--mute)">- baska kalemde de kullaniliyor</span></div>`:''}
+      </div>
+      <p style="font-size:11px;color:var(--mute)">Bu kayitlari silmek icin once bagli siparis / rapor / montaj kayitlarini tasiyin ya da silin, sonra geri almayi tekrarlayin.</p>`
+      :`<p style="font-size:12px;color:var(--green)">Silinecek kayitlara bagli stok / siparis / rapor / montaj kaydi yok - guvenle geri alinabilir.</p>`}
+    ${plan.isNew?`<p style="font-size:11.5px;color:var(--mute)">Bu kurulum yeni bir bina olusturmustu: baska hicbir kaydi kalmazsa <b>${esc(plan.bina)}</b> binasi da kaldirilir.</p>`:''}`;
+  }
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal">
     <div class="modal-head"><h3>Toplu Kurulumu Geri Al</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">
-      <p style="font-size:12px;color:var(--mute);margin-bottom:10px">Bir toplu kurulumun eklediklerini kaldirir (kat/oda/kalem/malzeme). Islem geri alinamaz - once onizlemeyi kontrol edin.</p>
+      <p style="font-size:12px;color:var(--mute);margin-bottom:10px">Bir toplu kurulumun eklediklerini kaldirir (kat / oda / kalem / malzeme) ve mevcut kayitlarda yazdigi alanlari eski haline getirir. Bagli kaydi olan kayitlar silinmez. Islem geri alinamaz - once onizlemeyi kontrol edin.</p>
       ${modeTabs}${body}${preview}
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Vazgec</button>
-      ${canApply?`<button class="btn del-btn" id="bu_apply" style="background:var(--red);color:#fff" onclick="applyBulkUndo()">Geri Al (${plan.odaIds.length+plan.specIds.length+matCount} kayit)</button>`:''}
+      ${canApply?`<button class="btn del-btn" id="bu_apply" style="background:var(--red);color:#fff" onclick="applyBulkUndo()">Geri Al</button>`:''}
     </div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
 }
 async function applyBulkUndo(){
   const plan=_bulkUndoCurrentPlan(); if(!plan){ toast('Plan bulunamadi','err'); return; }
   if(!guard('define',{bina:plan.bina}))return;
-  const refs=bulkSpecRefs(plan.specIds);
-  const msg=`${plan.bina}: ${plan.odaIds.length} oda, ${plan.specIds.length} kalem${(plan.matIds||[]).length?`, ${plan.matIds.length} malzeme`:''} kalici olarak silinecek.`
-    +(refs.any?`\n\nUYARI: bu kalemlere bagli ${refs.items} stok, ${refs.ordLines} siparis satiri, ${refs.raps} rapor kaydi var - bunlar bosta kalir.`:'')
+  const S=window.SB_STRICT; if(!S){ toast('Kalicilik katmani yuklenemedi - sayfayi yenileyin','err'); return; }
+  const msg=`${plan.bina}: ${plan.delLok.length} dugum (kat/aks/fragment/oda), ${plan.delSpec.length} kalem${plan.delMat.length?`, ${plan.delMat.length} malzeme`:''} kalici olarak silinecek.`
+    +((plan.keptLok.length||plan.keptSpec.length||plan.keptMat.length)?`\n\nBagli kaydi oldugu icin KORUNACAK: ${plan.keptLok.length} dugum, ${plan.keptSpec.length} kalem, ${plan.keptMat.length} malzeme.`:'')
+    +(plan.patched.length?`\n\n${plan.patched.length} alan eski degerine donecek (sonradan elle degistirilenlere dokunulmaz).`:'')
     +`\n\nDevam edilsin mi?`;
   if(!confirm(msg))return;
   const btn=document.getElementById('bu_apply'); if(btn){btn.disabled=true;btn.textContent='Geri aliniyor...';}
   try{
-    if(plan.specIds.length){ await sbDeleteProjeSpecs(plan.specIds); const ss=new Set(plan.specIds); DB.proje.specs=DB.proje.specs.filter(s=>!ss.has(s.id)); }
-    const lokIds=[...plan.odaIds,...(plan.katIds||[])];
-    if(lokIds.length){ await sbDeleteProjeLokasyonlar(lokIds); const ls=new Set(lokIds); DB.proje.lokasyonlar=DB.proje.lokasyonlar.filter(l=>!ls.has(l.id)); }
-    if((plan.matIds||[]).length){ await sbDeleteProjeMaterials(plan.matIds); const ms=new Set(plan.matIds); DB.proje.materials=DB.proje.materials.filter(m=>!ms.has(m.id)); }
-    // sartname kapsami: kayitli batch -> tam restore; yeniden yapilandirma -> silinen odalari kapsamdan cikar
-    if(plan.sartRestore&&plan.sartRestore.length){
-      for(const b of plan.sartRestore){ const sr=(DB.proje.sartnames||[]).find(x=>x.id===b.id); if(!sr)continue;
-        sr.katIds=(b.katIds||[]).slice(); sr.odalar=(b.odalar||[]).slice(); await sbUpdateProjeSartname(sr.id,{...sr}); }
-    } else if((plan.sartStripOdas||[]).length){
-      const strip=new Set(plan.sartStripOdas);
-      for(const sr of (DB.proje.sartnames||[]).filter(x=>x.bina===plan.bina)){
-        const na=(sr.odalar||[]).filter(o=>!strip.has(o));
-        if(na.length!==(sr.odalar||[]).length){ sr.odalar=na; await sbUpdateProjeSartname(sr.id,{...sr}); }
-      }
+    const silLok=new Set(plan.delLok);
+    // 1) mevcut kayitlarda yazilan alanlar: yalniz HALA kurulumdaki degerdeyse eski haline doner
+    const geri=new Map();
+    (plan.patched||[]).forEach(x=>{ if(silLok.has(x.id))return; const n=getLok(x.id); if(!n)return;
+      const cur=n[x.f];
+      const ayni=(x.f==='kot'||x.f==='alan')?Number(cur)===Number(x.a):String(cur==null?'':cur).trim()===String(x.a).trim();
+      if(!ayni) return;
+      let c=geri.get(x.id); if(!c){ c={...n}; geri.set(x.id,c); }
+      if(x.b==null) delete c[x.f]; else c[x.f]=x.b; });
+    if(geri.size){ await S.upsertLokasyonlar([...geri.values()]);
+      geri.forEach((c,id)=>{ const n=getLok(id); if(!n)return; Object.keys(n).forEach(k=>{ if(!(k in c)) delete n[k]; }); Object.assign(n,c); }); }
+    // 2) kalemler -> 3) dugumler -> 4) malzemeler
+    if(plan.delSpec.length){ await S.deleteSpecs(plan.delSpec); const ss=new Set(plan.delSpec); DB.proje.specs=DB.proje.specs.filter(s=>!ss.has(s.id)); }
+    if(plan.delLok.length){ await S.deleteLokasyonlar(plan.delLok); DB.proje.lokasyonlar=DB.proje.lokasyonlar.filter(l=>!silLok.has(l.id)); }
+    if(plan.delMat.length){ await S.deleteMaterials(plan.delMat); const ms=new Set(plan.delMat); DB.proje.materials=DB.proje.materials.filter(m=>!ms.has(m.id)); }
+    // 5) sartname kapsami: kurulumun EKLEDIKLERI cikar (eski kayitli batch: fotograf), silinen dugumler her durumda cikar
+    for(const sr of (DB.proje.sartnames||[]).filter(x=>x.bina===plan.bina)){
+      let katIds=(sr.katIds||[]).slice(), odalar=(sr.odalar||[]).slice();
+      const rs=plan.sartRestore&&plan.sartRestore.find(x=>x.id===sr.id);
+      const sa=plan.sartAdded&&plan.sartAdded.find(x=>x.id===sr.id);
+      if(rs){ katIds=(rs.katIds||[]).slice(); odalar=(rs.odalar||[]).slice(); }
+      else if(sa){ katIds=katIds.filter(k=>!(sa.katIds||[]).includes(k)); odalar=odalar.filter(o=>!(sa.odalar||[]).includes(o)); }
+      katIds=katIds.filter(k=>!silLok.has(k)); odalar=odalar.filter(o=>!silLok.has(o));
+      if(katIds.length===(sr.katIds||[]).length&&odalar.length===(sr.odalar||[]).length&&!rs) continue;
+      const next={...sr,katIds,odalar}; await S.updateSartname(sr.id,next); sr.katIds=katIds; sr.odalar=odalar;
     }
-    if(plan.isNew){ // yeni olusturulan binayi da kaldir
+    // 6) kurulumla olusan bina: baska hicbir kaydi kalmadiysa kaldirilir
+    let binaSilindi=false;
+    if(plan.isNew&&_bulkBinaBosMu(plan.bina)){
+      await S.deleteBuilding(plan.bina); binaSilindi=true;
       DB.proje.buildings=DB.proje.buildings.filter(b=>b!==plan.bina);
-      try{ await sbDeleteProjeBuilding(plan.bina); }catch(e){}
       if(DB.meta.binaGiris&&DB.meta.binaGiris[plan.bina]!=null){ const g={...DB.meta.binaGiris}; delete g[plan.bina]; DB.meta.binaGiris=g; await sbSetSetting('binaGiris',g); }
     }
     if(plan.batchId) await bulkBatchSave(bulkBatchesGet().filter(b=>b.id!==plan.batchId));
-    logAction('delete',`Toplu kurulum geri alindi: ${plan.bina} - ${plan.odaIds.length} oda, ${plan.specIds.length} kalem${(plan.matIds||[]).length?`, ${plan.matIds.length} malzeme`:''}`);
+    logAction('delete',`Toplu kurulum geri alindi: ${plan.bina} - ${plan.delLok.length} dugum, ${plan.delSpec.length} kalem${plan.delMat.length?`, ${plan.delMat.length} malzeme`:''}${plan.keptLok.length+plan.keptSpec.length?` (${plan.keptLok.length} dugum, ${plan.keptSpec.length} kalem bagli kayit nedeniyle korundu)`:''}${binaSilindi?', bina kaldirildi':''}`);
     _BULKUNDO=null; closeModal(); render();
-    toast(`Geri alindi: ${plan.odaIds.length} oda, ${plan.specIds.length} kalem silindi`);
-  }catch(err){ console.error(err); toast('Geri alma hatasi: '+(err.message||err),'err'); if(btn){btn.disabled=false;btn.textContent='Geri Al';} }
+    toast(`Geri alindi: ${plan.delLok.length} dugum, ${plan.delSpec.length} kalem silindi`+((plan.keptLok.length||plan.keptSpec.length)?` · ${plan.keptLok.length+plan.keptSpec.length} kayit korundu`:''));
+  }catch(err){ console.error(err); toast('GERI ALMA YARIM KALDI: '+(err.message||err)+' - sayfayi yenileyin ve tekrar deneyin','err'); if(btn){btn.disabled=true;btn.textContent='Yarim kaldi - sayfayi yenileyin';} }
 }
 async function flowAdd(bina,parentId,level,inpId){
   const iid=inpId||'fw_add';
@@ -14699,6 +15224,8 @@ async function lokMergeInto(keepId,dropId){
     c.parentId=ps[0]||null; if(ps.length>1)c.parentIds=ps; else delete c.parentIds;
     jobs.push(sbUpdateProjeLokasyon(c.id,{...c}));
   });
+  // oda bilgisi: kalan dugumde BOS olan alanlar silinenden doldurulur (kullanim amaci vb. kaybolmasin)
+  LOK_BILGI_ALANLARI.forEach(f=>{ if((keep[f]==null||String(keep[f]).trim()==='')&&drop[f]!=null&&String(drop[f]).trim()!=='') keep[f]=drop[f]; });
   // 6) kalan dugum artik her iki parcaya da bagli
   const merged=[...new Set([...lokParentIds(keep),...lokParentIds(drop)])].filter(Boolean);
   keep.parentId=merged[0]||null; if(merged.length>1)keep.parentIds=merged; else delete keep.parentIds;
@@ -15025,8 +15552,8 @@ function renderKatPanel(){
     const kotTag=[...k.kotlar].filter(x=>x&&katpKey(x)!==k.key).slice(0,3).map(x=>`<span class="katp-kot" title="Kot">${esc(x)}</span>`).join('');
     let body='';
     if(acik){
-      const odaAdlar=[...k.odaIds].map(id=>getLok(id)).filter(Boolean).map(o=>o.name).sort((a,b)=>String(a).localeCompare(String(b),'tr'));
-      const odaHtml=odaAdlar.length?`<div><div class="katp-sec">Odalar <span>${odaAdlar.length}</span></div><div class="katp-odalar" style="margin-top:7px">${odaAdlar.map(o=>`<span class="katp-oda">${esc(o)}</span>`).join('')}</div></div>`:'';
+      const odaAdlar=[...k.odaIds].map(id=>getLok(id)).filter(Boolean).sort((a,b)=>String(a.name).localeCompare(String(b.name),'tr',{numeric:true}));
+      const odaHtml=odaAdlar.length?`<div><div class="katp-sec">Odalar <span>${odaAdlar.length}</span></div><div class="katp-odalar" style="margin-top:7px">${odaAdlar.map(o=>`<span class="katp-oda" title="${esc(lokKullanim(o)||'Kullanim amaci girilmemis')}${o.alan!=null?' · '+esc(lokAlanTxt(o.alan))+' m2':''}">${esc(o.name)}${lokKullanim(o)?` <em class="katp-oda-kul">${esc(lokKullanim(o))}</em>`:''}</span>`).join('')}</div></div>`:'';
       // sartname gruplari > urunler (ozel kod rozetleriyle)
       const grps={};
       k.specs.forEach(sp=>{ const g=specGroupKey(sp); (grps[g]=grps[g]||[]).push(sp); });
@@ -16207,6 +16734,11 @@ function lokParentIds(l){
 }
 function lokIsShared(l){ return lokParentIds(l).length>1; }
 function lokHasParent(l,parentId){ return lokParentIds(l).includes(parentId||null); }
+// odanin KULLANIM AMACI ("Elektrik odasi", "Vestibul"): Toplu Kurulum sablonundan ya da oda bilgisi penceresinden girilir; bos ise ''
+function lokKullanim(l){ return l&&l.kullanim!=null?String(l.kullanim).trim():''; }
+// alan (m2) Turkce gosterim: 18.5 -> "18,5"
+function lokAlanTxt(a){ return String(a).replace('.',','); }
+const LOK_BILGI_ALANLARI=['kullanim','alan','not']; // oda bilgisi: dugumde serbest JSON, migration yok
 function lokChildren(bina,parentId){ const pid=parentId||null; return binaLoklar(bina).filter(l=>lokHasParent(l,pid)).sort((a,b)=>(a.name||'').localeCompare(b.name||'','tr',{numeric:true})); }
 // dugumun tam yolu: "Kat 1 / F-03 / Pompa Odasi" (paylasimli dugumde birincil ebeveynin yolu)
 function lokPath(id){ const parts=[]; let n=getLok(id), guard=0;
@@ -16239,7 +16771,7 @@ function lokSameNameInKat(l){
 function lokSelectOptions(bina,selectedId,emptyLabel){
   const flat=lokFlat(bina);
   return `<option value="">${esc(emptyLabel||'- lokasyon secin -')}</option>`+flat.map(f=>
-    `<option value="${f.lok.id}" ${f.lok.id===selectedId?'selected':''}>${esc(f.depth?f.path:f.lok.name)} (${lokLevelLabel(f.lok.level)})</option>`).join('');
+    `<option value="${f.lok.id}" ${f.lok.id===selectedId?'selected':''}>${esc(f.depth?f.path:f.lok.name)}${f.lok.level==='oda'&&lokKullanim(f.lok)?' · '+esc(lokKullanim(f.lok)):''} (${lokLevelLabel(f.lok.level)})</option>`).join('');
 }
 /* ===== SARTNAME-KAT KAPSAMI =====
    sr.katIds=[lokId,...]: sartnamenin binanin hangi katlarini kapsadigi (orn. "TAVA 1-5"
@@ -16329,6 +16861,9 @@ function binaKatNodeOf(bina,kat,kot){
   const kotNum=v=>{ const f=parseFloat(String(ktopKotFmt(v)).replace(/^\+/,'')); return isNaN(f)?null:f; };
   const hedef=(kot!=null&&String(kot).trim()!=='')?kotNum(kot):(kKey.charAt(0)==='k'?kotNum(kKey.slice(2)):null);
   if(hedef!=null){ const n=kats.find(k=>k.kot!=null&&String(k.kot)!==''&&kotNum(k.kot)===hedef); if(n) return n; }
+  // numarasiz ve kotsuz kat ("CATI"): Kat Ata / Toplu Kurulum kaleme kat ADINI yazar - adla da eslestir
+  const adKey=norm(String(kat==null?'':kat)).trim();
+  if(adKey){ const n=kats.find(k=>norm(k.name).trim()===adKey); if(n) return n; }
   return null;
 }
 // kisa kat etiketi: tum katlar secili -> "Tum katlar"; ardisik dizi -> "1.KAT – 5.KAT"; degilse adlar virgulle

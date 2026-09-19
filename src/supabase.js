@@ -935,10 +935,24 @@ export async function sbDeleteProjeAlternative(id) { return sbDeleteEntity('proj
 // Parçalı giriş: bina lokasyon kırılım ağacı (Kat / Fragment / Oda)
 export async function sbInsertProjeLokasyon(e) { return sbInsertEntity('proje_lokasyonlar', e) }
 export async function sbUpdateProjeLokasyon(id, e) { return sbUpdateEntity('proje_lokasyonlar', id, e) }
+// Kimlik listesi PostgREST'e URL'de gider: yuzlerce kimlik tek istekte URL sinirini asabilir.
+// 200'luk parcalar hem sinirin altinda kalir hem sunucudaki satir ust siniriyla catismaz.
+async function sbSilParcali(table, ids) {
+  for (let i = 0; i < ids.length; i += 200) {
+    await veri({ op: 'delete', table, in: { col: 'id', vals: ids.slice(i, i + 200) } })
+  }
+}
 export async function sbDeleteProjeLokasyonlar(ids) {
   if (!ids || !ids.length) return
-  await veri({ op: 'delete', table: 'proje_lokasyonlar', in: { col: 'id', vals: ids } })
+  await sbSilParcali('proje_lokasyonlar', ids)
 }
+// Toplu kurulum geri alma: kalem / malzeme icin de ayni parcali silme (tek tek istek yerine)
+export async function sbDeleteProjeSpecsToplu(ids) { if (ids && ids.length) await sbSilParcali('proje_specs', ids) }
+export async function sbDeleteProjeMaterialsToplu(ids) { if (ids && ids.length) await sbSilParcali('proje_materials', ids) }
+// Toplu kurulum (Excel): ayni kayitlar tek tek degil BAYT+SATIR limitli parcalar halinde yazilir.
+// Ekleme mevcut satirla cakisirsa (ayni id) hata verir; upsert mevcut satiri gunceller.
+export async function sbInsertProjeLokasyonlar(list) { return sbInsertEntities('proje_lokasyonlar', list) }
+export async function sbUpsertProjeLokasyonlar(list) { return sbUpsertEntities('proje_lokasyonlar', list) }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bina 3D Modelleri (glTF/.glb) - Supabase Storage + JSONB referans tablosu

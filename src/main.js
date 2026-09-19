@@ -168,7 +168,11 @@ import {
   // Parcali giris: lokasyon kirilim agaci
   sbInsertProjeLokasyon,
   sbUpdateProjeLokasyon,
+  sbInsertProjeLokasyonlar,
+  sbUpsertProjeLokasyonlar,
   sbDeleteProjeLokasyonlar,
+  sbDeleteProjeSpecsToplu,
+  sbDeleteProjeMaterialsToplu,
   // Gunluk Isler (takvimli gorev takibi)
   sbGetGunlukIsler,
   sbInsertGunlukIs,
@@ -462,6 +466,31 @@ window.initBinaViewer           = initBinaViewer
 window.sbInsertProjeLokasyon    = guardedSafe('tanimlar', 'create', sbInsertProjeLokasyon)
 window.sbUpdateProjeLokasyon    = guardedSafe('tanimlar', 'update', sbUpdateProjeLokasyon)
 window.sbDeleteProjeLokasyonlar = guardedSafe('tanimlar', 'delete', sbDeleteProjeLokasyonlar)
+
+// ─── Toplu kurulum icin HATA FIRLATAN katman ─────────────────────────────────
+// guardedSafe hatayi yutar (toast + undefined): tek tek islemler icin uygun, ama
+// yuzlerce kayitlik toplu kurulumda "yazildi mi?" sorusunu cevaplayamaz - baglanti
+// yarida koparsa kurulum basari gibi gorunurdu. Buradaki sarmalayici yetkiyi AYNI
+// kurallarla (_permCheck) denetler, hatayi ise cagirana FIRLATIR; cagiran taraf
+// (index.html, Toplu Kurulum / Geri Al) yarim kalan isi kullaniciya soyleyebilir.
+function guardedStrict(module, action, fn) {
+  return async function (...args) {
+    _permCheck(module, action)
+    return await fn.apply(this, args)
+  }
+}
+window.SB_STRICT = {
+  insertBuilding:    guardedStrict('tanimlar', 'create', sbInsertProjeBuilding),
+  deleteBuilding:    guardedStrict('tanimlar', 'delete', sbDeleteProjeBuilding),
+  insertLokasyonlar: guardedStrict('tanimlar', 'create', sbInsertProjeLokasyonlar),
+  upsertLokasyonlar: guardedStrict('tanimlar', 'update', sbUpsertProjeLokasyonlar),
+  deleteLokasyonlar: guardedStrict('tanimlar', 'delete', sbDeleteProjeLokasyonlar),
+  updateSartname:    guardedStrict('tanimlar', 'update', sbUpdateProjeSartname),
+  insertMaterials:   guardedStrict('kutuphane', 'create', sbInsertProjeMaterials),
+  deleteMaterials:   guardedStrict('kutuphane', 'delete', sbDeleteProjeMaterialsToplu),
+  insertSpecs:       guardedStrict('proje', 'create', sbInsertProjeSpecs),
+  deleteSpecs:       guardedStrict('proje', 'delete', sbDeleteProjeSpecsToplu),
+}
 
 // ─── Gunluk Isler ────────────────────────────────────────────────────────────
 // Proje modulunun yetkisini kullanir: proje panosunu goren gorevleri gorur,
