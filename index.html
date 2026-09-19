@@ -2288,8 +2288,9 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .gi-rapor+.gi-add{margin-left:6px}
 .kr-kalemler{display:flex;flex-direction:column;gap:8px;margin-top:4px}
 .kr-kalem{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);border-radius:10px;padding:9px 12px;background:var(--panel2)}
-/* SABIT 5 kalemin adi/birimi de INPUT'tur (yeniden adlandirilabilir) - sabit olan
-   yalnizca SAYISI/SIRASI/id'si; deger asagidaki .kr-kalem-deger'dedir. */
+/* SABIT 5 kalemin adi/birimi de INPUT'tur (yeniden adlandirilabilir) ve kalem
+   GIZLENEBILIR (cop kutusu) - sabit olan yalnizca id/sirasi; deger asagidaki
+   .kr-kalem-deger'dedir. */
 .kr-kalem-ad{flex:1;min-width:0;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.2px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:7px 10px;outline:none;transition:border .15s,box-shadow .15s}
 .kr-kalem-ad:focus{border-color:var(--amber);box-shadow:var(--ring) rgba(240,160,32,.16)}
 .kr-kalem-birim{display:flex;align-items:center;gap:6px;flex:0 0 auto}
@@ -2310,7 +2311,13 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .kr-ozel input.kr-ozel-deger{flex:0 0 78px;width:78px;text-align:center;font-family:var(--mono);font-size:13px}
 .kr-ozel .mini-btn{width:26px;height:26px;border-color:transparent;background:transparent;opacity:.6;flex:0 0 auto;transition:.15s}
 .kr-ozel .mini-btn:hover{opacity:1;background:var(--bg);border-color:var(--red)}
-.kr-ozel-ekle{margin-top:8px}
+.kr-kalem .mini-btn{width:26px;height:26px;border-color:transparent;background:transparent;opacity:.6;flex:0 0 auto;transition:.15s}
+.kr-kalem .mini-btn:hover{opacity:1;background:var(--bg);border-color:var(--red)}
+.kr-ozel-ekle{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}
+/* "0 olanlari goster" anahtari: acikken notr (+ tik), kapaliyken amber - metinde 0'lar gizli demektir */
+.kr-sifir{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;background:var(--panel2);border:1px solid var(--line);color:var(--mute);border-radius:20px;padding:3px 10px;font-size:10px;font-weight:700;font-family:var(--mono);letter-spacing:.2px;text-transform:none;cursor:pointer}
+.kr-sifir:hover{border-color:var(--dim);color:var(--ink)}
+.kr-sifir.kapali{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 55%,transparent)}
 /* COKLU GORSEL IZGARASI: bir goreve birden fazla ekran goruntusu eklenir.
    Bos halde eski tek-kutu gorunumu (yapistirma ipucu), dolu halde kucuk resim
    izgarasi + sondaki "+" karesi. */
@@ -7455,7 +7462,9 @@ function gyAcId(id){
    oku" ve oda onerileri gibi parcalari burada YOK - sabit bes kalemlik kisa bir
    form yeter. SABIT 5'in ADI/BIRIMI ise (KR_BASLIK_AYARI) yeniden adlandirilabilir
    - saha TAVA/KABLO disinda bir metraj olcerse basligi buradan degistirir, id/
-   sira/ondalik-basamak degismez (kayitlarda kalemler[id] ile tutulur).
+   sira/ondalik-basamak degismez (kayitlarda kalemler[id] ile tutulur). Sabit
+   kalem ayrica GIZLENEBILIR (ayarda gizli:true): forma/metne girmez ama
+   kayitlardaki degerler silinmez, geri getirilince yeniden gorunur.
 
    VERI: ayri tablo ACILMADI - Gunluk Yazi ile ayni desen: 'gunluk_isler'
    tablosunda tur:'rapor' isaretli kayit. Boylece yukleme, yetki (proje modulu),
@@ -7488,11 +7497,13 @@ function krKalemler(){
   return KR_KALEMLER.map(k=>{
     const ov=kayitli&&kayitli.find(x=>x&&x.id===k.id);
     const ad=ov&&String(ov.ad||'').trim(), birim=ov&&String(ov.birim||'').trim();
-    return {...k, ad:ad||k.ad, birim:birim||k.birim};
+    return {...k, ad:ad||k.ad, birim:birim||k.birim, gizli:!!(ov&&ov.gizli)};
   });
 }
-// onizleme/metin SADECE modal acikkken cagrilir (bkz. krGovde) - _KRK bos ise ayar tazedir
-function krEtkinKalemler(){ return (_KRK&&_KRK.length)?_KRK:krKalemler(); }
+/* Forma/metne giren (GIZLENMEMIS) sabit kalemler. Modal acikken calisma kopyasi
+   (_KRK) okunur; kapaliyken kayitli ayar - kapatilip iptal edilen bir gizleme
+   takvimdeki "N kalem dolu" sayisini bozmasin. */
+function krEtkinKalemler(){ return ((_KR&&_KRK&&_KRK.length)?_KRK:krKalemler()).filter(k=>!k.gizli); }
 
 function krAll(){ return (DB.gunlukIsler||[]).filter(r=>r&&r.id&&r.tur==='rapor'&&!r.is_deleted&&(!r.bina||canSeeBuilding(r.bina))); }
 // bir gunde birden cok rapor olur: her FIRMA/BINA kendi raporunu tutar (Gunluk Yazi ile ayni kimlik kurali)
@@ -7510,8 +7521,8 @@ function krDuzenlenebilir(){ return giCanCreate()||giCanUpdate(); }
 function krDeger(r,id){ const v=r&&r.kalemler&&r.kalemler[id]; return (v===0||v)?String(v):''; }
 // ozel kalem degeri: sabitlerden farkli olarak kayitta 'ozel' DIZISINDE durur (gid ile)
 function krOzelDoluMu(g){ return !!(g&&(g.deger===0||g.deger)&&String(g.deger).trim()!==''); }
-function krDoluMu(r){ return KR_KALEMLER.some(k=>krDeger(r,k.id)!=='') || (r&&r.ozel||[]).some(krOzelDoluMu); }
-function krDoluSayisi(r){ return KR_KALEMLER.filter(k=>krDeger(r,k.id)!=='').length + ((r&&r.ozel)||[]).filter(krOzelDoluMu).length; }
+function krDoluMu(r){ return krEtkinKalemler().some(k=>krDeger(r,k.id)!=='') || (r&&r.ozel||[]).some(krOzelDoluMu); }
+function krDoluSayisi(r){ return krEtkinKalemler().filter(k=>krDeger(r,k.id)!=='').length + ((r&&r.ozel)||[]).filter(krOzelDoluMu).length; }
 // metin basligindaki tarih GG.AA.YYYY - giKey ('YYYY-AA-GG') bicimini cevirir
 function krTarihTR(k){ const p=giParcala(k); return p?giZ(p[2])+'.'+giZ(p[1])+'.'+p[0]:''; }
 
@@ -7523,13 +7534,30 @@ function krTarihTR(k){ const p=giParcala(k); return p?giZ(p[2])+'.'+giZ(p[1])+'.
 /* OZEL KALEMLER metinde sabit 5'in ARDINDAN gelir; adsiz (henuz yazilmamis) satir
    atlanir (Gunluk Yazi'nin "bos baslik metne yazilmaz" kurali) - birim bossa
    deger tek basina yazilir ("kg / кг: 5" degil de "5"). */
+/* "0 olanlari goster" tercihi KULLANICIYA ozeldir (localStorage): biri metni sifirsiz
+   kopyalarken baskasinin metnini degistirmez. Varsayilan GOSTER (eski davranis).
+   Yalnizca girilmis 0 elenir; BOS (girilmemis) kalem yine yazilir - "olculmedi" ile
+   "0 olculdu" ayrimi bozulmasin. Sabit ve ozel kalemlerin ikisine de uygulanir. */
+let _KR_SIFIR=(function(){ try{ return localStorage.getItem('kr_sifir_goster')!=='0'; }catch(e){ return true; } })();
+function krSifirMu(v){ const s=String(v==null?'':v).trim(); return s!==''&&Number(s)===0; }
+function krSifirYazilsin(v){ return _KR_SIFIR||!krSifirMu(v); }
 function krOzelGovde(r){
-  return ((r&&r.ozel)||[]).filter(g=>String((g&&g.ad)||'').trim())
+  return ((r&&r.ozel)||[]).filter(g=>String((g&&g.ad)||'').trim()&&krSifirYazilsin(g.deger))
     .map(g=>{ const birim=String(g.birim||'').trim(), deger=(g.deger===0||g.deger)?String(g.deger):'';
       return String(g.ad).trim()+'\n'+(birim?birim+': ':'')+deger; });
 }
 function krGovde(r){
-  return krEtkinKalemler().map(k=>k.ad+'\n'+k.birim+': '+krDeger(r,k.id)).concat(krOzelGovde(r)).join('\n\n');
+  return krEtkinKalemler().filter(k=>krSifirYazilsin(krDeger(r,k.id)))
+    .map(k=>k.ad+'\n'+k.birim+': '+krDeger(r,k.id)).concat(krOzelGovde(r)).join('\n\n');
+}
+function krSifirDugmeHtml(){
+  return `<button id="krSifirBtn" type="button" class="kr-sifir${_KR_SIFIR?'':' kapali'}" aria-pressed="${_KR_SIFIR}" title="${_KR_SIFIR?'0 girilen kalemler metne yaziliyor - tiklayinca yazilmaz':'0 girilen kalemler metne yazilmiyor - tiklayinca yazilir'}" onclick="krSifirDegis()">${_KR_SIFIR?'✓ ':''}0 olanlari goster</button>`;
+}
+function krSifirDegis(){
+  _KR_SIFIR=!_KR_SIFIR;
+  try{ localStorage.setItem('kr_sifir_goster',_KR_SIFIR?'1':'0'); }catch(e){}
+  const b=document.getElementById('krSifirBtn'); if(b) b.outerHTML=krSifirDugmeHtml();
+  krTazele();
 }
 function krMetin(r){
   if(!r) return '';
@@ -7627,17 +7655,10 @@ function openKisaRapor(tarih,id){
   const kur=krOzelKur(_KR); _KROB=kur.ortak; _KR.ozel=kur.satirlar;
   _KRK=krKalemler().map(k=>({...k}));
   const dz=krDuzenlenebilir(), kilit=dz?'':' disabled';
-  const kalemHtml=_KRK.map((k,i)=>`<div class="kr-kalem">
-      <input class="kr-kalem-ad" value="${esc(k.ad)}" title="Baslik TUM raporlar icin ortaktir" oninput="krSetBaslikAd(${i},this.value)"${kilit}>
-      <div class="kr-kalem-birim">
-        <input class="kr-kalem-birim-ad" value="${esc(k.birim)}" title="Birim TUM raporlar icin ortaktir" oninput="krSetBaslikBirim(${i},this.value)"${kilit}>
-        <input class="kr-kalem-deger" type="number" min="0" step="${k.ondalik?'0.01':'1'}" value="${esc(krDeger(_KR,k.id))}" placeholder="-" oninput="krSetDeger('${k.id}',this.value)"${kilit}>
-      </div>
-    </div>`).join('');
   const html=`<div class="modal-bg" onclick="if(event.target===this)krDisaTikla()"><div class="modal" style="max-width:560px">
     <div class="modal-head"><h3>Kisa Rapor</h3><button class="mini-btn" onclick="krKapat()">x</button></div>
     <div class="modal-body">
-      <p class="t-meta" style="margin-bottom:10px">O gun sahada olculen metrajlar. Alttaki metin kopyalanacak halin aynisidir.${dz?' Baslik ve birim kutulari duzenlenebilir - degisiklik TUM raporlara yansir.':' <b>Yalnizca goruntuleme yetkiniz var.</b>'}</p>
+      <p class="t-meta" style="margin-bottom:10px">O gun sahada olculen metrajlar. Alttaki metin kopyalanacak halin aynisidir.${dz?' Baslik ve birim kutulari duzenlenebilir, cop kutusuyla kalem kaldirilabilir - degisiklik TUM raporlara yansir.':' <b>Yalnizca goruntuleme yetkiniz var.</b>'}</p>
       <div id="krKunyeler" class="gy-kunyeler">${krKunyelerHtml()}</div>
       <div class="frow three">
         <div><label>Tarih *</label><input id="kr_tarih" type="date" value="${esc(_KR.tarih)}" onchange="krTarihDegis(this.value)"${kilit}></div>
@@ -7645,11 +7666,12 @@ function openKisaRapor(tarih,id){
         <div><label>Firma <span class="t-meta">(Sirketler)</span></label><select id="kr_firma" onchange="krFirmaDegis(this.value)"${kilit}>${krFirmaSecenekleri()}</select>
           <input id="kr_yenifirma" class="${_KR.firmaId==='__new'?'':'hidden'}" style="margin-top:7px" placeholder="Yeni sirket adi" value="${_KR.firmaId==='__new'?esc(_KR.firma||''):''}" oninput="krYeniFirmaYaz(this.value)"${kilit}></div>
       </div>
-      <div class="kr-kalemler">${kalemHtml}</div>
+      <div id="krKalemler" class="kr-kalemler">${krKalemHtml()}</div>
       <div id="krOzel" class="kr-ozel-list">${krOzelHtml()}</div>
-      <div class="kr-ozel-ekle"><button class="gy-satir-ekle" onclick="krOzelEkle()"${kilit}>+ Kalem Ekle</button></div>
+      <div id="krEkle" class="kr-ozel-ekle">${krEkleHtml()}</div>
       <div class="frow" style="margin:14px 0 0">
-        <label>Metin <span class="t-meta">(kopyalanacak hali)</span></label>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">
+          <label style="margin:0">Metin <span class="t-meta">(kopyalanacak hali)</span></label>${krSifirDugmeHtml()}</div>
         <pre id="krOnizle" class="gy-onizle">${esc(krMetin(_KR))}</pre></div>
     </div>
     <div class="modal-foot">
@@ -7661,6 +7683,42 @@ function openKisaRapor(tarih,id){
   </div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   setModalGuard(()=>!!_KR&&(krKayitli(_KR.id)||krDoluMu(_KR)));
+}
+// SABIT 5 kalemin satirlari - gizlenenler cizilmez ama _KRK'daki sirasi (i) korunur (krSetBaslikAd(i) ayni indeksi kullanir)
+function krKalemHtml(){
+  const kilit=krDuzenlenebilir()?'':' disabled';
+  return _KRK.map((k,i)=>k.gizli?'':`<div class="kr-kalem">
+      <input class="kr-kalem-ad" value="${esc(k.ad)}" title="Baslik TUM raporlar icin ortaktir" oninput="krSetBaslikAd(${i},this.value)"${kilit}>
+      <div class="kr-kalem-birim">
+        <input class="kr-kalem-birim-ad" value="${esc(k.birim)}" title="Birim TUM raporlar icin ortaktir" oninput="krSetBaslikBirim(${i},this.value)"${kilit}>
+        <input class="kr-kalem-deger" type="number" min="0" step="${k.ondalik?'0.01':'1'}" value="${esc(krDeger(_KR,k.id))}" placeholder="-" oninput="krSetDeger('${k.id}',this.value)"${kilit}>
+      </div>
+      <button class="mini-btn del"${kilit} title="Bu kalemi kaldir - TUM raporlarin formundan kalkar, alttan geri getirilebilir" onclick="krKalemGizle(${i})">${icoTrash()}</button>
+    </div>`).join('');
+}
+// "+ Kalem Ekle" ve kaldirilmis sabit kalemlerin geri getirme dugmeleri
+function krEkleHtml(){
+  const kilit=krDuzenlenebilir()?'':' disabled';
+  const geri=_KRK.map((k,i)=>k.gizli?`<button class="gy-satir-ekle" title="Kaldirilan kalemi TUM raporlarin formuna geri getir"${kilit} onclick="krKalemGeriGetir(${i})">+ ${esc(k.ad)}</button>`:'').join('');
+  return `<button class="gy-satir-ekle" onclick="krOzelEkle()"${kilit}>+ Kalem Ekle</button>${geri}`;
+}
+function krCizKalem(){
+  const a=document.getElementById('krKalemler'); if(a) a.innerHTML=krKalemHtml();
+  const b=document.getElementById('krEkle'); if(b) b.innerHTML=krEkleHtml();
+  krTazele();
+}
+/* Kaldirma SILME DEGILDIR: kalem yalnizca forma/metne girmez (gizli:true, Kaydet'te ORTAK
+   ayara yazilir). Raporlardaki degerler kayitta durur; geri getirilince yeniden gorunur. */
+function krKalemGizle(i){
+  const k=_KRK[i]; if(!_KR||!k||!krDuzenlenebilir()) return;
+  if(!String(k.ad||'').trim()) k.ad=(KR_KALEMLER.find(x=>x.id===k.id)||{}).ad||k.ad;
+  const deger=krDeger(_KR,k.id);
+  if(deger!==''&&!confirm('"'+k.ad+'" kalemi TUM raporlarin formundan ve metninden kalkar.\n\nBu rapordaki '+deger+' degeri kayitta durur; kalem geri getirilirse yeniden gorunur.\n\nDevam edilsin mi?')) return;
+  k.gizli=true; krCizKalem();
+}
+function krKalemGeriGetir(i){
+  const k=_KRK[i]; if(!_KR||!k||!krDuzenlenebilir()) return;
+  k.gizli=false; krCizKalem();
 }
 function krKapat(){ _KR=null; closeModal(); }
 function krDisaTikla(){ toast('Kapatmak icin Iptal ya da X kullanin'); }
@@ -7825,7 +7883,7 @@ async function krKaydet(){
   // SABIT 5 kalemin (yeniden adlandirilmis olabilecek) ad/birim'i ayni sekilde ORTAK kaydedilir
   try{
     if(!DB.meta) DB.meta={};
-    const baslik=_KRK.map(k=>({id:k.id, ad:String(k.ad||'').trim(), birim:String(k.birim||'').trim()}));
+    const baslik=_KRK.map(k=>({id:k.id, ad:String(k.ad||'').trim(), birim:String(k.birim||'').trim(), ...(k.gizli?{gizli:true}:{})}));
     DB.meta[KR_BASLIK_AYARI]=baslik;
     await sbSetSetting(KR_BASLIK_AYARI,baslik);
   }catch(e){ toast('Baslik ayarlari kaydedilemedi (rapor kaydedildi): '+((e&&e.message)||e),'err'); }
