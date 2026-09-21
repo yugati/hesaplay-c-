@@ -74,6 +74,7 @@
   --amber:#f0a020; --amber-d:#c47e00;
   --grid:#00b4a6; --grid-d:#008478;
   --blue:#3b82f6; --green:#22c55e; --red:#ef4444; --violet:#a855f7;
+  --marka:#7cca69;   /* logo yesili - acilis isaretinde kullanilir (logo.png'den olculdu) */
   --primary:#3b82f6; --success:#22c55e; --warning:#f0a020; --danger:#ef4444;
   --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
   --sans:'Inter',system-ui,-apple-system,Segoe UI,sans-serif;
@@ -357,8 +358,13 @@ html.booting #login{display:none!important}
 html.davet-mode #davetKabul{display:flex}
 html.davet-mode #login,html.davet-mode #loading{display:none!important}
 /* logo: kutusuz, filtresiz, sabit — ayni PNG koyu ve acik temada oldugu gibi gosterilir */
-.ld-logo{width:104px;height:auto;object-fit:contain;
-  animation:ld-in .5s cubic-bezier(.16,.8,.3,1) both}
+/* acilis isareti: PNG degil, sayfanin her yerindeki donen marka (bkz. .bkl).
+   Renk logonun kendi yesili - acilis ekrani eskisi gibi gorunur, yalnizca doner.
+   Iki animasyon AYRI ozellik surer (donus: transform, girus: opacity): ld-in
+   translateY kullandigi icin burada kullanilamaz, donusu ezerdi. */
+.ld-logo{width:104px;height:104px;fill:var(--marka);
+  animation:wp-don 1.9s cubic-bezier(.62,.05,.36,.95) infinite, ld-fade .5s cubic-bezier(.16,.8,.3,1) both}
+@keyframes ld-fade{from{opacity:0}to{opacity:1}}
 /* dolum cubugu: GERCEK ilerleme ile dolar (her tablo indikce JS genisletir).
    Renk var(--ink): acik temada siyah, koyu temada beyaz - iki temada da okunur kalir.
    Veri gelmeye baslamadan once yavas suzulen bir "isinma" animasyonu vardir; ilk
@@ -379,7 +385,72 @@ html.davet-mode #login,html.davet-mode #loading{display:none!important}
 @keyframes ld-warm{0%{width:0}40%{width:9%}100%{width:16%}}
 @keyframes ld-dot{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-2px)}}
 @keyframes ld-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-@media (prefers-reduced-motion:reduce){.ld-logo{animation:none}.ld-bar i{animation:none}.ld-dots i{animation:none;opacity:.6}}
+@media (prefers-reduced-motion:reduce){.ld-logo{animation:wp-don 2.6s linear infinite}.ld-bar i{animation:none}.ld-dots i{animation:none;opacity:.6}}
+
+
+/* ══ ISLEM PERDESI ═══════════════════════════════════════════════════════
+   Uzun suren YAZMA islerinde ekrani kapatan pencere. Ihtiyac toplu kalem
+   girisinden dogdu: "Tumunu Kaydet" her satir icin AYRI bir sunucu yazmasi
+   yapar (bkz. specfSaveAll -> _specSaveCore -> sbInsertProjeSpec), 160 satirlik
+   bir grid 160 gidis-donus demektir. Ekranda hicbir sey degismedigi icin
+   kullanici dugmeye basilip basilmadigini anlayamiyor, ikinci kez basiyordu.
+   PERDE UYDURMA DEGILDIR: halka BITEN SATIR sayisiyla dolar, ortadaki yazi o an
+   sunucuya giden kalemin adidir, alt satir o ana kadarki kaydedilen/hatali
+   sayisini soyler (bkz. wperdeDurum).
+   Dolum isareti uygulamanin kendi markasidir (logo.png'nin vektor izi): PNG
+   degil inline SVG oldugu icin currentColor ile boyanir ve acik/koyu temada
+   zemin sorunu olmadan okunur. */
+.wperde{position:fixed;inset:0;z-index:500;display:none;align-items:center;justify-content:center;
+  background:color-mix(in srgb,var(--bg) 72%,transparent);
+  -webkit-backdrop-filter:blur(6px) saturate(1.2);backdrop-filter:blur(6px) saturate(1.2);
+  opacity:1;transition:opacity .22s ease}
+.wperde.acik{display:flex}
+.wperde.kapaniyor{opacity:0}
+.wperde-kart{background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-md);
+  padding:30px 34px 26px;min-width:322px;max-width:min(430px,92vw);text-align:center;
+  animation:wp-in .28s cubic-bezier(.16,.8,.3,1) both}
+.wperde-mark{position:relative;width:84px;height:84px;margin:0 auto 20px}
+/* ilerleme halkasi: -90deg ile saat 12'den baslar, dashoffset JS'te GERCEK oranla surulur */
+.wperde-ring{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}
+.wperde-ring .iz{fill:none;stroke:var(--line);stroke-width:4}
+.wperde-ring .dolum{fill:none;stroke:var(--ink);stroke-width:4;stroke-linecap:round;
+  stroke-dasharray:289.03;stroke-dashoffset:289.03;transition:stroke-dashoffset .3s cubic-bezier(.22,.61,.36,1)}
+/* marka isareti: dolu disk oldugu icin donerken yalnizca ok bosluklari hareket eder */
+.wperde-logo{position:absolute;left:50%;top:50%;width:56%;height:56%;margin:-28% 0 0 -28%;fill:var(--ink);
+  animation:wp-don 1.7s cubic-bezier(.62,.05,.36,.95) infinite}
+.wperde.kapaniyor .wperde-logo{animation-duration:.7s}
+.wperde-baslik{font-size:15px;font-weight:650;letter-spacing:.1px;color:var(--ink)}
+.wperde-sayac{margin-top:9px;font-family:var(--mono);font-size:12.5px;display:flex;justify-content:center;
+  gap:9px;align-items:baseline;color:var(--ink);min-height:17px}
+.wperde-sayac b{font-weight:600}
+.wperde-sayac .yzd{opacity:.55;font-size:11.5px}
+.wperde-satir{margin-top:8px;font-size:12px;color:var(--mute);line-height:1.45;min-height:35px;
+  overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
+.wperde-alt{margin-top:10px;font-size:11px;color:var(--mute);opacity:.8;line-height:1.5}
+@keyframes wp-don{to{transform:rotate(360deg)}}
+@keyframes wp-in{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}
+/* hareket azaltma: isaret doner ama sarsmadan - ilerleme yine de okunur kalir */
+@media (prefers-reduced-motion:reduce){
+  .wperde-logo{animation-timing-function:linear;animation-duration:2.4s}
+  .wperde-kart{animation:none}
+  .wperde-ring .dolum{transition:none}
+}
+
+/* ══ BEKLEME ISARETI ═════════════════════════════════════════════════════
+   Sayfadaki BUTUN bekleme yerleri ayni isareti kullanir: donen marka. Yazi
+   boyutundan olceklenir (1.05em) ve currentColor ile boyanir - hangi metnin
+   yanina konursa onun rengini ve boyunu alir, ayrica ayar gerekmez.
+   Yol tanimi belgede TEK BIR <symbol id="mrkSim"> icinde durur (bkz. body
+   basi); her kullanim <use> ile onu cagirir - 1 KB'lik yol tekrarlanmaz.
+   JS tarafi: icoBekle('bkl-lg'). */
+.bkl{display:inline-block;width:1.05em;height:1.05em;vertical-align:-.17em;fill:currentColor;flex:none;
+  animation:wp-don 1.7s cubic-bezier(.62,.05,.36,.95) infinite}
+.bkl-lg{width:34px;height:34px}
+/* OLCULEMEYEN bekleme (tek istekle biten toplu yazma gibi): halka ve yuzde gizlenir -
+   uydurma oran gosterilmez, 'calisiyor' bilgisini donen isaretin kendisi verir */
+.wperde.belirsiz .wperde-ring .dolum{display:none}
+.wperde.belirsiz .wperde-sayac .yzd{display:none}
+@media (prefers-reduced-motion:reduce){.bkl{animation-timing-function:linear;animation-duration:2.4s}}
 
 #app{display:flex;flex-direction:column;min-height:calc(100 * var(--vh));opacity:0;transition:opacity .45s ease}
 #app.show{opacity:1}
@@ -2809,7 +2880,8 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .alt-status{display:inline-block;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;font-family:var(--mono);white-space:nowrap;vertical-align:middle;margin-left:6px}
 .spec-alt-badge{display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:5px;font-size:10px;font-weight:700;font-family:var(--mono);vertical-align:middle;margin-left:4px}
 
-.toast-wrap{position:fixed;top:16px;right:16px;z-index:300;display:flex;flex-direction:column;gap:8px}
+/* bildirimler her seyin ustunde kalir - islem perdesi (z-index 500) acikken de okunur */
+.toast-wrap{position:fixed;top:16px;right:16px;z-index:520;display:flex;flex-direction:column;gap:8px}
 .toast{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--success);padding:12px 16px;border-radius:10px;font-size:13px;box-shadow:var(--shadow-md);animation:slideIn .2s ease;min-width:220px;color:var(--ink)}
 .toast.err{border-left-color:var(--danger)}
 .toast.warn{border-left-color:var(--warning)}
@@ -3846,7 +3918,11 @@ main:has(>.iht-form-wrap){max-width:none}
 </head>
 <body>
 
-<div id="loading"><img class="ld-logo" src="/logo.png" alt=""><div class="ld-bar"><i></i></div><div class="ld-label"><span class="ld-txt">Oturum doğrulanıyor</span><span class="ld-dots"><i></i><i></i><i></i></span><span class="ld-num"></span></div></div>
+<!-- MARKA ISARETI: sayfadaki tum bekleme yerleri (acilis ekrani, .bkl sinifi, islem
+     perdesi) bu TEK tanimi <use> ile cagirir. Body'nin basinda durur ki acilis
+     ekrani ilk boyamada onu bulabilsin. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="mrkSim" viewBox="0 0 100 100"><path fill-rule="evenodd" d="M47.88 0L56.91 0.33L62.04 1.23L66.39 2.45L74.64 6.13L81.77 11.04L88.8 18.17L91.58 21.96L94.26 26.53L96.15 30.55L98.05 36.01L99.72 44.93L99.83 53.18L99.39 57.64L98.16 63.55L96.27 69.12L93.81 74.25L90.13 79.93L86.9 83.84L81.44 88.96L77.42 88.96L72.74 88.29L65.94 85.95L62.15 83.95L57.8 80.94L50.78 74.25L46.21 68.12L43.98 63.99L53.57 55.96L53.34 55.63L45.09 51.17L35.51 47.6L27.26 45.82L20.35 45.6L20.23 81.49L30.04 76.59L34.5 81.49L39.3 85.4L43.87 88.29L50.11 91.19L56.24 93.09L61.93 94.09L69.4 94.31L73.75 93.87L67.84 96.66L58.25 99.22L51.67 100L46.1 100L38.74 99L35.62 98.22L29.38 95.88L21.01 90.97L14.21 85.06L10.76 81.05L7.41 76.25L4.85 71.46L2.62 65.89L1.39 61.54L0.39 55.85L0.17 46.71L0.61 42.36L2.06 35.67L4.63 28.87L7.53 23.63L12.43 17.17L18.78 11.26L21.01 11.15L27.03 11.82L31.49 13.04L37.85 16.05L43.42 19.96L49.33 25.86L52.01 29.43L54.91 34.23L46.88 41.36L77.98 57.41L77.98 20.4L63.71 20.4L59.36 16.28L56.13 13.82L52.01 11.26L47.66 9.14L42.53 7.36L36.18 6.02L32.72 5.69L27.48 5.8L31.94 3.46L37.18 1.67L42.53 0.56Z"/></symbol></svg>
+<div id="loading"><svg class="ld-logo" aria-hidden="true"><use href="#mrkSim"/></svg><div class="ld-bar"><i></i></div><div class="ld-label"><span class="ld-txt">Oturum doğrulanıyor</span><span class="ld-dots"><i></i><i></i><i></i></span><span class="ld-num"></span></div></div>
 
 <div id="login">
   <!-- Aurora arka plan katmanlari (tamamen dekoratif; JS motoru sayfa sonunda).
@@ -3962,6 +4038,23 @@ main:has(>.iht-form-wrap){max-width:none}
 </div>
 <input type="file" id="binaExcelFabInput" accept=".xlsx,.xls,.csv" class="hidden" onchange="importSpecsUpsertExcel(event)">
 <input type="file" id="syncXlsx" accept=".xlsx,.xls" class="hidden" onchange="fullSyncExcel(event)">
+<!-- ISLEM PERDESI: uzun suren yazma islerinde GERCEK ilerleme (bkz. wperdeAc / wperdeDurum).
+     Isaret uygulamanin markasidir; PNG degil inline SVG oldugu icin iki temada da dogru boyanir. -->
+<div class="wperde" id="wperde" role="status" aria-live="polite">
+  <div class="wperde-kart">
+    <div class="wperde-mark">
+      <svg class="wperde-ring" viewBox="0 0 100 100" aria-hidden="true">
+        <circle class="iz" cx="50" cy="50" r="46"/>
+        <circle class="dolum" id="wperdeHalka" cx="50" cy="50" r="46"/>
+      </svg>
+      <svg class="wperde-logo" aria-hidden="true"><use href="#mrkSim"/></svg>
+    </div>
+    <div class="wperde-baslik" id="wperdeBaslik">Kaydediliyor</div>
+    <div class="wperde-sayac"><b id="wperdeSayac"></b><span class="yzd" id="wperdeYuzde">%0</span></div>
+    <div class="wperde-satir" id="wperdeSatir"></div>
+    <div class="wperde-alt" id="wperdeAlt">Sayfayi kapatmayin</div>
+  </div>
+</div>
 <div class="toast-wrap" id="toasts"></div>
 
 <script>
@@ -3998,6 +4091,67 @@ window.__sbLoadProgress=function(p){
   // tablo indirme toplam cubugun %85'ini kaplar; kalani hazirlama + arayuz asamalarina ayrilir
   ldDurum(ad, 6+Math.round((p.done/Math.max(1,p.total))*79), p.done+'/'+p.total);
 };
+/* ── ISLEM PERDESI ────────────────────────────────────────────────────────
+   Uzun suren yazma islerinde GERCEK ilerlemeyi gosteren perde (CSS: .wperde).
+   Kullanimi:
+     wperdeAc('Kalemler kaydediliyor',{gecikme:0,alt:'...'});
+     wperdeDurum({metin:'urun adi', sayac:'12 / 164', yuzde:7});
+     wperdeKapat('164 kalem kaydedildi','2 satir hatali');  // %100'u gosterir, sonra kapanir
+   gecikme: kisa surecek islerde (tek satir) perdenin yanip sonmesini onler -
+   is o sureden once biterse perde hic gorunmez.
+   Yuzde her zaman OLCULEN bir oran olmalidir; "bir seyler oluyor" hissi icin
+   uydurma sayi verilmez, o isi donen isaret zaten yapar. */
+const WP_CEVRE=289.03;   // 2*pi*r  (r=46, viewBox 0 0 100 100)
+const _WP={acik:false,kapaniyor:false,zaman:0,acTimer:null,kapatTimer:null,sonNefes:0};
+function wperdeAc(baslik,opt){
+  opt=opt||{};
+  clearTimeout(_WP.acTimer); clearTimeout(_WP.kapatTimer); _WP.acTimer=_WP.kapatTimer=null;
+  _WP.kapaniyor=false;
+  const p=document.getElementById('wperde');
+  if(p){ p.classList.remove('kapaniyor');
+    // belirsiz: ilerlemesi OLCULEMEYEN bekleme (tek istekle biten toplu yazma gibi) -
+    // halka ve yuzde gizlenir, uydurma oran gosterilmez
+    p.classList.toggle('belirsiz',!!opt.belirsiz); }
+  wperdeDurum({baslik:baslik||'Kaydediliyor',metin:'',sayac:'',yuzde:0,alt:opt.alt||'Sayfayi kapatmayin'});
+  const goster=()=>{ _WP.acik=true; _WP.zaman=Date.now(); if(p) p.classList.add('acik'); };
+  if(opt.gecikme>0) _WP.acTimer=setTimeout(goster,opt.gecikme); else goster();
+}
+function wperdeDurum(d){
+  d=d||{};
+  const yaz=(id,v)=>{ if(v==null)return; const e=document.getElementById(id); if(e&&e.textContent!==v) e.textContent=v; };
+  yaz('wperdeBaslik',d.baslik); yaz('wperdeSayac',d.sayac); yaz('wperdeSatir',d.metin); yaz('wperdeAlt',d.alt);
+  if(d.yuzde!=null){
+    const y=Math.max(0,Math.min(100,d.yuzde));
+    const h=document.getElementById('wperdeHalka'); if(h) h.style.strokeDashoffset=(WP_CEVRE*(1-y/100)).toFixed(2);
+    const n=document.getElementById('wperdeYuzde'); if(n) n.textContent='%'+Math.round(y);
+  }
+}
+/* tarayiciya boyama firsati verir (en fazla 100ms'de bir). Ag bekleyen donguler
+   zaten ana is parcacigini birakir; bu, arada bekleme olmayan adimlarda da
+   perdenin guncellenmesini garantiler. */
+async function wperdeNefes(){
+  const t=Date.now(); if(t-_WP.sonNefes<100) return; _WP.sonNefes=t;
+  // DIKKAT: sekme arka plandayken requestAnimationFrame HIC calismaz. Kullanici
+  // kayit surerken baska sekmeye gecerse dongu burada asili kalmasin diye rAF bir
+  // zamanlayiciyla yaristirilir - hangisi once gelirse is devam eder.
+  await new Promise(r=>{ let bitti=false; const bit=()=>{ if(bitti)return; bitti=true; r(); };
+    requestAnimationFrame(bit); setTimeout(bit,60); });
+}
+function wperdeKapat(bitisBasligi,bitisAlt){
+  clearTimeout(_WP.acTimer); _WP.acTimer=null;
+  const p=document.getElementById('wperde');
+  if(_WP.kapaniyor) return;                  // kapanis zaten akiyor (ikinci cagri zararsiz)
+  if(!_WP.acik){ if(p) p.classList.remove('acik','kapaniyor'); return; }  // hic gorunmedi
+  _WP.kapaniyor=true; _WP.acik=false;
+  // bitiste alt satir SIFIRLANIR: is bitmisken 'sayfayi kapatmayin' yaziyor olmak yanlis bilgidir
+  wperdeDurum({baslik:bitisBasligi||'Tamamlandi',metin:'',yuzde:100,alt:bitisAlt||''});
+  const bekle=Math.max(260,620-(Date.now()-_WP.zaman));  // bittigi okunacak kadar dursun
+  _WP.kapatTimer=setTimeout(()=>{
+    if(!p){ _WP.kapaniyor=false; return; }
+    p.classList.add('kapaniyor');
+    _WP.kapatTimer=setTimeout(()=>{ if(!_WP.acik) p.classList.remove('acik','kapaniyor'); _WP.kapaniyor=false; },240);
+  },bekle);
+}
 if(document.documentElement.classList.contains('booting')){
   document.getElementById('login').classList.add('hidden');
   document.getElementById('loading').classList.add('active');
@@ -4493,7 +4647,7 @@ async function orgMenuAc(ev){
   if(m.classList.contains('open')){ m.classList.remove('open'); return; }
   m.classList.add('open');
   const ara=document.getElementById('orgAra'); if(ara){ ara.value=''; setTimeout(()=>ara.focus(),0); }
-  const el=document.getElementById('orgListe'); if(el) el.innerHTML='<div class="org-bos">Yukleniyor...</div>';
+  const el=document.getElementById('orgListe'); if(el) el.innerHTML='<div class="org-bos">'+icoBekle()+' Yukleniyor...</div>';
   try{
     _ORGLAR=await sbOrgListesi();
     // Sunucunun soyledigi aktif org DOGRU olandir - istemcideki gosterim ondan tazelenir
@@ -4624,7 +4778,7 @@ async function tasariMenuAc(ev){
   if(m.classList.contains('open')){ m.classList.remove('open'); return; }
   m.classList.add('open');
   const ara=document.getElementById('tasAra'); if(ara){ ara.value=''; setTimeout(()=>ara.focus(),0); }
-  const el=document.getElementById('tasListe'); if(el) el.innerHTML='<div class="org-bos">Yukleniyor...</div>';
+  const el=document.getElementById('tasListe'); if(el) el.innerHTML='<div class="org-bos">'+icoBekle()+' Yukleniyor...</div>';
   try{
     _ORGLAR=await sbOrgListesi();
     // Sunucunun soyledigi aktif tasari DOGRU olandir - istemcideki gosterim ondan tazelenir
@@ -4839,10 +4993,10 @@ async function afterLogin(user, token, remember, opts){
   window.AKTIF_TASARI=user.tasari_id||'akkuyu-ngs'; window.AKTIF_TASARI_AD='';
   CURRENT_USER=user; window.CURRENT_USER=user;
   // kimlik dogrulandi, sira veri yuklemede: dugmede de o an inen tablonun adi yazilir
-  if(btn) btn.textContent='Veriler yükleniyor...';
+  if(btn) btn.innerHTML=icoBekle()+' Veriler yükleniyor...';
   const _oncekiIlerleme=window.__sbLoadProgress;
   window.__sbLoadProgress=function(p){ try{ _oncekiIlerleme&&_oncekiIlerleme(p); }catch(_){}
-    if(btn&&p&&p.phase==='task') btn.textContent=(LD_ADLAR[p.key]||'Veriler')+' ('+p.done+'/'+p.total+')'; };
+    if(btn&&p&&p.phase==='task') btn.innerHTML=icoBekle()+' '+(LD_ADLAR[p.key]||'Veriler')+' ('+p.done+'/'+p.total+')'; };
   try{
     if(!DB){ DB=await loadDB(); if(btn) btn.textContent='Veriler hazırlanıyor...'; migrate(); }
   } finally { window.__sbLoadProgress=_oncekiIlerleme; }
@@ -6564,7 +6718,7 @@ function openGunlukIsDetay(id){
       ${gidFotolar.length?`<div class="gid-sec"><div class="gid-sec-h">Ekran Goruntusu${gidFotolar.length>1?' ('+gidFotolar.length+')':''}</div>
         <div class="gid-fotolar${gidFotolar.length>1?' cok':''}">${gidFotolar.map((f,i)=>
           `<div class="gid-foto-kutu" id="gidFotoKutu${i}"${gidFotolar.length>1?'':` style="aspect-ratio:${giFotoOran(f)}"`} title="Buyutmek icin tiklayin">
-            <span class="gid-foto-yuk" id="gidFotoYuk${i}">yukleniyor...</span>
+            <span class="gid-foto-yuk" id="gidFotoYuk${i}">${icoBekle()} yukleniyor...</span>
             <img id="gidFoto${i}" class="gid-foto" alt="gorsel ${i+1}">
           </div>`).join('')}</div></div>`:''}
       <div class="gid-sec"><div class="gid-sec-h">Durum</div><div class="gid-btns">${durumBtn}</div></div>
@@ -8181,7 +8335,7 @@ function renderAudit(){
       <td><span class="cat-tag" style="background:${col}22;color:${col}">${esc(AUDIT_LABELS[a.action]||a.action)}</span>${kaynak}</td>
       <td class="t-meta" style="font-size:12px">${esc(a.detail||'')}${a.ip?' <span style="opacity:.6;font-family:var(--mono);font-size:10px">'+esc(a.ip)+'</span>':''}</td>
     </tr>`;
-  }).join('') || `<tr><td colspan="4" style="text-align:center;color:var(--mute);padding:30px">${_AUDIT_YUKLENDI?'Kayit bulunamadi':'Denetim kaydi yukleniyor...'}</td></tr>`;
+  }).join('') || `<tr><td colspan="4" style="text-align:center;color:var(--mute);padding:30px">${_AUDIT_YUKLENDI?'Kayit bulunamadi':icoBekle()+' Denetim kaydi yukleniyor...'}</td></tr>`;
   const uOpts=`<option value="">Tum kullanicilar</option>`+users.map(u=>`<option value="${esc(u)}" ${AUDIT_FU===u?'selected':''}>${esc(u)}</option>`).join('');
   const aOpts=`<option value="">Tum islemler</option>`+actions.map(a=>`<option value="${esc(a)}" ${AUDIT_FA===a?'selected':''}>${esc(AUDIT_LABELS[a]||a)}</option>`).join('');
   const kOpts=[['','Tum kaynaklar'],['sunucu','Yalniz sunucu kaydi'],['uygulama','Yalniz uygulama kaydi']].map(([v,l])=>`<option value="${v}" ${AUDIT_FK===v?'selected':''}>${esc(l)}</option>`).join('');
@@ -11525,6 +11679,9 @@ async function topmSaveAll(){
   if(!guard('editMaterial'))return;
   if(!f.rows.some(topmSatirDolu)){ toast('Kaydedilecek kutu yok - en az bir kutuya malzeme adi girin','err'); return; }
   f._busy=true;
+  // TEK istekte yazilir: ilerleme olculemez, belirsiz perde (bkz. wperdeAc)
+  let _wpBitis='Kaydedilemedi';
+  wperdeAc('Urunler kutuphaneye yaziliyor',{gecikme:300,belirsiz:true,alt:f.rows.filter(topmSatirDolu).length+' kutu tek istekte kaydediliyor'});
   try{
     const gorulen={keys:new Map(),codes:new Map()};
     const yeni=[]; let hata=0;
@@ -11536,6 +11693,7 @@ async function topmSaveAll(){
     });
     if(yeni.length){
       await sbInsertProjeMaterials(yeni);          // once sunucu: yazma patlarsa bellek kirlenmesin
+      _wpBitis=yeni.length+' urun eklendi';
       DB.proje.materials.push(...yeni);
       logAction('editMaterial','Toplu ekleme: '+yeni.length+' urun');
     }
@@ -11551,7 +11709,7 @@ async function topmSaveAll(){
   }catch(e){
     f.rows.forEach(r=>{ delete r._yeni; });
     toast('Kaydedilemedi: '+((e&&e.message)||e),'err');
-  } finally { f._busy=false; }
+  } finally { f._busy=false; wperdeKapat(_wpBitis); }
 }
 /* ═══ TOPLU DUZENLEME (ikinci sekme) ═══════════════════════════════════════════
    Kutuphanede SECILEN urunler, mevcut bilgileriyle ekleme sekmesinin kutularinda acilir.
@@ -11736,6 +11894,9 @@ async function topmDuzKaydet(){
     +(kimlik?'\n\n'+kimlik+' urunde KOD veya AD degisiyor - tek tek duzenlemedeki gibi sartname satirlari da yeni kod/adi alir.':'')
     +(hata?'\n\n'+hata+' kutu hatali - onlar kaydedilmez, sayfada kalir.':'')+'\n\nDevam edilsin mi?')){ topmDraw(); return; }
   f._busy=true;
+  // TEK istekte yazilir: ilerleme olculemez, belirsiz perde (bkz. wperdeAc)
+  let _wpBitis='Kaydedilemedi';
+  wperdeAc('Urunler guncelleniyor',{gecikme:300,belirsiz:true,alt:hazir.length+' urun ve bagli sartname satirlari yaziliyor'});
   try{
     const now=Date.now();
     const yeniM=hazir.map(a=>({...a.m,...a.patch,updatedAt:now}));
@@ -11748,6 +11909,7 @@ async function topmDuzKaydet(){
         sp.standart=m.standart; sp.weight=m.weight; sp.tags=(m.tags||[]).slice(); sp.img=m.img||null; degS.set(sp.id,sp); });
     });
     if(degS.size) await sbUpsertProjeSpecs([...degS.values()].map(sp=>({...sp})));
+    _wpBitis=hazir.length+' urun guncellendi';
     logAction('editMaterial','Toplu duzenleme: '+hazir.length+' urun'+(degS.size?' ('+degS.size+' sartname satiri)':'')
       +' - '+hazir.slice(0,10).map(a=>a.m.code||a.m.name).join(', ')+(hazir.length>10?' ...':''));
     // kaydedilen kutular yeni kayitli halleriyle yeniden kurulur (DEGISTI isareti kalkar)
@@ -11758,7 +11920,7 @@ async function topmDuzKaydet(){
     toast(hazir.length+' urun guncellendi'+(degS.size?' · '+degS.size+' sartname satiri':'')+(hata?' - '+hata+' kutu hatali, uyarilara bakin':''),hata?'err':undefined);
   }catch(e){
     toast('Kaydedilemedi: '+((e&&e.message)||e),'err');
-  }finally{ f._busy=false; }
+  }finally { f._busy=false; wperdeKapat(_wpBitis); }
 }
 /* Bir urun kutusu = "Yeni Malzeme" modalinin govdesi. Alan sirasi ve etiketleri
    modalla BIREBIR ayni tutuldu - iki ekran arasinda gecen kullanici sasirmasin. */
@@ -12586,6 +12748,9 @@ async function topgSaveAll(){
   if(!guard('define',{mod:'gecici'}))return;
   if(!f.rows.some(topgSatirDolu)){ toast('Kaydedilecek kutu yok - en az bir kutuya malzeme adi girin','err'); return; }
   f._busy=true;
+  // TEK istekte yazilir: ilerleme olculemez, belirsiz perde (bkz. wperdeAc)
+  let _wpBitis='Kaydedilemedi';
+  wperdeAc('Malzemeler kutuphaneye yaziliyor',{gecikme:300,belirsiz:true,alt:f.rows.filter(topgSatirDolu).length+' kutu tek istekte kaydediliyor'});
   try{
     const gorulen=_topgBosGorulen();
     const yeni=[]; let hata=0;
@@ -12597,6 +12762,7 @@ async function topgSaveAll(){
     });
     if(yeni.length){
       await sbInsertGeciciLibItems(yeni);          // once sunucu: yazma patlarsa bellek kirlenmesin
+      _wpBitis=yeni.length+' malzeme eklendi';
       DB.gecici.lib.push(...yeni);
       logAction('define','Mobilizasyon toplu ekleme: '+yeni.length+' malzeme');
     }
@@ -12612,7 +12778,7 @@ async function topgSaveAll(){
   }catch(e){
     f.rows.forEach(r=>{ delete r._yeni; });
     toast('Kaydedilemedi: '+((e&&e.message)||e),'err');
-  } finally { f._busy=false; }
+  } finally { f._busy=false; wperdeKapat(_wpBitis); }
 }
 /* Bir kutu = "Kutuphaneye Malzeme Ekle" modalinin govdesi. Alan sirasi ve etiketleri
    modalla (openLibModal) BIREBIR ayni tutuldu - iki ekran arasinda gecen kullanici
@@ -15597,7 +15763,7 @@ function bina3dViewerHtml(bina,bm){
       <span class="t-meta">${esc(bm.fileName||'')}</span>
       <div style="margin-left:auto;display:flex;gap:8px">${editBtns}</div>
     </div>
-    <div id="bina3dCanvas" class="bina3d-canvas"><div class="bina3d-loading">Model yukleniyor...</div></div>
+    <div id="bina3dCanvas" class="bina3d-canvas"><div class="bina3d-loading">${icoBekle()} Model yukleniyor...</div></div>
     <p style="font-size:11px;color:var(--dim);margin-top:8px">Surukle: dondur · Kaydir: yakinlastir</p>`;
 }
 /* 3D model goruntuleyici. Kayit artik KALICI bir public URL tasimiyor (Asama 3:
@@ -19137,7 +19303,7 @@ async function confirmWipe(){
     if(!verified||verified.id!==CURRENT_USER.id){ errEl.textContent='Sifre yanlis.'; btn.disabled=false; return; }
     const safetyEl=document.getElementById('wipe-safety');
     if(safetyEl&&safetyEl.checked){
-      errEl.textContent='Guvenlik yedegi indiriliyor...';
+      errEl.innerHTML=icoBekle()+' Guvenlik yedegi indiriliyor...';
       downloadJSON(await makeBackupEnvelope(),backupFname('_guvenlik'));
     }
     errEl.textContent='Siliniyor...';
@@ -20043,7 +20209,7 @@ function iadeModalIc(){
         <textarea rows="2" placeholder="Hasarli teslimat, yanlis urun, fazla gonderim..." oninput="_IADE.not=this.value">${esc(st.not||'')}</textarea></div>
       <div class="frow"><label>Iade Belgesi (PDF)</label>
         <div class="drop ${st.pdf?'has':''}" id="iadePdfDrop" onclick="${st.pdf&&st.pdf.yukleniyor?'':`document.getElementById('iadePdfInput').click()`}">${st.pdf
-          ?`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(st.pdf.name)}${st.pdf.yukleniyor?' <span style="opacity:.7">· yukleniyor…</span>':`<button onclick="event.stopPropagation();iadePdfKaldir()">x</button>`}</div>`
+          ?`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(st.pdf.name)}${st.pdf.yukleniyor?' <span style="opacity:.7">· '+icoBekle()+' yukleniyor…</span>':`<button onclick="event.stopPropagation();iadePdfKaldir()">x</button>`}</div>`
           :icoDoc()+'<div style="margin-top:6px">PDF ekleyin</div>'}</div>
         <input type="file" id="iadePdfInput" accept="application/pdf" class="hidden" onchange="iadePickPdf(event)"></div>
       <div class="iade-arac">
@@ -20378,7 +20544,8 @@ function statRow(arr){ return `<div class="stats">`+arr.map(([l,v,s,c])=>`<div c
    ("00UYB18EM0426"); iOS kodu bir kelimeye "duzeltiyor" ve ilk harfi buyutuyordu.
    Arama zaten buyuk-kucuk harf ayirmiyor (norm), kapatmanin bir maliyeti yok. */
 function searchBox(ph){ return `<div class="search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4-4"/></svg><input id="searchBox" placeholder="${ph}" value="${esc(SEARCH)}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></div>`; }
-function emptyRow(cols,t,s){ return `<tr><td colspan="${cols}"><div class="empty"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-14L4 7m8 4v10M4 7v10l8 4"/></svg><p>${t}</p><span style="font-size:12px">${s}</span></div></td></tr>`; }
+// bekle=true: "kayit yok" degil "henuz gelmedi" - bos kutu ikonu yerine bekleme isareti
+function emptyRow(cols,t,s,bekle){ return `<tr><td colspan="${cols}"><div class="empty">${bekle?icoBekle('bkl-lg'):'<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-14L4 7m8 4v10M4 7v10l8 4"/></svg>'}<p>${t}</p><span style="font-size:12px">${s}</span></div></td></tr>`; }
 function phThumb(cls){ return `<div class="${cls||'thumb-ph'}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="9" cy="9" r="2"/></svg></div>`; }
 // malzeme kunyesindeki BUYUK fotograf linkten yuklenemezse (kirik/silinmis dis link)
 // kirik resim ikonu birakmaz - ayni "fotograf yok" yer tutucusuna doner (bkz. mdp-figure).
@@ -20476,6 +20643,9 @@ function icoSecimSil(){ return icoSimgeYazi(cx=>
   +`<path d="M${cx-5.4} 5.6l.8 11.4a1.3 1.3 0 001.3 1.2h6.6a1.3 1.3 0 001.3-1.2l.8-11.4"/>`
   +`<path d="M${cx-2.4} 8.6v6M${cx} 8.6v6M${cx+2.4} 8.6v6"/>`,'SİL'); }
 function icoUp(){return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>';}
+/* BEKLEME ISARETI: sayfadaki her bekleme yerinde kullanilan donen marka.
+   Metnin yanina konur (boyu ve rengi metinden gelir); buyuk kullanim icin 'bkl-lg'. */
+function icoBekle(cls){ return '<svg class="bkl'+(cls?' '+cls:'')+'" aria-hidden="true"><use href="#mrkSim"/></svg>'; }
 function icoDoc(){return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>';}
 function icoArr(d){ if(d==='left')return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>'; return d==='down'?'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>':'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>'; }
 function renkHex(r){ const m={'Kirmizi':'#ef4444','Kırmızı':'#ef4444','Siyah':'#1a1a1a','Mavi':'#3b82f6','Gri':'#9ca3af','Beyaz':'#f3f4f6','Sari':'#eab308','Sarı':'#eab308','Yesil':'#22c55e','Yeşil':'#22c55e','Turuncu':'#f97316','Kahverengi':'#92400e'}; return m[r]||'#6b7280'; }
@@ -20643,7 +20813,7 @@ async function pickPdf(e,dropId){
   const el=document.getElementById(dropId); if(!el)return;
   const onceki=modalPdf;
   el.classList.add('has');
-  el.innerHTML=`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(f.name)} <span style="opacity:.7">· yukleniyor…</span></div>`;
+  el.innerHTML=`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(f.name)} <span style="opacity:.7">· ${icoBekle()} yukleniyor…</span></div>`;
   try{
     modalPdf=await window.sbBelgeYukle('siparis',uid(),f);
     el.innerHTML=`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(f.name)}<button onclick="event.stopPropagation();silModalPdf('${dropId}')">x</button></div>`;
@@ -21120,35 +21290,85 @@ async function specfSaveAll(){
   if(!guard('editSpec',{bina:f.head.bina}))return;
   if(!f.id && !f.rows.some(specfRowDolu)){ toast('Kaydedilecek kalem yok - en az bir satirda malzeme secin','err'); return; }
   f._busy=true;
+  /* ISLEM PERDESI: her satir AYRI bir sunucu yazmasidir, 160 satirlik bir grid
+     dakikalarca surer. Toplu kayitta perde ANINDA acilir (dugmeye basildigi
+     belli olsun diye); tek satirlik duzenlemede 220ms gecikir, is o sureden
+     once biterse perde hic gorunmez. Ilerleme uydurma degil: paydasi
+     kaydedilecek dolu satir sayisi, payi BITEN satir sayisidir. */
+  const toplam=f.id?1:f.rows.filter(specfRowDolu).length;
+  let okC=0,errC=0,sira=0; const savedSpecs=[];
+  const perdeAlt=()=>(okC||errC)
+    ? okC+' kaydedildi'+(errC?' · '+errC+' satir hatali':'')+' · sayfayi kapatmayin'
+    : 'Sayfayi kapatmayin';
+  wperdeAc(toplam>1?'Kalemler kaydediliyor':'Kalem kaydediliyor',
+    { gecikme:toplam>1?0:220,
+      alt:toplam>1?(toplam+' satirin her biri sunucuya tek tek yaziliyor - sayfayi kapatmayin'):'Sayfayi kapatmayin' });
   try{
-    let okC=0,errC=0; const savedSpecs=[];
     for(const r of f.rows){
       if(!f.id && !specfRowDolu(r)){ r.err=''; continue; }
+      sira++;
+      wperdeDurum({ metin:(r.mat&&(r.mat.ad||r.mat.code))||'(malzemesiz satir)',
+        sayac:sira+' / '+toplam, yuzde:((sira-1)/toplam)*92, alt:perdeAlt() });
+      await wperdeNefes();
       const res=await _specSaveCore({ id:f.id||null, bina:f.head.bina, cat:f.head.cat, grup:f.head.grup,
         mat:r.mat, poz:r.poz, ozelNo:r.ozelNo, target:String(r.target==null?'':r.target), unit:r.unit, note:r.note, open:r.open, lokRowsRaw:r.lokRows });
-      if(!res.ok){ r.err=res.msg; errC++; continue; }
+      if(!res.ok){ r.err=res.msg; errC++; wperdeDurum({yuzde:(sira/toplam)*92,alt:perdeAlt()}); continue; }
       r.err=''; r._saved=res.spec; okC++; savedSpecs.push(res.spec);
+      wperdeDurum({yuzde:(sira/toplam)*92,alt:perdeAlt()});
     }
     if(f.id){ // duzenleme: tek satir - basarida sartnameye don (modal davranisi)
-      if(errC){ specfDraw(); toast(f.rows[0].err,'err'); return; }
+      if(errC){ wperdeKapat('Kaydedilemedi'); specfDraw(); toast(f.rows[0].err,'err'); return; }
       toast('Sartname kalemi kaydedildi'); closeSpecFormPage();
-      for(const s of savedSpecs) await autoLinkPendingRapor(s);
+      await _specfRaporBagla(savedSpecs);
       return;
     }
-    f.rows.forEach(r=>{ if(r._saved) f.saved.unshift(r._saved.id); });
-    f.rows=f.rows.filter(r=>!r._saved&&specfRowDolu(r));
-    f.rows.forEach(r=>{ delete r._saved; });
-    if(!f.rows.length||specfRowDolu(f.rows[f.rows.length-1])) f.rows.push(_specfEmptyRow());
+    _specfKaydedilenleriDusur(f);
     if(!errC) f._focusFirst=true;
     // TASLAK SENKRONU: acik taslak varsa - tum satirlar kaydedildiyse taslak TAMAMLANIR ve
     // silinir (kilit kalkar), hatali satir kaldiysa taslak o satirlarla guncellenir
+    if(f.draftId) wperdeDurum({baslik:'Taslak guncelleniyor',metin:'',sayac:'',yuzde:93});
     const bitti=f.draftId?await _specDraftSync(f):false;
+    wperdeDurum({baslik:'Ekran yenileniyor',metin:'',sayac:'',yuzde:95});
+    await wperdeNefes();
     render();
     if(okC&&!errC) toast(okC+' kalem kaydedildi'+(bitti?' - taslak tamamlandi, kilit kalkti':' - yeni satirla devam edebilirsiniz'));
     else if(okC) toast(okC+' kalem kaydedildi, '+errC+' satir hatali - satirdaki uyariya bakin','err');
     else toast('Kaydedilemedi - satirdaki uyariya bakin','err');
-    for(const s of savedSpecs) await autoLinkPendingRapor(s);
-  } finally { f._busy=false; }
+    await _specfRaporBagla(savedSpecs);
+  } catch(e){
+    /* Beklenmedik bir hata (ag kopmasi vb.) eskiden sayfayi sessizce dondurup birakiyordu.
+       Artik: o ana kadar kaydedilenler gridden dusurulur, ekran tazelenir ve nerede
+       kalindigi soylenir - kalan satirlar gridde durdugu icin is kaybolmaz. */
+    console.error('Toplu kayit yarida kesildi:',e);
+    if(!f.id) _specfKaydedilenleriDusur(f);
+    render();
+    toast('Kaydetme yarida kesildi ('+okC+' kalem kaydedilmisti): '+((e&&e.message)||e),'err');
+  } finally {
+    f._busy=false;
+    wperdeKapat(okC?(okC+' kalem kaydedildi'+(errC?', '+errC+' hatali':'')):'Kaydedilemedi',
+      errC?'Hatali satirlar gridde kaldi - nedeni satirin altinda yazar':'');
+  }
+}
+// kaydedilen satirlari gridden dusur, "bu oturumda eklenenler"e tasi ve giris
+// kesintisiz sursun diye en altta bos bir satir birak (hata veren satirlar kalir)
+function _specfKaydedilenleriDusur(f){
+  f.rows.forEach(r=>{ if(r._saved) f.saved.unshift(r._saved.id); });
+  f.rows=f.rows.filter(r=>!r._saved&&specfRowDolu(r));
+  f.rows.forEach(r=>{ delete r._saved; });
+  if(!f.rows.length||specfRowDolu(f.rows[f.rows.length-1])) f.rows.push(_specfEmptyRow());
+}
+// kaydedilen kalemlerin bekleyen saha kayitlariyla eslestirilmesi - perde bu asamada
+// da acik kalir, cunku her kalem icin ayri sunucu yazmasi olabilir
+async function _specfRaporBagla(savedSpecs){
+  if(!savedSpecs.length) return;
+  let i=0;
+  for(const s of savedSpecs){
+    i++;
+    wperdeDurum({baslik:'Saha kayitlari eslestiriliyor',metin:s.code||s.name||'',
+      sayac:i+' / '+savedSpecs.length, yuzde:95+(i/savedSpecs.length)*5});
+    await wperdeNefes();
+    await autoLinkPendingRapor(s);
+  }
 }
 
 /* ===================================================================
@@ -22824,6 +23044,9 @@ async function topaSaveAll(){
   if(!guard('define',{bina:PBINA}))return;
   if(!f.rows.some(topaSatirDolu)){ toast('Kaydedilecek kutu yok - en az bir kutuya malzeme adi girin','err'); return; }
   f._busy=true;
+  // TEK istekte yazilir: ilerleme olculemez, belirsiz perde (bkz. wperdeAc)
+  let _wpBitis='Kaydedilemedi';
+  wperdeAc('Aletler kutuphaneye yaziliyor',{gecikme:300,belirsiz:true,alt:f.rows.filter(topaSatirDolu).length+' kutu tek istekte kaydediliyor'});
   try{
     const gorulen={codes:new Map()};
     const yeni=[]; let hata=0;
@@ -22835,6 +23058,7 @@ async function topaSaveAll(){
     });
     if(yeni.length){
       await sbInsertAletLibItems(yeni);          // once sunucu: yazma patlarsa bellek kirlenmesin
+      _wpBitis=yeni.length+' alet eklendi';
       yeni.forEach(k=>aletLib().push(k));
       logAction('define','Mekanik (Alet) toplu ekleme: '+yeni.length+' kunye');
     }
@@ -22850,7 +23074,7 @@ async function topaSaveAll(){
   }catch(e){
     f.rows.forEach(r=>{ delete r._yeni; });
     toast('Kaydedilemedi: '+((e&&e.message)||e),'err');
-  } finally { f._busy=false; }
+  } finally { f._busy=false; wperdeKapat(_wpBitis); }
 }
 /* Bir alet kutusu = "Kutuphaneye Alet Ekle" modalinin govdesi. Alan sirasi ve
    etiketleri modalla (openAletLibModal) BIREBIR ayni tutuldu. */
@@ -24142,7 +24366,7 @@ async function confirmRaporSil(){
       if(btn)btn.disabled=false; const p=document.getElementById('rsil-pass'); if(p){p.value='';p.focus();} return;
     }
     const yedek=document.getElementById('rsil-yedek');
-    if(yedek&&yedek.checked){ errEl.textContent='Guvenlik yedegi indiriliyor...'; downloadJSON(await makeBackupEnvelope(),backupFname('_rapor-silmeden-once')); }
+    if(yedek&&yedek.checked){ errEl.innerHTML=icoBekle()+' Guvenlik yedegi indiriliyor...'; downloadJSON(await makeBackupEnvelope(),backupFname('_rapor-silmeden-once')); }
     errEl.textContent='Siliniyor...';
     const ids=hedef.map(e=>e.id);
     const moveIds=hedef.filter(e=>e._moveId).map(e=>e._moveId);
@@ -25393,6 +25617,9 @@ async function rimpApply(){
   const f=_RIMP; if(!f||f._busy)return;
   const plan=f._plan; if(!plan){ toast('Aktarim plani bulunamadi - Kaydet\'e yeniden basin','err'); return; }
   f._busy=true;
+  // TEK istekte yazilir: ilerleme olculemez, belirsiz perde (bkz. wperdeAc)
+  let _wpBitis='Kaydedilemedi';
+  wperdeAc('Saha kayitlari aktariliyor',{gecikme:300,belirsiz:true,alt:'Excel plani uygulaniyor - sayfayi kapatmayin'});
   const btn=document.getElementById('rimp_onay'); if(btn)btn.disabled=true;
   try{
     if(!DB.rapor.entries)DB.rapor.entries=[];
@@ -25442,12 +25669,13 @@ async function rimpApply(){
     ]);
     allNew.forEach(e=>DB.rapor.entries.push(e));
     allItems.forEach(it=>DB.proje.items.push(it));
+    _wpBitis=allNew.length+' kalem aktarildi';
     const gun=new Set(plan.gruplar.map(g=>g.tarih)).size;
     logAction('define',`Excel'den rapor aktarildi: ${allNew.length} yeni${nMerged?', '+nMerged+' birlesen':''} kalem / ${gun} gun (${f.files.join(', ')})`);
     closeModal();
     PRIMP=false; _RIMP=null; SEC='rapor'; RV.form=null; RV.filterTarih=''; render();
     toast(`${allNew.length} kalem aktarildi${nMerged?`, ${nMerged} kalem mevcut kayda birlestirildi`:''} (${gun} gun)`);
-  } finally { if(_RIMP)_RIMP._busy=false; }
+  } finally { if(_RIMP)_RIMP._busy=false; wperdeKapat(_wpBitis); }
 }
 
 function norm(s){ return String(s==null?'':s).toLocaleLowerCase('tr')
@@ -27976,7 +28204,7 @@ function renderNewOrderPage(){
               <option value="__new" ${NORD.companyId==='__new'?'selected':''}>+ Yeni sirket...</option></select>
             <input id="nord_newsirket" class="${NORD.companyId==='__new'?'':'hidden'}" style="margin-top:7px" placeholder="Yeni sirket adi" value="${esc(NORD.newCompany)}" oninput="NORD.newCompany=this.value"></div>
           <div class="frow"><label>Siparis / Fatura PDF'i</label>
-            <div class="drop ${NORD.pdf?'has':''}" id="nordPdfDrop" onclick="${NORD.pdf&&NORD.pdf.yukleniyor?'':`document.getElementById('nordPdfInput').click()`}">${NORD.pdf?`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(NORD.pdf.name)}${NORD.pdf.yukleniyor?' <span style="opacity:.7">· yukleniyor…</span>':`<button onclick="event.stopPropagation();nordPdfKaldir()">x</button>`}</div>`:icoDoc()+'<div style="margin-top:6px">PDF ekleyin</div>'}</div>
+            <div class="drop ${NORD.pdf?'has':''}" id="nordPdfDrop" onclick="${NORD.pdf&&NORD.pdf.yukleniyor?'':`document.getElementById('nordPdfInput').click()`}">${NORD.pdf?`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(NORD.pdf.name)}${NORD.pdf.yukleniyor?' <span style="opacity:.7">· '+icoBekle()+' yukleniyor…</span>':`<button onclick="event.stopPropagation();nordPdfKaldir()">x</button>`}</div>`:icoDoc()+'<div style="margin-top:6px">PDF ekleyin</div>'}</div>
             <input type="file" id="nordPdfInput" accept="application/pdf" class="hidden" onchange="nordPickPdf(event)"></div>
           <div class="frow" style="margin-bottom:0;display:flex;align-items:center;gap:7px">
             <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer;text-transform:none;font-size:13px;color:var(--ink)"><input type="checkbox" id="nord_imza" style="width:auto;margin:0" ${NORD.imzaYok?'checked':''} onchange="NORD.imzaYok=this.checked"> Imzali kagit elde degil</label>
@@ -28605,7 +28833,7 @@ async function tutPdfSec(e){
   if(f.size>20*1024*1024){ toast("PDF 20MB'tan buyuk",'err'); return; }
   const onceki=_TUT.pdf||null;
   const el=document.getElementById('tutPdfKutu');
-  if(el) el.innerHTML=`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(f.name)} <span style="opacity:.7">· yukleniyor…</span></div>`;
+  if(el) el.innerHTML=`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(f.name)} <span style="opacity:.7">· ${icoBekle()} yukleniyor…</span></div>`;
   try{
     _TUT.pdf=await window.sbBelgeYukle('tutanak',_TUT.id,f);
     tutPdfCopAt(onceki);                 // degistirilen dosya kayda hic islenmediyse birakma
@@ -32706,7 +32934,7 @@ function renderFaturaListe(){
   let rows='';
   if(!yuklendi) rows=window.__faturaTableMissing
     ? emptyRow(7,'Fatura tablosu henuz kurulmamis','Yukaridaki uyaridaki SQL dosyasini bir kez calistirin')
-    : emptyRow(7,'Fatura kayitlari yukleniyor...','Defter acilista inmez, bu ekrana girilince bir kez cekilir');
+    : emptyRow(7,'Fatura kayitlari yukleniyor...','Defter acilista inmez, bu ekrana girilince bir kez cekilir',true);
   else if(!list.length) rows=emptyRow(7,filtreVar?'Eslesen fatura yok':'Henuz fatura kaydi girilmedi',
     filtreVar?'Filtreleri degistirin':'"Yeni Fatura" ile tedarikciden gelen faturadaki urunleri ve miktarlarini girin');
   else list.forEach(f=>{
@@ -34030,7 +34258,7 @@ function renderFaturaForm(){
         ${FAT_BELGELER.map(bl=>{ const v=st[bl.k];
           return `<div class="frow"><label>${esc(bl.ad)} (PDF)<span class="bbal" tabindex="0">B<span>${esc(bl.ip)}</span></span></label>
           <div class="drop ${v?'has':''}" title="${esc(bl.ip)}" onclick="${v&&v.yukleniyor?'':`document.getElementById('fatPdfInput_${bl.k}').click()`}">${v
-            ?`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(v.name)}${v.yukleniyor?' <span style="opacity:.7">· yukleniyor…</span>':`<button onclick="event.stopPropagation();fatPdfKaldir('${bl.k}')">x</button>`}</div>`
+            ?`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(v.name)}${v.yukleniyor?' <span style="opacity:.7">· '+icoBekle()+' yukleniyor…</span>':`<button onclick="event.stopPropagation();fatPdfKaldir('${bl.k}')">x</button>`}</div>`
             :'<span>PDF secmek icin tiklayin</span>'}</div>
           <input type="file" id="fatPdfInput_${bl.k}" accept="application/pdf" class="hidden" onchange="fatPickPdf(event,'${bl.k}')"></div>`; }).join('')}
         <!-- NOT en altta ve TAM GENISLIKTE: serbest metin, oteki alanlar gibi tek
@@ -34864,7 +35092,7 @@ function renderFaturaMutabakat(){
       <div class="sel-bc"><button onclick="closeFatura()">${icoArr('left')} Geri Don</button></div>
       <div class="sel-head"><h2>Fatura Kontrol</h2><p>${window.__faturaTableMissing
         ?'Fatura tablosu henuz kurulmamis - mutabakat hesaplanamiyor.'
-        :'Fatura kayitlari yukleniyor...'}</p></div>
+        :icoBekle()+' Fatura kayitlari yukleniyor...'}</p></div>
       ${fatMissingWarn()}
       ${fatSekmeler()}</div>`;
   }
@@ -35896,18 +36124,18 @@ async function confirmRestore(){
     if(!verified||verified.id!==CURRENT_USER.id){ errEl.textContent='Sifre yanlis.'; btn.disabled=false; return; }
     const prevDB=DB;
     if(document.getElementById('rst-safety').checked){
-      errEl.textContent='Guvenlik yedegi indiriliyor...';
+      errEl.innerHTML=icoBekle()+' Guvenlik yedegi indiriliyor...';
       downloadJSON(await makeBackupEnvelope(),backupFname('_guvenlik'));
     }
     errEl.textContent='Mevcut veri temizleniyor...';
     await sbWipeAllData();
-    errEl.textContent='Yedek yukleniyor...';
+    errEl.innerHTML=icoBekle()+' Yedek yukleniyor...';
     try{
       await sbMigrateLocalDB(pr.data);
       DB=pr.data; migrate();
     }catch(err){
       // Yukleme yarim kaldi: eski veriyi geri yazip durumu geri sar
-      errEl.textContent='Hata olustu, eski veri geri yukleniyor...';
+      errEl.innerHTML=icoBekle()+' Hata olustu, eski veri geri yukleniyor...';
       try{ await sbMigrateLocalDB(prevDB); DB=prevDB; }catch(_){ /* guvenlik yedegi dosyasi kullanicida */ }
       throw err;
     }
