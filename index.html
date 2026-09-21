@@ -5506,6 +5506,9 @@ function mainNitelik(kaynak,hedef,atla){
 
 function render(){
   const m=document.getElementById('mainArea');
+  // Kutuphane siralama sayaclari (kullanim / siparis) cizim basina bir kez kurulur;
+  // burada dusurulmezse siparis girildikten sonra sira eski rakamlarla kalirdi.
+  matSiraSifirla();
   const inPanel = (PUSERS&&isAdmin()) || (PAUDIT&&isAdmin()) || PLIB || PDEF || PORD || PCOMP || PEKIP || PNEWORD || PBINAY || PKATA || PODM || PSPECF || PRIMP || PINV || PTUT || PIHT || PFAT || PKODD || PTOPM || PTOPG || PTOPA || PARAC;
   renderSidebar();
   updateBinaExcelFab();
@@ -9789,12 +9792,16 @@ let _matSel=new Set();
 // Kutuphane yapisal filtre paneli (Tum Siparisler ile ayni desen).
 // scope: 'proje' = sartname malzemeleri, 'gecici' = Mobilizasyon (Gecici Elektrik) kutuphanesi.
 // Iki kapsam AYRI listelerdir, birbirine karismaz; kapsam degisince filtreler sifirlanir.
-let MATF={scope:'proje',cat:'',brand:'',unit:'',tag:'',img:'',renk:'',cins:''};
+let MATF={scope:'proje',cat:'',brand:'',unit:'',tag:'',img:'',renk:'',cins:'',sort:''};
 function setMatF(k,v){ MATF[k]=v; render(); }
 function setMatScope(s){ if(MATF.scope===s)return;
-  MATF={scope:s,cat:'',brand:'',unit:'',tag:'',img:'',renk:'',cins:''};
+  MATF={scope:s,cat:'',brand:'',unit:'',tag:'',img:'',renk:'',cins:'',sort:''};
   _matUsageFilter='all'; _matSel.clear(); _markaSel.clear(); SEARCH=''; render(); }
-function clearMatF(){ MATF={scope:MATF.scope,cat:'',brand:'',unit:'',tag:'',img:'',renk:'',cins:''}; _matUsageFilter='all'; SEARCH=''; render(); }
+/* SIRALAMA FILTRE DEGILDIR: "Filtreyi Temizle" listeyi DARALTAN olculeri kaldirir,
+   secilen sirayi (MATF.sort) korur - sira gorunumu daraltmaz, yalnizca duzenler ve
+   secim kutuda yazili durdugu icin kullanici nerede oldugunu zaten gorur. Ayni
+   nedenle matAnyF de sirayi saymaz: siralamak "filtre var" demek degildir. */
+function clearMatF(){ MATF={scope:MATF.scope,cat:'',brand:'',unit:'',tag:'',img:'',renk:'',cins:'',sort:MATF.sort}; _matUsageFilter='all'; SEARCH=''; render(); }
 function matAnyF(){ return !!(SEARCH||MATF.cat||MATF.brand||MATF.unit||MATF.tag||MATF.img||MATF.renk||MATF.cins||_matUsageFilter!=='all'); }
 // marka alani coklu deger tutabilir ("BEMIS / VIKO" veya satir satir) - filtre parcalara bakar
 /* KAYITLI MARKA ADLARININ ANAHTAR KUMESI. matBrandParts her malzeme satirinda cagriliyor -
@@ -9842,19 +9849,161 @@ function setMatPageSize(v){ _matPageSize=Number(v)||25; _matPage=0; render(); }
 // ayni listeyi gormeli, aksi halde secilen satirlar ile gorunen satirlar ayrisir
 function matLibFilteredSorted(){
   let mats=(DB.proje.materials||[]).filter(m=>!m.is_deleted);
-  if(SEARCH){
-    mats=mats.filter(m=>matMatchesLibSearch(m,SEARCH));
-    // aramada en iyi eslesen en ustte: birebir kod/ad eslesmesi > icinde gecen > benzer (subsequence)
-    // > sadece diger alanlardan (marka/not/standart/etiket) eslesenler.
-    // ONEMLI: acScore eslesmeyene -1 doner; -1 kucuk oldugu icin "en iyi" sanilip
-    // liste basina cikiyordu (aranan urun en alta dusuyordu) - eslesmeyen EN SONA atilir.
+  if(SEARCH) mats=mats.filter(m=>matMatchesLibSearch(m,SEARCH));
+  // FILTRELER SIRALAMADAN ONCE: elenecek satiri siralamanin anlami yok. Siralama
+  // sayaclari zaten kutuphanenin TAMAMINDAN uretilir (bkz. matKullanimIdx /
+  // matSiparisIdx), gorunen listeden degil - filtre degisince sayilar oynamaz.
+  mats=mats.filter(matMatchesF).filter(matMatchesUsageFilter);
+  /* SIRA - uc kural, sirayla:
+     1) Kullanici Siralama kutusundan bir olcut sectiyse O KAZANIR; arama sirasinda da
+        gecerlidir, cunku "en cok siparis" diyen kisi aradigi harf kumesinin icinde de
+        ayni sirayi bekler.
+     2) Olcut secilmemis ve ARAMA varsa: en iyi eslesen en ustte - birebir kod/ad
+        eslesmesi > icinde gecen > benzer (subsequence) > sadece diger alanlardan
+        (marka/not/standart/etiket) eslesenler.
+        ONEMLI: acScore eslesmeyene -1 doner; -1 kucuk oldugu icin "en iyi" sanilip
+        liste basina cikiyordu (aranan urun en alta dusuyordu) - eslesmeyen EN SONA atilir.
+     3) Ikisi de yoksa ekranin eski duzeni: kategori -> ad. */
+  const cmp=MATF.sort?matSiraKarsilastirici(MATF.sort):null;
+  if(cmp) mats.sort(cmp);
+  else if(SEARCH){
     const nq=norm(SEARCH).trim();
     const rank=m=>{ const s=acScore(norm((m.code||'')+' '+(m.name||'')+' '+(m.cat||'')),nq); return s<0?1e9:s; };
     mats.sort((a,b)=>rank(a)-rank(b)||(a.name||'').localeCompare(b.name||'','tr'));
-  } else {
-    mats.sort((a,b)=>(a.cat||'').localeCompare(b.cat||'','tr')||(a.name||'').localeCompare(b.name||'','tr'));
   }
-  return mats.filter(matMatchesF).filter(matMatchesUsageFilter);
+  else mats.sort((a,b)=>(a.cat||'').localeCompare(b.cat||'','tr')||(a.name||'').localeCompare(b.name||'','tr'));
+  return mats;
+}
+/* SIRALAMA ===================================================================
+   Kutuphane listesi tek bir sirayi biliyordu (kategori -> ad). Buradaki olcutler
+   listeyi DARALTMAZ, yalnizca duzenler: "en son eklenen ne?", "hangi urun surekli
+   tekrar ediyor?", "en cok neyi aliyoruz?" sorulari filtre kurmadan yanit bulsun.
+   Secim MATF.sort'ta yasar - sayfa imzasi (matLibPageSlice) MATF'i butun olarak
+   okudugu icin sira degisince liste kendiliginden 1. sayfaya doner. */
+const MAT_SIRA=[
+  ['',        'Varsayilan (kategori - ad)'],
+  ['ad',      'Ad (A - Z)'],
+  ['adZ',     'Ad (Z - A)'],
+  ['kod',     'Urun kodu (A - Z)'],
+  ['yeni',    'En yeni eklenen'],
+  ['eski',    'En eski eklenen'],
+  ['guncel',  'Son duzenlenen'],
+  ['cokKul',  'En cok kullanilan (kalem)'],
+  ['azKul',   'En az kullanilan (kalem)'],
+  ['cokSip',  'En cok siparis (miktar)'],
+  ['azSip',   'En az siparis (miktar)'],
+  ['cokSipK', 'En cok siparis (kayit sayisi)']];
+function matSiraAd(mod){ const x=MAT_SIRA.find(s=>s[0]===mod); return x?x[1]:''; }
+/* Sayaclar RENDER BASINA BIR KEZ kurulur ve her cizimin basinda dusurulur
+   (render() -> matSiraSifirla) - siparis miktari degistiginde siralama bayat kalmasin.
+   Urun basina ayri tarama YAPILMAZ: 700 urunluk kutuphanede ayni siparis listesini 700
+   kez dolasmak olurdu (matOzelVeri ile ayni gerekce) - tek tarama, sonuc urune dagitilir. */
+let _matKulIdx=null, _matSipIdx=null, _matEklIdx=null;
+function matSiraSifirla(){ _matKulIdx=null; _matSipIdx=null; _matEklIdx=null; }
+/* EKLENME SIRASI: kayitlar sunucudan created_at'e gore yuklenir (src/supabase.js
+   sbGetAll -> order: created_at asc), yani dizideki yer gercek eklenme sirasidir.
+   mt.createdAt tek basina yetmez: eski kayitlarin hepsine tek seferlik bir goc damgasi
+   basildi (matFieldsV blogu) ve o kayitlar ayni ani tasiyor - esitlikte dizi sirasi
+   araya girer, yoksa "en eski" alfabetik bir kumeye donerdi. */
+function matEklenmeSirasi(){
+  if(_matEklIdx) return _matEklIdx;
+  _matEklIdx=new Map(); (DB.proje.materials||[]).forEach((m,i)=>_matEklIdx.set(m.id,i));
+  return _matEklIdx;
+}
+/* KULLANIM SAYACI - materialUsage'in TERS yonu (kalemden urune). materialUsage bir
+   kalemi s.matId ILE VEYA kod/ad anahtariyla (varyant kodlar dahil) urune baglar;
+   burada ayni kural tersten kurulur, sonuc materialUsage ile ayni sayidir.
+   Ayni kodu/adi tasiyan KOPYA urunler kalemi paylasir - materialUsage de ikisine birden
+   sayiyordu, sayi ikisinde de ayni cikar (bkz. Kopya Degerleri Vurgula). */
+function matKullanimIdx(){
+  if(_matKulIdx) return _matKulIdx;
+  const kalem=new Map(), spek=new Map(), byKey=new Map();
+  const ek=(k,id)=>{ if(!k) return; const a=byKey.get(k); if(a) a.push(id); else byKey.set(k,[id]); };
+  (DB.proje.materials||[]).forEach(m=>{ if(m.is_deleted) return;
+    kalem.set(m.id,0); spek.set(m.id,new Set());
+    ek(matKey(m.code,m.name),m.id);
+    (m.altCodes||[]).forEach(c=>{ if(String(c).trim()) ek(matKey(c,''),m.id); }); });
+  (DB.proje.specs||[]).forEach(s=>{
+    if(s.is_deleted) return;
+    const ids=new Set(byKey.get(matKey(s.code,s.name))||[]);
+    if(s.matId&&kalem.has(s.matId)) ids.add(s.matId);
+    if(!ids.size) return;
+    const g=specGroupKey(s);
+    ids.forEach(id=>{ kalem.set(id,kalem.get(id)+1); spek.get(id).add(g); });
+  });
+  _matKulIdx={kalem,spek};
+  return _matKulIdx;
+}
+/* SIPARIS SAYACI: satirin hangi urunun alimi oldugu lineAlimMaterial ile cozulur -
+   alternatifle alinan satir FATURADA YAZAN urune sayilir (bkz. BIR ALIM/MONTAJ HANGI
+   URUNE SAYILIR). Iadeler dusulur: Ozel Indirme kitabindaki "Net Alim" ile ayni hesap,
+   iki ekran ayni urun icin farkli rakam gosteremez.
+     mik = miktar toplami. Birim urunden urune degisir (m / adet / kg) - bu olcut ayni
+           urunun gecmisini degil, urunler arasi BUYUKLUK sirasini verir.
+     bel = urunun gectigi FARKLI siparis belgesi kumesi - birimden bagimsiz "ne siklikta
+           aliniyor" olcutu, karisik birimli kutuphanede miktardan daha durust okunur. */
+function matSiparisIdx(){
+  if(_matSipIdx) return _matSipIdx;
+  const mik=new Map(), bel=new Map();
+  (DB.proje.materials||[]).forEach(m=>{ if(m.is_deleted) return; mik.set(m.id,0); bel.set(m.id,new Set()); });
+  // satir cozumlemesi ayirt edici alanlar basina BIR KEZ (matOzelVeri ile ayni desen):
+  // lineAlimMaterial kutuphaneyi tarayabiliyor, ayni urunun 50 satiri 50 tarama olurdu
+  const coz=new Map();
+  const urunu=l=>{ const k=(l.altId||'')+'|'+(l.specId||'')+'|'+String(l.code||'')+'|'+String(l.ad||l.name||'');
+    if(!coz.has(k)) coz.set(k,lineAlimMaterial(l)); return coz.get(k); };
+  (DB.proje.orders||[]).forEach(o=>{
+    (o.lines||[]).forEach(l=>{ const mm=urunu(l); if(!mm||!mik.has(mm.id)) return;
+      mik.set(mm.id,mik.get(mm.id)+(Number(l.qty)||0)); bel.get(mm.id).add(o.id); });
+    orderIadeler(o).forEach(ia=>iadeSatirlari(ia).forEach(r=>{
+      const mm=urunu(r); if(!mm||!mik.has(mm.id)) return;
+      mik.set(mm.id,mik.get(mm.id)-(Number(r.qty)||0)); }));
+  });
+  _matSipIdx={mik,bel};
+  return _matSipIdx;
+}
+/* Esit degerlerde DAIMA ad -> id ile baglanir: bagsiz birakilsaydi "0 siparisli"
+   yuzlerce urun her cizimde yer degistirir, 2. sayfaya gecip donunce baska satirlar
+   gorunurdu (secim kutucuklari da onlarla birlikte kayardi). */
+function matSiraKarsilastirici(mod){
+  const ad=m=>String(m.name||'');
+  const son=(a,b)=>ad(a).localeCompare(ad(b),'tr')||String(a.id).localeCompare(String(b.id));
+  const sayi=(f,buyukUste)=>(a,b)=>(buyukUste?f(b)-f(a):f(a)-f(b))||son(a,b);
+  switch(mod){
+    case 'ad':  return son;
+    case 'adZ': return (a,b)=>ad(b).localeCompare(ad(a),'tr')||String(a.id).localeCompare(String(b.id));
+    // kodu olmayan urun kodlularin arasina karismasin - sona alinir
+    case 'kod': return (a,b)=>{ const x=String(a.code||'').trim(), y=String(b.code||'').trim();
+      if(!x!==!y) return x?-1:1; return x.localeCompare(y,'tr')||son(a,b); };
+    case 'yeni': { const ix=matEklenmeSirasi(); return (a,b)=>((Number(b.createdAt)||0)-(Number(a.createdAt)||0))||((ix.get(b.id)||0)-(ix.get(a.id)||0))||son(a,b); }
+    case 'eski': { const ix=matEklenmeSirasi(); return (a,b)=>((Number(a.createdAt)||0)-(Number(b.createdAt)||0))||((ix.get(a.id)||0)-(ix.get(b.id)||0))||son(a,b); }
+    case 'guncel': { const t=m=>Number(m.updatedAt)||Number(m.createdAt)||0; return (a,b)=>(t(b)-t(a))||son(a,b); }
+    case 'cokKul': { const K=matKullanimIdx(); return sayi(m=>K.kalem.get(m.id)||0,true); }
+    case 'azKul':  { const K=matKullanimIdx(); return sayi(m=>K.kalem.get(m.id)||0,false); }
+    case 'cokSip': { const S=matSiparisIdx(); return sayi(m=>S.mik.get(m.id)||0,true); }
+    case 'azSip':  { const S=matSiparisIdx(); return sayi(m=>S.mik.get(m.id)||0,false); }
+    case 'cokSipK':{ const S=matSiparisIdx(); return sayi(m=>{const x=S.bel.get(m.id);return x?x.size:0;},true); }
+    default: return null;
+  }
+}
+/* Satirdaki SIRA ROZETI: bir olcutle siralanan liste dayanagini da gostermeli -
+   yoksa ekran, gerekcesini soylemeyen bir siraya guvenmeyi ister. Yalnizca o olcut
+   secilirken cikar; sayi kutuphanenin tamamindan gelir, filtre onu degistirmez. */
+function matSiraRozet(m){
+  const mod=MATF.sort; if(!mod) return '';
+  // dil ekranin geri kalaniyla ayni: renkli olcut cipi (kullanim mavi / siparis yesil),
+  // tarih ise notr gri - listede rakamin yaninda ikinci bir renk daha olusmasin
+  const cip=(bg,fg,ic,ipucu,mono)=>`<span class="cat-tag" style="background:${bg};color:${fg};font-size:9px${mono?';font-family:var(--mono)':''}" title="${esc(ipucu)}">${ic}</span>`;
+  const olcut=(renk,ic,ipucu,mono)=>cip(renk+'18',renk,ic,ipucu,mono);
+  const notr=(ic,ipucu)=>cip('var(--dim)33','var(--mute)',ic,ipucu);
+  if(mod==='cokKul'||mod==='azKul'){ const n=matKullanimIdx().kalem.get(m.id)||0;
+    return olcut('var(--blue)',fmtNum(n)+' kalem','Bu urun sartnamelerde '+n+' kalemde geciyor. Kutuphanenin tamamindan sayilir - filtre ya da arama bu sayiyi degistirmez.'); }
+  if(mod==='cokSip'||mod==='azSip'){ const q=matSiparisIdx().mik.get(m.id)||0;
+    return olcut('var(--green)',fmtNum(q)+' '+esc(m.unit||''),'Siparislerde bu urunden alinan toplam miktar - iadeler dusuldu, alternatifle alinanlar faturada yazan urune sayildi (Ozel Indirme kitabindaki "Net Alim" ile ayni hesap).',true); }
+  if(mod==='cokSipK'){ const x=matSiparisIdx().bel.get(m.id), n=x?x.size:0;
+    return olcut('var(--green)',fmtNum(n)+' siparis','Bu urunun gectigi farkli siparis belgesi sayisi - birimlerden bagimsiz "ne siklikta aliniyor" olcutu.'); }
+  if(mod==='yeni'||mod==='eski') return m.createdAt?notr(esc(fmtDate(m.createdAt)),'Kutuphaneye eklenme tarihi'):'';
+  if(mod==='guncel'){ const t=m.updatedAt||m.createdAt; return t?notr(esc(fmtDate(t)),'Son duzenlenme tarihi'):''; }
+  return '';
 }
 function matLibPageSlice(total){
   const sig=SEARCH+'|'+JSON.stringify(MATF)+'|'+_matUsageFilter;
@@ -10097,11 +10246,12 @@ function renderMaterialLib(){
     ${allTags.length?`<div class="ord-f"><label>Etiket</label><select onchange="setMatF('tag',this.value)"><option value="">Tumu</option>${allTags.map(t=>`<option value="${esc(t)}" ${MATF.tag===t?'selected':''}>${esc(t)}</option>`).join('')}</select></div>`:''}
     <div class="ord-f"><label>Fotograf</label><select onchange="setMatF('img',this.value)"><option value="">Tumu</option><option value="var" ${MATF.img==='var'?'selected':''}>Foto ekli</option><option value="yok" ${MATF.img==='yok'?'selected':''}>Foto eksik</option></select></div>
     <div class="ord-f"><label>Kullanim</label><select onchange="setMatUsageFilter(this.value)"><option value="all" ${_matUsageFilter==='all'?'selected':''}>Tumu</option><option value="used" ${_matUsageFilter==='used'?'selected':''}>Kullanilan</option><option value="unused" ${_matUsageFilter==='unused'?'selected':''}>Kullanilmayan</option><option value="multi" ${_matUsageFilter==='multi'?'selected':''}>Ortak kullanim</option><option value="alt" ${_matUsageFilter==='alt'?'selected':''}>Alternatif olarak kullanilan</option></select></div>
+    <div class="ord-f"><label>Siralama</label><select onchange="setMatF('sort',this.value)" title="Listeyi DARALTMAZ, yalnizca duzenler. Sayilar kutuphanenin tamamindan gelir: filtre ya da arama degisse de urunun yanindaki rozet ayni kalir.\n\nKullanim = urunun gectigi sartname kalemi sayisi.\nSiparis (miktar) = alinan toplam, iadeler dusulmus.\nSiparis (kayit) = urunun gectigi farkli siparis belgesi sayisi - birimler karisik oldugu icin miktardan daha durust okunur.">${MAT_SIRA.map(([v,l])=>`<option value="${v}" ${MATF.sort===v?'selected':''}>${esc(l)}</option>`).join('')}</select></div>
     ${anyF?`<div class="ord-f" style="justify-content:flex-end"><label>&nbsp;</label><button class="btn btn-ghost" style="padding:8px 14px" onclick="clearMatF()">Filtreyi Temizle</button></div>`:''}
   </div>`;
   // sayfalama cubugu: "350 malzemeden 1-25 arasi" + sayfa boyutu + onceki/sonraki
   const pgbar=`<div class="matlib-pgbar">
-    <span class="t-meta">${matsAll.length?`<b>${fmtNum(matsAll.length)}</b> malzemeden <b>${start+1}-${end}</b> arasi gosteriliyor`:'Gosterilecek malzeme yok'}</span>
+    <span class="t-meta">${matsAll.length?`<b>${fmtNum(matsAll.length)}</b> malzemeden <b>${start+1}-${end}</b> arasi gosteriliyor`:'Gosterilecek malzeme yok'}${MATF.sort?` &middot; <b>${esc(matSiraAd(MATF.sort))}</b> sirasiyla`:''}</span>
     <div class="matlib-pgctrl">
       <select class="selbox" onchange="setMatPageSize(this.value)">${[25,50,100,250].map(n=>`<option value="${n}" ${_matPageSize===n?'selected':''}>${n} satir</option>`).join('')}</select>
       <button class="mini-btn" ${_matPage===0?'disabled':`onclick="setMatPage(${_matPage-1})"`} title="Onceki sayfa"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button>
@@ -10134,7 +10284,7 @@ function renderMaterialLib(){
       rows+=`<tr class="mat-row ${_matSel.has(m.id)?'row-sel':''}" onclick="openMatDetail('${m.id}')" title="Malzeme kunyesi: sartnameler, siparisler, montaj">
         <td style="width:34px;text-align:center" onclick="event.stopPropagation()"><input type="checkbox" class="mat-check" ${_matSel.has(m.id)?'checked':''} onclick="event.stopPropagation();toggleMatSel('${m.id}')"></td>
         <td>${thumb}</td>
-        <td class="t-name mat-clk${_matHighlightDup&&dupNames.has(norm(m.name).trim())?' dup-hl':''}">${esc(m.name)} ${usageTag} ${altTag} ${ozelTag}<div style="margin-top:4px">${specs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px">${esc(g)}</span>`).join('')}${altSpecs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--amber)18;color:var(--amber);font-family:var(--mono);font-size:9px" title="Bu sartnamedeki bir kalemin alternatifi olarak kullaniliyor">ALT · ${esc(g)}</span>`).join('')}${altSpecs.length>4?`<span class="cat-tag" style="background:var(--amber)18;color:var(--amber);font-size:9px">+${altSpecs.length-4}</span>`:''}</div></td>
+        <td class="t-name mat-clk${_matHighlightDup&&dupNames.has(norm(m.name).trim())?' dup-hl':''}">${esc(m.name)} ${usageTag} ${altTag} ${ozelTag} ${matSiraRozet(m)}<div style="margin-top:4px">${specs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px">${esc(g)}</span>`).join('')}${altSpecs.slice(0,4).map(g=>`<span class="cat-tag" style="background:var(--amber)18;color:var(--amber);font-family:var(--mono);font-size:9px" title="Bu sartnamedeki bir kalemin alternatifi olarak kullaniliyor">ALT · ${esc(g)}</span>`).join('')}${altSpecs.length>4?`<span class="cat-tag" style="background:var(--amber)18;color:var(--amber);font-size:9px">+${altSpecs.length-4}</span>`:''}</div></td>
         <td class="${_matHighlightDup&&m.code&&dupCodes.has(norm(m.code).trim())?'dup-hl':''}" style="font-family:var(--mono);font-size:12px">${esc(m.code||'-')}${(()=>{ const v=matVaryant(m); if(!v.satirlar.length) return '';
           // cip ustunde varyantin OZELLIKLERI de gorunur (orn. "M10 / Beyaz"), yoksa duz aciklama
           return `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${v.satirlar.map(r=>{ const oz=varyantOzet(v,r);
@@ -22364,7 +22514,7 @@ function aletArananMetin(x){ const k=aletKunye(x);
   return [k.ad,k.kod,k.marka,k.barkod,k.renk,k.olcu,k.madde,k.grup,x.seri,x.zimkod,x.zimmet,x.konum,x.note].filter(Boolean).join(' '); }
 // El Aletleri ekranindan kutuphaneye atlama (kutuphane ekraninin Mekanik kapsami)
 function openAletLib(){ if(!canSee('alet')){toast('Yetkiniz yok','err');return;}
-  MATF={scope:'alet',cat:'',brand:'',unit:'',tag:'',img:'',renk:''}; _matUsageFilter='all'; _matSel.clear(); _matPage=0; openMaterialLib(); }
+  MATF={scope:'alet',cat:'',brand:'',unit:'',tag:'',img:'',renk:'',sort:''}; _matUsageFilter='all'; _matSel.clear(); _matPage=0; openMaterialLib(); }
 
 /* FILTRE PANELI: bolumun ustundeki dev sayac kartlari kaldirildi - dort kutu ekranin
    yarisini yiyor, hicbir soruyu cevaplamiyordu. Yerine kutuphane/siparis ekranlarindaki
@@ -36259,7 +36409,7 @@ function cmdkSearch(q){
       const cats=materialAllCats(m).join(' ');
       cmdkAdd(out,{kind:'Urun',name:m.name||m.code||'Urun',
         meta:[m.code,m.brand,cats,m.unit].filter(Boolean).join(' / '),
-        go:()=>{ switchSection('proje'); openMaterialLib(); SEARCH=m.code||m.name||''; MATF={scope:'proje',cat:'',brand:'',unit:'',tag:'',img:'',renk:''}; render(); }},
+        go:()=>{ switchSection('proje'); openMaterialLib(); SEARCH=m.code||m.name||''; MATF={scope:'proje',cat:'',brand:'',unit:'',tag:'',img:'',renk:'',sort:''}; render(); }},
         q,[m.name,m.code,(m.altCodes||[]).join(' '),m.brand,m.cat,m.unit,m.note,m.note2,m.standart,(m.tags||[]).join(' '),cats,'urun malzeme kutuphane']);
     });
     (DB.proje.items||[]).filter(it=>!it.is_deleted).forEach(it=>cmdkAdd(out,{kind:it.type==='out'?'Cikis':(it.type==='iade'?'Iade':'Hareket'),
