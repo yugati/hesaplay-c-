@@ -2610,10 +2610,17 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .moz-kapsam{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--primary);border-radius:10px;padding:10px 13px}
 .moz-kapsam>b{display:block;font-size:13.5px;color:var(--ink)}
 .moz-kapsam>span{display:block;font-size:12px;color:var(--mute);line-height:1.5;margin-top:3px}
-.moz-sayfa{display:flex;align-items:baseline;gap:10px;padding:7px 2px;border-bottom:1px dashed var(--line);font-size:12px}
+/* Sayfa satiri artik bir SECIM: isaretlenmeyen sayfa dosyaya girmez. Etiketin tamami
+   tiklanabilir olsun diye <label>; kapali satir soluklasir ki ne inmeyecegi bir bakista
+   gorunsun. */
+.moz-sayfa{display:flex;align-items:baseline;gap:10px;padding:7px 2px;border-bottom:1px dashed var(--line);font-size:12px;cursor:pointer}
 .moz-sayfa:last-child{border-bottom:0}
-.moz-sayfa b{flex:0 0 138px;font-family:var(--mono);font-size:11.5px;color:var(--ink)}
+.moz-sayfa input{flex:0 0 auto;align-self:center;margin:0;cursor:pointer}
+.moz-sayfa b{flex:0 0 146px;font-family:var(--mono);font-size:11.5px;color:var(--ink)}
 .moz-sayfa span{color:var(--mute);line-height:1.45}
+.moz-sayfa.kapali b,.moz-sayfa.kapali span{opacity:.45}
+.moz-say{margin-top:10px;font-size:12px;color:var(--mute)}
+.moz-say b{color:var(--ink)}
 /* BILGI SERIDI: bos bir bolumun aciklamasi. Duz paragraf yerine ikonlu, cerceveli
    ince bir serit - goz "burada icerik yok, ne yapacagim yaziyor" diye bir bakista
    ayirir. Metin KISA tutulur: ornek deger gerekiyorsa duzenleme kutularinin
@@ -10007,7 +10014,7 @@ function renderMaterialLib(){
       <button class="btn btn-ciplak" title="Excel'den Ice Aktar - malzeme kutuphanesini secilen Excel dosyasindan gunceller" aria-label="Excel'den ice aktar" onclick="document.getElementById('matLibXlsx').click()">${icoXlsIc()}</button>
       <input type="file" id="matLibXlsx" accept=".xlsx,.xls" class="hidden" onchange="importLibraryExcel(event)">
       <button class="btn btn-ciplak" title="Excel'e Disa Aktar - malzeme kutuphanesini Excel dosyasi olarak indirir" aria-label="Excel'e disa aktar" onclick="exportMaterialLib()">${icoXlsDis()}</button>
-      <button class="btn btn-ciplak" title="Ozel Indirme - ${_matSel.size?`secili ${_matSel.size} urunun`:'filtreye uyan tum urunlerin'} siparis alimlari, iadeleri, fatura satirlari ve sartname yuzdeleri tek Excel kitabinda" aria-label="Ozel indirme" onclick="openMatOzelIndir()">${icoXlsYazi('ÖZEL')}${_matSel.size?`<b class="ciplak-say">${_matSel.size}</b>`:''}</button>
+      <button class="btn btn-ciplak" title="Ozel Indirme - ${_matSel.size?`secili ${_matSel.size} urunun`:'filtreye uyan tum urunlerin'} siparis alimlari, iadeleri, fatura satirlari ve sartname yuzdeleri tek Excel kitabinda. Hangi sayfalarin inecegini pencereden secersiniz; Sartname Matrisi sayfasi her urunu tek satirda, sartname sartname Hedef / Alinan / Kalan olarak verir" aria-label="Ozel indirme" onclick="openMatOzelIndir()">${icoXlsYazi('ÖZEL')}${_matSel.size?`<b class="ciplak-say">${_matSel.size}</b>`:''}</button>
       <button class="btn btn-ciplak" title="Kutuphaneye yeni malzeme ekle" aria-label="Malzeme ekle" onclick="openMaterialModal()">${icoMalEkle()}</button>
       <button class="btn btn-ciplak" title="${_matSel.size?`Toplu Urun Duzenleme - secili ${_matSel.size} urun kayitli bilgileriyle kendi kutularinda acilir; yeni urun eklemek icin sayfadaki Yeni Urun Ekle sekmesi`:'Toplu Urun Ekleme - her kutu bir yeni urun, Excel\'den yapistirarak da doldurabilirsiniz. Mevcut urunleri toplu duzenlemek icin once listeden secin'}" aria-label="Toplu urun ekleme ve duzenleme" onclick="openTopluMalPage()">${icoTopluMal()}</button>
       <button class="btn btn-ciplak${_matHighlightDup?' on':''}" title="Kopya Degerleri Vurgula - Excel'deki 'Yinelenen Degerler' gibi: Malzeme ve Kod sutunlarinda kutuphane genelinde tekrar eden degerleri vurgular; ayni urunun farkli urun kodu ile iki kayda bolunmus olabilecegini fark etmenizi saglar${_matHighlightDup&&dupCellCount?`\n\nSu an ${dupCellCount} tekrar eden hucre vurgulu`:''}" aria-label="Kopya degerleri vurgula" onclick="toggleMatHighlightDup()">${icoKopyaVurgula()}${_matHighlightDup&&dupCellCount?`<b class="ciplak-say">${dupCellCount}</b>`:''}</button>
@@ -12755,9 +12762,14 @@ function exportMaterialLib(){
    Kutuphanede SECILEN urunlerin - secim yoksa filtreye uyan TUM urunlerin (yalnizca
    ekrandaki sayfa degil) - alim ve fatura dokumu tek kitapta:
      Ozet                urun basina: hedef, siparis, iade, montaj, yuzdeler, faturalanan, tutar
+     Sartname Matrisi    urun basina TEK satir; her sartname ayri Hedef/Alinan/Kalan sutunu
      Siparis Alimlari    her alim / iade / yerine-alinan satiri
      Fatura Satirlari    her fatura satiri: fiyat, iskonto, matrah, KDV, toplam
      Sartname Ilerlemesi urunun gectigi her kalemin siparis ve montaj yuzdesi
+   SAYFALAR SECILEBILIR (bkz. MOZ_SAYFALAR): isaretlenmeyen sayfa kitaba hic girmez.
+   Tek sayfa secilince dosya tek tablodan ibaret olur - baska bir Excel'e yapistirmak icin.
+   Ozet'ten diger sayfalara verilen koprular, hedef sayfa inmiyorsa YAZILMAZ: var olmayan
+   sayfaya isaret eden bir kopru Excel'e dosyayi "onarmak" istetir.
    TEK KAYNAK: sayilar Malzeme Kunyesi'nin kurallariyla secilir (bkz. matKunyeParcalari):
      Siparis            = lineAlimMaterial ile BU urune cozulen satirlar
      Alternatif Siparis = bu urunun kalemleri icin BASKA urunle yapilan alimlar
@@ -12832,12 +12844,24 @@ function matOzelVeri(mats){
 }
 /* KITABI KURAR (indirmez) - fatKitapKur gibi: tarayicisiz calistirilip icerigi
    dogrulanabilsin diye indirme ayri durur. */
-function matOzelKitapKur(kap,veri){
+/* Indirme penceresinde isaretlenebilen sayfalar - sira kitaptaki sayfa sirasidir. */
+const MOZ_SAYFALAR=[
+  ['oz','Ozet','urun basina hedef, siparis, iade, montaj, yuzdeler, faturalanan ve tutar'],
+  ['mx','Sartname Matrisi','urun basina TEK satir - her sartname ayri Hedef / Alinan / Kalan sutunu, sonunda toplam'],
+  ['sp','Siparis Alimlari','her alim, iade ve yerine alinan satiri - firma, sartname, tedarik, ozel kod, belge durumu'],
+  ['ft','Fatura Satirlari','her fatura satiri - birim fiyat, iskonto, matrah, KDV, toplam, irsaliye, ETTN'],
+  ['sr','Sartname Ilerlemesi','urunun gectigi her kalemin siparis ve montaj yuzdesi']];
+function matOzelKitapKur(kap,veri,sec){
   const {V,montajSpec,fatVar,genel}=veri;
+  const ac=k=>!sec||sec[k]!==false;                // sec verilmezse tum sayfalar iner
   const wb=xlsxKitap(), B=fatKitapBicim(wb);
-  const OZ='Ozet', SP='Siparis Alimlari', FT='Fatura Satirlari', SR='Sartname Ilerlemesi';
-  // sayfalar ONCE acilir: ozet, detay sayfalarindaki satir numaralarina kopru verir
-  const sOz=wb.sayfa(OZ,true), sSp=wb.sayfa(SP), sFt=wb.sayfa(FT), sSr=wb.sayfa(SR);
+  const OZ='Ozet', MX='Sartname Matrisi', SP='Siparis Alimlari', FT='Fatura Satirlari', SR='Sartname Ilerlemesi';
+  // sayfalar ONCE acilir: ozet, detay sayfalarindaki satir numaralarina kopru verir.
+  // Acilan ILK sayfa secili sekme olur - Ozet kapatildiginda kitap bos sekmeyle acilmasin.
+  let ilkVar=false;
+  const acSayfa=(k,ad)=>{ if(!ac(k)) return null; const s=wb.sayfa(ad,!ilkVar); ilkVar=true; return s; };
+  const sOz=acSayfa('oz',OZ), sMx=acSayfa('mx',MX), sSp=acSayfa('sp',SP), sFt=acSayfa('ft',FT), sSr=acSayfa('sr',SR);
+  if(!ilkVar) throw new Error('En az bir sayfa secilmeli');   // sayfasiz kitap acilamayan dosya olur
   const kenar={b:{c:FKX.cizgi}};
   const saatB=[0,1].map(z=>wb.bicim({fmt:'dd"."mm"."yyyy  hh:mm',font:{sz:10.5},yatay:'center',dikey:'center',kenar,dolgu:z?FKX.zebra:null}));
   const trh=(v,z)=>{ const n=v?xlsxTarihSeri(v):null; return n==null?{v:'',b:z?B.tdSZ:B.tdS}:{v:n,b:z?B.trhZ:B.trh}; };
@@ -12863,8 +12887,8 @@ function matOzelKitapKur(kap,veri){
   const spTh=['Urun Kodu','Malzeme','Kayit','Siparis No','Iade No','Tarih','Bina','Firma','Sartname','Fatura Satiri',
     'Spek No','Satirdaki Malzeme','Miktar','Birim','Alternatif','Siparis Turu','Kaynak Bina','Kaynak Sartname',
     'Atama Nedeni','Tedarik Bina','Tedarik Sartname','Tedarik Notu','Ozel Kod','Ozel Kod Kati','Imzali Belge','Belge PDF','Notlar'];
-  const spBas=baslik(sSp,'Siparis Alimlari  ·  '+kap.metin,spTh,
-    [16,40,14,14,10,11,9,26,22,10,16,40,11,8,30,11,10,18,20,10,18,20,16,18,11,9,36]);
+  const spBas=sSp?baslik(sSp,'Siparis Alimlari  ·  '+kap.metin,spTh,
+    [16,40,14,14,10,11,9,26,22,10,16,40,11,8,30,11,10,18,20,10,18,20,16,18,11,9,36]):0;
   const KAYIT={alim:['ALIM',B.durum.tam],iade:['IADE',B.durum.fazla],yerine:['YERINE ALINAN',B.durum.kismi]};
   const specAdi=id=>{ const sp=id?(DB.proje.specs||[]).find(s=>s.id===id):null; return sp?(sp.name||sp.code||''):''; };
   // tedarik / ozel kod kirilimi: exportOrdersExcel ile ayni parcalama
@@ -12887,6 +12911,8 @@ function matOzelKitapKur(kap,veri){
         :(l.altId?'ALTERNATIF → '+(specAdi(l.specId)||'kalem silinmis'):'');
       const notlar=k.tur==='iade'?String(k.ia.not||''):orderNotlar(o).map(n=>n.text).filter(Boolean).join(' | ');
       parca.forEach((p,pi)=>{
+        spN++; spSay.set(m.id,(spSay.get(m.id)||0)+1);
+        if(!sSp) return;                                   // sayfa inmiyor - sayim yine de Ozet'e yazilir
         const z=spZ++%2, td=z?B.tdZ:B.td, ts=z?B.tdSZ:B.tdS, kod=z?B.kodZ:B.kod, sar=z?B.sarZ:B.sar;
         const n=sSp.satir([
           {v:m.code||'',b:kod},{v:m.name||'',b:td},{v:KAYIT[k.tur][0],b:KAYIT[k.tur][1]},
@@ -12899,22 +12925,24 @@ function matOzelKitapKur(kap,veri){
           {v:(p.ted&&p.ted.bina)||'',b:ts},{v:(p.ted&&p.ted.sart)||'',b:td},{v:k.tur==='iade'?'':(o.tedarikNot||''),b:sar},
           {v:p.kod,b:kod},{v:p.kod?((p.lokId?lokPath(p.lokId):ozelKodKatAdi(o.bina,p.kod))||''):'',b:td},
           {v:o.imzaYok?'ELDE DEGIL':'Elde',b:o.imzaYok?B.uyari:ts},{v:o.pdf?'Var':'Yok',b:ts},{v:notlar,b:sar}]);
-        spN++; spSay.set(m.id,(spSay.get(m.id)||0)+1); if(!ilkSp.has(m.id)) ilkSp.set(m.id,n);
+        if(!ilkSp.has(m.id)) ilkSp.set(m.id,n);
       });
     });
   });
-  if(!spN) sSp.satir([{v:'Secilen urunler icin siparis kaydi yok.',b:B.dipnot}]);
-  bitir(sSp,spBas,spTh.length);
+  if(sSp){
+    if(!spN) sSp.satir([{v:'Secilen urunler icin siparis kaydi yok.',b:B.dipnot}]);
+    bitir(sSp,spBas,spTh.length);
+  }
 
   // ══════ FATURA SATIRLARI ══════
   const ftTh=['Urun Kodu','Malzeme','Fatura No','Tarih','Firma','Kayit Durumu','Senaryo','Fatura Tipi','Irsaliye No',
     'Irsaliye Tarihi','ETTN','Satir','Satirdaki Kod','Satirdaki Mal / Hizmet','Miktar','Birim','Birim Fiyat','Isk %',
     'Iskonto','Matrah','KDV %','KDV','Diger Vergi','Satir Toplami','Para Birimi','Kur','Ozel Kod Dagilimi','Kaydeden','Uyari','Not'];
-  const ftBas=baslik(sFt,'Fatura Satirlari  ·  '+kap.metin,ftTh,
-    [16,40,18,16,26,12,14,12,14,12,24,6,16,40,11,8,12,7,11,13,7,11,10,14,8,8,28,16,26,30]);
+  const ftBas=sFt?baslik(sFt,'Fatura Satirlari  ·  '+kap.metin,ftTh,
+    [16,40,18,16,26,12,14,12,14,12,24,6,16,40,11,8,12,7,11,13,7,11,10,14,8,8,28,16,26,30]):0;
   const etiket=(liste,kod)=>((liste.find(x=>x[0]===kod)||[])[1])||kod||'';
   let ftN=0, ftZ=0;
-  if(fatVar) kap.mats.forEach(m=>{
+  if(fatVar&&sFt) kap.mats.forEach(m=>{
     V.get(m.id).fat.slice().sort((a,b)=>fatSirala(a.f,b.f)).forEach(({f,r,ri})=>{
       const z=ftZ++%2, td=z?B.tdZ:B.td, ts=z?B.tdSZ:B.tdS, kod=z?B.kodZ:B.kod, sar=z?B.sarZ:B.sar, yuz=z?B.yuzZ:B.yuz;
       const h=fatSatirHesap(r), dur=fatDurumu(f), dk=fatSaatDk(f), ts0=f.tarih?xlsxTarihSeri(f.tarih):null;
@@ -12934,21 +12962,38 @@ function matOzelKitapKur(kap,veri){
       ftN++; if(!ilkFt.has(m.id)) ilkFt.set(m.id,n);
     });
   });
-  if(!fatVar) sFt.satir([{v:fatYokNedeni,b:B.dipnot}]);
-  else if(!ftN) sFt.satir([{v:'Secilen urunler hicbir fatura kaydinda gecmiyor.',b:B.dipnot}]);
-  bitir(sFt,ftBas,ftTh.length);
+  if(sFt){
+    if(!fatVar) sFt.satir([{v:fatYokNedeni,b:B.dipnot}]);
+    else if(!ftN) sFt.satir([{v:'Secilen urunler hicbir fatura kaydinda gecmiyor.',b:B.dipnot}]);
+    bitir(sFt,ftBas,ftTh.length);
+  }
 
   // ══════ SARTNAME ILERLEMESI ══════
   const srTh=['Urun Kodu','Malzeme','Bina','Sartname','Ozel No','Bolum','Hedef','Siparis','Siparis %','Montaj','Montaj %','Durum','Birim'];
-  const srBas=baslik(sSr,'Sartname Ilerlemesi  ·  '+kap.metin,srTh,[16,40,9,30,16,18,11,11,10,11,10,20,8]);
+  const srBas=sSr?baslik(sSr,'Sartname Ilerlemesi  ·  '+kap.metin,srTh,[16,40,9,30,16,18,11,11,10,11,10,20,8]):0;
   const ilerleme=new Map();                         // matId -> {tt,got,mont}
-  let srZ=0;
+  const mxVeri=new Map();                           // matId -> Map(sartname -> {hedef,alinan,acik}) : Sartname Matrisi
+  let srZ=0, srN=0;
   kap.mats.forEach(m=>{
     const g={tt:0,got:0,mont:0}; ilerleme.set(m.id,g);
     V.get(m.id).usage.forEach(s=>{
-      const z=srZ++%2, td=z?B.tdZ:B.td, ts=z?B.tdSZ:B.tdS, kod=z?B.kodZ:B.kod, yuz=z?B.yuzZ:B.yuz;
       const tgt=Number(s.target)||0, ex=!!s.exclude, got=specProgress(s).got, mont=montajSpec.get(s.id)||0;
+      srN++;
       if(!ex){ g.tt+=tgt; g.got+=got; g.mont+=mont; }
+      /* Matris hucresi: yuzdeden cikarilan (exclude) kalem Ozet'te oldugu gibi burada da
+         toplamlara katilmaz. TEK ISTISNA ACIK KALEM: o da exclude'dur (bkz. _specSaveCore
+         degismezi - openQty ise hedef 0 ve exclude true), ama "daha ne kadar alinabilir"
+         sorusunun oradaki cevabi "0" degil "sinirsiz"dir. Gormezden gelinseydi bu sayfa
+         acik kalemli bir urun icin "hakkin doldu" derdi; alimi gercek, hedefi yok.
+         Bir urun ayni sartnamede birden cok kalemde gecebilir (farkli ozel no / poz) - toplanir. */
+      if(!ex||s.openQty){
+        let mm=mxVeri.get(m.id); if(!mm){ mm=new Map(); mxVeri.set(m.id,mm); }
+        const gk=specGroupKey(s); let c=mm.get(gk);
+        if(!c){ c={hedef:0,alinan:0,acik:0}; mm.set(gk,c); }
+        c.alinan+=got; if(s.openQty) c.acik++; else c.hedef+=tgt;
+      }
+      if(!sSr) return;
+      const z=srZ++%2, td=z?B.tdZ:B.td, ts=z?B.tdSZ:B.tdS, kod=z?B.kodZ:B.kod, yuz=z?B.yuzZ:B.yuz;
       const n=sSr.satir([{v:m.code||'',b:kod},{v:m.name||'',b:td},{v:s.bina||'',b:ts},{v:specGroupKey(s),b:kod},
         {v:s.ozelNo||'',b:kod},{v:s.cat||'',b:td},tgt?mik(tgt,z):{v:'',b:ts},mik(got,z),
         {v:tgt?Number(Math.max(0,Math.min(100,got/tgt*100)).toFixed(1)):'',b:yuz},mik(mont,z),
@@ -12957,10 +13002,69 @@ function matOzelKitapKur(kap,veri){
       if(!ilkSr.has(m.id)) ilkSr.set(m.id,n);
     });
   });
-  if(!srZ) sSr.satir([{v:'Secilen urunler hicbir sartname kaleminde kullanilmiyor.',b:B.dipnot}]);
-  bitir(sSr,srBas,srTh.length);
+  if(sSr){
+    if(!srN) sSr.satir([{v:'Secilen urunler hicbir sartname kaleminde kullanilmiyor.',b:B.dipnot}]);
+    bitir(sSr,srBas,srTh.length);
+  }
+
+  /* ══════ SARTNAME MATRISI ══════
+     Urun basina TEK satir; gectigi her sartname UC sutun (Hedef / Alinan / Kalan), sonunda
+     ayni uclu TOPLAM. "Kalan" = sartname geregi daha ne kadar alinabilecegi (hedef - alinan).
+     Olculen iki gercek bicimi belirledi (16 Eyl 2026 yedegi):
+       - 28 kalemde alinan hedefi ASMIS. Negatif kalan GIZLENMEZ, kirmizi yazilir: sifira
+         yuvarlamak "hakkin tam doldu" demek olurdu, oysa fazla alim yapilmis.
+       - 16 kalemde hedef YOK (acik kalem). Oraya 0 yazmak "hic alinamaz" demektir; hucreye
+         ACIK yazilir - alinabilir miktar hesaplanamaz, yasaklanmis degildir.
+     Sayfada BASLIK BANDI, KOPRU ve BIRLESTIRILMIS HUCRE yoktur: tablo A1'den baslar, boylece
+     baska bir Excel'e oldugu gibi kopyalanabilir (birlesik hucre yapistirmayi engelliyor).
+     Sartname kolonu specGroupKey iledir - kutuphane listesindeki "2 spek'te" rozetiyle ayni
+     olcut, ekranda 2 gorunen urun burada 2 kolon doldurur. */
+  if(sMx){
+    const mxSet=new Set(); mxVeri.forEach(mm=>mm.forEach((c,k)=>mxSet.add(k)));
+    const mxKol=[...mxSet].sort((a,b)=>a.localeCompare(b,'tr'));
+    const mxSabit=['Urun Kodu','Malzeme','Birim','Sartname'];
+    sMx.sutun([16,46,9,10,...mxKol.flatMap(()=>[13,13,13]),14,14,14]);
+    // Ust baslik: sartname kodu ucunde de TEKRAR eder - hucre birlestirilmedigi icin
+    // sutunlar tek tek suzulebilir ve blok baska bir tabloya bozulmadan yapistirilir.
+    sMx.satir([...mxSabit.map(()=>({v:'',b:B.th})),
+      ...mxKol.flatMap(k=>[{v:k,b:B.th},{v:k,b:B.th},{v:k,b:B.th}]),
+      {v:'TOPLAM',b:B.th},{v:'TOPLAM',b:B.th},{v:'TOPLAM',b:B.th}],{h:34});
+    const mxBas=sMx.satir([...mxSabit.map(v=>({v,b:B.th})),
+      ...mxKol.flatMap(()=>[{v:'Hedef',b:B.th},{v:'Alinan',b:B.th},{v:'Kalan',b:B.th}]),
+      {v:'Hedef',b:B.th},{v:'Alinan',b:B.th},{v:'Kalan',b:B.th}],{h:20});
+    const kal=(v,z)=>Number(v)<0?{v:Number(v),b:B.fark}:mik(v,z);
+    let mxZ=0;
+    kap.mats.forEach(m=>{
+      const mm=mxVeri.get(m.id)||new Map(), x=V.get(m.id);
+      const z=mxZ++%2, td=z?B.tdZ:B.td, ts=z?B.tdSZ:B.tdS, kod=z?B.kodZ:B.kod;
+      const hucre=[]; let tH=0, tA=0, tAcik=0;
+      mxKol.forEach(k=>{
+        const c=mm.get(k);
+        if(!c){ hucre.push({v:'',b:ts},{v:'',b:ts},{v:'',b:ts}); return; }
+        tH+=c.hedef; tA+=c.alinan; tAcik+=c.acik;
+        // Acik kalem varsa Kalan SAYI YAZILMAZ: bilinen hedef gosterilir ama alim hakki
+        // sinirsizdir - oraya sonlu bir sayi yazmak eksik alima yol acardi.
+        hucre.push(c.hedef?mik(c.hedef,z):{v:c.acik?'ACIK':'',b:c.acik?B.uyari:ts},
+          mik(c.alinan,z),
+          c.acik?{v:'ACIK',b:B.uyari}:(c.hedef?kal(c.hedef-c.alinan,z):{v:'',b:ts}));
+      });
+      sMx.satir([{v:m.code||'',b:kod},{v:m.name||'',b:td},
+        {v:m.unit||(x.usage[0]&&x.usage[0].unit)||'',b:ts},{v:mm.size,b:ts},...hucre,
+        tH?mik(tH,z):{v:tAcik?'ACIK':'',b:tAcik?B.uyari:ts}, mik(tA,z),
+        tAcik?{v:'ACIK',b:B.uyari}:(tH?kal(tH-tA,z):{v:'',b:ts})]);
+    });
+    if(!kap.mats.length) sMx.satir([{v:'Kapsamda urun yok.',b:B.dipnot}]);
+    sMx.dondur(mxBas);
+    sMx.suzgec('A'+mxBas+':'+_xzSut(mxSabit.length+mxKol.length*3+2)+Math.max(mxBas,sMx.satirlar.length));
+    sMx.bos();
+    [ 'Kalan = Hedef - Alinan: sartname geregi daha ne kadar alinabilecegi. Kirmizi negatif deger hedefin ASILDIGINI gosterir.',
+      'ACIK: o sartnamede hedefi belirlenmemis (acik) kalem var - alim hakki sinirsizdir, sonlu bir "kalan" yazilamaz. Bos hucre: urun o sartnamede hic gecmiyor.',
+      'Alinan: kalemin hedefine sayilan alimlar - muadil (alternatif) urunle yapilanlar dahil, iadeler dusulmus (Malzeme Kunyesi\'ndeki "Sartnameler" yuzdesiyle ayni hesap). Yuzdeden bilerek cikarilmis kalemler hicbir sutuna katilmaz; acik kalemler yalnizca Alinan sutununa girer.'
+    ].forEach(t=>sMx.satir([{v:t,b:B.dipnot}],{h:14}));
+  }
 
   // ══════ OZET (kapak) ══════
+  if(sOz){
   const ozTh=['#','Urun Kodu','Malzeme','Birim','Kalem','Hedef','Siparis','Alternatif Siparis','Iade','Net Alim',
     'Siparis %','Montaj','Montaj %','Kalan','Faturalanan','Faturalanacak','Fatura Durumu','Siparis Satiri',
     'Fatura Satiri','Matrah','KDV Dahil Tutar','Para Birimi'];
@@ -12969,9 +13073,14 @@ function matOzelKitapKur(kap,veri){
   sOz.birlestir('A1:'+ozSon+'1'); sOz.birlestir('A2:'+ozSon+'2');
   sOz.satir([{v:'Malzeme Ozel Indirme',b:B.baslik}],{h:30});
   sOz.satir([{v:fmtDate(Date.now())+'  ·  '+kap.metin,b:B.altBaslik}],{h:18});
-  const lk=sOz.satir([{v:'▶ '+SP,b:B.link},{v:'',b:B.link},{v:'',b:B.link},{v:'▶ '+FT,b:B.link},{v:'',b:B.link},{v:'',b:B.link},{v:'',b:B.link},{v:'▶ '+SR,b:B.link}],{h:18});
-  sOz.kopru('A'+lk,SP,'▶ '+SP); sOz.kopru('D'+lk,FT,'▶ '+FT); sOz.kopru('H'+lk,SR,'▶ '+SR);
-  sOz.birlestir('A'+lk+':C'+lk); sOz.birlestir('D'+lk+':G'+lk); sOz.birlestir('H'+lk+':K'+lk);
+  // kisayol seridi yalnizca INEN sayfalari gosterir - inmeyen sayfaya kopru Excel'e
+  // dosyayi onarmak istetirdi (bkz. bolum basligindaki not)
+  const kisa=[[sMx,MX],[sSp,SP],[sFt,FT],[sSr,SR]].filter(x=>x[0]);
+  if(kisa.length){
+    const lk=sOz.satir(kisa.flatMap(x=>[{v:'▶ '+x[1],b:B.link},{v:'',b:B.link},{v:'',b:B.link},{v:'',b:B.link}]),{h:18});
+    kisa.forEach((x,i)=>{ const c=_xzSut(i*4);
+      sOz.kopru(c+lk,x[1],'▶ '+x[1]); sOz.birlestir(c+lk+':'+_xzSut(i*4+3)+lk); });
+  }
   sOz.bos();
   const ozBas=sOz.satir(ozTh.map(v=>({v,b:B.th})),{h:32});
   kap.mats.forEach((m,i)=>{
@@ -13012,8 +13121,10 @@ function matOzelKitapKur(kap,veri){
   [ 'Siparis: urunun KENDI adina alinan miktar (baska bir kalemin alternatifi olarak alinan bu urun dahil). Alternatif Siparis: bu urunun kalemleri icin BASKA urunle yapilan alim - ayrintisi "Siparis Alimlari" sayfasinda YERINE ALINAN satirlari. Net Alim = Siparis - Iade.',
     'Siparis % / Montaj %: sartname hedefine gore, Malzeme Kunyesi\'ndeki "Sartnameler" basligiyla ayni hesap - kalemin hedefine muadil alimlar da sayilir, yuzdeden cikarilan kalemler katilmaz. Kalem bazinda dokum "Sartname Ilerlemesi" sayfasinda. Kalan = Siparis + Alternatif Siparis - Montaj.',
     fatVar?'Faturalanan / Faturalanacak / Fatura Durumu: Fatura Kontrol mutabakatiyla ayni (tum firmalar, taslak haric). Matrah ve KDV Dahil Tutar bu urunun fatura SATIRLARINDAN hesaplanir (taslak haric); farkli para birimli faturalari olan urunde tutar yazilmaz.':fatYokNedeni,
-    'Mavi alti cizili hucreler ilgili sayfadaki ilk satira goturur. Her detay sayfasinin basindaki "◀ Ozet" buraya dondurur.'
+    kisa.length?'Mavi alti cizili hucreler ilgili sayfadaki ilk satira goturur. Her detay sayfasinin basindaki "◀ Ozet" buraya dondurur.'
+      :'Bu dosyaya yalnizca Ozet sayfasi secildi - detay sayfalari indirilmedi.'
   ].forEach(t=>{ const r=sOz.satir([{v:t,b:B.dipnot}],{h:30}); sOz.birlestir('A'+r+':'+ozSon+r); });
+  }
   return {wb, spN, ftN};
 }
 /* Indirmeden once kapsam sorulur: secim yokken FILTREYE UYAN TUM urunler iner - bu kural
@@ -13032,7 +13143,11 @@ async function openMatOzelIndir(){
   let alim=0, yerine=0, iade=0, fat=0; const belge=new Set();
   veri.V.forEach(x=>{ alim+=x.alim.length; yerine+=x.yerine.length; iade+=x.iade.length;
     fat+=x.fat.length; x.fat.forEach(a=>belge.add(a.f.id)); });
-  const satir=(ad,acik)=>`<div class="moz-sayfa"><b>${ad}</b><span>${acik}</span></div>`;
+  // sayfa secimi pencere ACILDIGINDA sifirlanmaz: ayni oturumda pes pese indirme alan
+  // kullanici her seferinde ayni kutulari yeniden isaretlemek zorunda kalmasin
+  if(!_MOZ_SEC) _MOZ_SEC={}; MOZ_SAYFALAR.forEach(([k])=>{ if(_MOZ_SEC[k]===undefined) _MOZ_SEC[k]=true; });
+  const satir=([k,ad,acik])=>`<label class="moz-sayfa${_MOZ_SEC[k]?'':' kapali'}" data-moz="${k}">
+    <input type="checkbox" ${_MOZ_SEC[k]?'checked':''} onchange="mozSecSayfa('${k}',this.checked)"><b>${ad}</b><span>${acik}</span></label>`;
   const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:560px">
     <div class="modal-head"><h3>Ozel Indirme - Excel</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">
@@ -13040,27 +13155,47 @@ async function openMatOzelIndir(){
         <span>${kap.secili?'Yalnizca kutucukla sectiginiz urunler iner.':'Secim yok: filtreye uyan urunlerin <b>tamami</b> iner (yalnizca ekrandaki sayfa degil). Belirli urunler icin listeden kutucukla secin.'}</span></div>
       <div class="ord-sumline" style="margin:12px 0"><b>${fmtNum(alim)}</b> alim kaydi · <b>${fmtNum(iade)}</b> iade · <b>${fmtNum(yerine)}</b> yerine alinan${veri.fatVar?` · <b>${fmtNum(fat)}</b> fatura satiri (${fmtNum(belge.size)} belge)`:''}</div>
       ${veri.fatVar?'':`<p class="mdp-bosbilgi" style="margin-bottom:12px">${icoInfoSm()}<span>${fatCanSee()?'Fatura defteri yuklenemedi - dosyada fatura bilgisi olmayacak.':'Fatura bolumunu gorme yetkiniz yok - dosyada fatura bilgisi olmayacak.'}</span></p>`}
-      ${satir('Ozet','urun basina hedef, siparis, iade, montaj, yuzdeler, faturalanan ve tutar')}
-      ${satir('Siparis Alimlari','her alim, iade ve yerine alinan satiri - firma, sartname, tedarik, ozel kod, belge durumu')}
-      ${satir('Fatura Satirlari','her fatura satiri - birim fiyat, iskonto, matrah, KDV, toplam, irsaliye, ETTN')}
-      ${satir('Sartname Ilerlemesi','urunun gectigi her kalemin siparis ve montaj yuzdesi')}
+      ${MOZ_SAYFALAR.map(satir).join('')}
+      <div class="moz-say" id="mozSay"></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" style="margin-right:auto" onclick="closeModal()">Vazgec</button>
-      <button class="btn btn-add" onclick="exportMatOzel()">${icoXls()} Excel Indir</button></div>
+      <button class="btn btn-add" id="mozIndir" onclick="exportMatOzel()">${icoXls()} Excel Indir</button></div>
   </div></div>`;
   closeModal();
   document.body.insertAdjacentHTML('beforeend',html);
+  mozSecTazele();
+}
+/* Sayfa secimi pencere disinda yasar: modal HTML'i yeniden kurulmadan guncellenir,
+   yoksa her tikta kutular yeniden cizilip odak kaybolurdu. */
+let _MOZ_SEC=null;
+function mozSecSayfa(k,acik){
+  if(_MOZ_SEC) _MOZ_SEC[k]=!!acik;
+  const el=document.querySelector('.moz-sayfa[data-moz="'+k+'"]');
+  if(el) el.classList.toggle('kapali',!acik);
+  mozSecTazele();
+}
+function mozSecTazele(){
+  const n=MOZ_SAYFALAR.filter(([k])=>_MOZ_SEC&&_MOZ_SEC[k]).length;
+  const say=document.getElementById('mozSay');
+  if(say) say.innerHTML=n?`<b>${n}</b> sayfa inecek${n===1?' - dosya tek tablodan ibaret olur':''}`
+    :'<b>Hicbir sayfa secilmedi</b> - indirmek icin en az bir sayfa isaretleyin';
+  const btn=document.getElementById('mozIndir');
+  if(btn) btn.disabled=!n;
 }
 function exportMatOzel(){
   if(!_MOZ) return;
-  const {kap,veri}=_MOZ;
+  const {kap,veri}=_MOZ, sec=_MOZ_SEC||{};
+  if(!MOZ_SAYFALAR.some(([k])=>sec[k])){ toast('En az bir sayfa secin','err'); return; }
   try{
-    const {wb,spN,ftN}=matOzelKitapKur(kap,veri);
+    const {wb,spN,ftN}=matOzelKitapKur(kap,veri,sec);
     xlsxIndir('Ozel_Indirme_'+new Date().toISOString().slice(0,10)+'.xlsx',wb.bayt());
-    // fatura tutarlari da iniyor: Fatura Kitabi gibi denetim kaydina yazilir
-    if(veri.fatVar) logAction('fatura','Ozel indirme (kutuphane) alindi - '+kap.mats.length+' urun, '+ftN+' fatura satiri');
+    // fatura tutarlari da iniyor: Fatura Kitabi gibi denetim kaydina yazilir. Fatura sayfasi
+    // isaretlenmediyse dosyada tutar YOKTUR - o indirmeyi fatura erisimi diye kaydetmek
+    // denetim kaydini yaniltirdi.
+    if(veri.fatVar&&sec.ft) logAction('fatura','Ozel indirme (kutuphane) alindi - '+kap.mats.length+' urun, '+ftN+' fatura satiri');
     closeModal(); _MOZ=null;
-    toast(fmtNum(kap.mats.length)+' urun · '+fmtNum(spN)+' siparis satiri'+(veri.fatVar?' · '+fmtNum(ftN)+' fatura satiri':'')+' - Excel indirildi');
+    toast(fmtNum(kap.mats.length)+' urun'+(sec.sp?' · '+fmtNum(spN)+' siparis satiri':'')
+      +(veri.fatVar&&sec.ft?' · '+fmtNum(ftN)+' fatura satiri':'')+' - Excel indirildi');
   }catch(err){
     console.error('ozel indirme',err);
     toast('Excel olusturulamadi: '+((err&&err.message)||err),'err');
