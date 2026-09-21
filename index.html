@@ -603,6 +603,18 @@ main{flex:1;padding:clamp(16px,2vw,28px);max-width:1600px;width:100%;margin:0 au
    kaydirmamak adina bu cubuk ust menunun (56px) hemen altina sabit (sticky) kalir */
 .spec-toolbar{position:sticky;top:56px;z-index:30;background:var(--bg);padding:10px 0;margin:0 0 14px;border-bottom:1px solid var(--line)}
 .spec-toolbar .toolbar{margin-bottom:0}
+/* ALIM DURUMU SUZGECI: arama satirinin ALTINDA duran sayacli segment + tek satirlik
+   ozet + o anki gorunumun Excel ciktisi. Ayri satir, cunku ust satir (arama, gorunum
+   secimi, giris dugmeleri) zaten dolu; suzgec ile ozet yan yana durunca "kac kalem
+   suzuldu" sorusu dugmenin hemen yaninda cevaplanir. */
+.spec-filtbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:10px}
+.spec-filtbar .ord-sumline{margin:0}
+/* Etiket kutusu .ord-filterbar'daki ile ayni oge (.ord-f) ama burada TEK SATIR
+   icinde durur: etiket ustte degil solda, kutu icerige gore dar. */
+.spec-filtbar .ord-f{flex:0 0 auto;flex-direction:row;align-items:center;gap:7px;min-width:0}
+.spec-filtbar .ord-f select{width:auto;min-width:148px;max-width:230px}
+.spec-filtbar .spec-filt-ara{flex:1 1 auto}
+@media(max-width:720px){ .spec-filtbar .spec-filt-ara{display:none} }
 @media(max-width:720px){ .spec-toolbar{position:static} }
 
 /* Siparis Ekle - tam sayfa */
@@ -4265,6 +4277,47 @@ let ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:'',tur:''}; //
 let ORDVIEW='orders'; // Tum Siparisler alt gorunumu: 'orders' (kesinlesmis) | 'drafts' (taslaklar)
 let SPECVIEW=localStorage.getItem('specview')==='list'?'list':'grid';     // sartname kalemleri gorunumu: 'grid' (kart) | 'list' (satir) - kullanicinin son secimi hatirlanir
 function setSpecView(v){ SPECVIEW=v; try{localStorage.setItem('specview',v);}catch(e){} render(); }
+/* SARTNAME ALIM DURUMU SUZGECI: '' (tumu) | 'alinmamis' | 'kismi' | 'tamam'
+   "Bu sartnamede daha hic siparis edilmemis ne var" sorusunun ekrandaki karsiligi.
+   Arama kutusuyla BIRLIKTE calisir (once arama, sonra durum). Gorunum tercihinin
+   (SPECVIEW) aksine localStorage'a YAZILMAZ ve ekran degisince sifirlanir
+   (setTab/setPSpec/setPCat/setPBina) - baska bir sartnameye gecen kullanici, acik
+   kalmis bir suzgec yuzunden "kalem yok" sanmasin. */
+let SPECFILT='';
+function setSpecFilt(v){ SPECFILT=(SPECFILT===v?'':v); render(); }
+/* ETIKET SUZGECI: '' (tumu) | '<etiket>' | '__etiketsiz'
+   Malzeme Kutuphanesi'ndeki Etiket suzgecinin (MATF.tag) sartname ekranindaki
+   karsiligi; eslesme orada oldugu gibi TAM ad uzerindendir. SPECFILT ile ayni
+   anda calisir ve onunla birlikte sifirlanir. */
+let SPECTAG='';
+function setSpecTag(v){ SPECTAG=v; render(); }
+function specAnyF(){ return !!(SEARCH||SPECFILT||SPECTAG); }
+function clearSpecF(){ SEARCH=''; SPECFILT=''; SPECTAG=''; render(); }
+/* Kalemin etiketleri. Etiket kutuphanede (malzeme kunyesinde) tanimlanir ve
+   sartname satirina KOPYALANIR (bkz. matFieldsV/specLinkV gocleri ile malzeme
+   kaydetme yollari: sp.tags=mt.tags). Burada once o kopya okunur - kopyasi hic
+   olusmamis eski kayitta kunyeye inilir, boylece etiket alani eklenmeden once
+   girilmis satirlar da suzgece girer. */
+function specEtiketleri(sp){
+  if(Array.isArray(sp.tags)) return sp.tags;
+  const mt=sp.matId?getMaterial(sp.matId):null;
+  return (mt&&mt.tags)||[];
+}
+function specEtiketGecer(sp){
+  if(!SPECTAG) return true;
+  const et=specEtiketleri(sp);
+  return SPECTAG==='__etiketsiz' ? et.length===0 : et.includes(SPECTAG);
+}
+/* Bir kalemin alim durumu. ACIK KALEM'de (miktar belirsiz) hedef olmadigi icin
+   "tamamlandi" denemez - alim girilmisse kismi sayilir. IADE alimi asarsa got
+   eksiye duser (bkz. specProgress), o da "hic alinmamis" tarafina yazilir. */
+function specAlimDurum(sp){
+  const got=specProgress(sp).got, hedef=Number(sp.target)||0;
+  if(got<=0) return 'alinmamis';
+  if(sp.openQty||hedef<=0) return 'kismi';
+  return got>=hedef?'tamam':'kismi';
+}
+const SPEC_DURUM_AD={alinmamis:'Hic alinmamis',kismi:'Kismi alinan',tamam:'Tamamlanan'};
 let CURRENT_USER=null;   // giris yapan kullanici
 let SB_USERS=[];         // Supabase kullanici onbellek (YALNIZ yonetici doldurur - openUsers)
 /* KISI DIZINI: [{username, ad, meslek}] - HER kullanicida dolu (api/kisiler.js).
@@ -5447,11 +5500,11 @@ function projeSubnav(){
     ${katAtaBtn}${koddBtn}
   </div>`;
 }
-function setTab(t){ TAB=t; SEARCH=""; render(); }
+function setTab(t){ TAB=t; SEARCH=""; SPECFILT=""; SPECTAG=""; render(); }
 function catColor(c){ return '#8b97a7'; }
-function setPBina(b){ PBINA=b; PCAT=""; PSPEC=""; TAB="spec"; SEARCH=""; render(); }
-function setPCat(c){ PCAT=c; PSPEC=""; TAB="spec"; SEARCH=""; render(); }
-function setPSpec(g){ PSPEC=g; TAB="spec"; SEARCH=""; render(); }
+function setPBina(b){ PBINA=b; PCAT=""; PSPEC=""; TAB="spec"; SEARCH=""; SPECFILT=""; SPECTAG=""; render(); }
+function setPCat(c){ PCAT=c; PSPEC=""; TAB="spec"; SEARCH=""; SPECFILT=""; SPECTAG=""; render(); }
+function setPSpec(g){ PSPEC=g; TAB="spec"; SEARCH=""; SPECFILT=""; SPECTAG=""; render(); }
 function resetPSel(){ PBINA=""; PCAT=""; PSPEC=""; render(); }
 function backToCat(){ PCAT=""; PSPEC=""; render(); }
 function backToSpec(){ PSPEC=""; render(); }
@@ -19106,6 +19159,86 @@ function mergedSpecs(specs){
   });
   return Object.values(map).map(m=>({...m,grups:[...m.grups]}));
 }
+function specAramaGecer(sp,q){ return !q||matchText(sp.name+' '+(sp.code||'')+' '+(sp.poz||'')+' '+(sp.ozelNo||''), q); }
+/* EKRANDA GORUNEN KUME: arama + alim durumu suzgeci uygulanmis kalemler, grup grup
+   ve ekrandaki sirayla. Hem renderSpec hem exportSpecGorunumExcel buradan okur -
+   "ekranda gordugum liste" ile "indirdigim Excel" ayni yerden ciktigi icin
+   birbirinden ayrisamaz.
+   Sayaclar durum suzgeci UYGULANMADAN once toplanir (yalnizca aramaya gore):
+   boylece "Hic alinmamis" dugmesine basildiginda diger dugmelerin sayilari 0'a
+   dusmez, kullanici hangi kumeye gectigini gorebilir. */
+function specGorunum(specs){
+  const tumu=specs||pSpecs(), q=SEARCH, nq=q?norm(q).trim():'';
+  const gruplar={}, sayac={hepsi:0,alinmamis:0,kismi:0,tamam:0};
+  const etSayac={}; let etiketsiz=0, etiketliVar=false;
+  let gosterilen=0;
+  tumu.forEach(sp=>{
+    const et=specEtiketleri(sp);
+    // Kutu, baglamda etiketli TEK BIR kalem olsa bile cizilir (aramadan bagimsiz):
+    // yazi yazarken suzgec kutusunun kaybolup gelmesi kullaniciyi sasirtir.
+    if(et.length) etiketliVar=true;
+    if(!specAramaGecer(sp,q)) return;
+    const d=specAlimDurum(sp);
+    /* Her sayac, KENDISI DISINDAKI suzgeclere gore toplanir: bir secenegin
+       yanindaki sayi, "ona tiklarsam kac kalem kalir" sorusunun cevabidir.
+       Etiket secenekleri icin bu, arama + alim durumu demektir. */
+    if(!SPECFILT||d===SPECFILT){
+      if(et.length) et.forEach(t=>{ etSayac[t]=(etSayac[t]||0)+1; }); else etiketsiz++;
+    }
+    if(!specEtiketGecer(sp)) return;
+    sayac.hepsi++; sayac[d]++;
+    if(SPECFILT&&d!==SPECFILT) return;
+    gosterilen++;
+    const k=specGroupKey(sp); (gruplar[k]||(gruplar[k]=[])).push(sp);
+  });
+  // arama aktifken en alakali sonuc (birebir alt dize) en ustte gelsin;
+  // sadece harf-sirasi (fuzzy) eslesenler alfabetik siralamada geriye dusmesin diye en sona atilir
+  Object.keys(gruplar).forEach(k=>{
+    if(q) gruplar[k].sort((a,b)=>{ const sa=acScore(norm(a.name+' '+(a.code||'')),nq), sb=acScore(norm(b.name+' '+(b.code||'')),nq);
+      return sa!==sb ? sa-sb : a.name.localeCompare(b.name,'tr'); });
+    else gruplar[k].sort((a,b)=>a.name.localeCompare(b.name,'tr'));
+  });
+  return {gruplar,sayac,gosterilen,toplam:tumu.length,etSayac,etiketsiz,etiketliVar};
+}
+/* O ANKI GORUNUMUN EXCEL CIKTISI. Acik olan bina/bolum/sartname baglami, arama
+   kutusu ve alim durumu suzgeci ciktiya AYNEN yansir; satirlar ekrandaki sirayla
+   yazilir. Sutunlar karttaki sayilarin karsiligidir (hedef/alinan/kalan/alim %/
+   montaj), ustune kalemi taniyan kunye sutunlari eklenir.
+   exportBinaSpecExcel'den (FAB) farki: o, geri YUKLENEBILIR round-trip dosyasi
+   uretir ve hep tum sartnameyi yazar; bu ise RAPORdur - suzulmus kumeyi anlatir,
+   ice aktarma icin kullanilmaz. */
+function exportSpecGorunumExcel(){
+  const g=specGorunum();
+  if(!g.gosterilen){ toast("Gosterilecek kalem yok","err"); return; }
+  const rows=[["Sartname","Bolum","Bina","Poz No","Ozel No","Malzeme Ismi","Urun Kodu","Standart No","Marka","Etiket","Kat",
+    "Birim","Hedef","Alinan","Kalan","Alim %","Montaj","Montaj %","Alim Durumu","Kalem Durumu","Alternatif","Not"]];
+  Object.keys(g.gruplar).sort((a,b)=>a.localeCompare(b,'tr')).forEach(k=>{
+    g.gruplar[k].forEach(sp=>{
+      const{got,pct}=specProgress(sp); const{installed,pct:mpct}=specMontajProgress(sp);
+      const hedef=Number(sp.target)||0, acik=!!sp.openQty;
+      const ozel=(sp.ozelNolar&&sp.ozelNolar.length)?sp.ozelNolar.join(', '):(sp.ozelNo||'');
+      const altN=specAlts(sp.id).length;
+      rows.push([k, sp.cat||'', sp.bina||'', sp.poz||'', ozel, sp.name||'', sp.code||'', sp.standart||'', sp.brand||'',
+        specEtiketleri(sp).join(', '), sp.kat||'',
+        sp.unit||'', acik?'':hedef, got, acik?'':Math.max(0,hedef-got), acik?'':Number(pct.toFixed(1)),
+        installed, hedef>0?Number(mpct.toFixed(1)):'', SPEC_DURUM_AD[specAlimDurum(sp)],
+        acik?'Acik kalem (miktar belirsiz)':(sp.exclude?'Ilerlemeye dahil degil':''),
+        altN||'', sp.note||'']);
+    });
+  });
+  const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[{wch:18},{wch:14},{wch:10},{wch:9},{wch:18},{wch:44},{wch:16},{wch:16},{wch:14},{wch:20},{wch:10},
+    {wch:8},{wch:10},{wch:10},{wch:10},{wch:8},{wch:10},{wch:9},{wch:15},{wch:24},{wch:10},{wch:28}];
+  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:rows[0].length-1}})};
+  XLSX.utils.book_append_sheet(wb,ws,"Gorunen Kalemler");
+  // Dosya adi neyin suzuldugunu de tasir: ayni sartnamenin iki ciktisi karismasin
+  const ad=[PBINA||'Proje', PCAT||'', (PSPEC&&PSPEC!=='__all')?PSPEC:'Tum-Sartnameler',
+    SPECFILT?SPEC_DURUM_AD[SPECFILT].replace(/ /g,'-'):'',
+    SPECTAG?('etiket-'+(SPECTAG==='__etiketsiz'?'yok':SPECTAG)):'', SEARCH?'arama':'',
+    new Date().toISOString().slice(0,10)].filter(Boolean).join('_');
+  XLSX.writeFile(wb, (ad+'.xlsx').replace(/[\\/:*?"<>|]/g,'-'));
+  toast(fmtNum(g.gosterilen)+" kalem Excel'e aktarildi");
+}
 function renderSpec(){
   const specs=pSpecs();
   // GRUP bazli istatistik (her sartname/grubu ayri yuzde)
@@ -19125,20 +19258,15 @@ function renderSpec(){
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><span style="font-size:11px;color:var(--mute)">Montaj</span><span style="font-size:11px;font-weight:600;color:${mdone?'var(--green)':'var(--amber)'}">${mp.toFixed(0)}%</span></div>
       <div class="bar" style="margin-top:3px"><i style="width:${mp}%;background:${mdone?'var(--green)':'var(--amber)'}"></i></div></div>`; });
 
-  // gruplara gore kart bolumleri
+  // gruplara gore kart bolumleri - hangi kalemin gorunecegini ve siralamayi
+  // specGorunum() belirler (arama + alim durumu suzgeci); Excel ciktisi da ayni
+  // fonksiyondan okur, boylece ekran ile rapor ayrisamaz.
   let sections='';
   const q=SEARCH;
+  const gorunum=specGorunum(specs);
   groupKeys.forEach(k=>{ const g=groups[k];
-    let list=g.specs.filter(sp=>!q||matchText(sp.name+' '+(sp.code||'')+' '+(sp.poz||'')+' '+(sp.ozelNo||''), q));
+    const list=gorunum.gruplar[k]||[];
     if(list.length===0) return;
-    // arama aktifken en alakali sonuc (birebir alt dize) en ustte gelsin;
-    // sadece harf-sirasi (fuzzy) eslesenler alfabetik siralamada geriye dusmesin diye en sona atilir
-    if(q){ const nq=norm(q).trim();
-      list.sort((a,b)=>{ const sa=acScore(norm(a.name+' '+(a.code||'')),nq), sb=acScore(norm(b.name+' '+(b.code||'')),nq);
-        return sa!==sb ? sa-sb : a.name.localeCompare(b.name,'tr'); });
-    } else {
-      list.sort((a,b)=>a.name.localeCompare(b.name,'tr'));
-    }
     const p=g.target>0?Math.min(100,(g.got/g.target)*100):0; const col=catColor(g.cat); const gdone=p>=100;
     const specRowHtml=(sp)=>{ const{got,pct}=specProgress(sp); const{installed:montajGot,pct:montajPct}=specMontajProgress(sp); const c2=catColor(sp.cat); const done=pct>=100; const ex=!!sp.exclude; const open=!!sp.openQty; const montajDone=montajPct>=100; const spAlts=specAlts(sp.id); const altCount=spAlts.length; const altActive=spAlts.filter(a=>a.status==='kullanımda').length; const altApproved=spAlts.filter(a=>a.status==='onaylandi').length;
       const simg=specImgOf(sp);
@@ -19180,7 +19308,7 @@ function renderSpec(){
           <span style="width:12px;height:12px;border-radius:3px;background:${col};display:inline-block"></span>
           <b style="font-size:15px">${esc(k)}</b>
           <span class="cat-tag" style="background:${col}22;color:${col}">${esc(g.cat)}</span>
-          <span class="t-meta">${list.length} kalem · ${fmtNum(g.got)}/${fmtNum(g.target)}</span>
+          <span class="t-meta">${list.length} kalem${list.length<g.specs.length?` · ${g.specs.length} icinden suzuldu`:''} · ${fmtNum(g.got)}/${fmtNum(g.target)}</span>
           <button class="mini-btn" title="Grup adini duzenle" onclick="renameSpecGroup(this.dataset.k)" data-k="${esc(k)}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
         </div>
         <div class="spec-group-pct" style="color:${gdone?'var(--green)':col}">${p.toFixed(0)}%</div>
@@ -19188,9 +19316,12 @@ function renderSpec(){
       <div class="bar" style="margin:0 0 12px"><i style="width:${p}%;background:${gdone?'var(--green)':col}"></i></div>
       <div class="${SPECVIEW==='list'?'prog-list':'prog-grid'}">${cards}</div></div>`;
   });
-  if(!sections) sections=`<div class="empty"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><p>${q?'Eslesen kalem yok':'Sartname kalemi yok'}</p><span style="font-size:12px">Kalem ekleyin; alimlar otomatik eslesip yuzde hesaplanir</span></div>`;
+  if(!sections) sections=`<div class="empty"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><p>${SPECFILT?SPEC_DURUM_AD[SPECFILT]+' kalem yok':q?'Eslesen kalem yok':'Sartname kalemi yok'}</p><span style="font-size:12px">${SPECFILT?'Suzgeci "Tumu"ne alarak butun kalemleri gorebilirsiniz':'Kalem ekleyin; alimlar otomatik eslesip yuzde hesaplanir'}</span></div>`;
 
-  const off=offSpecItems();
+  /* Sartname disi alimlarin tanimi geregi HEPSINDE alim vardir. Alim durumu
+     suzgeci acikken bu bolum gizlenir: "hic alinmamis" listesinin altinda bir
+     alim listesi durmasi ustteki sayiyla celisirdi. */
+  const off=SPECFILT?[]:offSpecItems();
   let offHtml='';
   if(off.length){
     let offCards='';
@@ -19217,6 +19348,9 @@ function renderSpec(){
     // GERCEKTEN birden fazla sartnameye yayilmissa ek bilgi verir (basligin vaat ettigi de bu).
     const merged=mergedSpecs(specs).filter(m=>m.items.length>1)
       .filter(m=>!q||matchText(m.name+' '+(m.code||''),q))
+      // suzgec birlesik ozete de uygulanir - toplanan miktar uzerinden, tek
+      // kalemdekiyle ayni kural (bkz. specAlimDurum)
+      .filter(m=>!SPECFILT||(m.got<=0?'alinmamis':(m.target<=0?'kismi':(m.got>=m.target?'tamam':'kismi')))===SPECFILT)
       .sort((a,b)=>a.name.localeCompare(b.name,'tr'));
     if(merged.length){
       let mcards='';
@@ -19241,12 +19375,43 @@ function renderSpec(){
       mergedHtml=`<div class="merged-section"><div class="merged-head"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7h10v10M7 17L17 7"/></svg><b>Birlesik Urun Ozeti</b><span class="t-meta">Birden fazla sartnamede kullanilan ${merged.length} urun · hedef ve alimlar toplanmis</span></div><div class="${SPECVIEW==='list'?'prog-list':'prog-grid'}">${mcards}</div></div>`;
     }
   }
+  /* SUZGEC SATIRI: sayacli segment + suzulmus kumeyi anlatan tek satirlik ozet +
+     o gorunumun Excel ciktisi. Excel dugmesi bilerek burada, suzgecin yaninda
+     durur - indirilen dosyanin bu satirdaki kumeyi tasidigi gorunsun. */
+  const sayac=gorunum.sayac;
+  const fbtn=(v,etiket,n,ip)=>`<button class="${SPECFILT===v?'on':''}" onclick="setSpecFilt('${v}')" title="${esc(ip)}">${etiket}<i>${fmtNum(n)}</i></button>`;
+  /* ETIKET KUTUSU: secenekler o anki baglamda (bina/bolum/sartname) GERCEKTEN
+     bulunan etiketlerden dolar - kutuphanedeki butun etiketler listelenseydi
+     secilenlerin cogu bos liste getirirdi. Sayisi 0'a dusen etiket listeden
+     cikar, ama SECILI olan her zaman kalir (yoksa kutu yanlis deger gosterir). */
+  const etAdlar=Object.keys(gorunum.etSayac).sort((a,b)=>a.localeCompare(b,'tr'));
+  if(SPECTAG&&SPECTAG!=='__etiketsiz'&&!etAdlar.includes(SPECTAG)) etAdlar.push(SPECTAG);
+  const etKutu=gorunum.etiketliVar?`<div class="ord-f"><label>Etiket</label>
+    <select onchange="setSpecTag(this.value)" title="Etiketler malzeme kunyesinde tanimlanir (Malzeme Kutuphanesi) - buradaki liste bu sartnamede gecen etiketlerdir">
+      <option value="">Tumu</option>
+      ${etAdlar.map(t=>`<option value="${esc(t)}" ${SPECTAG===t?'selected':''}>${esc(t)} (${fmtNum(gorunum.etSayac[t]||0)})</option>`).join('')}
+      ${(gorunum.etiketsiz||SPECTAG==='__etiketsiz')?`<option value="__etiketsiz" ${SPECTAG==='__etiketsiz'?'selected':''}>Etiketsiz (${fmtNum(gorunum.etiketsiz)})</option>`:''}
+    </select></div>`:'';
+  const filtBar=`<div class="spec-filtbar">
+    ${etKutu}
+    <div class="iht-seg">
+      ${fbtn('','Tumu',sayac.hepsi,'Aramaya giren butun kalemler')}
+      ${fbtn('alinmamis','Hic alinmamis',sayac.alinmamis,'Bugune kadar hic alim girilmemis kalemler (Alinan 0) - siparis edilmesi gerekenler')}
+      ${fbtn('kismi','Kismi alinan',sayac.kismi,'Alimi baslamis ama hedefi henuz dolmamis kalemler')}
+      ${fbtn('tamam','Tamamlanan',sayac.tamam,'Alinan miktari hedefe ulasmis kalemler')}
+    </div>
+    <span class="ord-sumline"><b>${fmtNum(gorunum.gosterilen)}</b> kalem gosteriliyor${
+      gorunum.gosterilen<gorunum.toplam?` <span class="t-meta">· ${fmtNum(gorunum.toplam)} kalem icinden suzuldu</span>`:''}</span>
+    ${specAnyF()?`<button class="iht-reset" onclick="clearSpecF()" title="Arama, etiket ve alim durumu suzgecini birden kaldirir">Filtreleri temizle</button>`:''}
+    <span class="spec-filt-ara"></span>
+    <button class="btn btn-grid" onclick="exportSpecGorunumExcel()" title="Ekranda o an gorunen kalemleri Excel'e aktarir - arama ve alim durumu suzgeci ciktiya aynen yansir">${icoXls()} Excel (Gorunen)</button>
+  </div>`;
   return `<div class="stats">${statHtml}</div>
     <div class="spec-toolbar"><div class="toolbar">${searchBox('Spesifikasyon kalemi ara...')}
       <div class="seg"><button class="${SPECVIEW==='grid'?'on':''}" onclick="setSpecView('grid')" title="Kart gorunumu">${icoGridSm()} Kart</button><button class="${SPECVIEW==='list'?'on':''}" onclick="setSpecView('list')" title="Satir gorunumu">${icoListSm()} Satir</button></div>
       ${(()=>{ const d=myOpenSpecDraft(); return d?`<button class="btn btn-ghost sdraft-chip" onclick="openSpecDraft('${d.id}')" title="Yarim kalmis toplu giris taslaginiz - tamamlanana kadar yeni kalem eklenemez">${icoDoc()} Taslak (${(d.rows||[]).length} satir) · Devam Et</button>`:''; })()}
       <button class="btn btn-ghost" onclick="openSpecGridCtx()" title="Genis sayfada satir satir pes pese kalem girisi - her satir bir kalem">${icoListSm()} Toplu Giris</button>
-      <button class="btn btn-add" onclick="openSpecModalCtx()">${icoPlus()} Kalem Ekle</button></div></div>
+      <button class="btn btn-add" onclick="openSpecModalCtx()">${icoPlus()} Kalem Ekle</button></div>${filtBar}</div>
     ${sartOdaPanelHtml()}${mergedHtml}${sections}${offHtml}`;
 }
 async function renameSpecGroup(oldName){
