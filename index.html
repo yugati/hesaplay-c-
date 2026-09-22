@@ -539,6 +539,24 @@ header{display:flex;align-items:center;gap:12px;padding:0 20px;height:56px;backg
    gorundugu her an belli olmali - modun acik oldugu fark edilmeden kalmasin */
 @media(max-width:1500px){.pam-pill span{display:inline}}
 .pam-pill.on{border-color:var(--amber);color:var(--amber);background:color-mix(in srgb,var(--amber) 12%,transparent)}
+/* MARKER MODU dugmesi - piyasa adi pill'i ile ayni kalip, farkli renk:
+   ikisi ayni anda acik olabiliyor, hangisinin acik oldugu renkten anlasilsin. */
+.mkr-pill{cursor:pointer;min-width:0;white-space:nowrap}
+@media(max-width:1500px){.mkr-pill span{display:inline}}
+.mkr-pill.on{border-color:var(--green);color:var(--green);background:color-mix(in srgb,var(--green) 12%,transparent)}
+/* ISARET. Iki agirlik var ve AYRIMI GORUNUR olmali:
+   .mkr      -> sorgu metinde oldugu gibi (ya da yalnizca ayrac farkiyla) gecti
+   .mkr.ince -> harfler yalnizca SIRAYLA gecti (subsequence). Ikisini ayni
+                gostermek, zayif eslesmeyi tam eslesme gibi okutup kullaniciyi
+                yanlis satira gotururdu.
+   Tarayicinin kendi <mark> varsayilani (sari zemin / siyah yazi) koyu temada
+   okunmuyor - iki sinif da acikca boyanir. */
+mark.mkr{background:color-mix(in srgb,var(--amber) 42%,transparent);color:var(--ink);
+  border-radius:3px;padding:0 1px;font-weight:700;box-shadow:0 0 0 1px color-mix(in srgb,var(--amber) 55%,transparent)}
+mark.mkr.ince{background:none;color:var(--amber);font-weight:700;box-shadow:none;padding:0;
+  border-bottom:1.5px solid color-mix(in srgb,var(--amber) 60%,transparent);border-radius:0}
+/* Baglantinin (fat-link) ve mavi bolum metninin icinde de okunur kalsin */
+.fat-link mark.mkr,.t-meta mark.mkr{color:var(--ink)}
 .pam-menu{min-width:212px;padding:7px}
 .pam-baslik{font-size:9.5px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--dim);font-family:var(--mono);padding:5px 8px 3px}
 .pam-dil{display:flex;flex-wrap:wrap;gap:4px;padding:2px 6px 5px}
@@ -4113,6 +4131,13 @@ main:has(>.iht-form-wrap){max-width:none}
       </button>
       <div class="theme-menu pam-menu" id="pamMenu"></div>
     </div>
+    <!-- MARKER MODU: aramada eslesen harf/rakamlari isaretler. Piyasa adi
+         modunun yaninda durur - ikisi de "nasil gorunsun" modudur. Menusu
+         yoktur, dugmenin kendisi ac/kapadir. -->
+    <button class="gsearch-pill mkr-pill" id="mkrBtn" onclick="mkrAcKapa()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3l6 6-9.5 9.5a2 2 0 01-1 .55L4 21l1.95-6.5a2 2 0 01.55-1z"/><path d="M4 21h16"/></svg>
+      <span id="mkrPillAd">Marker</span>
+    </button>
     <div class="user-chip" id="clock">-</div>
     <span class="hd-sep"></span>
     <div class="hd-actions">
@@ -4706,6 +4731,7 @@ function applyLandingPanels(){ if(isAdmin())return;
 // kullanici basligi/rol rozeti chrome
 function applyUserChrome(){
   pamPillCiz();   // piyasa adi modu dugmesi (baslikta)
+  mkrPillCiz();   // marker modu dugmesi (baslikta)
   const info=document.getElementById('dbInfo');
   /* ORGANIZASYON ADI HER ZAMAN GORUNUR - tek kiracili kurulumda bile. Yanlis
      sirkete veri girmenin tek panzehiri, hangisinde oldugunu gormek. */
@@ -26254,6 +26280,156 @@ function acHighlight(name,q){
   }
   return out;
 }
+/* ══════════════════════════════════════════════════════════════════════════
+   MARKER MODU  (aramada eslesen karakterleri isaretler)
+
+   NE ISE YARAR: Fatura Kontrol'de aranan sey cogu zaman bir KOD - "4022135"
+   gibi. Liste doner ama hangi satirin kodun neresinde tuttugu goz taramasiyla
+   bulunuyor; kullanici bunun icin tarayicinin Ctrl+F'ini ikinci bir katman
+   olarak kullaniyordu. Bu mod o isi uygulamanin kendisine yaptirir: sorgunun
+   metinde TUTAN her harfi/rakami isaretler.
+
+   ISARET, ARAMANIN KENDI KURALINI IZLER. Vurgu ayri bir "bul" mantigiyla
+   kurulsaydi arama bir satiri getirip marker hicbir sey isaretlemeyebilirdi -
+   o an kullanici arama sonucundan supheye duserdi. Bu yuzden asagidaki sira
+   fatAramaEslesir / matchText ile birebir aynidir:
+     1) birebir alt dize          -> KOYU isaret
+     2) kelime kelime (hepsi var) -> KOYU isaret
+     3) ayracsiz (bosluk/-/_ silinmis; ktopKey ile ayni) -> KOYU isaret
+     4) harf sirasi (subsequence) -> INCE isaret, YALNIZCA rakamsiz sorguda
+   Dorduncu adimin rakamli sorguda kapali olmasinin gerekcesi fatKodSorgusu'nun
+   gerekcesiyle ayni: "4033128" bambaska bir satirda da sirayla gecebiliyor.
+   Ince isaret bu yuzden gorsel olarak da zayif cizilir - "tam tuttu" ile
+   "harfleri sirayla gecti" ayni agirlikta gosterilemez.
+
+   NORMALLESTIRME norm() ile AYNI: buyuk/kucuk, Turkce harf ve i/I farki
+   silinir. Eslesme normal metinde bulunur ama isaret ORIJINAL karakterin
+   uzerine konur - bunun icin her normal karakterin kaynaktaki yeri tutulur
+   (bkz. markHay; aramaIsaret'teki aramaHay ile ayni kalip).
+
+   Secim KULLANICIYA OZELDIR (localStorage) - piyasa adi modundaki karar. */
+const MKR_ANAHTAR='markerModu';
+let MKR={acik:false};
+function mkrYukle(){
+  try{ const x=JSON.parse(localStorage.getItem(MKR_ANAHTAR)||'null');
+    if(x&&typeof x==='object') MKR={acik:!!x.acik};
+  }catch(e){}
+}
+function mkrKaydet(){ try{ localStorage.setItem(MKR_ANAHTAR,JSON.stringify(MKR)); }catch(e){} }
+/* Metni norm()'lar VE her normal karakterin kaynaktaki indisini tutar.
+   norm() KARAKTER BASINA uygulanir: boylece donusum arama ile birebir ayni
+   kalir (norm parca parca uygulanabilir - tek cok-karakterli kural olan
+   'i'+U+0307 zaten tek bir 'İ'den dogar). */
+function markHay(s){
+  const o=String(s==null?'':s); let h=''; const m=[];
+  for(let i=0;i<o.length;i++){
+    const n=norm(o[i]);
+    for(let j=0;j<n.length;j++){ h+=n[j]; m.push(i); }
+  }
+  return {h,m};
+}
+const MKR_AYRAC=/[\s\-_]/;
+/* Harf-sirasi yedeginde bir alanin boyanmasi icin sorgunun en az bu kadari
+   o alanda sirayla gecmeli - altinda kalan alan gurultuden ibarettir. */
+const MKR_SUBSEQ_ESIK=0.6;
+/* Isaret maskesi: metin uzunlugunda sayi dizisi - 0 yok, 2 koyu, 1 ince. */
+function markMaske(o,q){
+  const im=new Array(o.length).fill(0);
+  const nq=norm(String(q==null?'':q)).trim();
+  if(!nq||!o.length) return im;
+  const {h,m}=markHay(o);
+  if(!h) return im;
+  const koy=(hi,len,g)=>{ for(let j=hi;j<hi+len&&j<m.length;j++){ const t=m[j]; if(t!=null&&im[t]<g) im[t]=g; } };
+  // 1) birebir alt dize - TUM gecisleri isaretlenir, ilki degil
+  let bul=false, i=h.indexOf(nq);
+  while(i>=0){ koy(i,nq.length,2); bul=true; i=h.indexOf(nq,i+1); }
+  if(bul) return im;
+  // 2) kelime kelime: hepsi bulunursa gecerli (aramanin coklu kelime kurali)
+  const kel=nq.split(/\s+/).filter(Boolean);
+  if(kel.length>1 && kel.every(k=>h.indexOf(k)>=0)){
+    kel.forEach(k=>{ let j=h.indexOf(k); while(j>=0){ koy(j,k.length,2); j=h.indexOf(k,j+1); } });
+    return im;
+  }
+  /* 3) AYRACSIZ ESLESME: bosluk/tire/alt cizgi silinerek aranir - ktopKey ile
+     ayni kural. "CH100 HDG 4015" yazani "CH100HDG4015" kodunda bulur. Isaret
+     ayraclarin USTUNE konmaz, aradaki gercek karakterlere dagilir. */
+  const kq=nq.replace(/[\s\-_]/g,'');
+  if(kq){
+    let sik='', h2=[];
+    for(let k=0;k<h.length;k++){ if(MKR_AYRAC.test(h[k])) continue; sik+=h[k]; h2.push(k); }
+    let j=sik.indexOf(kq);
+    while(j>=0){
+      for(let t=j;t<j+kq.length&&t<h2.length;t++){ const p=m[h2[t]]; if(p!=null) im[p]=2; }
+      bul=true; j=sik.indexOf(kq,j+1);
+    }
+    if(bul) return im;
+  }
+  /* 4) HARF SIRASI (subsequence): yalnizca rakamsiz sorguda. Arama tarafinda da
+     rakamli sorguda kapali (fatKodSorgusu) - marker oradan ayrilamaz. Karakter
+     kumesi de matchText ile AYNI: yalnizca BOSLUK silinir, tire/alt cizgi kalir
+     (ustteki 3. adim ayracsiz halini zaten denedi).
+
+     BURADA TAM ESLESME ARANMAZ. Arama bu yedegi satirin BUTUN alanlari tek
+     metne eklenmis haliyle calistiriyor; marker ise alan alan isaretliyor, o
+     yuzden sorgunun tamami tek bir alana sigmayabilir. Tam eslesme sart
+     kosulsaydi arama satiri getirip marker hicbir sey isaretlemezdi -
+     kullanici o an arama sonucundan supheye duserdi. Onun yerine "nereye kadar
+     tuttugu" isaretlenir; MKR_SUBSEQ_ESIK altinda kalan alan hic boyanmaz,
+     yoksa alakasiz her alana serpistirilmis isaret duserdi. */
+  if(!/\d/.test(nq)){
+    const qs=nq.replace(/\s+/g,'');
+    if(qs.length>=2){
+      let t=0; const yer=[];
+      for(let k=0;k<h.length&&t<qs.length;k++){ if(h[k]===qs[t]){ yer.push(k); t++; } }
+      if(t>=2 && t/qs.length>=MKR_SUBSEQ_ESIK)
+        yer.forEach(k=>{ const p=m[k]; if(p!=null&&im[p]<1) im[p]=1; });
+    }
+  }
+  return im;
+}
+/* Metni kacisli HTML olarak doner; mod KAPALIYKEN ya da sorgu bosken duz
+   esc() ile ayni sonucu verir - cagiran yerin kosul yazmasina gerek yok. */
+function markIsaret(txt,q){
+  const o=String(txt==null?'':txt);
+  if(!MKR.acik||!String(q==null?'':q).trim()||!o) return esc(o);
+  const im=markMaske(o,q);
+  let out='', acik=0;
+  for(let i=0;i<o.length;i++){
+    const g=im[i];
+    if(g!==acik){
+      if(acik) out+='</mark>';
+      if(g) out+='<mark class="mkr'+(g===1?' ince':'')+'">';
+      acik=g;
+    }
+    out+=esc(o[i]);
+  }
+  return out+(acik?'</mark>':'');
+}
+/* Bir metinde hic isaret var mi - sayac/ipucu icin (isaretli HTML uretmeden). */
+function markVarMi(txt,q){
+  if(!MKR.acik||!String(q==null?'':q).trim()) return false;
+  return markMaske(String(txt==null?'':txt),q).some(x=>x>0);
+}
+
+/* ---- baslikataki dugme ---- */
+/* PIYASA ADI MODUNDAN FARKI: menusu yok, dugmenin kendisi ac/kapa. Modun tek
+   bir ayari var (acik/kapali); menu acmak bir tiklama fazladan olurdu. */
+function mkrPillCiz(){
+  const b=document.getElementById('mkrBtn'); if(!b) return;
+  b.classList.toggle('on',!!MKR.acik);
+  const e=document.getElementById('mkrPillAd');
+  if(e) e.textContent=MKR.acik?'Marker · acik':'Marker';
+  b.title=MKR.acik
+    ? 'Marker modu ACIK - arama kutusuna yazdiginiz harf ve rakamlardan TUTANLAR listede isaretlenir. Kapatmak icin tiklayin.'
+    : 'Marker modu kapali - aramada eslesen karakterler isaretlenmiyor. Acmak icin tiklayin.';
+}
+function mkrAcKapa(v){
+  MKR.acik=(v===undefined)?!MKR.acik:!!v;
+  mkrKaydet(); mkrPillCiz(); render();
+  toast(MKR.acik?'Marker modu acik - aramada tutan harfler isaretlenir':'Marker modu kapandi');
+}
+mkrYukle();   // tercih taraficidadir: sayfa acilir acilmaz okunur
+
 // global aktif autocomplete durumu
 let AC={el:null,drop:null,src:[],onPick:null,allowNew:true,hl:-1,q:''};
 function acOpen(inputEl, src, onPick, allowNew){
@@ -34426,11 +34602,24 @@ function fatAramaEslesir(u,q){
    yerlesimde gecer): ekranda ilk birkaci, tamami ipucunda - ipucu da tavanlanir,
    yoksa binlerce karakterlik bir title dogar. */
 const FAT_OZEL_GOSTER=3, FAT_OZEL_IPUCU=40;
-function fatOzelKodOzet(u,goster){
-  const k=(u&&u.ozelKodlar)||[]; if(!k.length) return '';
+/* q verilirse marker modu isaretlemesi uygulanir. Tedarikci faturayi cogu
+   zaman bu kodla kesiyor - aranan kodun listedeki kodun neresinde tuttugunu
+   goz taramasiyla bulmak en cok burada zaman yiyordu.
+   GOSTERILEN KODLAR ESLESENDEN BASLAR: liste tavanlanmis (ilk 3) ve aranan kod
+   dorduncu sirada olabiliyordu - satir eslesiyor ama ekranda eslesen kod hic
+   gorunmuyordu. */
+function fatOzelKodOzet(u,goster,q){
+  let k=(u&&u.ozelKodlar)||[]; if(!k.length) return '';
   const n=goster||FAT_OZEL_GOSTER;
   const ipucu=k.slice(0,FAT_OZEL_IPUCU).join(', ')+(k.length>FAT_OZEL_IPUCU?` +${k.length-FAT_OZEL_IPUCU} kod daha`:'');
-  return `<span style="color:var(--amber)" title="Ozel (yerlesim) kodlari - ${k.length} kod: ${esc(ipucu)}">${esc(k.slice(0,n).join(', '))}${k.length>n?` +${k.length-n}`:''}</span>`;
+  if(MKR.acik&&String(q==null?'':q).trim()&&k.length>n){
+    const tutan=k.filter(c=>markVarMi(c,q));
+    if(tutan.length&&tutan.length<k.length){
+      const kalan=k.filter(c=>!markVarMi(c,q));
+      k=tutan.concat(kalan);
+    }
+  }
+  return `<span style="color:var(--amber)" title="Ozel (yerlesim) kodlari - ${k.length} kod: ${esc(ipucu)}">${k.slice(0,n).map(c=>markIsaret(c,q)).join(', ')}${k.length>n?` +${k.length-n}`:''}</span>`;
 }
 
 /* ---------- ARAMA: ALIMI OLMAYAN URUNLER ----------
@@ -34592,7 +34781,7 @@ const FAT_ALINMAMIS_DURUM={
   firmasec:{ad:'ALINMIŞ · FİRMA SEÇİN', aciklama:'Alimi var - faturaya yazmak icin once firmayi secin'},
   firmasiz:{ad:'FİRMASIZ ALIM',        aciklama:'Yalnizca firmasi girilmemis siparislerde alinmis - hicbir faturanin dayanagi olamaz'},
 };
-function fatAlinmamisSatir(u,baglam){
+function fatAlinmamisSatir(u,baglam,q){
   const d=FAT_ALINMAMIS_DURUM[u.durum]||FAT_ALINMAMIS_DURUM.hic;
   const net=`net <b>${fmtNum(u.net)}</b>${u.unit?' '+esc(u.unit):''}`;
   const fr=u.alinanFirmalar.slice(0,3).map(esc).join(', ')+(u.alinanFirmalar.length>3?` +${u.alinanFirmalar.length-3}`:'');
@@ -34601,11 +34790,11 @@ function fatAlinmamisSatir(u,baglam){
     :u.durum==='baska'?`Alindigi firma: <b>${fr}</b> (${net}). Belge o firmaya aitse ${baglam==='form'?'ustteki Firma alanini':'firma suzgecini'} degistirin`
     :`Alindigi firma: <b>${fr}</b> (${net}). Faturaya yazmak icin once firmayi secin`;
   return `<div class="fat-alin-satir ${u.durum}">
-    <div class="ad">${u.matId&&baglam!=='form'?`<button class="fat-link" style="font-weight:600;font-size:12.5px" onclick="openMatDetail('${esc(u.matId)}')" title="Malzeme kunyesini ac">${esc(u.ad||u.code||'-')}</button>`:esc(u.ad||u.code||'-')}
-      <div class="t-meta">${esc(u.code||'-')}${u.unit?' · '+esc(u.unit):''}${u.binalar.length?' · '+esc(u.binalar.join(', ')):''}${
-        u.bolumler.length?' · <span style="color:var(--blue)">'+esc(u.bolumler.join(', '))+'</span>':''}${
-        u.sartnameler.length?' · '+esc(u.sartnameler.slice(0,2).join(', '))+(u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''):''}</div>
-      ${u.ozelKodlar.length?`<div class="t-meta">${fatOzelKodOzet(u)}</div>`:''}</div>
+    <div class="ad">${u.matId&&baglam!=='form'?`<button class="fat-link" style="font-weight:600;font-size:12.5px" onclick="openMatDetail('${esc(u.matId)}')" title="Malzeme kunyesini ac">${markIsaret(u.ad||u.code||'-',q)}</button>`:markIsaret(u.ad||u.code||'-',q)}
+      <div class="t-meta">${markIsaret(u.code||'-',q)}${u.unit?' · '+esc(u.unit):''}${u.binalar.length?' · '+markIsaret(u.binalar.join(', '),q):''}${
+        u.bolumler.length?' · <span style="color:var(--blue)">'+markIsaret(u.bolumler.join(', '),q)+'</span>':''}${
+        u.sartnameler.length?' · '+markIsaret(u.sartnameler.slice(0,2).join(', '),q)+(u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''):''}</div>
+      ${u.ozelKodlar.length?`<div class="t-meta">${fatOzelKodOzet(u,0,q)}</div>`:''}</div>
     <div class="durum"><span class="fat-rozet ${u.durum}" title="${esc(d.aciklama)}">${d.ad}</span><small>${acik}</small></div>
   </div>`;
 }
@@ -34636,7 +34825,7 @@ function fatAlinmamisPanel(s,q,companyId,baglam,sistemdeYok){
   return `<div class="fat-alinmamis" id="fatAlinmamis">
     <h5>"${qq}" &middot; ${fmtNum(s.n)} urun ${baglam!=='form'?'mutabakat disinda':(cid?'bu faturaya yazilamaz':'eslesti')} ${ozet}</h5>
     <p>${aciklama}</p>
-    <div class="fat-alin-liste">${s.liste.slice(0,FAT_ALINMAMIS_GOSTER).map(u=>fatAlinmamisSatir(u,baglam)).join('')}</div>
+    <div class="fat-alin-liste">${s.liste.slice(0,FAT_ALINMAMIS_GOSTER).map(u=>fatAlinmamisSatir(u,baglam,q)).join('')}</div>
     ${s.n>FAT_ALINMAMIS_GOSTER?`<p class="dip">+ ${fmtNum(s.n-FAT_ALINMAMIS_GOSTER)} urun daha - aramayi daraltin</p>`:''}
     ${gizliNot}</div>`;
 }
@@ -35021,11 +35210,11 @@ function renderFaturaForm(){
     const oranlar=[...new Set(KDV_ORANLARI.concat(b.kdv===''||b.kdv==null?[]:[fatSayi(b.kdv)]))].sort((x,y)=>x-y);
     return `<tr class="${bitti?'bitti':''}">
       <td class="tl-no">${i+1}</td>
-      <td><div style="font-size:12.5px">${esc(u.ad||'-')}</div>
-        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(u.code||'-')}${u.unit?' · '+esc(u.unit):''}${u.binalar.length?' · '+esc(u.binalar.join(', ')):''}${
-          u.bolumler.length?' · <span style="color:var(--blue)">'+esc(u.bolumler.join(', '))+'</span>':''}${
-          u.sartnameler.length?' · '+esc(u.sartnameler.slice(0,2).join(', '))+(u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''):''}</div>
-        ${u.ozelKodlar&&u.ozelKodlar.length?`<div class="t-meta" style="font-size:11px;font-family:var(--mono)">${fatOzelKodOzet(u)}</div>`:''}
+      <td><div style="font-size:12.5px">${markIsaret(u.ad||'-',st.fq)}</div>
+        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${markIsaret(u.code||'-',st.fq)}${u.unit?' · '+esc(u.unit):''}${u.binalar.length?' · '+markIsaret(u.binalar.join(', '),st.fq):''}${
+          u.bolumler.length?' · <span style="color:var(--blue)">'+markIsaret(u.bolumler.join(', '),st.fq)+'</span>':''}${
+          u.sartnameler.length?' · '+markIsaret(u.sartnameler.slice(0,2).join(', '),st.fq)+(u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''):''}</div>
+        ${u.ozelKodlar&&u.ozelKodlar.length?`<div class="t-meta" style="font-size:11px;font-family:var(--mono)">${fatOzelKodOzet(u,0,st.fq)}</div>`:''}
         ${bitti?`<div class="fat-bitti" title="Bu urunden alinan miktarin TAMAMI daha once faturalanmis - bu faturaya yazilamaz. Satir yalnizca gorulsun diye listede durur.">${icoKilit(false)} Tamami faturalandi</div>`:''}
         ${eslesir(u)?'':`<div class="fat-arama-disi" title="Bu satir aramayla eslesmiyor. Bu faturaya miktar girildigi icin listeden dusmez - yoksa girilen miktar gorulmeden kaydedilirdi.">aramaya uymuyor · miktar girildigi icin listede</div>`}
         ${(u.kodlar&&u.kodlar.length)?fatKodBtnHtml(i,u,bitti):''}</td>
@@ -36066,11 +36255,11 @@ function renderFaturaMutabakat(){
     : emptyRow(9,filtreVar?'Eslesen urun yok':'Henuz alim kaydi yok','Filtreleri degistirin');
   else liste.slice(0,LIMIT).forEach(u=>{
     rows+=`<tr>
-      <td>${u.matId?`<button class="fat-link" style="font-weight:600" onclick="openMatDetail('${u.matId}')" title="Malzeme kunyesini ac">${esc(u.ad||'-')}</button>`:esc(u.ad||'-')}
-        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(u.code||'-')}${u.ozelKodlar&&u.ozelKodlar.length?' · '+fatOzelKodOzet(u,2):''}</div></td>
-      <td class="t-meta">${esc(u.binalar.join(', ')||'-')}</td>
-      <td class="t-meta">${esc(u.bolumler.join(', ')||'-')}${u.sartnameler.length?`<div style="font-size:10.5px">${esc(u.sartnameler.slice(0,2).join(', '))}${u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''}</div>`:''}</td>
-      <td class="t-meta">${esc(u.firmalar.join(', ')||'-')}</td>
+      <td>${u.matId?`<button class="fat-link" style="font-weight:600" onclick="openMatDetail('${u.matId}')" title="Malzeme kunyesini ac">${markIsaret(u.ad||'-',FATV.q)}</button>`:markIsaret(u.ad||'-',FATV.q)}
+        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${markIsaret(u.code||'-',FATV.q)}${u.ozelKodlar&&u.ozelKodlar.length?' · '+fatOzelKodOzet(u,2,FATV.q):''}</div></td>
+      <td class="t-meta">${markIsaret(u.binalar.join(', ')||'-',FATV.q)}</td>
+      <td class="t-meta">${markIsaret(u.bolumler.join(', ')||'-',FATV.q)}${u.sartnameler.length?`<div style="font-size:10.5px">${markIsaret(u.sartnameler.slice(0,2).join(', '),FATV.q)}${u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''}</div>`:''}</td>
+      <td class="t-meta">${markIsaret(u.firmalar.join(', ')||'-',FATV.q)}</td>
       <td class="t-qty">${fmtNum(u.alinan)}${u.unit?` <span style="color:var(--mute)">${esc(u.unit)}</span>`:''}</td>
       <td class="t-qty" style="color:${u.iade>0?'var(--amber)':'var(--dim)'}">${u.iade>0?fmtNum(u.iade):'-'}</td>
       <td class="t-qty">${fmtNum(u.net)}</td>
