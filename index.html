@@ -33169,7 +33169,12 @@ function fatKayitFarklari(f){
     const h=fatFarkHesapla(u,b,r?fatSayi(r.qty):0);
     out.push({ key:k, ad:(u&&u.ad)||bilgi.ad||(r&&r.ad)||'(urun)',
       code:(u&&u.code)||bilgi.code||(r&&r.code)||'',
-      unit:(u&&u.unit)||bilgi.unit||(r&&r.unit)||'', ...h });
+      unit:(u&&u.unit)||bilgi.unit||(r&&r.unit)||'',
+      /* BIRIM FIYAT: faturanin KENDI satirindan. Fazlanin para karsiligini
+         tedarikcinin kendi fiyatiyla hesaplamak en az itiraz edilebilir
+         olanidir. Satiri olmayan (yalnizca beyan girilmis) urunde fiyat
+         yoktur - o satirda tutar sutunu bos kalir, uydurulmaz. */
+      fiyat:r?fatSayi(r.fiyat):0, ...h });
   });
   // once fazlalar (karsi tarafin hatasi), sonra oteki farklar, sonra denk olanlar
   return out.sort(fatFarkSirala);
@@ -34207,7 +34212,7 @@ function renderFaturaDetay(){
 
     ${farklar.length?`<div class="tut-card">
       <h4>Fark Raporu <i>tedarikcinin belgesinde yazan adetler ile bu faturaya kabul edilenlerin karsilastirmasi</i></h4>
-      ${fatFarkPanelHtml(farklar,farkliOlan,{no:f.no,firma:fatCompany(f),tarih:f.tarih},f.id)}
+      ${fatFarkPanelHtml(farklar,farkliOlan,{no:f.no,firma:fatCompany(f),tarih:f.tarih,pb:f.paraBirimi||'TRY'},f.id)}
     </div>`:''}
 
     ${(kodOzet.kodlar.length||kodOzet.secilebilir>FAT_EPS)?`<div class="tut-card">
@@ -34925,7 +34930,8 @@ function fatFormFarklari(){
   return Object.keys(st.bq||{}).filter(k=>fatSayi(st.bq[k])>0).map(k=>{
     const u=hav.get(k)||null;
     const h=fatFarkHesapla(u,st.bq[k],fatSayi(st.qty[k]));
-    return { key:k, ad:(u&&u.ad)||'(urun)', code:(u&&u.code)||'', unit:(u&&u.unit)||'', ...h };
+    return { key:k, ad:(u&&u.ad)||'(urun)', code:(u&&u.code)||'', unit:(u&&u.unit)||'',
+      fiyat:fatSayi(((st.sb||{})[k]||{}).fiyat), ...h };
   }).sort(fatFarkSirala);
 }
 /* Belgede yazan adet kutusu. MIKTAR KUTUSUNDAN FARKI: TAVAN YOKTUR ve satir
@@ -34977,7 +34983,7 @@ function fatFarkPanelIc(){
   const hepsi=fatFormFarklari(); if(!hepsi.length) return '';
   const farkli=hepsi.filter(x=>x.durum!=='denk');
   const firma=((DB.companies||[]).find(c=>c.id===st.companyId)||{}).ad||'';
-  return fatFarkPanelHtml(hepsi,farkli,{no:String(st.no||'').trim(),firma,tarih:st.tarih});
+  return fatFarkPanelHtml(hepsi,farkli,{no:String(st.no||'').trim(),firma,tarih:st.tarih,pb:st.paraBirimi||'TRY'});
 }
 /* ORTAK CIZIM: form ve kayitli fatura detayi ayni HTML'i kullanir - ayni rapor
    iki ekranda iki turlu gorunemesin. */
@@ -34990,7 +34996,8 @@ function fatFarkPanelHtml(hepsi,farkli,kunye,pdfId){
     <div class="sy"><span>Faturada yazan <b>${say(x.beyan)}</b>${x.unit?' '+esc(x.unit):''}</span>
       <span>Bu faturaya girilen <b>${say(x.sistem)}</b></span>
       <span>Faturalanabilir kalan <b>${say(x.kalan)}</b></span>
-      <span class="fk">Fark <b>${x.fark>0?'+':''}${say(x.fark)}</b></span></div>
+      <span class="fk">Fark <b>${x.fark>0?'+':''}${say(x.fark)}</b></span>
+      ${(x.fark>0&&x.fiyat>0)?`<span class="fk" title="Fazla adet x bu faturadaki birim fiyat - tedarikcinin kendi fiyatiyla degerlendi">Fazla tutar <b>${fatPara(x.fark*x.fiyat,(kunye&&kunye.pb)||'')}</b></span>`:''}</div>
     ${x.neden?`<div class="nd">${esc(x.neden)}</div>`:''}</div>`).join('');
   return `<div class="fat-fark-panel${farkli.length?'':' temiz'}">
     <div class="bas">
@@ -35024,6 +35031,7 @@ function fatFarkMetni(hepsi,kunye){
     '   Bu faturaya girilen  : '+say(x.sistem),
     '   Faturalanabilir kalan: '+say(x.kalan),
     '   FARK                 : '+(x.fark>0?'+':'')+say(x.fark)+'   ('+(FAT_FARK_ETIKET[x.durum]||x.durum)+')',
+    ...((x.fark>0&&x.fiyat>0)?['   Fazla tutar          : '+fatPara(x.fark*x.fiyat,(k.pb||''))+'   (birim fiyat '+fatPara(x.fiyat,'')+')']:[]),
     '   Gerekce              : '+(x.neden||'-'),''].join('\n'));
   return bas.concat(gv).join('\n');
 }
@@ -36496,10 +36504,19 @@ const FKX_SOZLUK={
   pdfHesapBand:'HESAP',
   pdfHesapSat:{ alinan:'Toplam alinan', iade:'Iade edilen', net:'Net teslim alinan',
     onceki:'Daha once faturalanan', kalan:'Bu faturada faturalanabilir kalan',
-    beyan:'Faturanizda yazan', fark:'FAZLA' },
+    beyan:'Faturanizda yazan', fark:'FAZLA', fazlaTutar:'Fazla tutar' },
   pdfDip:'Bu rapor uygulamanin kayitlarindan otomatik uretilmistir. Alim kayitlari teslim alinan siparislere, fatura kayitlari kesinlesmis belgelere dayanir; taslak belgeler hesaba katilmaz.',
   pdfYazdir:'Yazdır / PDF olarak kaydet',
   pdfYazdirIp:'Yazdırma penceresinde "Hedef: PDF olarak kaydet" seçerek dosya olarak alabilirsiniz.',
+  /* OZET TABLOSU: belgenin ilk sayfasinda tek bakista "ne kadar fazla, kac
+     para" cevabi. Ayrintili dayanak bloklari bunun altinda gelir. */
+  pdfOzetBand:'OZET  —  uyusmayan urunler',
+  pdfOzetTh:['#','Urun Kodu','Urun / Hizmet','Br.','Faturada Yazan','Kabul Edilen','Fark','Birim Fiyat','Fazla Tutar'],
+  pdfDetayBand:'AYRINTI VE DAYANAK  —  her urun icin gerekce ve dayandigi belgeler',
+  pdfToplam:'TOPLAM',
+  pdfAraToplam:'Ara toplam',
+  pdfTutarNot:'Fazla tutar = fazla adet x BU FATURADAKI birim fiyat; yani fazlalik tedarikcinin kendi fiyatiyla degerlendi. Birim fiyati girilmemis satirda tutar hesaplanmaz, hucre bos birakilir. Tutarlar KDV haricdir ve bilgi amaclidir - faturanin kendi toplamini degistirmez.',
+  pdfFiyatYok:'birim fiyat girilmemis',
   sFrk:'Fark Raporu', gitFrk:'Fark Raporu ▶',
   frkBaslik:'FARK RAPORU — tedarikci faturasinda yazan adet ile kabul edilen adet',
   frkNot:'"Faturada yazan" sutunu tedarikcinin KENDI belgesindeki adettir ve hicbir hesaba girmez - kalani tuketmez, tutari degistirmez. Yalnizca karsilastirma icindir; "Kabul edilen" sutunu bizim kaydimizdir.',
@@ -36588,10 +36605,17 @@ const FKX_SOZLUK={
   pdfHesapBand:'РАСЧЁТ',
   pdfHesapSat:{ alinan:'Всего получено', iade:'Возвращено', net:'Нетто получено',
     onceki:'Выставлено ранее', kalan:'Можно выставить по этому счёту',
-    beyan:'Указано в Вашем счёте', fark:'ИЗЛИШЕК' },
+    beyan:'Указано в Вашем счёте', fark:'ИЗЛИШЕК', fazlaTutar:'Сумма излишка' },
   pdfDip:'Отчёт сформирован автоматически по учётным данным приложения. Закупки опираются на принятые заказы, счета — на окончательные документы; черновики не учитываются.',
   pdfYazdir:'Печать / Сохранить в PDF',
   pdfYazdirIp:'В окне печати выберите «Принтер: Сохранить как PDF», чтобы получить файл.',
+  pdfOzetBand:'СВОДКА  —  позиции с расхождением',
+  pdfOzetTh:['№','Код товара','Товар / услуга','Ед.','Указано в счёте','Принято','Расхожд.','Цена за ед.','Сумма излишка'],
+  pdfDetayBand:'ПОДРОБНО И ОСНОВАНИЯ  —  по каждой позиции обоснование и подтверждающие документы',
+  pdfToplam:'ИТОГО',
+  pdfAraToplam:'Промежуточный итог',
+  pdfTutarNot:'Сумма излишка = излишек в единицах x цена за единицу ИЗ ЭТОГО СЧЁТА, то есть излишек оценён по Вашей собственной цене. Если цена за единицу не указана, сумма не рассчитывается и ячейка остаётся пустой. Суммы указаны без НДС и носят справочный характер — итог самого счёта они не меняют.',
+  pdfFiyatYok:'цена за единицу не указана',
   sFrk:'Расхождения по количеству', gitFrk:'Расхождения по количеству ▶',
   frkBaslik:'РАСХОЖДЕНИЯ ПО КОЛИЧЕСТВУ — количество в счёте поставщика и принятое количество',
   frkNot:'Столбец «Указано в счёте» — это количество из СОБСТВЕННОГО документа поставщика; оно не участвует ни в одном расчёте: не уменьшает остаток и не меняет сумму. Оно служит только для сверки; столбец «Принято» — наша запись.',
@@ -36680,10 +36704,17 @@ const FKX_SOZLUK={
   pdfHesapBand:'CALCULATION',
   pdfHesapSat:{ alinan:'Total received', iade:'Returned', net:'Net received',
     onceki:'Invoiced before', kalan:'Invoiceable on this document',
-    beyan:'Stated on your invoice', fark:'EXCESS' },
+    beyan:'Stated on your invoice', fark:'EXCESS', fazlaTutar:'Excess amount' },
   pdfDip:'This report is generated automatically from the application records. Purchase records rest on received orders and invoice records on finalised documents; drafts are not counted.',
   pdfYazdir:'Print / Save as PDF',
   pdfYazdirIp:'In the print dialog choose "Destination: Save as PDF" to obtain a file.',
+  pdfOzetBand:'SUMMARY  —  products with a discrepancy',
+  pdfOzetTh:['#','Product Code','Product / Service','Unit','Stated on Invoice','Accepted','Diff.','Unit Price','Excess Amount'],
+  pdfDetayBand:'DETAIL AND EVIDENCE  —  the reason for each product and the documents it rests on',
+  pdfToplam:'TOTAL',
+  pdfAraToplam:'Subtotal',
+  pdfTutarNot:'Excess amount = excess quantity x the unit price ON THIS INVOICE, i.e. the excess is valued at your own price. Where no unit price was entered, no amount is calculated and the cell is left empty. Amounts exclude VAT and are informational - they do not change the invoice total.',
+  pdfFiyatYok:'no unit price entered',
   sFrk:'Quantity Discrepancies', gitFrk:'Quantity Discrepancies ▶',
   frkBaslik:'QUANTITY DISCREPANCIES — quantity on the supplier invoice vs quantity accepted',
   frkNot:'The "Stated on invoice" column is the quantity on the supplier\'s OWN document; it enters no calculation - it does not consume the remaining balance and does not change any amount. It is for comparison only; the "Accepted" column is our own record.',
@@ -37186,92 +37217,148 @@ function exportFaturaKitabi(dil){
    tarayici onu bir satir sinirindan boler - kacinilmaz ve dogru davranis,
    alternatifi blogun tasip kirpilmasi olurdu. */
 function fatFarkPdfCss(){ return `
-@page{size:A4;margin:12mm 11mm 13mm}
+@page{size:A4;margin:13mm 12mm 14mm}
 *{box-sizing:border-box}
 /* TEK MUREKKEP - ihtPdfCss ile ayni karar: hiyerarsi renkle degil punto,
    kalinlik ve tonla kurulur, fotokopide de aynen okunur. Tek istisna FARK
    rakamidir; belgenin tek "bak buraya" noktasi odur. */
 :root{ --ink:#111827; --tx:#374151; --mu:#6b7280; --fn:#9ca3af;
-  --hr:#e5e7eb; --bx:#f4f5f7; --pg:#eceef1; --uy:#b91c1c; }
+  --hr:#e5e7eb; --hr2:#cbd1d9; --bx:#f6f7f9; --pg:#eceef1; --uy:#b91c1c; --uybg:#fdf2f2; }
 body{margin:0;background:var(--pg);color:var(--tx);font-size:8.6pt;
   font-family:"Segoe UI",-apple-system,"Helvetica Neue",Arial,sans-serif;
   -webkit-print-color-adjust:exact;print-color-adjust:exact;-webkit-font-smoothing:antialiased}
+/* SAYILAR HER YERDE AYNI GENISLIKTE: bu bir fatura belgesi, rakam sutunlari
+   basamak basamak alt alta gelmezse goz toplami denetleyemez. */
+.sy,.hs b,.oz b,table td.sy,table th.sy{font-variant-numeric:tabular-nums;
+  font-feature-settings:"tnum" 1,"lnum" 1}
 .tbar{position:sticky;top:0;z-index:9;display:flex;gap:10px;align-items:center;justify-content:center;
   padding:11px;background:var(--ink);color:#fff;font-size:12.5px}
 .tbar button{background:#fff;color:var(--ink);border:none;border-radius:7px;padding:7px 16px;
   font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
 .tbar span{opacity:.7}
 @media print{.tbar{display:none}body{background:#fff}}
-.sheet{width:210mm;background:#fff;margin:14px auto;padding:12mm 11mm 13mm;
+.sheet{width:210mm;background:#fff;margin:14px auto;padding:13mm 12mm 14mm;
   box-shadow:0 2px 16px rgba(17,24,39,.14)}
 @media print{.sheet{width:auto;margin:0;padding:0;box-shadow:none}}
 
-/* antet */
+/* ── ANTET ─────────────────────────────────────────────────────────── */
 .ph-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
 .ph-logo{height:11mm;width:auto;max-width:54mm;object-fit:contain}
-.ph-firm{text-align:right;font-size:6pt;line-height:1.45;color:var(--mu)}
-.ph-firm b{display:block;font-size:8pt;font-weight:600;color:var(--ink);letter-spacing:.2px}
-.ph-rule{height:.9px;background:var(--ink);margin:2mm 0 3.5mm}
-h1{margin:0;font-size:13pt;font-weight:600;color:var(--ink);letter-spacing:.3px}
-.alt{margin:1mm 0 0;font-size:7.6pt;color:var(--mu)}
+.ph-firm{text-align:right;font-size:6pt;line-height:1.5;color:var(--mu)}
+.ph-firm b{display:block;font-size:8.4pt;font-weight:600;color:var(--ink);letter-spacing:.2px;margin-bottom:.4mm}
+.ph-rule{height:1.1px;background:var(--ink);margin:2.4mm 0}
+.ph-rule.ince{height:.4px;background:var(--hr2)}
+h1{margin:0;font-size:14.5pt;font-weight:600;color:var(--ink);letter-spacing:.4px;line-height:1.15}
+.alt{margin:1.2mm 0 0;font-size:7.8pt;color:var(--mu);line-height:1.45}
 
-/* kunye - fatura basligi */
-.kn{display:flex;flex-wrap:wrap;gap:0 7mm;margin:4mm 0 3mm;padding:2.6mm 3mm;
-  background:var(--bx);border-left:1.6mm solid var(--ink)}
-.kn div{font-size:7.4pt;color:var(--mu);line-height:1.5}
-.kn b{display:block;font-size:9pt;font-weight:600;color:var(--ink)}
-.giris{margin:0 0 4mm;font-size:7.8pt;line-height:1.6;color:var(--tx);text-align:justify}
+/* ── KUNYE: etiket ustte kucuk, deger altta - fatura basligi gibi okunur ── */
+.kn{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin:4.5mm 0 0;
+  border:.4mm solid var(--hr);border-left:1.4mm solid var(--ink);background:var(--bx)}
+.kn div{padding:2.2mm 3mm;border-right:.3mm solid var(--hr);border-bottom:.3mm solid var(--hr);min-width:0}
+.kn div:nth-child(4n){border-right:none}
+.kn span{display:block;font-size:6.2pt;letter-spacing:.45px;text-transform:uppercase;color:var(--fn);margin-bottom:.6mm}
+.kn b{font-size:9pt;font-weight:600;color:var(--ink);line-height:1.25;word-break:break-word}
+.giris{margin:4mm 0 0;font-size:7.8pt;line-height:1.62;color:var(--tx);text-align:justify}
 
-/* urun blogu - asla iki yaprak arasinda bolunmez */
-.ur{break-inside:avoid;page-break-inside:avoid;margin:0 0 5mm;border:.4mm solid var(--hr);
-  border-left:1.6mm solid var(--uy)}
-.ur>.bas{display:flex;align-items:baseline;gap:3mm;padding:2.4mm 3mm 1.6mm;border-bottom:.3mm solid var(--hr)}
-.ur>.bas .sn{font-size:9pt;font-weight:600;color:var(--fn);flex:none}
-.ur>.bas .ad{font-size:9.6pt;font-weight:600;color:var(--ink);flex:1;line-height:1.35}
-.ur>.bas .kd{font-size:7.4pt;color:var(--mu);white-space:nowrap}
-.ur>.bas .rz{font-size:7pt;font-weight:600;letter-spacing:.4px;color:var(--uy);
-  border:.35mm solid var(--uy);padding:.6mm 2mm;white-space:nowrap;flex:none}
-/* ozet seridi: faturada yazan / kabul edilen / kalan / fark */
-.oz{display:flex;gap:0;padding:0;border-bottom:.3mm solid var(--hr)}
-.oz div{flex:1;padding:2mm 3mm;border-right:.3mm solid var(--hr)}
-.oz div:last-child{border-right:none;background:var(--bx)}
-.oz span{display:block;font-size:6.6pt;letter-spacing:.3px;color:var(--fn);text-transform:uppercase}
-.oz b{font-size:11pt;font-weight:600;color:var(--ink)}
-.oz div:last-child b{color:var(--uy)}
-.gr{padding:2.2mm 3mm;font-size:7.8pt;line-height:1.55;color:var(--tx);border-bottom:.3mm solid var(--hr)}
-.gr u{text-decoration:none;font-weight:600;color:var(--ink);letter-spacing:.3px;font-size:6.8pt;
-  text-transform:uppercase;display:block;margin-bottom:.8mm;color:var(--fn)}
+/* ── BANTLAR ───────────────────────────────────────────────────────── */
+.bnd{margin:5.5mm 0 0;padding:1.9mm 3mm;font-size:7pt;font-weight:600;letter-spacing:.55px;
+  line-height:1.45;text-transform:uppercase;color:#fff;background:var(--ink)}
+.bnd.ic{margin:2.4mm 0 0;padding:1.5mm 3mm;color:var(--fn);background:none;
+  border-bottom:.3mm solid var(--hr);letter-spacing:.45px;line-height:1.4}
 
-/* kanit tablolari */
-.bnd{padding:1.6mm 3mm .8mm;font-size:6.8pt;font-weight:600;letter-spacing:.4px;
-  text-transform:uppercase;color:var(--fn)}
+/* ── TABLOLAR ──────────────────────────────────────────────────────── */
 table{width:100%;border-collapse:collapse;table-layout:fixed}
-th{font-size:6.6pt;font-weight:600;letter-spacing:.3px;text-transform:uppercase;color:var(--fn);
-  text-align:left;padding:1mm 3mm;border-bottom:.3mm solid var(--hr);white-space:nowrap}
-td{font-size:7.8pt;color:var(--tx);padding:1.1mm 3mm;border-bottom:.25mm solid var(--hr);
+th{font-size:6.4pt;font-weight:600;letter-spacing:.35px;text-transform:uppercase;color:var(--mu);
+  text-align:left;padding:1.4mm 2.4mm;border-bottom:.45mm solid var(--hr2);white-space:nowrap;
+  vertical-align:bottom}
+/* Ozet tablosunun basliklari UZUN ("Faturada Yazan"); nowrap'ta yan yana
+   sutunlarin ustune biniyorlardi. Burada sarmalarina izin verilir - sutun
+   genisligini baslik degil SAYI belirlemeli. */
+.oztab th{white-space:normal;line-height:1.25;font-size:5.9pt;letter-spacing:.25px;
+  padding-left:1.5mm;padding-right:1.5mm;overflow-wrap:anywhere}
+.oztab td{padding-left:1.5mm;padding-right:1.5mm}
+.oztab td.kod{white-space:normal}
+td{font-size:7.8pt;color:var(--tx);padding:1.4mm 2.4mm;border-bottom:.25mm solid var(--hr);
   vertical-align:top;overflow-wrap:anywhere}
-tr:last-child td{border-bottom:none}
+tbody tr:nth-child(even) td{background:#fafbfc}
 th.sy,td.sy{text-align:right;white-space:nowrap}
 td.sy{font-weight:600;color:var(--ink)}
-td.kod{font-size:7pt;color:var(--mu)}
-.yok{padding:1.6mm 3mm 2.4mm;font-size:7.6pt;color:var(--mu);font-style:italic}
-/* hesap: farkin nasil ciktigi satir satir */
-.hs{margin-top:1mm;border-top:.3mm solid var(--hr);background:var(--bx)}
-.hs div{display:flex;justify-content:space-between;gap:4mm;padding:1mm 3mm;font-size:7.8pt}
-.hs div span{color:var(--mu)}
-.hs div b{font-weight:600;color:var(--ink);white-space:nowrap}
-.hs div.snc{border-top:.35mm solid var(--ink);padding-top:1.4mm;padding-bottom:1.4mm}
+td.kod{font-size:7.2pt;color:var(--mu)}
+td.ad{color:var(--ink)}
+/* Ozet tablosunun fark ve tutar sutunlari belgenin CEVABIDIR - one cikar */
+td.frk,th.frk{text-align:right;white-space:nowrap}
+td.frk{font-weight:700;color:var(--uy)}
+td.tut{text-align:right;white-space:nowrap;font-weight:700;color:var(--ink);background:var(--uybg)!important}
+tr.top td{border-top:.7mm double var(--ink);border-bottom:none;padding-top:1.8mm;
+  font-weight:700;color:var(--ink);background:#fff!important;font-size:8.4pt}
+tr.top td.tut{background:var(--uybg)!important;color:var(--uy)}
+.yok{padding:1.8mm 3mm 2.6mm;font-size:7.6pt;color:var(--mu);font-style:italic}
+.not{margin:1.8mm 0 0;font-size:6.6pt;color:var(--fn);line-height:1.55;text-align:justify}
+
+/* ── URUN BLOGU - asla iki yaprak arasinda bolunmez ─────────────────── */
+.ur{break-inside:avoid;page-break-inside:avoid;margin:4.5mm 0 0;border:.4mm solid var(--hr);
+  border-left:1.4mm solid var(--uy)}
+.ur>.bas{display:flex;align-items:baseline;gap:2.6mm;padding:2.6mm 3mm 2mm;background:var(--bx);
+  border-bottom:.35mm solid var(--hr)}
+.ur>.bas .sn{font-size:11pt;font-weight:700;color:var(--fn);flex:none;line-height:1}
+.ur>.bas .ad{font-size:9.8pt;font-weight:600;color:var(--ink);flex:1;line-height:1.3}
+.ur>.bas .kd{font-size:7.4pt;color:var(--mu);white-space:nowrap}
+.ur>.bas .rz{font-size:6.6pt;font-weight:700;letter-spacing:.5px;color:#fff;background:var(--uy);
+  padding:.9mm 2.2mm;white-space:nowrap;flex:none}
+/* ozet seridi: dort kutu, sonuncusu (fark) TERS - belgenin vurgusu */
+.oz{display:flex;border-bottom:.35mm solid var(--hr)}
+.oz div{flex:1;padding:2.2mm 3mm;border-right:.3mm solid var(--hr)}
+.oz div:last-child{border-right:none;background:var(--uy)}
+.oz span{display:block;font-size:6.2pt;letter-spacing:.45px;color:var(--fn);text-transform:uppercase;margin-bottom:.7mm}
+.oz b{font-size:12pt;font-weight:600;color:var(--ink);line-height:1}
+.oz i{font-style:normal;font-size:7pt;font-weight:400;color:var(--mu);margin-left:.8mm}
+/* Tutar rakamin yanina yapismaz, altina duser: ikisi ayri buyukluktur */
+.oz div:last-child i{display:block;margin:.9mm 0 0;font-size:7.6pt;font-weight:600}
+.oz div:last-child span{color:rgba(255,255,255,.75)}
+.oz div:last-child b,.oz div:last-child i{color:#fff}
+.gr{padding:2.4mm 3mm;font-size:7.9pt;line-height:1.6;color:var(--tx);border-bottom:.35mm solid var(--hr)}
+.gr u{text-decoration:none;display:block;margin-bottom:.9mm;font-size:6.4pt;font-weight:600;
+  letter-spacing:.5px;text-transform:uppercase;color:var(--fn)}
+
+/* ── HESAP MERDIVENI: muhasebe duzeni - sonucun ustunde cizgi ───────── */
+.hs{margin:0;padding:2.4mm 3mm 3mm;background:var(--bx)}
+.hs div{display:flex;align-items:baseline;gap:3mm;padding:.9mm 0;font-size:8pt}
+.hs div span{color:var(--mu);flex:1;min-width:0}
+/* Nokta kilavuzu: gozu etiketten rakama goturur (fatura/hakedis duzeni).
+   Cok silik tutulur - okunacak sey rakam, kilavuz degil. */
+.hs div span:after{content:"";display:inline-block;width:100%;margin-left:2mm;
+  border-bottom:.2mm dotted #d7dbe0;transform:translateY(-.7mm)}
+.hs div b{font-weight:600;color:var(--ink);white-space:nowrap;min-width:26mm;text-align:right}
+.hs div.ara b{border-top:.3mm solid var(--hr2);padding-top:.9mm}
+.hs div.ara span{color:var(--tx)}
+.hs div.snc{margin-top:.6mm;padding-top:1.4mm;border-top:.55mm solid var(--ink)}
 .hs div.snc span{color:var(--ink);font-weight:600}
-.hs div.snc b{color:var(--uy);font-size:9pt}
-.denk{padding:6mm 3mm;text-align:center;font-size:9.5pt;color:var(--ink);border:.4mm solid var(--hr)}
-.dip{margin-top:4mm;padding-top:2mm;border-top:.3mm solid var(--hr);display:flex;
-  align-items:center;gap:3mm;font-size:6.6pt;color:var(--fn);line-height:1.5}
+.hs div.snc b{color:var(--ink);font-size:9.5pt}
+.hs div.fzl{margin-top:1.2mm;padding:1.4mm 2.4mm;background:var(--uy)}
+.hs div.fzl span{color:rgba(255,255,255,.8);font-weight:600}
+.hs div.fzl span:after{display:none}
+.hs div.fzl b{color:#fff;font-size:10pt}
+.hs div.fzl em{font-style:normal;color:rgba(255,255,255,.85);font-size:8pt;margin-left:2.5mm;white-space:nowrap}
+
+.denk{margin-top:5mm;padding:7mm 3mm;text-align:center;font-size:10pt;color:var(--ink);
+  border:.4mm solid var(--hr);background:var(--bx)}
+.dip{margin-top:6mm;padding-top:2.2mm;border-top:.35mm solid var(--hr);display:flex;
+  align-items:center;gap:3mm;font-size:6.4pt;color:var(--fn);line-height:1.55}
 .dip img{height:6mm;width:auto;opacity:.8;flex:none}
 `; }
 
 /* Kayitli faturanin A4 fark raporu. KAYITTAN uretilir (formdan degil):
    "kaydedildikten sonra cikti al" istegi tam da bunu soyluyor - gonderilen
    belge, kaydedilmis olanin aynisi olmali. */
+/* Kayitli faturanin A4 fark raporu. KAYITTAN uretilir (formdan degil):
+   "kaydedildikten sonra cikti al" istegi tam da bunu soyluyor - gonderilen
+   belge, kaydedilmis olanin aynisi olmali.
+
+   BELGENIN DUZENI, bir fatura itiraz yazisinin dogal sirasidir:
+     kunye -> OZET TABLOSU (ne kadar fazla, kac para) -> her urun icin
+     ayrintili dayanak (gerekce + alim/iade/fatura dokumu + hesap merdiveni).
+   Ozet once gelir cunku karsi tarafin ilk sorusu "ne kadar" dir; dayanak
+   sonra gelir cunku ikinci soru "neden" dir. */
 function fatFarkPdfHtml(f,dil){
   const L=fatKitapSozluk(dil||FAT_KITAP_DIL);
   const farklar=fatKayitFarklari(f);
@@ -37283,53 +37370,94 @@ function fatFarkPdfHtml(f,dil){
      kunyede "faturayi kesen" olarak gecer. */
   const A=eskiAntet()||BOS_ANTET;
   const unvan=A.unvan||(typeof orgAdiGoster==='function'?orgAdiGoster():'')||'';
+  const pb=f.paraBirimi||'TRY';
   const say=v=>fmtNum(Math.round(fatSayi(v)*1e6)/1e6);
+  const para=v=>fatPara(v,'');
   const damga=new Date().toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
   const dur=fatDurumu(f);
-  const kn=(et,dg)=>dg?`<div>${esc(et)}<b>${esc(dg)}</b></div>`:'';
-  const tablo=(basliklar,satirlar,bosMetin)=>satirlar.length
-    ? `<table><colgroup>${basliklar.map((_,i)=>`<col style="width:${i===basliklar.length-1?'13%':(i===basliklar.length-2?'22%':Math.round(65/(basliklar.length-2))+'%')}">`).join('')}</colgroup>
+  const kn=(et,dg)=>dg?`<div><span>${esc(et)}</span><b>${esc(dg)}</b></div>`:'';
+  /* Fazlanin PARA karsiligi: yalnizca fazla olan ve birim fiyati GIRILMIS
+     satirlarda. Fiyatsiz satirda hucre bos kalir - uydurulmus bir tutar,
+     belgenin tamamini tartismali hale getirirdi. */
+  const tutar=x=>(x.fark>0&&x.fiyat>0)?x.fark*x.fiyat:0;
+  const toplamFark=farkli.reduce((a,x)=>a+(x.fark>0?x.fark:0),0);
+  const toplamTutar=farkli.reduce((a,x)=>a+tutar(x),0);
+  const fiyatsiz=farkli.some(x=>x.fark>0&&!(x.fiyat>0));
+
+  // ── OZET TABLOSU ────────────────────────────────────────────────────────
+  const ozetTablo=!farkli.length?'':`
+    <div class="bnd">${esc(L.pdfOzetBand)}</div>
+    <table class="oztab"><colgroup><col style="width:4%"><col style="width:12%"><col style="width:29%"><col style="width:7%">
+      <col style="width:11%"><col style="width:10%"><col style="width:8%"><col style="width:9%"><col style="width:10%"></colgroup>
+      <thead><tr>${L.pdfOzetTh.map((h,i)=>`<th class="${i>=4?(i===6?'frk':'sy'):''}">${esc(h)}</th>`).join('')}</tr></thead>
+      <tbody>${farkli.map((x,i)=>`<tr>
+        <td class="sy" style="font-weight:400;color:var(--fn)">${i+1}</td>
+        <td class="kod">${esc(x.code||'-')}</td>
+        <td class="ad">${esc(x.ad||'-')}</td>
+        <td class="kod">${esc(x.unit||'-')}</td>
+        <td class="sy">${say(x.beyan)}</td>
+        <td class="sy">${say(x.sistem)}</td>
+        <td class="frk">${x.fark>0?'+':''}${say(x.fark)}</td>
+        <td class="sy" style="font-weight:400">${x.fiyat>0?para(x.fiyat):'&mdash;'}</td>
+        <td class="tut">${tutar(x)?para(tutar(x)):'&mdash;'}</td></tr>`).join('')}
+        <tr class="top">
+          <td colspan="4">${esc(L.pdfToplam)}</td>
+          <td class="sy">${say(farkli.reduce((a,x)=>a+x.beyan,0))}</td>
+          <td class="sy">${say(farkli.reduce((a,x)=>a+x.sistem,0))}</td>
+          <td class="frk">+${say(toplamFark)}</td>
+          <td class="sy">${esc(pb)}</td>
+          <td class="tut">${toplamTutar?para(toplamTutar):'&mdash;'}</td></tr>
+      </tbody></table>
+    <p class="not">${esc(L.pdfTutarNot)}${fiyatsiz?' &mdash; '+esc(L.pdfFiyatYok):''}</p>`;
+
+  // ── AYRINTI BLOKLARI ────────────────────────────────────────────────────
+  const tablo=(basliklar,satirlar,bosMetin,gen,altToplam)=>satirlar.length
+    ? `<table><colgroup>${gen.map(w=>`<col style="width:${w}">`).join('')}</colgroup>
         <thead><tr>${basliklar.map((h,i)=>`<th${i===basliklar.length-1?' class="sy"':''}>${esc(h)}</th>`).join('')}</tr></thead>
-        <tbody>${satirlar.join('')}</tbody></table>`
+        <tbody>${satirlar.join('')}${altToplam!=null?`<tr class="top">
+          <td colspan="${basliklar.length-1}">${esc(L.pdfAraToplam)}</td><td class="sy">${say(altToplam)}</td></tr>`:''}</tbody></table>`
     : `<div class="yok">${esc(bosMetin)}</div>`;
 
   const bloklar=farkli.map((x,i)=>{
     const k=kanit.get(x.key)||{alimlar:[],iadeler:[],faturalar:[]};
-    const alimSat=k.alimlar.map(a=>`<tr><td>${esc(a.no||'-')}</td><td>${esc(a.tarih?fmtDate(a.tarih):'-')}</td>
-      <td>${esc(a.bina||'-')}</td><td>${esc(a.sartname||'-')}</td>
+    const br=x.unit?`<i>${esc(x.unit)}</i>`:'';
+    const alimSat=k.alimlar.map(a=>`<tr><td class="kod">${esc(a.no||'-')}</td><td>${esc(a.tarih?fmtDate(a.tarih):'-')}</td>
+      <td>${esc(a.bina||'-')}</td><td class="kod">${esc(a.sartname||'-')}</td>
       <td class="kod">${esc(a.kodlar.join(' · ')||'-')}</td>
-      <td class="sy">${say(a.qty)}${a.unit?' '+esc(a.unit):''}</td></tr>`);
-    const iadeSat=k.iadeler.map(a=>`<tr><td>${esc(a.no||'-')}</td><td>${esc(a.tarih?fmtDate(a.tarih):'-')}</td>
-      <td>${esc(a.siparis||'-')}</td><td class="sy">${say(a.qty)}${a.unit?' '+esc(a.unit):''}</td></tr>`);
-    const fatSat=k.faturalar.map(a=>`<tr><td>${esc(a.no||'-')}</td><td>${esc(a.tarih?fmtDate(a.tarih):'-')}</td>
+      <td class="sy">${say(a.qty)}</td></tr>`);
+    const iadeSat=k.iadeler.map(a=>`<tr><td class="kod">${esc(a.no||'-')}</td><td>${esc(a.tarih?fmtDate(a.tarih):'-')}</td>
+      <td class="kod">${esc(a.siparis||'-')}</td><td class="sy">${say(a.qty)}</td></tr>`);
+    const fatSat=k.faturalar.map(a=>`<tr><td class="kod" style="color:var(--ink);font-weight:600">${esc(a.no||'-')}</td><td>${esc(a.tarih?fmtDate(a.tarih):'-')}</td>
       <td>${esc(L.kayit[a.durum]||a.durum)}</td><td class="kod">${esc(a.kodlar.join(' · ')||'-')}</td>
-      <td class="sy">${say(a.qty)}${a.unit?' '+esc(a.unit):''}</td></tr>`);
+      <td class="sy">${say(a.qty)}</td></tr>`);
     const H=L.pdfHesapSat;
-    const hs=(et,dg,snc)=>`<div${snc?' class="snc"':''}><span>${esc(et)}</span><b>${dg}</b></div>`;
+    const hs=(et,dg,cls)=>`<div${cls?' class="'+cls+'"':''}><span>${esc(et)}</span><b>${dg}</b></div>`;
     return `<div class="ur">
       <div class="bas"><span class="sn">${i+1}</span>
         <span class="ad">${esc(x.ad||'-')}</span>
         ${x.code?`<span class="kd">${esc(x.code)}</span>`:''}
         <span class="rz">${esc(L.frkDurum[x.durum]||x.durum)}</span></div>
       <div class="oz">
-        <div><span>${esc(L.pdfOzet.beyan)}</span><b>${say(x.beyan)}${x.unit?' '+esc(x.unit):''}</b></div>
-        <div><span>${esc(L.pdfOzet.kabul)}</span><b>${say(x.sistem)}</b></div>
-        <div><span>${esc(L.pdfOzet.kalan)}</span><b>${say(x.kalan)}</b></div>
-        <div><span>${esc(L.pdfOzet.fark)}</span><b>${x.fark>0?'+':''}${say(x.fark)}</b></div></div>
+        <div><span>${esc(L.pdfOzet.beyan)}</span><b>${say(x.beyan)}</b>${br}</div>
+        <div><span>${esc(L.pdfOzet.kabul)}</span><b>${say(x.sistem)}</b>${br}</div>
+        <div><span>${esc(L.pdfOzet.kalan)}</span><b>${say(x.kalan)}</b>${br}</div>
+        <div><span>${esc(L.pdfOzet.fark)}</span><b>${x.fark>0?'+':''}${say(x.fark)}</b>${tutar(x)?`<i>${esc(para(tutar(x))+' '+pb)}</i>`:br}</div></div>
       <div class="gr"><u>${esc(L.pdfGerekce)}</u>${esc(L.frkNeden(x.kod,x,say)||'')}</div>
-      <div class="bnd">${esc(L.pdfAlimBand)}</div>
-      ${tablo(L.pdfAlimTh,alimSat,L.pdfAlimYok)}
-      ${iadeSat.length?`<div class="bnd">${esc(L.pdfIadeBand)}</div>${tablo(L.pdfIadeTh,iadeSat,'')}`:''}
-      <div class="bnd">${esc(L.pdfFatBand)}</div>
-      ${tablo(L.pdfFatTh,fatSat,L.pdfFatYok)}
-      <div class="bnd">${esc(L.pdfHesapBand)}</div>
+      <div class="bnd ic">${esc(L.pdfAlimBand)}</div>
+      ${tablo(L.pdfAlimTh,alimSat,L.pdfAlimYok,['15%','12%','13%','25%','24%','11%'],alimSat.length?x.alinan:null)}
+      ${iadeSat.length?`<div class="bnd ic">${esc(L.pdfIadeBand)}</div>
+        ${tablo(L.pdfIadeTh,iadeSat,'',['24%','16%','48%','12%'],x.iade)}`:''}
+      <div class="bnd ic">${esc(L.pdfFatBand)}</div>
+      ${tablo(L.pdfFatTh,fatSat,L.pdfFatYok,['17%','13%','18%','41%','11%'],fatSat.length?x.onceki:null)}
+      <div class="bnd ic">${esc(L.pdfHesapBand)}</div>
       <div class="hs">
         ${hs(H.alinan,say(x.alinan))}
-        ${x.iade>0?hs(H.iade,'- '+say(x.iade))+hs(H.net,say(x.net)):''}
-        ${hs(H.onceki,'- '+say(x.onceki))}
-        ${hs(H.kalan,'= '+say(x.kalan))}
+        ${x.iade>0?hs(H.iade,'− '+say(x.iade))+hs(H.net,say(x.net),'ara'):''}
+        ${hs(H.onceki,'− '+say(x.onceki))}
+        ${hs(H.kalan,say(x.kalan),'snc')}
         ${hs(H.beyan,say(x.beyan))}
-        ${x.fark>0?hs(H.fark,'+'+say(x.fark),true):''}
+        ${x.fark>0?`<div class="fzl"><span>${esc(H.fark)}</span><b>+${say(x.fark)}${x.unit?' '+esc(x.unit):''}</b>${
+          tutar(x)?`<em>${esc(H.fazlaTutar)}: ${esc(para(tutar(x))+' '+pb)}</em>`:''}</div>`:''}
       </div></div>`;
   }).join('');
 
@@ -37355,10 +37483,13 @@ function fatFarkPdfHtml(f,dil){
         ${kn(L.pdfKunye.durum, L.kayit[dur]||dur)}
         ${kn(L.pdfKunye.urun, fmtNum(farklar.length))}
         ${kn(L.pdfKunye.fark, fmtNum(farkli.length))}
+        ${kn(L.ePara, pb+(f.kur?'  ·  '+L.kur+' '+fmtNum(f.kur):''))}
         ${kn(L.pdfKunye.damga, damga)}
       </div>
       <p class="giris">${esc(farkli.length?L.pdfGiris:L.pdfDenk)}</p>
-      ${farkli.length?bloklar:`<div class="denk">${esc(L.pdfDenk)}</div>`}
+      ${ozetTablo}
+      ${farkli.length?`<div class="bnd">${esc(L.pdfDetayBand)}</div>${bloklar}`
+                     :`<div class="denk">${esc(L.pdfDenk)}</div>`}
       <div class="dip"><img src="${esc(location.origin+'/logo.png')}" alt="" onerror="this.style.display='none'">
         <span>${esc(L.pdfDip)}</span></div>
     </div></body></html>`;
