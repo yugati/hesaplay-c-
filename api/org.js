@@ -91,13 +91,20 @@ async function kovaDosyalari(kova, onek) {
   return yollar
 }
 
+// PostgREST 'tablo bulunamadi' (PGRST205) ya da Postgres 'relation yok' (42P01)
+function tabloYok(e) { return !!e && (e.code === 'PGRST205' || e.code === '42P01') }
+
 /* Kaldirilacak organizasyonun dokumu: tablo basina satir sayisi + kova basina
    dosyalar. Onizleme ve silme AYNI dokumu kullanir - ekranda gorulen ile
    silinen birbirini tutsun diye. */
 async function orgDokumu(hedef) {
+  /* HEAD DEGIL GET: olmayan bir tabloya HEAD istegi hata DONMEZ (204, count
+     null) - 'katalog' canlida kurulmamisti, onizleme onu var sandi ve silme
+     orada patladi. GET ayni durumda PGRST205 doner. Tablo bu kurulumda yoksa
+     (migration'i hic calismamis) atlanir; baska bir hata ise kaldirma durur. */
   const tablolar = await Promise.all(ORG_TABLOLARI.map(async t => {
-    const { count, error } = await supabaseAdmin.from(t).select('*', { count: 'exact', head: true }).eq('org_id', hedef)
-    // Tablo bu kurulumda yoksa (ör. migration'i hic calismamis) atlanir
+    const { count, error } = await supabaseAdmin.from(t).select('org_id', { count: 'exact' }).eq('org_id', hedef).limit(1)
+    if (error && !tabloYok(error)) throw error
     return { tablo: t, adet: error ? 0 : (count || 0), yok: !!error }
   }))
   const { count: tasariAdet } = await supabaseAdmin.from('tasarilar').select('*', { count: 'exact', head: true }).eq('org_id', hedef)
@@ -385,7 +392,7 @@ export default async function handler(req, res) {
         // 2) Veri tablolari, kullanicilar, davetler
         const sonuc = await Promise.all(dokum.tablolar.filter(t => !t.yok).map(async t => {
           const { error } = await supabaseAdmin.from(t.tablo).delete().eq('org_id', hedef)
-          return error ? t.tablo + ': ' + error.message : null
+          return error && !tabloYok(error) ? t.tablo + ': ' + error.message : null
         }))
         const hatalar = sonuc.filter(Boolean)
         if (hatalar.length) {
