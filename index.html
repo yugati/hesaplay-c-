@@ -22644,7 +22644,10 @@ function specMatBoxHtml(){
       </div></div>`;
   }
   return `<div class="ac-wrap"><input id="s_matSearch" placeholder="Kutuphaneden malzeme ara (kod, ad, marka, standart, etiket)..." autocomplete="off" readonly onclick="specPickMaterial()" style="cursor:pointer">
-    </div><button class="btn btn-ghost" style="margin-top:8px;padding:7px 12px;font-size:12px" onclick="openMaterialModalFromSpec()">${icoPlus()} Kutuphaneye Yeni Malzeme Ekle</button>`;
+    </div>${specYeniMatBtnHtml()}`;
+}
+function specYeniMatBtnHtml(){
+  return `<button class="btn btn-ghost" style="margin-top:8px;padding:7px 12px;font-size:12px" onclick="openMaterialModalFromSpec()">${icoPlus()} Kutuphaneye Yeni Malzeme Ekle</button>`;
 }
 // modal icindeki bina/bolum degisince sartname listesini ve malzeme kutusunu tazele
 function specModalRefresh(){
@@ -22659,9 +22662,14 @@ function specModalRefresh(){
 // kutuphaneden malzeme sec (autocomplete)
 function specPickMaterial(){
   const box=document.getElementById('s_matBox');
-  box.innerHTML=`<div class="ac-wrap"><input id="s_matSearch" placeholder="Kutuphaneden malzeme ara (kod, ad, marka)..." autocomplete="off"></div>`;
+  // arama acikken de "Kutuphaneye Yeni Malzeme Ekle" dugmesi yerinde kalir; liste bos alana
+  // tiklanip kapansa bile girdi canli kalir - tekrar tiklayinca/yazinca liste yeniden acilir
+  box.innerHTML=`<div class="ac-wrap"><input id="s_matSearch" placeholder="Kutuphaneden malzeme ara (kod, ad, marka)..." autocomplete="off"></div>${specYeniMatBtnHtml()}`;
   const el=document.getElementById('s_matSearch'); el.focus();
-  acOpen(el, matLibSrc(), (it,isNew)=>{
+  const ac=()=>{ if(AC.el!==el) acOpen(el, matLibSrc(), sec, false); };
+  el.addEventListener('click',ac); el.addEventListener('input',ac);
+  ac();
+  function sec(it,isNew){
     if(isNew){ box.innerHTML=specMatBoxHtml(); return; }
     window._specMat={matId:it.matId,code:it.code,ad:it.ad,brand:it.brand,cat:it.cat,unit:it.unit,img:it.img,standart:it.standart||'',weight:it.weight!=null?it.weight:null,tags:(it.tags||[]).slice()};
     modalImg=it.img||null;
@@ -22673,7 +22681,7 @@ function specPickMaterial(){
     const u=document.getElementById('s_unit');
     if(u){ if(it.unit){ u.value=it.unit; u.setAttribute('readonly',''); u.classList.add('ro-auto'); }
            else { u.removeAttribute('readonly'); u.classList.remove('ro-auto'); } }
-  }, false);
+  }
 }
 // spec modalindan kutuphaneye yeni malzeme ekle, sonra spec modalini yeni malzemeyle yeniden ac
 function openMaterialModalFromSpec(){
