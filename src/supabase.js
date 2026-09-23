@@ -247,6 +247,24 @@ export async function sbOrgYeni(id, ad) {
   })
 }
 
+// { org, ad, tablolar:[{tablo, adet}], tasari, dosya } - HICBIR SEY SILMEZ, yalnizca sayar
+export async function sbOrgSilOnizle(org) {
+  return authFetch('/api/org', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op: 'silOnizle', org }),
+  })
+}
+
+// GERI ALINAMAZ - onay, kullanicinin elle yazdigi org kimligidir (sunucu esitligi yeniden denetler)
+export async function sbOrgSil(org, onay) {
+  return authFetch('/api/org', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op: 'sil', org, onay }),
+  })
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Tasarilar (proje katmani) - organizasyonun ALTINDAKI ikinci kapsam
 //

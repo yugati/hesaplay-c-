@@ -498,6 +498,13 @@ header{display:flex;align-items:center;gap:12px;padding:0 20px;height:56px;backg
 .org-opt .org-kod{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--dim);font-weight:500}
 .org-opt.on .org-kod{display:none}
 .org-ayrac{height:1px;background:var(--line);margin:5px 2px}
+.org-opt.org-sil{color:var(--red)}
+.org-opt.org-sil:hover{color:var(--red);background:color-mix(in srgb,var(--red) 10%,transparent)}
+/* organizasyon kaldirma onizlemesi: silinecek tablo/sayi listesi */
+.org-dokum{margin:10px 0 0;border:1px solid var(--line);border-radius:8px;max-height:220px;overflow:auto}
+.org-dokum div{display:flex;justify-content:space-between;gap:10px;padding:6px 10px;font-size:12px;border-bottom:1px solid var(--line)}
+.org-dokum div:last-child{border-bottom:0}
+.org-dokum b{font-family:var(--mono);font-weight:600;color:var(--ink)}
 .org-bos{padding:10px 11px;font-size:12px;color:var(--dim)}
 
 /* -- tasari (proje) degistirici -- */
@@ -2266,6 +2273,9 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 /* geri donusu olmayan / butun veriyi degistiren islemler amber cerceveyle ayrilir */
 .arac-tile.uyari:hover{border-color:color-mix(in srgb,var(--amber) 55%,transparent)}
 .arac-tile.uyari:hover>svg{color:var(--amber)}
+.arac-tile.tehlike>svg,.arac-tile.tehlike b{color:var(--red)}
+.arac-tile.tehlike:hover{border-color:color-mix(in srgb,var(--red) 60%,transparent)}
+.arac-tile.tehlike:hover>svg{color:var(--red)}
 /* ══ GUNLUK ISLER (TAKVIMLI GOREV TAKIBI) ═══════════════════════════════════
    Sol: ay takvimi (gun hucrelerinde durum noktalari). Sag: secili gunun -
    ya da "Onay Bekleyen" / "Geciken" suzgecinin - gorev listesi.
@@ -4098,6 +4108,7 @@ main:has(>.iht-form-wrap){max-width:none}
         <div class="org-liste" id="orgListe"></div>
         <div class="org-ayrac"></div>
         <button class="org-opt" onclick="orgYeniAc()">+ Yeni Organizasyon</button>
+        <button class="org-opt org-sil" onclick="orgSilAc()">Organizasyon Kaldir...</button>
       </div>
     </div>
     <!-- TASARI (PROJE) DEGISTIRICI: organizasyon secildikten sonraki ikinci kapsam.
@@ -4721,7 +4732,7 @@ function logAction(action, detail){
 }
 const AUDIT_LABELS={ stock:'Stok hareketi', order:'Siparis', editSpec:'Spesifikasyon', editMaterial:'Malzeme', delete:'Silme', define:'Tanim', import:'Excel import', sync:'Full sync', wipe:'Veri temizleme', backup:'Yedek alma', restore:'Yedek yukleme', user:'Kullanici', login:'Giris',
   // sunucunun yazdigi islemler (api/login.js, api/cikis.js, api/profil.js) - tarayici bunlari uretmez
-  logout:'Cikis', girisHata:'Basarisiz giris', kilit:'Hesap kilidi', sistem:'Sistem', profil:'Hesap bilgileri' };
+  logout:'Cikis', girisHata:'Basarisiz giris', kilit:'Hesap kilidi', sistem:'Sistem', profil:'Hesap bilgileri', org:'Organizasyon' };
 function firstAllowedSection(){ if(isAdmin())return 'proje'; for(const k of ['proje','gecici','alet','saha','hakedis','rapor','tanimlar','kutuphane']){ if(canSee(k))return k; } return 'proje'; }
 // ACILIS PANELI: 'siparis' bir SEC gorunumu degil, bir panel (PORD). Gorunur bir SEC'i olmayan ama
 // Tum Siparisler yetkisi olan kullanici (orn. yalnizca siparis) dogrudan siparis paneline iner.
@@ -4865,6 +4876,78 @@ async function orgYeniKaydet(){
     }
   }catch(e){
     toast(e.message||'Organizasyon olusturulamadi','err');
+  }
+}
+/* ORGANIZASYON KALDIRMA - yalnizca super yonetici (sunucu da ayni kapiya bakar,
+   bkz. api/org.js op:'silOnizle'/'sil'). Uc adim: sec -> ne silinecegini gor ->
+   kimligi elle yazarak onayla. Icinde bulunulan ve ana organizasyon listede
+   hic cikmaz; sunucu yine de ikisini ayrica reddeder. */
+const ORG_TABLO_ADI={
+  companies:'Sirket',tutanaklar:'Tutanak',alet_items:'El aleti',alet_lib:'Alet kunyesi',
+  saha_panels:'Saha panosu',saha_lines:'Saha hatti',saha_sockets:'Saha prizi',
+  rapor_entries:'Rapor kaydi',gecici_lib:'Gecici elektrik kunyesi',gecici_moves:'Gecici elektrik hareketi',gecici_orders:'Gecici elektrik siparisi',
+  proje_sartnames:'Sartname',proje_materials:'Malzeme',proje_specs:'Spesifikasyon',proje_items:'Siparis satiri',
+  proje_orders:'Siparis',proje_alternatives:'Alternatif',proje_bina_modelleri:'Bina modeli',proje_lokasyonlar:'Lokasyon',
+  gunluk_isler:'Gunluk is',ihtiyac_listeleri:'Ihtiyac listesi',faturalar:'Fatura',katalog:'Katalog kaydi',audit_log:'Denetim kaydi',
+  app_settings:'Ayar',saha_settings:'Saha ayari',rapor_ekipler:'Ekip',proje_buildings:'Bina',proje_sections:'Bolum',
+  invites:'Davet',users:'Kullanici'
+};
+let _ORGSIL=null; // silOnizle yaniti - onay adiminda hangi org icin gorulduguyle karsilastirilir
+async function orgSilAc(){
+  const m=document.getElementById('orgMenu'); if(m) m.classList.remove('open');
+  let liste;
+  try{ liste=((_ORGLAR&&_ORGLAR.orgs)||(await sbOrgListesi()).orgs||[]); }
+  catch(e){ toast('Organizasyon listesi alinamadi','err'); return; }
+  liste=liste.filter(o=>o.id!==window.AKTIF_ORG&&o.id!=='bykara');
+  _ORGSIL=null;
+  const secenek=liste.map(o=>`<option value="${esc(o.id)}">${esc(o.ad||o.id)} (${esc(o.id)})</option>`).join('');
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:480px">
+    <div class="modal-head"><h3>Organizasyon Kaldir</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body">${liste.length?`
+      <div class="frow"><label>Kaldirilacak organizasyon</label>
+        <select id="orgsil_sec" onchange="orgSilOnizle()"><option value="">- secin -</option>${secenek}</select></div>
+      <div id="orgsil_dokum"><p class="t-meta" style="margin:0">Icinde bulundugunuz organizasyon ve ana organizasyon (BYKARA) listede yer almaz.</p></div>`
+      :`<p class="t-meta" style="margin:0">Kaldirilabilecek organizasyon yok. Icinde bulundugunuz organizasyon ve ana organizasyon (BYKARA) kaldirilamaz.</p>`}
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button>
+      <button class="btn" id="orgsil_btn" style="background:var(--red);color:#fff;border-color:var(--red)" disabled onclick="orgSilKaydet()">Kalici Olarak Kaldir</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function orgSilOnizle(){
+  const id=(document.getElementById('orgsil_sec')||{}).value||'';
+  const el=document.getElementById('orgsil_dokum'), btn=document.getElementById('orgsil_btn');
+  _ORGSIL=null; if(btn) btn.disabled=true;
+  if(!el) return;
+  if(!id){ el.innerHTML=''; return; }
+  el.innerHTML='<p class="t-meta" style="margin:0">'+icoBekle()+' Silinecekler sayiliyor...</p>';
+  try{
+    const r=await sbOrgSilOnizle(id);
+    if(((document.getElementById('orgsil_sec')||{}).value||'')!==id) return; // bu arada secim degisti
+    _ORGSIL=r;
+    const satirlar=(r.tablolar||[]).map(t=>`<div><span>${esc(ORG_TABLO_ADI[t.tablo]||t.tablo)}</span><b>${t.adet}</b></div>`).join('');
+    el.innerHTML=`<p style="margin:0;font-size:12.5px"><b>${esc(r.ad)}</b> ile birlikte asagidakilerin <b style="color:var(--red)">tamami kalici olarak silinir</b>. Geri alinamaz; yedek yalnizca icindeyken alinabilir.</p>
+      <div class="org-dokum">${satirlar||'<div><span>Veri satiri yok</span><b>0</b></div>'}
+        <div><span>Tasari (proje)</span><b>${r.tasari||0}</b></div>
+        <div><span>Dosya (PDF, gorsel, model)</span><b>${r.dosya||0}</b></div></div>
+      <div class="frow" style="margin-top:12px"><label>Onaylamak icin kimligi yazin: <b style="font-family:var(--mono)">${esc(r.org)}</b></label>
+        <input id="orgsil_onay" autocomplete="off" oninput="document.getElementById('orgsil_btn').disabled=(this.value.trim()!==_ORGSIL.org)"></div>`;
+  }catch(e){
+    el.innerHTML='<p class="t-meta" style="margin:0;color:var(--red)">'+esc(e.message||'Onizleme alinamadi')+'</p>';
+  }
+}
+async function orgSilKaydet(){
+  const r=_ORGSIL; if(!r) return;
+  const onay=((document.getElementById('orgsil_onay')||{}).value||'').trim();
+  if(onay!==r.org){ toast('Onay icin kimligi aynen yazin','err'); return; }
+  const btn=document.getElementById('orgsil_btn'); if(btn){ btn.disabled=true; btn.textContent='Kaldiriliyor...'; }
+  try{
+    await sbOrgSil(r.org, onay);
+    closeModal();
+    _ORGLAR=null;
+    toast('"'+r.ad+'" organizasyonu kaldirildi');
+  }catch(e){
+    toast(e.message||'Organizasyon kaldirilamadi','err');
+    if(btn){ btn.disabled=false; btn.textContent='Kalici Olarak Kaldir'; }
   }
 }
 // orgGec'in onay sormayan hali: cagiran taraf onayi zaten aldi
@@ -6233,6 +6316,8 @@ function aracBakimKart(){
   if(isAdmin())      t.push(['Kayit Temizligi','Mukerrer, sahipsiz ve sikismis kayitlari listeler - onayladiklariniz silinir','dedupeProjeSpecs()','<path d="M20 6L9 17l-5-5"/>','']);
   if(canAudit())     t.push(['Denetim Kaydi','Kim ne zaman ne yapti - giris/cikis ve silmeler dahil','openAudit()','<path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>','']);
   if(isAdmin())      t.push(['Kullanicilar','Kullanici, yetki ve davet yonetimi','openUsers()','<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>','']);
+  // en sonda ve kirmizi: menuden tasindi, tek erisim noktasi burasi
+  if(can('wipe'))    t.push(['Tum Veriyi Temizle','Girilen tum verileri siler - geri alinamaz','wipeAllData()','<path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/>','tehlike']);
   if(!t.length) return '';
   const tuslar=t.map(function(x){
     return `<button class="arac-tile${x[4]?' '+x[4]:''}" onclick="${x[2]}">
@@ -8308,7 +8393,7 @@ function renderSidebar(){
   ];
   let secs='';
   SEC_DEFS.forEach(([s,lbl,ico])=>{ if(canSee(s)) secs+=it(lbl,ico,`switchSection('${s}')`, !inPanel&&SEC===s); });
-  let top='', mid='', ops='', danger='';
+  let top='', mid='';
   if(canSee('proje')) top+=it('Başlangıç','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>','goHome()', !inPanel&&SEC==='proje');
   if(can('order')) top+=it('Sipariş Ekle','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M12 18v-6M9 15h6"/></svg>','openNewOrderPage()',PNEWORD);
   if(canSee('rapor')) top+=it('Rapor','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>','switchSection(\'rapor\')', !inPanel&&SEC==='rapor');
@@ -8340,14 +8425,13 @@ function renderSidebar(){
     mid+=it('Şirketler','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/></svg>','openCompanies()',PCOMP);
     mid+=it('Ekipler','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>','openEkipler()',PEKIP);
   }
-  if(can('sync')) ops+=it('Full Sync (Excel)','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16"/></svg>',"document.getElementById('syncXlsx').click()",false,'','Excel ile tam senkronizasyon (tek kaynak)');
-  if(isAdmin()) ops+=it('Kayıt Temizliği','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>','dedupeProjeSpecs()',false,'','Mukerrer kayitlari, binasiz (sahipsiz) kalemleri ve kutuphanede sikismis eski ozel-kodlu malzemeleri gosterir - onayladiklariniz silinir');
-  if(can('wipe')) danger+=it('Temizle','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg>','wipeAllData()',false,'danger','Girilen tum verileri sil');
+  /* Full Sync, Kayit Temizligi ve Temizle (tum veriyi sil) menuden kaldirildi -
+     uc islem de yalnizca Araclar > Bakim Araclari kartindan acilir (bkz. aracBakimKart). */
   /* ARACLAR: menunun EN ALTI. Yetkiye bagli DEGIL - icindeki pano duzeni kisisel
      bir gorunum tercihi, herkes kendi panosunu duzenleyebilmeli. Karttaki bakim
      araclari ise tek tek kendi yetkisine bakar (bkz. aracBakimKart). */
   const arac=it('Araçlar','<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>','openAraclar()',PARAC,'','Ayarlar - baslangic panosunun duzeni ve bakim araclari');
-  const groups=[top,mid,ops,danger].filter(Boolean).join('<div class="sb-sep"></div>');
+  const groups=[top,mid].filter(Boolean).join('<div class="sb-sep"></div>');
   /* sb-none: ya gosterilecek menu yok, ya da fatura formu genis alan modunda.
      Ikinci durumda menu KAYBOLMAZ - form kapaninca kendiliginden geri gelir.
      OLCU YINE 'groups': Araclar herkeste ciktigi icin ona bakilsaydi bayrak bir daha
@@ -8472,7 +8556,7 @@ function renderAudit(){
   const shown=list.slice(0,500);
   const rows=shown.map(a=>{
     const col={delete:'var(--red)',wipe:'var(--red)',sync:'#a855f7',import:'#a855f7',user:'#f59e0b',login:'var(--dim)',stock:'var(--blue)',order:'var(--blue)',editSpec:'var(--green)',editMaterial:'var(--green)',define:'var(--amber)',backup:'var(--dim)',restore:'var(--red)',
-      logout:'var(--dim)',girisHata:'var(--red)',kilit:'var(--red)',sistem:'var(--dim)',profil:'#f59e0b'}[a.action]||'var(--dim)';
+      logout:'var(--dim)',girisHata:'var(--red)',kilit:'var(--red)',sistem:'var(--dim)',profil:'#f59e0b',org:'var(--red)'}[a.action]||'var(--dim)';
     // Sunucunun yazdigi kayitlar isaretlenir: bunlar atlanamaz/sahtelenemez kayitlardir
     const kaynak=a.kaynak==='sunucu'?' <span class="t-meta" title="Sunucuda kaydedildi - atlanamaz" style="font-size:10px;opacity:.7">SUNUCU</span>':'';
     return `<tr>

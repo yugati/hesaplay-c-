@@ -26,6 +26,8 @@ import {
   sbOrgListesi,
   sbOrgGecis,
   sbOrgYeni,
+  sbOrgSilOnizle,
+  sbOrgSil,
   sbTasariGecis,
   sbTasariYeni,
   // Core
@@ -272,6 +274,8 @@ window.sbDavetKabul        = sbDavetKabul
 window.sbOrgListesi        = sbOrgListesi
 window.sbOrgGecis          = sbOrgGecis
 window.sbOrgYeni           = sbOrgYeni
+window.sbOrgSilOnizle      = sbOrgSilOnizle
+window.sbOrgSil            = sbOrgSil
 // Tasari (proje katmani) - liste sbOrgListesi yanitinda geliyor, ayri uc yok
 window.sbTasariGecis       = sbTasariGecis
 window.sbTasariYeni        = sbTasariYeni

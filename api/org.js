@@ -1,7 +1,8 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { requireAuth, signSession, SESSION_TTL_DEFAULT, SESSION_TTL_REMEMBER } from '../lib/auth.js'
-import { aktifOrg, orgIdGecerli } from '../lib/org.js'
+import { aktifOrg, orgIdGecerli, VARSAYILAN_ORG } from '../lib/org.js'
 import { tasariIdGecerli, tasariCoz, TASIYAN_AYARLAR } from '../lib/tasari.js'
+import { denetimYaz } from '../lib/denetim.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ORGANIZASYON UCU
@@ -9,6 +10,8 @@ import { tasariIdGecerli, tasariCoz, TASIYAN_AYARLAR } from '../lib/tasari.js'
 // GET  /api/org                              -> { orgs, aktif, super, tasarilar, aktifTasari }
 // POST /api/org  { op:'gecis', org }         -> { token, org, tasari, ttl }  (yalnizca super)
 // POST /api/org  { op:'yeni', id, ad }       -> { org }                      (yalnizca super)
+// POST /api/org  { op:'silOnizle', org }     -> { org, ad, tablolar, tasari, dosya } (yalnizca super)
+// POST /api/org  { op:'sil', org, onay }     -> { ok, ...ozet }              (yalnizca super, GERI ALINAMAZ)
 // POST /api/org  { op:'tasariGecis', tasari} -> { token, tasari, ad, ttl }   (HERKES)
 // POST /api/org  { op:'tasariYeni', id, ad } -> { tasari }                   (yalnizca admin)
 //
@@ -48,6 +51,59 @@ import { tasariIdGecerli, tasariCoz, TASIYAN_AYARLAR } from '../lib/tasari.js'
 // lib/tasari.js ORTAK_TABLOLAR). Yalnizca IS VERISI bos dogar: sartname,
 // siparis, bina, bolum, rapor, saha, tutanak, fatura.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/* ORGANIZASYON KALDIRMA - org_id tasiyan HER tablo. api/veri.js'teki TABLOLAR
+   (28 veri tablosu) + yalnizca sunucunun yonettigi uc tablo. Yeni bir veri
+   tablosu eklenince buraya da yazilmali; yazilmazsa kaldirilan organizasyonun
+   o tablodaki satirlari sahipsiz kalir (zarari yok ama yer tutar).
+   tasarilar ve organizations BU LISTEDE YOK: en son, ayri silinirler - yarida
+   kalan bir kaldirmada organizasyon listede kalsin ve tekrar denenebilsin. */
+const ORG_TABLOLARI = [
+  'companies', 'tutanaklar', 'alet_items', 'alet_lib',
+  'saha_panels', 'saha_lines', 'saha_sockets',
+  'rapor_entries', 'gecici_lib', 'gecici_moves', 'gecici_orders',
+  'proje_sartnames', 'proje_materials', 'proje_specs', 'proje_items',
+  'proje_orders', 'proje_alternatives', 'proje_bina_modelleri', 'proje_lokasyonlar',
+  'gunluk_isler', 'ihtiyac_listeleri', 'faturalar', 'katalog', 'audit_log',
+  'app_settings', 'saha_settings', 'rapor_ekipler', 'proje_buildings', 'proje_sections',
+  'invites', 'users',
+]
+// Dosyalar '<org>/...' onekiyle bu iki kovada durur (bkz. api/dosya.js)
+const ORG_KOVALARI = ['belgeler', 'bina-modelleri']
+
+/* Kovada '<org>/' altindaki butun dosya yollari. Storage listesi ozyinelemeli
+   degil: klasorler (id'si null olan girdiler) tek tek acilir. */
+async function kovaDosyalari(kova, onek) {
+  const yollar = []
+  const kuyruk = [onek]
+  while (kuyruk.length) {
+    const klasor = kuyruk.shift()
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await supabaseAdmin.storage.from(kova).list(klasor, { limit: 1000, offset })
+      if (error) throw error
+      for (const g of data || []) {
+        const yol = klasor + '/' + g.name
+        if (g.id) yollar.push(yol); else kuyruk.push(yol)
+      }
+      if (!data || data.length < 1000) break
+    }
+  }
+  return yollar
+}
+
+/* Kaldirilacak organizasyonun dokumu: tablo basina satir sayisi + kova basina
+   dosyalar. Onizleme ve silme AYNI dokumu kullanir - ekranda gorulen ile
+   silinen birbirini tutsun diye. */
+async function orgDokumu(hedef) {
+  const tablolar = await Promise.all(ORG_TABLOLARI.map(async t => {
+    const { count, error } = await supabaseAdmin.from(t).select('*', { count: 'exact', head: true }).eq('org_id', hedef)
+    // Tablo bu kurulumda yoksa (ör. migration'i hic calismamis) atlanir
+    return { tablo: t, adet: error ? 0 : (count || 0), yok: !!error }
+  }))
+  const { count: tasariAdet } = await supabaseAdmin.from('tasarilar').select('*', { count: 'exact', head: true }).eq('org_id', hedef)
+  const kovalar = await Promise.all(ORG_KOVALARI.map(async k => ({ kova: k, yollar: await kovaDosyalari(k, hedef) })))
+  return { tablolar, tasariAdet: tasariAdet || 0, kovalar }
+}
 
 function orgSatiri(r) {
   return { id: r.id, ad: (r.data && r.data.ad) || r.id, aktif: r.aktif !== false }
@@ -120,7 +176,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'POST') {
     const { op } = req.body || {}
-    const GECERLI = ['gecis', 'yeni', 'tasariGecis', 'tasariYeni']
+    const GECERLI = ['gecis', 'yeni', 'silOnizle', 'sil', 'tasariGecis', 'tasariYeni']
     if (!GECERLI.includes(op)) { res.status(400).json({ error: 'Bilinmeyen islem' }); return }
 
     /* YETKI KAPISI ISLEME GORE AYRILIR - hepsi super istemez:
@@ -130,7 +186,7 @@ export default async function handler(req, res) {
        Eskiden burada tek bir 'if (!claims.sup)' vardi; tasari islemleri o
        kapinin ardinda kalsaydi organizasyondaki hicbir normal kullanici proje
        degistiremezdi. */
-    if ((op === 'gecis' || op === 'yeni') && !claims.sup) {
+    if ((op === 'gecis' || op === 'yeni' || op === 'silOnizle' || op === 'sil') && !claims.sup) {
       res.status(403).json({ error: 'Yetkiniz yok' }); return
     }
     if (op === 'tasariYeni' && claims.role !== 'admin') {
@@ -259,11 +315,96 @@ export default async function handler(req, res) {
           res.status(500).json({ error: 'Organizasyon olusturulamadi (tasari acilamadi)' }); return
         }
 
+        // Denetim kaydi ACAN organizasyona yazilir: yeni organizasyonun kaydini
+        // okuyacak kimse yok, "bunu kim acti" sorusu buradan sorulur.
+        await denetimYaz(org, { user: claims.username, role: claims.role, action: 'org',
+          detail: `Organizasyon olusturuldu: ${isim} (${id})` })
+
         // Organizasyon BOS dogar; ilk kullanicisi Kullanicilar ekranindan, o
         // organizasyona GECILDIKTEN sonra acilir (api/users.js aktif org'a yazar).
         res.status(201).json({ org: { id, ad: isim, aktif: true }, tasari: { id: ilkTasariId, ad: isim, aktif: true } })
       } catch (e) {
         console.error('org yeni basarisiz', e)
+        res.status(500).json({ error: 'Sunucu hatasi' })
+      }
+      return
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       ORGANIZASYON KALDIRMA - yalnizca super yonetici, iki adim:
+         silOnizle -> neyin silinecegini sayar, HICBIR SEY SILMEZ
+         sil       -> govdede onay: '<kimlik>' ister (ekranda elle yazilir)
+       GERI ALINAMAZ: organizasyonun butun satirlari, kullanicilari, davetleri,
+       tasarilari ve kovadaki dosyalari silinir.
+       KALDIRILAMAYANLAR:
+         - su an ICINDE bulunulan organizasyon (once baska birine gecilir)
+         - kullanicinin KENDI organizasyonu (kendini disarida birakirdi)
+         - VARSAYILAN_ORG: oneksiz eski dosyalar ve org iddiasi tasimayan eski
+           tokenler tanimi geregi ona duser (bkz. lib/org.js, api/dosya.js)
+       ───────────────────────────────────────────────────────────────────── */
+    if (op === 'silOnizle' || op === 'sil') {
+      const hedef = (req.body || {}).org
+      if (!orgIdGecerli(hedef)) { res.status(400).json({ error: 'Gecersiz organizasyon' }); return }
+      try {
+        // Bayrak kayittan da dogrulanir - gecis ile ayni gerekce (asagida)
+        const { data: user, error: uErr } = await supabaseAdmin
+          .from('users').select('id, username, role, org_id, is_super').eq('id', claims.sub).maybeSingle()
+        if (uErr) throw uErr
+        if (!user || !user.is_super) { res.status(403).json({ error: 'Yetkiniz yok' }); return }
+
+        if (hedef === VARSAYILAN_ORG) { res.status(400).json({ error: 'Ana organizasyon kaldirilamaz' }); return }
+        if (hedef === org) { res.status(400).json({ error: 'Icinde bulundugunuz organizasyon kaldirilamaz - once baska bir organizasyona gecin' }); return }
+        if (hedef === user.org_id) { res.status(400).json({ error: 'Kendi hesabinizin bagli oldugu organizasyon kaldirilamaz' }); return }
+
+        const { data: o, error: oErr } = await supabaseAdmin
+          .from('organizations').select('id, data').eq('id', hedef).maybeSingle()
+        if (oErr) throw oErr
+        if (!o) { res.status(404).json({ error: 'Organizasyon bulunamadi' }); return }
+        const ad = orgSatiri(o).ad
+
+        const dokum = await orgDokumu(hedef)
+        const ozet = {
+          org: hedef, ad,
+          tablolar: dokum.tablolar.filter(t => t.adet > 0).map(t => ({ tablo: t.tablo, adet: t.adet })),
+          tasari: dokum.tasariAdet,
+          dosya: dokum.kovalar.reduce((s, k) => s + k.yollar.length, 0),
+        }
+        if (op === 'silOnizle') { res.status(200).json(ozet); return }
+
+        if ((req.body || {}).onay !== hedef) {
+          res.status(400).json({ error: 'Onay icin organizasyon kimligini aynen yazin' }); return
+        }
+
+        // 1) Dosyalar - once, cunku satirlar silinince yollarini veren kayit kalmaz
+        for (const k of dokum.kovalar) {
+          for (let i = 0; i < k.yollar.length; i += 100) {
+            const { error } = await supabaseAdmin.storage.from(k.kova).remove(k.yollar.slice(i, i + 100))
+            if (error) throw error
+          }
+        }
+        // 2) Veri tablolari, kullanicilar, davetler
+        const sonuc = await Promise.all(dokum.tablolar.filter(t => !t.yok).map(async t => {
+          const { error } = await supabaseAdmin.from(t.tablo).delete().eq('org_id', hedef)
+          return error ? t.tablo + ': ' + error.message : null
+        }))
+        const hatalar = sonuc.filter(Boolean)
+        if (hatalar.length) {
+          // Organizasyon kaydi SILINMEDI: listede kalir, islem tekrar denenebilir
+          console.error('org sil: yarida kaldi', hatalar)
+          res.status(500).json({ error: 'Bazi tablolar silinemedi, organizasyon yerinde birakildi: ' + hatalar.join('; ') }); return
+        }
+        // 3) En son tasarilar ve organizasyonun kendisi
+        const { error: tErr } = await supabaseAdmin.from('tasarilar').delete().eq('org_id', hedef)
+        if (tErr) throw tErr
+        const { error: dErr } = await supabaseAdmin.from('organizations').delete().eq('id', hedef)
+        if (dErr) throw dErr
+
+        const satir = ozet.tablolar.reduce((s, t) => s + t.adet, 0)
+        await denetimYaz(org, { user: user.username, role: user.role, action: 'org',
+          detail: `Organizasyon kaldirildi: ${ad} (${hedef}) - ${satir} satir, ${ozet.tasari} tasari, ${ozet.dosya} dosya silindi` })
+        res.status(200).json({ ok: true, ...ozet })
+      } catch (e) {
+        console.error('org sil basarisiz', e)
         res.status(500).json({ error: 'Sunucu hatasi' })
       }
       return
