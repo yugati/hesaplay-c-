@@ -500,6 +500,9 @@ header{display:flex;align-items:center;gap:12px;padding:0 20px;height:56px;backg
 .org-ayrac{height:1px;background:var(--line);margin:5px 2px}
 .org-opt.org-sil{color:var(--red)}
 .org-opt.org-sil:hover{color:var(--red);background:color-mix(in srgb,var(--red) 10%,transparent)}
+/* kirmizi kaldir dugmesi: kimlik yazilana kadar KAPALI oldugu gorunmeli */
+.btn.org-sil-btn{background:var(--red);color:#fff;border-color:var(--red)}
+.btn.org-sil-btn:disabled{opacity:.35;cursor:not-allowed}
 /* organizasyon kaldirma onizlemesi: silinecek tablo/sayi listesi */
 .org-dokum{margin:10px 0 0;border:1px solid var(--line);border-radius:8px;max-height:220px;overflow:auto}
 .org-dokum div{display:flex;justify-content:space-between;gap:10px;padding:6px 10px;font-size:12px;border-bottom:1px solid var(--line)}
@@ -4915,19 +4918,28 @@ async function orgSilAc(){
   let liste;
   try{ liste=((_ORGLAR&&_ORGLAR.orgs)||(await sbOrgListesi()).orgs||[]); }
   catch(e){ toast('Organizasyon listesi alinamadi','err'); return; }
+  const tum=liste;
   liste=liste.filter(o=>o.id!==window.AKTIF_ORG&&o.id!=='bykara');
   _ORGSIL=null;
   const secenek=liste.map(o=>`<option value="${esc(o.id)}">${esc(o.ad||o.id)} (${esc(o.id)})</option>`).join('');
+  /* Liste bossa NEDENI soylenir: en sik durum, kaldirilmak istenen organizasyonun
+     ICINDE olmak - o zaman tek adim BYKARA'ya donmek, dugme de onu yapar. */
+  const icinde=window.AKTIF_ORG&&window.AKTIF_ORG!=='bykara'?tum.find(o=>o.id===window.AKTIF_ORG):null;
+  const bosMetin=icinde
+    ?`<p style="margin:0 0 12px;font-size:12.5px">Su an <b>${esc(icinde.ad||icinde.id)}</b> organizasyonunun icindesiniz. Icinde bulunulan organizasyon kaldirilamaz.</p>
+      <p class="t-meta" style="margin:0 0 12px">Once BYKARA'ya gecin, sonra bu pencereyi tekrar acin - ${esc(icinde.ad||icinde.id)} listede cikacak.</p>
+      <button class="btn btn-add" onclick="closeModal();orgGecOnaysiz('bykara','BYKARA')">BYKARA'ya Gec</button>`
+    :`<p class="t-meta" style="margin:0">Kaldirilabilecek organizasyon yok. Ana organizasyon (BYKARA) kaldirilamaz.</p>`;
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:480px">
     <div class="modal-head"><h3>Organizasyon Kaldir</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">${liste.length?`
       <div class="frow"><label>Kaldirilacak organizasyon</label>
         <select id="orgsil_sec" onchange="orgSilOnizle()"><option value="">- secin -</option>${secenek}</select></div>
       <div id="orgsil_dokum"><p class="t-meta" style="margin:0">Icinde bulundugunuz organizasyon ve ana organizasyon (BYKARA) listede yer almaz.</p></div>`
-      :`<p class="t-meta" style="margin:0">Kaldirilabilecek organizasyon yok. Icinde bulundugunuz organizasyon ve ana organizasyon (BYKARA) kaldirilamaz.</p>`}
+      :bosMetin}
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button>
-      <button class="btn" id="orgsil_btn" style="background:var(--red);color:#fff;border-color:var(--red)" disabled onclick="orgSilKaydet()">Kalici Olarak Kaldir</button></div></div></div>`;
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">${liste.length?'Iptal':'Kapat'}</button>
+      ${liste.length?`<button class="btn org-sil-btn" id="orgsil_btn" disabled onclick="orgSilKaydet()">Kalici Olarak Kaldir</button>`:''}</div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
 }
 async function orgSilOnizle(){
