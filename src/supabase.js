@@ -227,13 +227,21 @@ export async function sbOrgListesi() {
   return authFetch('/api/org')
 }
 
-// { token, org, ad, ttl }
-export async function sbOrgGecis(org) {
+// { token, org, ad, tasari, ttl }
+// tasari verilirse sunucu onu - hedef organizasyonda gecerliyse - aktif yapar;
+// verilmezse ya da gecersizse hedef organizasyonun ilk tasarisina inilir.
+export async function sbOrgGecis(org, tasari) {
   return authFetch('/api/org', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ op: 'gecis', org }),
+    body: JSON.stringify({ op: 'gecis', org, tasari: tasari || undefined }),
   })
+}
+
+// Kapsam haritasinin sayilari - { ozet:{ tasari:{'org/tas':{bina,siparis,son}}, org:{org:{kullanici}} } }
+// Iskeletten (sbOrgListesi) ayri istenir: harita beklemeden cizilir, sayilar arkadan dolar.
+export async function sbOrgOzet() {
+  return authFetch('/api/org?ozet=1')
 }
 
 // { org:{id, ad, aktif}, tasari:{id, ad, aktif} } - yalnizca super yonetici

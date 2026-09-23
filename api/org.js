@@ -7,8 +7,9 @@ import { denetimYaz } from '../lib/denetim.js'
 // ─────────────────────────────────────────────────────────────────────────────
 // ORGANIZASYON UCU
 //
-// GET  /api/org                              -> { orgs, aktif, super, tasarilar, aktifTasari }
-// POST /api/org  { op:'gecis', org }         -> { token, org, tasari, ttl }  (yalnizca super)
+// GET  /api/org                              -> { orgs, aktif, super, tasarilar, aktifTasari, agac }
+// GET  /api/org?ozet=1                       -> { ozet:{ tasari:{'org/tas':{bina,siparis,son}}, org:{org:{kullanici}} } }
+// POST /api/org  { op:'gecis', org, tasari? }-> { token, org, tasari, ttl }  (yalnizca super)
 // POST /api/org  { op:'yeni', id, ad }       -> { org }                      (yalnizca super)
 // POST /api/org  { op:'silOnizle', org }     -> { org, ad, tablolar, tasari, dosya } (yalnizca super)
 // POST /api/org  { op:'sil', org, onay }     -> { ok, ...ozet }              (yalnizca super, GERI ALINAMAZ)
@@ -112,6 +113,47 @@ async function orgDokumu(hedef) {
   return { tablolar, tasariAdet: tasariAdet || 0, kovalar }
 }
 
+/* KAPSAM HARITASININ SAYILARI (GET ?ozet=1). Iskeletten AYRI istenir: harita
+   once cizilir, sayilar arkadan dolar - her tasari icin uc kucuk sorgu var ve
+   menunun acilmasini onlara bekletmek gereksizdi.
+     bina    : proje_buildings satiri   (tasariya ozel)
+     siparis : proje_orders satiri      (tasariya ozel)
+     son     : o tasaridaki SON ISLEM - giris/cikis gibi tasariya bagli olmayan
+               olaylar sayilmaz (onlar kullanicinin varsayilan tasarisina damgalanir,
+               bkz. lib/denetim.js), yoksa hic dokunulmamis bir proje "az once" gorunurdu.
+     kullanici (org basina): kullanicilar organizasyona baglidir, tasariya degil.
+   Sayim HEAD istegiyle - govde inmez, egress'e yuk olmaz. Bir sayim hata verirse
+   null doner: ekranda "-" gorunur, harita yine cizilir. */
+async function kapsamOzeti(orgIdleri) {
+  const { data: tData, error } = await supabaseAdmin
+    .from('tasarilar').select('org_id, id, aktif').in('org_id', orgIdleri)
+  if (error) throw error
+  const say = async (tablo, o, t) => {
+    const { count, error: e } = await supabaseAdmin
+      .from(tablo).select('*', { count: 'exact', head: true }).eq('org_id', o).eq('tasari_id', t)
+    return e || count == null ? null : count
+  }
+  const sonIslem = async (o, t) => {
+    const { data, error: e } = await supabaseAdmin
+      .from('audit_log').select('created_at').eq('org_id', o).eq('tasari_id', t)
+      .not('data->>action', 'in', '(login,logout,girisHata,kilit,profil)')
+      .order('created_at', { ascending: false }).limit(1)
+    return e || !data || !data[0] ? null : data[0].created_at
+  }
+  const tasari = {}
+  await Promise.all((tData || []).filter(r => r.aktif !== false).map(async r => {
+    const [bina, siparis, son] = await Promise.all([
+      say('proje_buildings', r.org_id, r.id), say('proje_orders', r.org_id, r.id), sonIslem(r.org_id, r.id),
+    ])
+    tasari[r.org_id + '/' + r.id] = { bina, siparis, son }
+  }))
+  const org = {}
+  for (const id of orgIdleri) org[id] = { kullanici: 0 }
+  const { data: uData } = await supabaseAdmin.from('users').select('org_id').in('org_id', orgIdleri)
+  for (const u of uData || []) if (org[u.org_id]) org[u.org_id].kullanici++
+  return { tasari, org }
+}
+
 function orgSatiri(r) {
   return { id: r.id, ad: (r.data && r.data.ad) || r.id, aktif: r.aktif !== false }
 }
@@ -145,6 +187,23 @@ export default async function handler(req, res) {
   const org = await aktifOrg(claims)
 
   if (req.method === 'GET') {
+    if (req.query && req.query.ozet) {
+      try {
+        // Super butun organizasyonlarin sayilarini gorur (zaten hepsine gecebiliyor);
+        // digerleri yalnizca kendi organizasyonununkini - GET listesiyle ayni sinir.
+        let ids = [org]
+        if (claims.sup) {
+          const { data, error } = await supabaseAdmin.from('organizations').select('id, aktif')
+          if (error) throw error
+          ids = (data || []).filter(r => r.aktif !== false).map(r => r.id)
+        }
+        res.status(200).json({ ozet: await kapsamOzeti(ids) })
+      } catch (e) {
+        console.error('org ozet basarisiz', e)
+        res.status(500).json({ error: 'Sunucu hatasi' })
+      }
+      return
+    }
     try {
       /* TASARI LISTESI HERKESE ACIKTIR - organizasyon listesinin aksine.
          Gerekce: kullanici zaten hepsinin arasinda gecebiliyor (alinan karar),
@@ -167,9 +226,28 @@ export default async function handler(req, res) {
       const { data, error } = await sorgu.order('id', { ascending: true })
       if (error) throw error
       const orgs = (data || []).filter(r => claims.sup ? r.aktif !== false : true).map(orgSatiri)
+
+      /* AGAC: kapsam haritasinin iskeleti - her organizasyon, altinda tasarilari.
+         Super BUTUN organizasyonlarin tasarilarini gorur: zaten hepsine gecebiliyor,
+         haritada baska organizasyonun projesine TEK ADIMDA gecis bunu gerektiriyor
+         (op:'gecis' + tasari). Digerleri yalnizca kendi organizasyonunu - yukaridaki
+         tasarilar listesinin aynisi, ek sorgu yok. */
+      let agacTasari = null
+      if (claims.sup) {
+        const { data: aData, error: aErr } = await supabaseAdmin
+          .from('tasarilar').select('org_id, id, data, aktif').order('created_at', { ascending: true })
+        if (aErr) throw aErr
+        agacTasari = aData || []
+      }
+      const agac = orgs.map(o => ({
+        ...o,
+        tasarilar: agacTasari
+          ? agacTasari.filter(r => r.org_id === o.id && r.aktif !== false).map(tasariSatiri)
+          : (o.id === org ? tasarilar : []),
+      }))
       res.status(200).json({
         orgs, aktif: org, super: !!claims.sup,
-        tasarilar, aktifTasari,
+        tasarilar, aktifTasari, agac,
         // Yeni tasari acma dugmesi yalnizca yoneticide gorunur; sunucu da oyle
         // davranir (asagidaki op:'tasariYeni'). Istemci bunu gizlemek icin okur.
         tasariYonetici: claims.role === 'admin',
@@ -446,7 +524,11 @@ export default async function handler(req, res) {
          Eski kimlikle imzalanmis bir token, hicbir satirin eslesmedigi BOMBOS
          bir uygulama demek olurdu - kullanici organizasyonu degistirdiginde
          "veri kayboldu" diye bakardi. */
-      const hedefTasari = await tasariCoz(o.id, null, user)
+      /* Istemci hedef tasariyi da soyleyebilir (kapsam haritasinda baska
+         organizasyonun projesine tek adimda gecis). tasariCoz onu YALNIZCA hedef
+         organizasyonda gecerliyse kabul eder; degilse eskisi gibi ilk tasariya duser. */
+      const istenen = (req.body || {}).tasari
+      const hedefTasari = await tasariCoz(o.id, tasariIdGecerli(istenen) ? istenen : null, user)
       res.status(200).json({
         token: signSession(user, ttl, o.id, hedefTasari),
         org: o.id, ad: orgSatiri(o).ad, tasari: hedefTasari, ttl,

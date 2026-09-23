@@ -25,6 +25,7 @@ import {
   // Organizasyon
   sbOrgListesi,
   sbOrgGecis,
+  sbOrgOzet,
   sbOrgYeni,
   sbOrgSilOnizle,
   sbOrgSil,
@@ -273,6 +274,7 @@ window.sbDavetKabul        = sbDavetKabul
 // ─── Organizasyon ────────────────────────────────────────────────────────────
 window.sbOrgListesi        = sbOrgListesi
 window.sbOrgGecis          = sbOrgGecis
+window.sbOrgOzet           = sbOrgOzet
 window.sbOrgYeni           = sbOrgYeni
 window.sbOrgSilOnizle      = sbOrgSilOnizle
 window.sbOrgSil            = sbOrgSil
