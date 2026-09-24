@@ -3951,7 +3951,23 @@ main:has(>.iht-form-wrap){max-width:none}
 .fat-alin-satir .durum{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
 .fat-alin-satir .durum small{font-size:11px;color:var(--mute);line-height:1.45}
 .fat-alin-satir .durum small b{color:var(--ink);font-weight:700}
-@media(max-width:760px){ .fat-alin-satir{grid-template-columns:minmax(0,1fr);gap:6px} }
+/* ALIMI OLMAYAN URUNE "FATURADA YAZAN": ucuncu sutunda beyan kutusu. Kutu
+   ana tablodaki beyan kutusunun dilini tasir (kesik cerceve, mavi) - ikisi de
+   hicbir hesaba girmeyen ayni seydir. */
+.fat-alin-satir.beyanli{grid-template-columns:minmax(0,1fr) minmax(200px,34%) 132px}
+.fat-alin-beyan{display:flex;flex-direction:column;align-items:flex-end;gap:3px;min-width:0}
+.fat-alin-beyan label{font-size:9.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--mute)}
+.fat-alin-beyan .ic{display:flex;gap:5px;align-items:center}
+.fat-alin-beyan input{width:96px;text-align:right;font-family:var(--mono);font-size:12.5px;padding:5px 8px;
+  border:1px dashed var(--line);border-radius:7px;background:var(--panel);color:var(--blue)}
+.fat-alin-beyan input:focus{outline:none;border-style:solid;border-color:var(--blue)}
+.fat-alin-beyan input.dolu{border-style:solid;border-color:var(--blue);font-weight:700}
+.fat-alin-beyan .sil{border:1px solid var(--line);background:transparent;color:var(--mute);border-radius:7px;
+  width:26px;height:28px;cursor:pointer;font-size:15px;line-height:1}
+.fat-alin-beyan .sil:hover{color:var(--red);border-color:var(--red)}
+.fat-alinmamis.disbeyan{border-left-color:var(--blue);background:color-mix(in srgb,var(--blue) 5%,var(--panel));margin:11px 0 0}
+@media(max-width:760px){ .fat-alin-satir,.fat-alin-satir.beyanli{grid-template-columns:minmax(0,1fr);gap:6px}
+  .fat-alin-beyan{align-items:flex-start} }
 /* Sayactaki kisayollar: alimi olmayan eslesme / sistemde yok. Tiklayinca panele iner. */
 .fat-ara .sayac .alinmamis,.fat-ara .sayac .sistemdeyok{font-family:var(--mono);font-size:11.5px;font-weight:700;
   border-radius:20px;padding:2px 9px;cursor:pointer;line-height:1.5}
@@ -35048,7 +35064,7 @@ function fatYeni(){
     senaryo:'TICARIFATURA', faturaTipi:'SATIS', ozellestirmeNo:'TR1.2', ettn:'',
     irsaliyeNo:'', irsaliyeTarihi:'', paraBirimi:'TRY', kur:'', varsayilanKdv:20,
     beyanTutar:'', not:'', pdf:null, sozlesmePdf:null, irsaliyePdf:null, durum:'taslak',
-    qty:{}, sb:{}, oz:{}, bq:{}, fq:'', fbina:'', fbolum:'', fsart:'', ftum:false, fgizleBitmis:false,
+    qty:{}, sb:{}, oz:{}, bq:{}, bqBilgi:{}, fq:'', fbina:'', fbolum:'', fsart:'', ftum:false, fgizleBitmis:false,
     fyalnizGirilen:false };
   fatImzala();                       // bu andan sonraki her degisiklik korunur
   FATV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
@@ -35058,9 +35074,12 @@ function fatDuzenle(id){
   const f=fatKayitlar().find(x=>x.id===id); if(!f){ toast('Fatura bulunamadi','err'); return; }
   // kilitli / baskasinin / onay bekleyen: neden role gore soylenir (yonetici olmayana "kilidi acin" denmez)
   if(!fatAcikMi(f)){ toast(fatKapaliNedeni(f)||'Bu faturayi duzenleyemezsiniz','err'); return; }
-  const qty={}, sb={}, oz={}, bq={};
-  // BELGEDE YAZAN adetler kendi listesinden okunur - satirlara hic karismaz
-  fatBeyanlari(f).forEach(b=>{ const k=String((b&&b.key)||''); if(k&&fatSayi(b.qty)>0) bq[k]=fatSayi(b.qty); });
+  const qty={}, sb={}, oz={}, bq={}, bqBilgi={};
+  // BELGEDE YAZAN adetler kendi listesinden okunur - satirlara hic karismaz.
+  // Urun bilgisi de alinir: alimi olmayan urun havuzda yok, adi yalnizca kayitta durur
+  fatBeyanlari(f).forEach(b=>{ const k=String((b&&b.key)||''); if(!k||!(fatSayi(b.qty)>0)) return;
+    bq[k]=fatSayi(b.qty);
+    bqBilgi[k]={ matId:b.matId||'', code:b.code||'', ad:b.ad||'', unit:b.unit||'' }; });
   fatSatirlari(f).forEach(r=>{ const k=String(r.key||'');
     qty[k]=fatSayi(r.qty);
     sb[k]={ fiyat:r.fiyat==null?'':r.fiyat, iskonto:r.iskontoOrani||'',
@@ -35076,7 +35095,7 @@ function fatDuzenle(id){
     paraBirimi:f.paraBirimi||'TRY', kur:f.kur||'', varsayilanKdv:20,
     beyanTutar:f.beyanTutar||'', not:f.not||'', durum:fatDurumu(f),
     pdf:f.pdf||null, sozlesmePdf:f.sozlesmePdf||null, irsaliyePdf:f.irsaliyePdf||null,
-    qty, sb, oz, bq, fq:'', fbina:'', fbolum:'', fsart:'', ftum:true, fgizleBitmis:false,
+    qty, sb, oz, bq, bqBilgi, fq:'', fbina:'', fbolum:'', fsart:'', ftum:true, fgizleBitmis:false,
     fyalnizGirilen:false };
   fatImzala();                       // duzenleme formu DOLU acilir - olcut "degisti"
   FATV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
@@ -35511,21 +35530,32 @@ const FAT_ALINMAMIS_DURUM={
   firmasec:{ad:'ALINMIŞ · FİRMA SEÇİN', aciklama:'Alimi var - faturaya yazmak icin once firmayi secin'},
   firmasiz:{ad:'FİRMASIZ ALIM',        aciklama:'Yalnizca firmasi girilmemis siparislerde alinmis - hicbir faturanin dayanagi olamaz'},
 };
-function fatAlinmamisSatir(u,baglam,q){
+/* ai: formda, firma seciliyken satirin _FAT._alinAday icindeki yeri (yoksa -1).
+   O zaman satira "Faturada Yazan" kutusu gelir - MIKTAR KUTUSU YINE YOK:
+   alimi olmayan urunun kabul edilecek miktari sifirdir. Beyan hicbir hesaba
+   girmedigi icin tavan kuralini delmez; tek isi Fark Raporuna "bu urun
+   faturada yaziyor ama bu firmadan hic alinmadi" satirini koymaktir. */
+function fatAlinmamisSatir(u,baglam,q,ai){
   const d=FAT_ALINMAMIS_DURUM[u.durum]||FAT_ALINMAMIS_DURUM.hic;
+  const beyanli=ai!=null&&ai>=0;
+  const bv=beyanli?((_FAT&&_FAT.bq)||{})[u.key]:undefined;
   const net=`net <b>${fmtNum(u.net)}</b>${u.unit?' '+esc(u.unit):''}`;
   const fr=u.alinanFirmalar.slice(0,3).map(esc).join(', ')+(u.alinanFirmalar.length>3?` +${u.alinanFirmalar.length-3}`:'');
   const acik=u.durum==='hic'?'Hicbir sipariste alim kaydi yok. Faturalanabilecek miktar: <b>0</b>'
     :u.durum==='firmasiz'?`Yalnizca firmasi girilmemis siparislerde alinmis (${net})`
     :u.durum==='baska'?`Alindigi firma: <b>${fr}</b> (${net}). Belge o firmaya aitse ${baglam==='form'?'ustteki Firma alanini':'firma suzgecini'} degistirin`
     :`Alindigi firma: <b>${fr}</b> (${net}). Faturaya yazmak icin once firmayi secin`;
-  return `<div class="fat-alin-satir ${u.durum}">
+  return `<div class="fat-alin-satir ${u.durum}${beyanli?' beyanli':''}">
     <div class="ad">${u.matId&&baglam!=='form'?`<button class="fat-link" style="font-weight:600;font-size:12.5px" onclick="openMatDetail('${esc(u.matId)}')" title="Malzeme kunyesini ac">${markIsaret(u.ad||u.code||'-',q)}</button>`:markIsaret(u.ad||u.code||'-',q)}
       <div class="t-meta">${markIsaret(u.code||'-',q)}${u.unit?' · '+esc(u.unit):''}${u.binalar.length?' · '+markIsaret(u.binalar.join(', '),q):''}${
         u.bolumler.length?' · <span style="color:var(--blue)">'+markIsaret(u.bolumler.join(', '),q)+'</span>':''}${
         u.sartnameler.length?' · '+markIsaret(u.sartnameler.slice(0,2).join(', '),q)+(u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''):''}</div>
       ${u.ozelKodlar.length?`<div class="t-meta">${fatOzelKodOzet(u,0,q)}</div>`:''}</div>
     <div class="durum"><span class="fat-rozet ${u.durum}" title="${esc(d.aciklama)}">${d.ad}</span><small>${acik}</small></div>
+    ${beyanli?`<div class="fat-alin-beyan"><label>Faturada yazan</label>
+      <input type="number" step="any" min="0" class="${fatSayi(bv)>0?'dolu':''}" value="${bv!==undefined&&bv!==''?esc(bv):''}"
+        placeholder="-" onchange="fatSetDisBeyan('a',${ai},this)" onkeydown="if(event.key==='Enter')this.blur()"
+        title="Tedarikcinin faturasinda bu urun icin yazan adet. Bu urunun bu firmadan alimi olmadigi icin kabul edilen miktar 0 kalir; adet yalnizca Fark Raporuna 'alim yok' gerekcesiyle girer, hicbir hesabi degistirmez."></div>`:''}
   </div>`;
 }
 /* Arama sonuc paneli - form ve mutabakat ayni fonksiyondan cizer.
@@ -35547,15 +35577,23 @@ function fatAlinmamisPanel(s,q,companyId,baglam,sistemdeYok){
   const say={}; s.liste.forEach(u=>{ say[u.durum]=(say[u.durum]||0)+1; });
   const ozet=Object.keys(FAT_ALINMAMIS_DURUM).filter(k=>say[k])
     .map(k=>`<span class="fat-rozet ${k}">${FAT_ALINMAMIS_DURUM[k].ad} ${fmtNum(say[k])}</span>`).join('');
+  // formda firma seciliyse satirlar "Faturada Yazan" kutusu tasir - kutunun hangi urune
+  // ait oldugu indeksle bulunur (urun adi onclick'e gomulemez, bkz. fatYeni ustundeki not)
+  const beyanli=baglam==='form'&&!!cid&&!!_FAT;
+  if(beyanli) _FAT._alinAday=[];
   const aciklama=baglam==='form'
     ?(cid?'Bu urunler sistemde kayitli ama <b>bu firmadan alim kaydi yok</b>. Faturalanabilecek miktar alimdan gelir; alinmamis urunun tavani sifirdir, bu yuzden miktar kutusu yoktur.'
+         +' Urun tedarikcinin faturasinda yaziyorsa <b>Faturada yazan</b> kutusuna adedini girin: hesaba girmez, Fark Raporuna "alim yok" gerekcesiyle eklenir.'
          :'<b>Once firma secin</b>: fatura yalnizca secilen firmanin alimlarindan kesilir. Asagida her urunun alim durumu yazar.')
     :(cid?'Bu urunler sistemde kayitli ama <b>secili firmadan alim kaydi yok</b> - mutabakata girmezler.'
          :'Bu urunler sistemde kayitli ama mutabakata girecek bir alimlari yok - faturalanmis olmalari da beklenmez.');
   return `<div class="fat-alinmamis" id="fatAlinmamis">
     <h5>"${qq}" &middot; ${fmtNum(s.n)} urun ${baglam!=='form'?'mutabakat disinda':(cid?'bu faturaya yazilamaz':'eslesti')} ${ozet}</h5>
     <p>${aciklama}</p>
-    <div class="fat-alin-liste">${s.liste.slice(0,FAT_ALINMAMIS_GOSTER).map(u=>fatAlinmamisSatir(u,baglam,q)).join('')}</div>
+    <div class="fat-alin-liste">${s.liste.slice(0,FAT_ALINMAMIS_GOSTER).map(u=>{
+      if(!beyanli) return fatAlinmamisSatir(u,baglam,q);
+      _FAT._alinAday.push({key:u.key,matId:u.matId||'',code:u.code||'',ad:u.ad||'',unit:u.unit||''});
+      return fatAlinmamisSatir(u,baglam,q,_FAT._alinAday.length-1); }).join('')}</div>
     ${s.n>FAT_ALINMAMIS_GOSTER?`<p class="dip">+ ${fmtNum(s.n-FAT_ALINMAMIS_GOSTER)} urun daha - aramayi daraltin</p>`:''}
     ${gizliNot}</div>`;
 }
@@ -35653,9 +35691,9 @@ function fatFormFarklari(){
   const st=_FAT; if(!st) return [];
   const hav=st._havuz||new Map();
   return Object.keys(st.bq||{}).filter(k=>fatSayi(st.bq[k])>0).map(k=>{
-    const u=hav.get(k)||null;
+    const u=hav.get(k)||null, bi=(st.bqBilgi||{})[k]||{};
     const h=fatFarkHesapla(u,st.bq[k],fatSayi(st.qty[k]));
-    return { key:k, ad:(u&&u.ad)||'(urun)', code:(u&&u.code)||'', unit:(u&&u.unit)||'',
+    return { key:k, ad:(u&&u.ad)||bi.ad||'(urun)', code:(u&&u.code)||bi.code||'', unit:(u&&u.unit)||bi.unit||'',
       fiyat:fatSayi(((st.sb||{})[k]||{}).fiyat), ...h };
   }).sort(fatFarkSirala);
 }
@@ -35673,6 +35711,69 @@ function fatSetBeyan(i,el){
   el.classList.toggle('dolu',q>0);
   // render() YOK: tablo bastan cizilseydi kutu odagi kaybolurdu (bkz. fatSetQty)
   fatFarkGuncelle();
+}
+/* ---------- ALIMI OLMAYAN URUNUN "FATURADA YAZAN" ADEDI ----------
+   Tedarikci bu firmadan hic alinmamis (kutuphanede kayitli ama siparisi yok ya
+   da baska firmadan alinmis) bir urunu faturasina yazmis olabilir. Rapor en
+   cok o satira muhtactir: "bu mal bizden hic alinmadi". Formun ana tablosu
+   yalnizca bu firmanin alimlarindan kurulur, o yuzden bu urunler arama
+   panelinden (tur 'a') girilir ve tablonun altindaki ayri bolumde (tur 'd')
+   durur - arama silinince kaybolmasinlar.
+   Kural fatSetBeyan'la ayni: yalnizca st.bq'ya yazilir, st.qty'ye ASLA -
+   kabul edilen miktar sifir kalir, tavan/toplam/mutabakat degismez. Urunun
+   ad/kod bilgisi st.bqBilgi'de tutulur: havuzda olmadigi icin baska yerden
+   okunamaz, kayda da oradan gecer.
+   onchange + render: kutu doldugunda urun alttaki bolume tasinir; odak
+   kaybi burada sorun degil (tek sayi, Enter/Tab ile biter). */
+function fatSetDisBeyan(tur,i,el){
+  const st=_FAT; if(!st) return;
+  const s=(tur==='a'?st._alinAday:st._disSatirlar||[])[i]; if(!s) return;
+  let q=fatSayi(el.value); if(!(q>0)) q=0;
+  if(!st.bq) st.bq={};
+  if(!st.bqBilgi) st.bqBilgi={};
+  st.bq[s.key]=q||'';
+  if(q>0) st.bqBilgi[s.key]={matId:s.matId||'',code:s.code||'',ad:s.ad||'',unit:s.unit||''};
+  render();
+}
+function fatDisBeyanSil(i){
+  const st=_FAT; if(!st) return;
+  const s=(st._disSatirlar||[])[i]; if(!s) return;
+  if(st.bq) delete st.bq[s.key];
+  if(st.bqBilgi) delete st.bqBilgi[s.key];
+  render();
+}
+/* Bolum: st.bq'da adedi olan ama bu firmanin havuzunda OLMAYAN urunler.
+   Havuz (st._havuz) cizimin basinda kurulur; urun sonradan bu firmadan
+   alinirsa anahtari havuza girer ve kendiliginden ana tabloya gecer. */
+function fatDisBeyanBolumu(){
+  const st=_FAT; if(!st) return '';
+  const hav=st._havuz||new Map();
+  st._disSatirlar=Object.keys(st.bq||{}).filter(k=>fatSayi(st.bq[k])>0&&!hav.has(k)).map(k=>{
+    const b=(st.bqBilgi||{})[k]||{};
+    return {key:k,matId:b.matId||'',code:b.code||'',ad:b.ad||'',unit:b.unit||''};
+  });
+  if(!st._disSatirlar.length) return '';
+  const satir=(s,i)=>{
+    const bv=st.bq[s.key];
+    const h=fatFarkHesapla(null,bv,0);
+    return `<div class="fat-alin-satir hic beyanli">
+      <div class="ad">${esc(s.ad||s.code||'(urun)')}
+        <div class="t-meta">${esc(s.code||'-')}${s.unit?' · '+esc(s.unit):''}</div></div>
+      <div class="durum"><span class="fat-rozet hic" title="Bu firmadan bu urun icin alim kaydi yok - kabul edilen miktar 0">BU FİRMADAN ALIM YOK</span>
+        <small>Kabul edilen <b>0</b> · <span class="fat-fark-rozet ${h.durum.replace(/ /g,'-')}" style="display:inline;text-align:left">${esc(fatFarkRozetMetni(h))}</span></small></div>
+      <div class="fat-alin-beyan"><label>Faturada yazan</label>
+        <div class="ic"><input type="number" step="any" min="0" class="dolu" value="${esc(bv)}" placeholder="-"
+          onchange="fatSetDisBeyan('d',${i},this)" onkeydown="if(event.key==='Enter')this.blur()"
+          title="Tedarikcinin faturasinda yazan adet - yalnizca Fark Raporu icin. Silmek icin kutuyu bosaltin ya da x'e basin.">
+        <button type="button" class="sil" onclick="fatDisBeyanSil(${i})" title="Bu urunu Fark Raporundan cikar">&times;</button></div></div>
+    </div>`;
+  };
+  return `<div class="fat-alinmamis disbeyan">
+    <h5>Faturada yazan · bu firmadan alimi olmayan ${fmtNum(st._disSatirlar.length)} urun</h5>
+    <p>Bu urunler tedarikcinin faturasinda yaziyor ama <b>bu firmadan alim kaydi yok</b>. Faturaya kabul edilen miktarlari
+      <b>0</b>'dir, tutara ve kalana girmezler; yalnizca Fark Raporunda (ekran, kopya metin, PDF, Excel) "alim yok" gerekcesiyle
+      gorunurler. Yeni urun eklemek icin yukaridaki aramada adini ya da kodunu aratin.</p>
+    <div class="fat-alin-liste">${st._disSatirlar.map(satir).join('')}</div></div>`;
 }
 const FAT_FARK_ETIKET={ fazla:'FAZLA FATURALANMIS', 'eksik girilmis':'EKSIK GIRILMIS',
   eksik:'BELGEDEN FAZLA GIRILMIS', denk:'DENK' };
@@ -36153,6 +36254,7 @@ function renderFaturaForm(){
       <!-- FARK RAPORU TABLONUN DISINDA: bir suzgec listeyi bosaltsa bile rapor
            ekranda kalir. Icerik bosken (hic "faturada yazan" girilmemisse)
            fatFarkPanelIc bos metin doner ve kutu hic cizilmez. -->
+      ${fatDisBeyanBolumu()}
       <div id="fatFarkPanel">${fatFarkPanelIc()}</div>
       ${liste.length>LIMIT?`<p class="t-meta" style="font-size:11.5px;margin-top:8px">+ ${fmtNum(liste.length-LIMIT)} urun daha var - listeyi daraltmak icin arama ya da bina filtresi kullanin</p>`:''}
       ${!panelUstte&&aramaPanel?`<div style="margin-top:11px">${aramaPanel}</div>`:''}
@@ -36624,10 +36726,12 @@ async function fatKaydet(kesin){
   const beyanlar=[];
   Object.keys(st.bq||{}).forEach(k=>{
     const q=fatSayi(st.bq[k]); if(!(q>0)) return;
-    const u=urunler.get(k), r=satirlar.find(x=>x.key===k);
-    beyanlar.push({ key:k, matId:(u&&u.matId)||(r&&r.matId)||'',
-      code:(u&&u.code)||(r&&r.code)||'', ad:(u&&u.ad)||(r&&r.ad)||'',
-      unit:(u&&u.unit)||(r&&r.unit)||'', qty:q });
+    // bi: BU FIRMADAN ALIMI OLMAYAN urunun bilgisi (arama panelinden girildi) -
+    // havuzda ve satirlarda yoktur, yazilmazsa kayitta adsiz bir anahtar kalirdi
+    const u=urunler.get(k), r=satirlar.find(x=>x.key===k), bi=(st.bqBilgi||{})[k]||{};
+    beyanlar.push({ key:k, matId:(u&&u.matId)||(r&&r.matId)||bi.matId||'',
+      code:(u&&u.code)||(r&&r.code)||bi.code||'', ad:(u&&u.ad)||(r&&r.ad)||bi.ad||'',
+      unit:(u&&u.unit)||(r&&r.unit)||bi.unit||'', qty:q });
   });
   if(sorunlar.length&&kesin){
     toast('Kaydedilmedi - kalandan fazla ya da kod kirilimi tutmuyor: '+sorunlar.slice(0,3).join(' ; ')+(sorunlar.length>3?` (+${sorunlar.length-3} sorun daha)`:''),'err');
