@@ -90,7 +90,9 @@ input::placeholder,textarea::placeholder{color:var(--dim)}
 .filtre b{display:inline-block;min-width:22px;margin-left:5px;padding:1px 6px;border-radius:99px;background:var(--line);font:700 12px var(--mono)}
 .filtre[aria-pressed="true"]{border-color:var(--amber);background:var(--dolu)}
 .filtre[aria-pressed="true"] b{background:var(--amber);color:var(--amber-ink)}
-.liste-bas{margin:2px 2px 8px;font-size:12px;color:var(--dim)}
+.liste-bas{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:2px 2px 8px;font-size:12px;color:var(--dim)}
+.sart-suz{width:auto;max-width:62%;min-height:38px;padding:6px 30px 6px 10px;font-size:13.5px}
+.k-sart{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:5px;background:rgba(0,180,166,.15);color:var(--grid);font:700 10.5px var(--mono);vertical-align:1px}
 
 /* kalem karti */
 .kalem{margin-bottom:10px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}
@@ -214,6 +216,20 @@ function katEtiket(ad) { ad = String(ad || '').trim(); return /^-?\d+$/.test(ad)
 function katAdi(id) { const k = V.katlar.find(x => x.id === id); return k ? katEtiket(k.ad) : ''; }
 const katSecilir = () => !V.katSabit && V.katlar.length > 0;      // her satirda kat listesi
 const katYazilir = () => !V.katSabit && V.katlar.length === 0;    // binada kat tanimi yok: serbest, istege bagli
+// yonetici linkte ad / adam sayisi girdiyse sayfada SABIT gorunur, sorulmaz
+const sabitAd = () => !!V.link.dolduran;
+const sabitAdam = () => V.link.adam != null;
+const cokSartname = () => V.sartKodlar.length > 1;
+// sartname kodlarinin ortak on ekini atar (en az bir parca kalir):
+// AKU.0179.00UYB.0.EK.TB0002 + ...TB0003 -> TB0002 / TB0003 ; ...CYA.SS.MB0001 + ...CYB.SS.MB0001 -> CYA.SS.MB0001 / CYB.SS.MB0001
+function sartKisalt(kodlar) {
+  const p = kodlar.map(k => String(k).split('.'));
+  let n = 0;
+  while (p.length > 1 && p.every(x => x.length > n + 1 && x[n] === p[0][n])) n++;
+  const m = {};
+  kodlar.forEach((k, i) => { m[k] = p[i].slice(n).join('.'); });
+  return m;
+}
 
 function toast(m) {
   let t = $('f_toast');
@@ -246,8 +262,13 @@ async function yukle() {
   }
   if (!r.ok) { linkHatasi(r.status, b.error); return; }
   V = b;
+  // kalemlerde gecen sartnameler: once yoneticinin sectigi sira, sonra digerleri
+  const sirali = (V.link.sartlar || []).slice();
+  V.kalemler.forEach(k => { if (k.sart && !sirali.includes(k.sart)) sirali.push(k.sart); });
+  V.sartKodlar = sirali.filter(c => V.kalemler.some(k => k.sart === c));
+  V.sartKisa = sartKisalt(V.sartKodlar);
   V.kalemler.forEach(k => {
-    k._ara = norm([k.kod, k.ad, k.ozelNo, k.poz].join(' ') + ' ' + String(k.kod || '').replace(/[\s._-]/g, ''));
+    k._ara = norm([k.kod, k.ad, k.ozelNo, k.poz, V.sartKisa[k.sart] || ''].join(' ') + ' ' + String(k.kod || '').replace(/[\s._-]/g, ''));
     kalemMap.set(k.id, k);
   });
   baslat();
@@ -262,7 +283,7 @@ function baslat() {
     adam: typeof t.adam === 'string' ? t.adam : '',
     not: typeof t.not === 'string' ? t.not : '',
     varsayilanKat: katIds.has(t.varsayilanKat) ? t.varsayilanKat : (V.katlar.length === 1 ? V.katlar[0].id : ''),
-    q: '', yalnizDolu: false, g: {},
+    q: '', yalnizDolu: false, sartF: '', g: {},
   };
   if (t.g && typeof t.g === 'object') {
     for (const id in t.g) {
@@ -283,8 +304,19 @@ function katOpts(sec) { return V.katlar.map(k => `<option value="${esc(k.id)}" $
 function ciz() {
   const L = V.link, t = tarihYaz(L.tarih);
   const kunye = [['Bina', L.bina], ['Bölüm', L.cat], ['Ekip', L.ekip, 'tam']];
-  if (L.sart) kunye.push(['Şartname', L.sart, 'tam', 'mono']);
+  const sl = L.sartlar || [];
+  if (sl.length === 1) kunye.push(['Şartname', sl[0], 'tam', 'mono']);
+  else if (sl.length > 1) kunye.push([sl.length + ' şartname', sl.join('\n'), 'tam', 'mono']);
   if (V.katSabit) kunye.push(['Kat', katEtiket(V.katSabit.ad)]);
+  if (sabitAd()) kunye.push(['Dolduran', L.dolduran]);
+  if (sabitAdam()) kunye.push(['Adam sayısı', String(L.adam)]);
+  const bilgi = [
+    sabitAd() ? '' : `<label class="alan"><span>Adınız</span><input id="f_ad" maxlength="60" autocomplete="name" placeholder="opsiyonel" value="${esc(S.dolduran)}"></label>`,
+    sabitAdam() ? '' : `<label class="alan"><span>Adam sayısı</span><input id="f_adam" inputmode="numeric" maxlength="3" placeholder="0" value="${esc(S.adam)}"></label>`,
+    katSecilir() ? `<label class="alan tam"><span>Çalışılan kat</span><select id="f_vkat"><option value="">- seçin -</option>${katOpts(S.varsayilanKat)}</select><small>Miktar girdiğiniz kaleme otomatik yazılır; kalemin kendi satırında değiştirebilirsiniz.</small></label>` : '',
+  ].filter(Boolean);
+  const sartSuz = cokSartname()
+    ? `<select id="f_sart" class="sart-suz" aria-label="Şartnameye göre süz"><option value="">Tüm şartnameler</option>${V.sartKodlar.map(c => `<option value="${esc(c)}">${esc(V.sartKisa[c])} (${V.kalemler.filter(k => k.sart === c).length})</option>`).join('')}</select>` : '';
   const bitis = new Date(L.bitis).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const onceki = V.gonderimSayisi ? ` · bu linkten ${V.gonderimSayisi} gönderim yapıldı` : '';
   window.scrollTo(0, 0);
@@ -293,19 +325,15 @@ function ciz() {
     <div class="marka"><img src="/logo.png" alt="" onerror="this.remove()"><span>Günlük Saha Raporu</span></div>
     <h1>${esc(t.gun)}<span class="hafta">${esc(t.hafta)}</span></h1>
     <div class="vardiya">${L.vardiya === 'GECE' ? IKON.ay : IKON.gunes} ${esc(VARDIYA_AD[L.vardiya] || L.vardiya)} vardiyası</div>
-    <dl class="kunye">${kunye.map(([k, v, tam, c]) => `<div class="${tam || ''}"><dt>${k}</dt><dd class="${c || ''}">${esc(v)}</dd></div>`).join('')}</dl>
+    <dl class="kunye">${kunye.map(([k, v, tam, c]) => `<div class="${tam || ''}"><dt>${esc(k)}</dt><dd class="${c || ''}">${esc(v).replace(/\n/g, '<br>')}</dd></div>`).join('')}</dl>
     <p class="bitis">${IKON.saat}<span>Son gönderim: ${esc(bitis)}${onceki}</span></p>
   </header>
-  <section class="kart bilgi">
-    <label class="alan"><span>Adınız</span><input id="f_ad" maxlength="60" autocomplete="name" placeholder="opsiyonel" value="${esc(S.dolduran)}"></label>
-    <label class="alan"><span>Adam sayısı</span><input id="f_adam" inputmode="numeric" maxlength="3" placeholder="0" value="${esc(S.adam)}"></label>
-    ${katSecilir() ? `<label class="alan tam"><span>Çalışılan kat</span><select id="f_vkat"><option value="">- seçin -</option>${katOpts(S.varsayilanKat)}</select><small>Miktar girdiğiniz kaleme otomatik yazılır; kalemin kendi satırında değiştirebilirsiniz.</small></label>` : ''}
-  </section>
+  ${bilgi.length ? `<section class="kart bilgi">${bilgi.join('')}</section>` : ''}
   <div class="arac">
     <div class="ara">${IKON.ara}<input id="f_q" type="search" placeholder="Kalem ara" autocomplete="off" enterkeyhint="search" aria-label="Kalem ara: kod, ad veya özel no" title="Kod, ad veya özel no ile arayın"></div>
     <button id="f_dolu" class="filtre" type="button" aria-pressed="false" title="Yalnızca miktar girilen kalemleri göster">Girilenler<b id="f_dolu_n">0</b></button>
   </div>
-  <div class="liste-bas" id="f_say">${V.kalemler.length} kalem</div>
+  <div class="liste-bas"><span id="f_say">${V.kalemler.length} kalem</span>${sartSuz}</div>
   <div id="liste">${V.kalemler.map(kalemHtml).join('')}</div>
   <div id="f_bos" class="bos" hidden>Aramaya uyan kalem yok.</div>
   ${V.kalemler.length ? '' : '<div class="bos">Bu linkte kalem yok - yöneticiye haber verin.</div>'}
@@ -317,9 +345,10 @@ function ciz() {
 
 function kalemHtml(k) {
   const alt = [k.ozelNo ? 'Özel ' + k.ozelNo : '', k.poz ? 'Poz ' + k.poz : '', k.hedef ? 'Hedef ' + fmt(k.hedef) + (k.birim ? ' ' + k.birim : '') : ''].filter(Boolean);
+  const sartEt = cokSartname() && k.sart ? `<span class="k-sart" title="${esc(k.sart)}">${esc(V.sartKisa[k.sart] || k.sart)}</span>` : '';
   return `<article class="kalem${kalemDolu(k.id) ? ' dolu' : ''}" data-id="${esc(k.id)}">
     <div class="k-ust">${k.img ? `<img class="k-foto" src="${esc(k.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
-      <div class="k-bilgi">${k.kod ? `<div class="k-kod">${esc(k.kod)}</div>` : ''}<div class="k-ad">${esc(k.ad)}</div>${alt.length ? `<div class="k-alt">${alt.map(esc).join(' · ')}</div>` : ''}</div>
+      <div class="k-bilgi">${(k.kod || sartEt) ? `<div class="k-kod">${sartEt}${esc(k.kod)}</div>` : ''}<div class="k-ad">${esc(k.ad)}</div>${alt.length ? `<div class="k-alt">${alt.map(esc).join(' · ')}</div>` : ''}</div>
     </div>
     <div class="k-satirlar">${satirlarHtml(k)}</div>
   </article>`;
@@ -336,12 +365,13 @@ function satirlarHtml(k) {
 }
 
 function bagla() {
-  $('f_ad').addEventListener('input', e => { S.dolduran = e.target.value; kaydet(); });
-  $('f_adam').addEventListener('input', e => {
+  if ($('f_ad')) $('f_ad').addEventListener('input', e => { S.dolduran = e.target.value; kaydet(); });
+  if ($('f_adam')) $('f_adam').addEventListener('input', e => {
     const v = e.target.value.replace(/\D/g, '');
     if (v !== e.target.value) e.target.value = v;
     S.adam = v; kaydet();
   });
+  if ($('f_sart')) $('f_sart').addEventListener('change', e => { S.sartF = e.target.value; suz(); });
   $('f_not').addEventListener('input', e => { S.not = e.target.value; kaydet(); });
   if ($('f_vkat')) $('f_vkat').addEventListener('change', e => { S.varsayilanKat = e.target.value; kaydet(); });
   $('f_q').addEventListener('input', e => { S.q = e.target.value; suz(); });
@@ -400,7 +430,7 @@ function suz() {
   let n = 0;
   document.querySelectorAll('#liste .kalem').forEach(art => {
     const k = kalemMap.get(art.dataset.id);
-    const gorunur = (!S.yalnizDolu || kalemDolu(k.id)) && kelimeler.every(w => k._ara.includes(w));
+    const gorunur = (!S.yalnizDolu || kalemDolu(k.id)) && (!S.sartF || k.sart === S.sartF) && kelimeler.every(w => k._ara.includes(w));
     art.hidden = !gorunur;
     if (gorunur) n++;
   });
@@ -466,10 +496,12 @@ function onayAc() {
   }
   if (!out.length) { toast('En az bir kaleme miktar girin'); return; }
   const L = V.link;
-  const bilgi = [tarihYaz(L.tarih).gun, VARDIYA_AD[L.vardiya] || L.vardiya, L.cat, S.adam ? S.adam + ' adam' : ''].filter(Boolean).map(esc).join(' · ');
+  const adam = sabitAdam() ? String(L.adam) : S.adam;
+  const bilgi = [tarihYaz(L.tarih).gun, VARDIYA_AD[L.vardiya] || L.vardiya, L.cat, adam ? adam + ' adam' : ''].filter(Boolean).map(esc).join(' · ');
   const satirHtml = out.map(o => {
     const kat = o.katId ? katAdi(o.katId) : (o.kat ? 'Kat ' + o.kat : (V.katSabit ? katEtiket(V.katSabit.ad) : ''));
-    return `<li><span class="o-ad">${o.k.kod ? `<span class="mono">${esc(o.k.kod)}</span> ` : ''}${esc(o.k.ad)}${kat ? ` <span class="o-kat">${esc(kat)}</span>` : ''}</span><span class="o-mik">${fmt(o.miktar)} ${esc(o.k.birim || '')}</span></li>`;
+    const sart = cokSartname() && o.k.sart ? `<span class="k-sart">${esc(V.sartKisa[o.k.sart] || o.k.sart)}</span>` : '';
+    return `<li><span class="o-ad">${sart}${o.k.kod ? `<span class="mono">${esc(o.k.kod)}</span> ` : ''}${esc(o.k.ad)}${kat ? ` <span class="o-kat">${esc(kat)}</span>` : ''}</span><span class="o-mik">${fmt(o.miktar)} ${esc(o.k.birim || '')}</span></li>`;
   }).join('');
   const d = document.createElement('div');
   d.className = 'perde'; d.id = 'f_onay';
@@ -490,7 +522,8 @@ function onayAc() {
 async function gonder(out, btn) {
   btn.disabled = true; btn.textContent = 'Gönderiliyor...';
   const govde = {
-    dolduran: S.dolduran.trim(), adam: S.adam === '' ? '' : Number(S.adam), not: S.not.trim(),
+    // yoneticinin sabitledigi ad/adam gonderilmez - sunucu linktekini kullanir
+    dolduran: sabitAd() ? '' : S.dolduran.trim(), adam: sabitAdam() || S.adam === '' ? '' : Number(S.adam), not: S.not.trim(),
     satirlar: out.map(o => ({ id: o.id, miktar: o.miktar, katId: o.katId, kat: o.kat })),
   };
   let r, b;
@@ -520,7 +553,7 @@ function basari(n) {
     '<button class="btn" type="button" id="f_yeni">Yeni gönderim yap</button><p class="kucuk">Unuttuğunuz bir kalem varsa yeni gönderim yapabilirsiniz - aynı kalemi tekrar göndermeyin.</p>');
   $('f_yeni').addEventListener('click', () => {
     V.gonderimSayisi = (V.gonderimSayisi || 0) + 1;
-    S.g = {}; S.not = ''; S.q = ''; S.yalnizDolu = false;
+    S.g = {}; S.not = ''; S.q = ''; S.yalnizDolu = false; S.sartF = '';
     ciz();
   });
 }
