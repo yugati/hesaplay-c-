@@ -213,6 +213,23 @@ export async function sbDavetKabul(token, { username, password }) {
   })
 }
 
+/* SAHA LINKI yonetimi (yalnizca yonetici) - bkz. lib/sahaLink.js.
+   Linki acan kisinin sayfasi (public/saha-link.html) bu dosyayi KULLANMAZ;
+   oturumu olmadigi icin /api/saha-link/:token'a dogrudan fetch eder. */
+export async function sbSahaLinkListe() {
+  return authFetch('/api/saha-link')
+}
+
+// govde: {op:'olustur', tarih, bina, cat, ekip, vardiya, sart, katId, stokDus}
+//        {op:'iptal', id} | {op:'karar', id, durum:'kabul'|'red', kayitlar?, neden?}
+export async function sbSahaLinkIslem(govde) {
+  return authFetch('/api/saha-link', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(govde),
+  })
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Organizasyonlar (cok kiracili yapi)
 //

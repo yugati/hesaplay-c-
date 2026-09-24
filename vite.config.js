@@ -109,6 +109,21 @@ function localApiPlugin() {
     return null
   }
 
+  // /s/abc -> '/saha-link.html' ; eslesme yoksa null. Yalnizca .html'e giden, index.html
+  // DISINDAKI ve /api/ ile baslamayan kurallar - ":ad" tek segment (Vercel gibi).
+  function sayfaYenidenYaz(pathname) {
+    let kurallar = []
+    try {
+      kurallar = JSON.parse(fs.readFileSync(path.join(kokDizin, 'vercel.json'), 'utf8')).rewrites || []
+    } catch (e) { return null }
+    for (const r of kurallar) {
+      const s = String(r.source), d = String(r.destination || '')
+      if (s.startsWith('/api/') || !d.endsWith('.html') || d === '/index.html' || /[()]/.test(s)) continue
+      if (new RegExp('^' + s.replace(/:(\w+)/g, '[^/]+') + '/?$').test(pathname)) return d
+    }
+    return null
+  }
+
   function sendJson(res, code, obj) {
     res.statusCode = code
     res.setHeader('Content-Type', 'application/json; charset=utf-8')
@@ -120,7 +135,14 @@ function localApiPlugin() {
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
         const url = new URL(req.url, 'http://localhost')
-        if (!url.pathname.startsWith('/api/')) return next()
+        if (!url.pathname.startsWith('/api/')) {
+          // Sayfa rewrite'lari (orn. /s/:token -> /saha-link.html): canlida Vercel yapar,
+          // yerelde Vite'in SPA yedegi index.html'i verirdi. index.html'e giden
+          // catch-all kurali Vite'in kendi davranisiyla ayni, o yuzden atlanir.
+          const sayfa = sayfaYenidenYaz(url.pathname)
+          if (sayfa) req.url = sayfa + url.search
+          return next()
+        }
 
         // Gizli anahtarlar eksikse net bir mesajla durdur (login ekraninda gorunur)
         const missing = SERVER_ENV_KEYS.filter((k) => !process.env[k])

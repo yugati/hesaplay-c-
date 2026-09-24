@@ -67,7 +67,7 @@ const ORG_TABLOLARI = [
   'proje_orders', 'proje_alternatives', 'proje_bina_modelleri', 'proje_lokasyonlar',
   'gunluk_isler', 'ihtiyac_listeleri', 'faturalar', 'katalog', 'audit_log',
   'app_settings', 'saha_settings', 'rapor_ekipler', 'proje_buildings', 'proje_sections',
-  'invites', 'users',
+  'invites', 'users', 'saha_linkleri',
 ]
 // Dosyalar '<org>/...' onekiyle bu iki kovada durur (bkz. api/dosya.js)
 const ORG_KOVALARI = ['belgeler', 'bina-modelleri']

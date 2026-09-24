@@ -5,6 +5,7 @@ import { signSession, SESSION_TTL_DEFAULT } from '../lib/auth.js'
 import { girisKilitli, hataliDeneme, basariliGiris, istekIp } from '../lib/girisKoruma.js'
 import { denetimYaz } from '../lib/denetim.js'
 import { ilkTasari, VARSAYILAN_TASARI } from '../lib/tasari.js'
+import sahaLink from '../lib/sahaLink.js'
 
 const ROL_AD = { admin: 'Yonetici', izleyici: 'Izleyici', saha_personeli: 'Saha Personeli' }
 
@@ -21,7 +22,11 @@ function kalanMetin(sn) {
 // degismedi. token ve action vercel.json rewrite'lariyla sorgu olarak gelir:
 //   /api/davet/:token        -> /api/davet?token=:token
 //   /api/davet/:token/kabul  -> /api/davet?token=:token&action=kabul
+// SAHA LINKI de burada: ayni tur (tokenli, hesapsiz acilan link) ve ayni sinir.
+//   /api/saha-link[/:token]  -> /api/davet?tur=saha[&token=:token]  (bkz. lib/sahaLink.js)
 export default async function handler(req, res) {
+  const tur = Array.isArray(req.query.tur) ? req.query.tur[0] : req.query.tur
+  if (tur === 'saha') return sahaLink(req, res)
   const { token } = req.query
   const actionParam = req.query.action
   const action = Array.isArray(actionParam) ? actionParam[0] : actionParam
