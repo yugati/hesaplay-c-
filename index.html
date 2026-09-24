@@ -763,6 +763,30 @@ mark.mkr.ince{background:none;color:var(--amber);font-weight:700;box-shadow:none
 .cmdk-empty{padding:28px;text-align:center;color:var(--dim);font-size:13px}
 .cmdk-foot{display:flex;gap:14px;padding:9px 16px;border-top:1px solid var(--line);font-size:11px;color:var(--dim)}
 .cmdk-foot kbd{font-family:var(--mono);font-size:10px;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-right:4px}
+.cmdk-foot .cf-not{margin-left:auto;color:var(--amber)}
+/* arama ayarlari: disli dugmesi + girisin altinda acilan kucuk panel */
+.cmdk-gear{position:relative;background:none;border:1px solid transparent;border-radius:7px;width:28px;height:28px;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;color:var(--dim);cursor:pointer;transition:background var(--transition),color var(--transition)}
+.cmdk-gear:hover,.cmdk.ayar-acik .cmdk-gear{background:var(--hover);color:var(--ink);border-color:var(--line)}
+.cmdk-gear.degisik::after{content:'';position:absolute;top:4px;right:4px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.cmdk-ayar{display:none;padding:11px 16px 12px;border-bottom:1px solid var(--line);background:var(--panel2)}
+.cmdk.ayar-acik .cmdk-ayar{display:block}
+.cmdk-ayar-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.cmdk-ayar-h b{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mute)}
+.cmdk-ayar-h button{background:none;border:none;color:var(--dim);font:inherit;font-size:11px;cursor:pointer;padding:0}
+.cmdk-ayar-h button:hover{color:var(--ink);text-decoration:underline}
+.cmdk-turler{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
+.cmdk-tur{background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:20px;padding:3px 10px;font-size:11.5px;
+  font-weight:600;font-family:inherit;cursor:pointer;text-decoration:line-through;transition:all var(--transition)}
+.cmdk-tur.on{color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,var(--line));background:color-mix(in srgb,var(--accent) 12%,var(--panel));text-decoration:none}
+.cmdk-ayar-satir{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
+.cmdk-ayar-satir>span{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--mute)}
+.cmdk-ayar .seg button{padding:4px 10px;font-size:11px}
+.cmdk-ayar label{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink);cursor:pointer}
+.cmdk-item .ci-son{color:var(--dim);flex:0 0 auto;display:flex}
+.cmdk.sik .cmdk-item{padding:5px 10px;gap:9px}
+.cmdk.sik .cmdk-item .ci-ico{width:22px;height:22px;border-radius:6px}
+.cmdk.sik .cmdk-item .ci-meta{display:none}
 header .brand-mark{width:36px}
 header .htitle{font-weight:700;font-size:14px;letter-spacing:-.2px;line-height:1.25}
 header .hsub{font-size:10.5px;color:var(--dim);font-family:var(--mono);letter-spacing:.3px;line-height:1.3}
@@ -39574,6 +39598,87 @@ function icoDown(){return '<svg width="13" height="13" viewBox="0 0 24 24" fill=
    - Klavye: Ctrl/Cmd+K ac, ok tuslari gezin, Enter git, Esc kapat
    ================================================================== */
 let _cmdkSel=0, _cmdkResults=[];
+/* ARAMA AYARLARI (disli dugmesi) - KULLANICI BASINA localStorage, pano duzeni
+   gibi (bkz. panoDuzenKey): app_settings org geneli ortaktir, bir kisinin arama
+   tercihi otekileri etkilememeli.
+   - kapali: aramanin disinda tutulan TUR GRUPLARI (CMDK_GRUPLAR id'leri)
+   - tam:    true -> yalniz bitisik esleme; false -> matchText'in harf-sirasi
+             eslemesi (esnek, eskisi gibi varsayilan)
+   - sik:    sonuc satirlarini daraltir (alt bilgi satiri gizlenir)
+   - son:    bos aramada son gidilen sonuclar en ustte */
+const CMDK_GRUPLAR=[
+  {id:'modul', ad:'Modüller',        turler:['Modul']},
+  {id:'yapi',  ad:'Bina & Bölüm',    turler:['Bina','Bolum','Lokasyon']},
+  {id:'sart',  ad:'Şartname',        turler:['Sartname','Kalem']},
+  {id:'urun',  ad:'Ürün',            turler:['Urun']},
+  {id:'hrk',   ad:'Hareket',         turler:['Hareket','Cikis','Iade']},
+  {id:'sip',   ad:'Sipariş & Şirket',turler:['Siparis','Sirket']},
+  {id:'gecici',ad:'Geçici Elektrik', turler:['Gecici','Gecici Siparis'], sec:'gecici'},
+  {id:'alet',  ad:'El Aletleri',     turler:['Alet','Alet Kunyesi'],     sec:'alet'},
+  {id:'saha',  ad:'Şantiye',         turler:['Pano','Priz'],             sec:'saha'},
+  {id:'rapor', ad:'Rapor & Ekip',    turler:['Rapor','Ekip'],            sec:'rapor'}
+];
+const CMDK_TUR_GRUP={}; CMDK_GRUPLAR.forEach(g=>g.turler.forEach(t=>{ CMDK_TUR_GRUP[t]=g.id; }));
+// rozetteki gorunen ad - tur anahtari ikon sozlugunde ASCII kalir
+const CMDK_TUR_AD={Modul:'Modül',Bolum:'Bölüm',Sartname:'Şartname',Urun:'Ürün',Cikis:'Çıkış',Iade:'İade',Siparis:'Sipariş',
+  Sirket:'Şirket',Gecici:'Geçici','Gecici Siparis':'Geçici Sipariş','Alet Kunyesi':'Alet Künyesi'};
+const CMDK_AYAR_VARSAYILAN={kapali:[],tam:false,sik:false,son:true};
+let _cmdkAyar=null, _cmdkAyarKey='', _cmdkOff=new Set(), _cmdkSonAnah=new Map();
+function cmdkAyarKey(){ return 'cmdkAyar:'+((CURRENT_USER&&CURRENT_USER.username)||'-'); }
+function cmdkSonKey(){ return 'cmdkSon:'+((CURRENT_USER&&CURRENT_USER.username)||'-'); }
+function cmdkAyar(){
+  const k=cmdkAyarKey();
+  if(_cmdkAyar&&_cmdkAyarKey===k) return _cmdkAyar;
+  let kayit=null; try{ kayit=JSON.parse(localStorage.getItem(k)||'null'); }catch(e){}
+  const bilinen=new Set(CMDK_GRUPLAR.map(g=>g.id));
+  const a=Object.assign({},CMDK_AYAR_VARSAYILAN,kayit&&typeof kayit==='object'?kayit:{});
+  a.kapali=Array.isArray(a.kapali)?a.kapali.filter(id=>bilinen.has(id)):[];
+  a.tam=!!a.tam; a.sik=!!a.sik; a.son=a.son!==false;
+  _cmdkAyar=a; _cmdkAyarKey=k; return a;
+}
+function cmdkAyarYaz(degisen){
+  const a=Object.assign(cmdkAyar(),degisen||{});
+  try{ localStorage.setItem(cmdkAyarKey(),JSON.stringify(a)); }catch(e){ console.warn('Arama ayari kaydedilemedi:',e); }
+  cmdkAyarCiz(); cmdkYenile();
+}
+function cmdkAyarSifirla(){ _cmdkAyar=null; try{ localStorage.removeItem(cmdkAyarKey()); }catch(e){} cmdkAyarCiz(); cmdkYenile(); }
+function cmdkTurToggle(id){
+  const k=new Set(cmdkAyar().kapali); if(k.has(id))k.delete(id); else k.add(id);
+  cmdkAyarYaz({kapali:[...k]});
+}
+// kullanicinin gorebildigi gruplar (yetkisiz modulun cipi hic cikmaz)
+function cmdkGorunenGruplar(){ return CMDK_GRUPLAR.filter(g=>cmdkCan(g.sec)); }
+function cmdkKapaliSay(){ const a=cmdkAyar(); return cmdkGorunenGruplar().filter(g=>a.kapali.includes(g.id)).length; }
+function cmdkAyarDegisik(){ const a=cmdkAyar(); return cmdkKapaliSay()>0||a.tam||a.sik||!a.son; }
+function cmdkAyarCiz(){
+  const kutu=document.querySelector('#cmdkBg .cmdk'); if(!kutu)return;
+  const a=cmdkAyar();
+  kutu.classList.toggle('sik',a.sik);
+  const g=document.getElementById('cmdkGear'); if(g)g.classList.toggle('degisik',cmdkAyarDegisik());
+  const p=document.getElementById('cmdkAyar'); if(!p)return;
+  const seg=(alan,secenekler)=>`<div class="seg">${secenekler.map(([v,ad])=>`<button class="${a[alan]===v?'on':''}" onclick="cmdkAyarYaz({${alan}:${v}})">${ad}</button>`).join('')}</div>`;
+  p.innerHTML=`<div class="cmdk-ayar-h"><b>Aranan türler</b>${cmdkAyarDegisik()?`<button onclick="cmdkAyarSifirla()">Varsayılana dön</button>`:''}</div>
+    <div class="cmdk-turler">${cmdkGorunenGruplar().map(gr=>`<button class="cmdk-tur${a.kapali.includes(gr.id)?'':' on'}" onclick="cmdkTurToggle('${gr.id}')" title="${a.kapali.includes(gr.id)?'Aramaya kat':'Aramanın dışında tut'}">${esc(gr.ad)}</button>`).join('')}</div>
+    <div class="cmdk-ayar-satir">
+      <span title="Esnek: harfler sırayla geçiyorsa bulur (kbl → kablo). Tam: yazılan metin bitişik geçmeli, daha az ama daha isabetli sonuç.">Eşleşme ${seg('tam',[[false,'Esnek'],[true,'Tam']])}</span>
+      <span>Görünüm ${seg('sik',[[false,'Rahat'],[true,'Sıkı']])}</span>
+      <label><input type="checkbox" ${a.son?'checked':''} onchange="cmdkAyarYaz({son:this.checked})"> Boş aramada son gidilenler üstte</label>
+    </div>`;
+}
+function cmdkAyarAcKapa(){
+  const kutu=document.querySelector('#cmdkBg .cmdk'); if(!kutu)return;
+  kutu.classList.toggle('ayar-acik'); cmdkAyarCiz();
+  const inp=document.getElementById('cmdkInput'); if(inp)inp.focus();
+}
+// ayar degisince acik aramayi ayni metinle tazele, odak girise donsun (klavye gezinmesi bozulmasin)
+function cmdkYenile(){ const inp=document.getElementById('cmdkInput'); if(!inp)return; cmdkSearch(inp.value); inp.focus(); }
+// SON GIDILENLER: tur+ad+alt bilgi anahtariyla tutulur (go kapanisi saklanamaz); en fazla 6
+function cmdkSonAnahtar(r){ return [r.kind,r.name,r.meta||''].join('\u0001'); }
+function cmdkSonListe(){ try{ const v=JSON.parse(localStorage.getItem(cmdkSonKey())||'[]'); return Array.isArray(v)?v.filter(x=>typeof x==='string'):[]; }catch(e){ return []; } }
+function cmdkSonEkle(r){
+  const k=cmdkSonAnahtar(r); const l=[k,...cmdkSonListe().filter(x=>x!==k)].slice(0,6);
+  try{ localStorage.setItem(cmdkSonKey(),JSON.stringify(l)); }catch(e){}
+}
 function openCmdk(){
   if(document.getElementById('cmdkBg'))return;
   if(!CURRENT_USER)return; // giris yapilmadan acilmaz
@@ -39582,12 +39687,15 @@ function openCmdk(){
   d.innerHTML=`<div class="cmdk">
     <div class="cmdk-input">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-      <input id="cmdkInput" placeholder="Her yerde ara: urun, kod, siparis, rapor, bina, bolum..." autocomplete="off">
+      <input id="cmdkInput" placeholder="Her yerde ara: ürün, kod, sipariş, rapor, bina, bölüm..." autocomplete="off">
+      <button class="cmdk-gear" id="cmdkGear" onclick="cmdkAyarAcKapa()" title="Arama ayarları: aranan türler, eşleşme, görünüm"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></button>
     </div>
+    <div class="cmdk-ayar" id="cmdkAyar"></div>
     <div class="cmdk-list" id="cmdkList"></div>
-    <div class="cmdk-foot"><span><kbd>&uarr;&darr;</kbd> gezin</span><span><kbd>Enter</kbd> git</span><span><kbd>Esc</kbd> kapat</span></div>
+    <div class="cmdk-foot"><span><kbd>&uarr;&darr;</kbd> gezin</span><span><kbd>Enter</kbd> git</span><span><kbd>Esc</kbd> kapat</span><span class="cf-not" id="cmdkFootNot"></span></div>
   </div>`;
   document.body.appendChild(d);
+  cmdkAyarCiz();
   const inp=document.getElementById('cmdkInput');
   inp.oninput=()=>cmdkSearch(inp.value);
   inp.onkeydown=e=>{
@@ -39600,16 +39708,28 @@ function openCmdk(){
 function closeCmdk(){ const d=document.getElementById('cmdkBg'); if(d)d.remove(); _cmdkResults=[]; _cmdkSel=0; }
 function cmdkCan(sec){ return !sec || canSee(sec); }
 function cmdkText(v){ return Array.isArray(v)?v.filter(Boolean).join(' '):String(v||''); }
-function cmdkHit(fields,q){ if(!q)return true; return (fields||[]).some(f=>f&&matchText(String(f),q)); }
+function cmdkHit(fields,q){
+  if(!q)return true;
+  if(!cmdkAyar().tam) return (fields||[]).some(f=>f&&matchText(String(f),q));
+  // TAM esleme: harf-sirasi (subseq) yok - metin bitisik gecmeli; bosluksuz yazim yine tutar
+  const nq=norm(q).trim(), noSp=nq.replace(/\s+/g,'');
+  return (fields||[]).some(f=>{ if(!f)return false; const h=norm(String(f)); return h.includes(nq)||(!!noSp&&h.replace(/\s+/g,'').includes(noSp)); });
+}
 function cmdkAdd(out,item,q,fields){
+  if(_cmdkOff.has(CMDK_TUR_GRUP[item.kind]))return; // ayarlarda kapatilan tur
   if(!cmdkHit(fields||[item.name,item.meta],q))return;
   const hay=norm(cmdkText(fields||[item.name,item.meta]));
   const nq=norm(q).trim();
   item.score=!nq?999:(hay.startsWith(nq)?0:hay.includes(nq)?1:2);
+  // bos aramada son gidilenler en uste (en yenisi en ustte)
+  if(!nq&&_cmdkSonAnah.size){ const s=_cmdkSonAnah.get(cmdkSonAnahtar(item)); if(s!=null){ item.score=-10+s; item.son=true; } }
   out.push(item);
 }
 function cmdkSearch(q){
   q=(q||'').trim(); const out=[];
+  const ayar=cmdkAyar();
+  _cmdkOff=new Set(ayar.kapali);
+  _cmdkSonAnah=new Map((!q&&ayar.son)?cmdkSonListe().map((k,i)=>[k,i]):[]);
   const moduleItems=[
     ['Proje Malzemesi','Bina, sartname, siparis ve montaj ilerleme','Modul','proje',()=>{switchSection('proje');}],
     ['Malzeme Kutuphanesi','Tum proje urunleri, kodlar, etiketler, standartlar','Modul','proje',()=>{switchSection('proje'); openMaterialLib();}],
@@ -39709,7 +39829,10 @@ function cmdkSearch(q){
 }
 function cmdkPaint(){
   const l=document.getElementById('cmdkList'); if(!l)return;
-  if(!_cmdkResults.length){ l.innerHTML='<div class="cmdk-empty">Sonuc bulunamadi</div>'; return; }
+  // alt seritte etkin ayar hatirlatmasi: kapali tur / tam esleme sonuclari daraltir
+  const kapaliN=cmdkKapaliSay(), fn=document.getElementById('cmdkFootNot');
+  if(fn) fn.textContent=[kapaliN?`${kapaliN} tür kapalı`:'',cmdkAyar().tam?'tam eşleşme':''].filter(Boolean).join(' · ');
+  if(!_cmdkResults.length){ l.innerHTML=`<div class="cmdk-empty">Sonuç bulunamadı${kapaliN?`<br><button class="btn btn-ghost" style="margin-top:10px" onclick="cmdkAyarYaz({kapali:[]})">${kapaliN} kapalı türü de ara</button>`:''}</div>`; return; }
   const icos={Modul:'M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z',Bina:'M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6',Bolum:'M4 6h16M4 12h16M4 18h16',Sartname:'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11',Kalem:'M9 11l3 3L22 4M5 4h11M5 20h14M5 12h4',
     Urun:'M21 8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z',Malzeme:'M21 8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z',
     Siparis:'M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6',Sirket:'M3 21h18M5 21V5h9v16M14 9h5v12M8 9h3M8 13h3M8 17h3',Lokasyon:'M21 10c0 7-9 12-9 12S3 17 3 10a9 9 0 1118 0zM12 10a3 3 0 100-6 3 3 0 000 6z',
@@ -39718,10 +39841,11 @@ function cmdkPaint(){
   l.innerHTML=_cmdkResults.map((r,i)=>`<div class="cmdk-item${i===_cmdkSel?' sel':''}" onclick="cmdkGo(${i})" onmousemove="if(_cmdkSel!==${i}){_cmdkSel=${i};cmdkPaint();}">
     <div class="ci-ico"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="${ico(r.kind)}"/></svg></div>
     <div class="ci-txt"><div class="ci-name">${esc(r.name)}</div>${r.meta?`<div class="ci-meta">${esc(r.meta)}</div>`:''}</div>
-    <span class="ci-kind">${r.kind}</span></div>`).join('');
+    ${r.son?`<span class="ci-son" title="Son gidilenlerden"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>`:''}
+    <span class="ci-kind">${esc(CMDK_TUR_AD[r.kind]||r.kind)}</span></div>`).join('');
   const sel=l.children[_cmdkSel]; if(sel)sel.scrollIntoView({block:'nearest'});
 }
-function cmdkGo(i){ const r=_cmdkResults[i]; if(!r)return; closeCmdk(); r.go(); }
+function cmdkGo(i){ const r=_cmdkResults[i]; if(!r)return; cmdkSonEkle(r); closeCmdk(); r.go(); }
 /* BILGI BALONU KONUMU - balon varsayilan olarak rozetin SOLUNDAN hizali acilir;
    sagdaki sutunlarda pencere disina tasip metni kirpiyordu. Genislik ancak balon
    yerlestikten sonra olculebildigi icin CSS'te cozulemez: imlec rozete girince
