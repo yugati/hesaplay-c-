@@ -3965,7 +3965,9 @@ main:has(>.iht-form-wrap){max-width:none}
 .fat-alin-beyan .sil{border:1px solid var(--line);background:transparent;color:var(--mute);border-radius:7px;
   width:26px;height:28px;cursor:pointer;font-size:15px;line-height:1}
 .fat-alin-beyan .sil:hover{color:var(--red);border-color:var(--red)}
-.fat-alinmamis.disbeyan{border-left-color:var(--blue);background:color-mix(in srgb,var(--blue) 5%,var(--panel));margin:11px 0 0}
+.fat-alinmamis.disbeyan{border:1px solid color-mix(in srgb,var(--red) 45%,var(--line));border-left:4px solid var(--red);
+  background:color-mix(in srgb,var(--red) 8%,var(--panel));margin:0 0 11px}
+.fat-alinmamis.disbeyan h5{color:var(--red);font-size:13px}
 @media(max-width:760px){ .fat-alin-satir,.fat-alin-satir.beyanli{grid-template-columns:minmax(0,1fr);gap:6px}
   .fat-alin-beyan{align-items:flex-start} }
 /* Sayactaki kisayollar: alimi olmayan eslesme / sistemde yok. Tiklayinca panele iner. */
@@ -34743,6 +34745,7 @@ function renderFaturaDetay(){
      durmasin. */
   const farklar=fatKayitFarklari(f);
   const farkliOlan=farklar.filter(x=>x.durum!=='denk');
+  const alimYoklar=farklar.filter(x=>x.kod==='alim-yok');
 
   /* SATIR TABLOSU GORUNUM SIRASIYLA cizilir (bkz. fatSiraAnahtarlari). Sira
      duzenlenirken bekleyen sira (FAT_SIRA) gosterilir - kaydedilene kadar
@@ -34770,7 +34773,7 @@ function renderFaturaDetay(){
           ?`<button class="fat-link" title="Malzeme kunyesini ac" onclick="openMatDetail('${esc(b.matId)}')">${esc(b.ad||'-')}</button>`
           :esc(b.ad||(u&&u.ad)||'-')}</div>
           ${(b.code||(u&&u.code))?`<div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(b.code||u.code)}</div>`:''}
-          <div style="margin-top:3px"><span class="fat-yb-rz" title="Bu urun tedarikcinin faturasinda yaziyor ama bu faturaya kabul edilen miktari yok - tutari hesaba girmez, yalnizca Fark Raporunda gorunur">YALNIZCA FATURADA YAZAN</span></div></td>
+          <div style="margin-top:3px">${u?'':'<span class="fat-rozet hic" style="margin-right:5px" title="Bu firmanin siparislerinde bu urun icin hicbir alim kaydi yok">BU FİRMADAN ALIM YOK</span>'}<span class="fat-yb-rz" title="Bu urun tedarikcinin faturasinda yaziyor ama bu faturaya kabul edilen miktari yok - tutari hesaba girmez, yalnizca Fark Raporunda gorunur">YALNIZCA FATURADA YAZAN</span></div></td>
         <td class="fat-alim">${u?`<b>${fmtNum(u.alinan)}</b>${u.iade>0?` · <span style="color:var(--amber)">-${fmtNum(u.iade)}</span>`:''}
           <div class="t-meta" style="font-size:10.5px">F${fmtNum(u.fat)} · kalan ${fmtNum(Math.max(0,u.kalan))}</div>`
           :'<span style="color:var(--red)">bu firmadan alim yok</span>'}</td>
@@ -34881,6 +34884,12 @@ function renderFaturaDetay(){
         fazlalar.length>4?` (+${fazlalar.length-4} urun daha)`:''}.
       Bu urunler asagida kirmizi satirla isaretli. Ayni mal ikinci kez faturalanmis olabilir -
       Mutabakat ekranindan hangi faturalarin bu urune yazdigini gorebilirsiniz.</p></div>`:''}
+    ${alimYoklar.length?`<div class="fat-uyari kritik">
+      <h5>&#9888; Faturada yazan ${fmtNum(alimYoklar.length)} urun bu firmadan HİÇ ALINMAMIŞ</h5>
+      <p>${esc(alimYoklar.slice(0,4).map(x=>`${x.sira?'#'+x.sira+' ':''}${x.ad||x.code||'urun'} (faturada ${fmtNum(x.beyan)})`).join(' ; '))}${
+        alimYoklar.length>4?` (+${alimYoklar.length-4} urun daha)`:''}.
+      ${esc(fatCompany(f)||'Bu firma')} siparislerinde bu urunler icin hicbir alim kaydi yok - kabul edilen miktarlari 0, tutara girmezler.
+      Fark Raporunda "alim yok" gerekcesiyle duruyorlar.</p></div>`:''}
     ${farkliOlan.length?`<div class="fat-uyari kritik">
       <h5>&#9888; Faturada yazan adetlerin ${fmtNum(farkliOlan.length)} tanesi kayitlarla uyusmuyor</h5>
       <p>Tedarikcinin belgesinde yazan adetler ile bu faturaya kabul edilen adetler ayni degil.
@@ -35769,7 +35778,8 @@ function fatDisBeyanBolumu(){
     </div>`;
   };
   return `<div class="fat-alinmamis disbeyan">
-    <h5>Faturada yazan · bu firmadan alimi olmayan ${fmtNum(st._disSatirlar.length)} urun</h5>
+    <h5>&#9888; Faturada yaziyor ama bu firmadan HİÇ ALINMAMIŞ: ${fmtNum(st._disSatirlar.length)} urun
+      <span class="fat-rozet hic">ALIM YOK ${fmtNum(st._disSatirlar.length)}</span></h5>
     <p>Bu urunler tedarikcinin faturasinda yaziyor ama <b>bu firmadan alim kaydi yok</b>. Faturaya kabul edilen miktarlari
       <b>0</b>'dir, tutara ve kalana girmezler; yalnizca Fark Raporunda (ekran, kopya metin, PDF, Excel) "alim yok" gerekcesiyle
       gorunurler. Yeni urun eklemek icin yukaridaki aramada adini ya da kodunu aratin.</p>
@@ -35777,6 +35787,11 @@ function fatDisBeyanBolumu(){
 }
 const FAT_FARK_ETIKET={ fazla:'FAZLA FATURALANMIS', 'eksik girilmis':'EKSIK GIRILMIS',
   eksik:'BELGEDEN FAZLA GIRILMIS', denk:'DENK' };
+/* "Hic alinmamis" farki FAZLA FATURALANMIS'tan ayri adla yazilir: ikisi de
+   karsi tarafin fazlasidir ama biri "kalandan fazla", oteki "bu mal hic
+   alinmadi" der - ikincisi cok daha agir bir itirazdir, ayni etiketle
+   okunursa gozden kacar. */
+function fatFarkEtiket(x){ return (x&&x.kod==='alim-yok')?'BU FİRMADAN ALIM YOK':(FAT_FARK_ETIKET[x.durum]||x.durum); }
 function fatFarkRozetMetni(h){
   const say=v=>fmtNum(Math.round(Math.abs(v)*1e6)/1e6);
   if(h.durum==='denk') return 'denk';
@@ -35818,7 +35833,7 @@ function fatFarkPanelHtml(hepsi,farkli,kunye,pdfId){
   const metin=fatFarkMetni(hepsi,kunye);
   const satirlar=(farkli.length?farkli:hepsi).map(x=>`<div class="fk-sat ${x.durum.replace(/ /g,'-')}">
     <div class="ust">${x.sira?`<span class="sn" title="Faturadaki satir numarasi">#${x.sira}</span>`:''}<b>${esc(x.ad||'-')}</b>${x.code?`<span class="kod">${esc(x.code)}</span>`:''}
-      <span class="rz">${esc(FAT_FARK_ETIKET[x.durum]||x.durum)}</span></div>
+      <span class="rz">${esc(fatFarkEtiket(x))}</span></div>
     <div class="sy"><span>Faturada yazan <b>${say(x.beyan)}</b>${x.unit?' '+esc(x.unit):''}</span>
       <span>Bu faturaya girilen <b>${say(x.sistem)}</b></span>
       <span>Faturalanabilir kalan <b>${say(x.kalan)}</b></span>
@@ -35857,7 +35872,7 @@ function fatFarkMetni(hepsi,kunye){
     '   Faturada yazan       : '+say(x.beyan)+(x.unit?' '+x.unit:''),
     '   Bu faturaya girilen  : '+say(x.sistem),
     '   Faturalanabilir kalan: '+say(x.kalan),
-    '   FARK                 : '+(x.fark>0?'+':'')+say(x.fark)+'   ('+(FAT_FARK_ETIKET[x.durum]||x.durum)+')',
+    '   FARK                 : '+(x.fark>0?'+':'')+say(x.fark)+'   ('+fatFarkEtiket(x)+')',
     ...((x.fark>0&&x.fiyat>0)?['   Fazla tutar          : '+fatPara(x.fark*x.fiyat,(k.pb||''))+'   (birim fiyat '+fatPara(x.fiyat,'')+')']:[]),
     '   Gerekce              : '+(x.neden||'-'),''].join('\n'));
   return bas.concat(gv).join('\n');
@@ -36220,6 +36235,10 @@ function renderFaturaForm(){
           ${cipler.length>1?`<button class="cip hepsi" onclick="fatFormFiltreTemizle()">Tumunu temizle</button>`:''}
         </div>`:''}
       </div>
+      <!-- ALIMI OLMAYAN URUNLER TABLONUN USTUNDE: altta 80 satirlik listenin
+           arkasinda kaliyordu - "bu mal bu firmadan hic alinmadi" bilgisi
+           faturanin en agir uyarisidir, gozden kacmamali. -->
+      ${fatDisBeyanBolumu()}
       ${gizliN>0?`<div class="fat-uyari dikkat" style="margin:0 0 10px">
         <h5>&#9888; "${esc(st.fq)}" ile eslesen ${fmtNum(gizliN)} urun daha var</h5>
         <p>Bu urunler suzgeclerin disinda kaldi: secili bina/bolum disinda${st.fgizleBitmis?' ya da tamami zaten faturalanmis':''}
@@ -36254,7 +36273,6 @@ function renderFaturaForm(){
       <!-- FARK RAPORU TABLONUN DISINDA: bir suzgec listeyi bosaltsa bile rapor
            ekranda kalir. Icerik bosken (hic "faturada yazan" girilmemisse)
            fatFarkPanelIc bos metin doner ve kutu hic cizilmez. -->
-      ${fatDisBeyanBolumu()}
       <div id="fatFarkPanel">${fatFarkPanelIc()}</div>
       ${liste.length>LIMIT?`<p class="t-meta" style="font-size:11.5px;margin-top:8px">+ ${fmtNum(liste.length-LIMIT)} urun daha var - listeyi daraltmak icin arama ya da bina filtresi kullanin</p>`:''}
       ${!panelUstte&&aramaPanel?`<div style="margin-top:11px">${aramaPanel}</div>`:''}
