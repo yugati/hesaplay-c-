@@ -4251,6 +4251,17 @@ main:has(>.iht-form-wrap){max-width:none}
 .fat-fark-rozet.eksik-girilmis{color:var(--amber)}
 .fat-fark-rozet.eksik{color:var(--amber)}
 .fat-fark-rozet.denk{color:var(--green)}
+/* "+N Yazilabilir": fazla rozetinin hemen solunda, kucuk ve turuncu - belgedeki
+   fazlanin bir kismi bu faturaya hala yazilabilir (kalan > girilen miktar).
+   SUTUN GENISLIGI SABIT: etiket Miktar kutusuna yazarken belirip kayboluyor;
+   sutun onunla genisleyip daralsaydi yazilan kutu 13-17px kayardi (olculdu).
+   166px = "+999 Yazılabilir +999 fazla" + hucre boslugu - daha uzun sayilarda
+   sutun yine genisler. Ikisi birden gerekli: yalniz min-width'te genis ekranda
+   artan yer bu sutuna da paylastirilip sutun ~60px sisiyordu; yalniz width'te
+   dar ekranda (tablo 1180px tabaninda) sutun sikisip kayma geri geliyordu. */
+.fat-fark-rozet .yaz{color:var(--amber);font-size:9px;font-weight:600;margin-right:6px}
+.fat-lines .fat-beyan-hucre{width:166px}
+.fat-lines .fat-beyan-hucre .fat-fark-rozet{min-width:158px}
 /* Arama seridindeki uyusmazlik sayaci - rozet dili alinmamis/sistemdeyok ile ayni */
 .fat-ara .sayac .fark{font-family:var(--mono);font-size:11.5px;font-weight:700;border-radius:20px;
   padding:2px 9px;cursor:pointer;line-height:1.5;color:var(--red);
@@ -37092,6 +37103,21 @@ function fatFarkRozetMetni(h){
   if(h.durum==='eksik girilmis') return say(h.fark)+' girilmemis';
   return say(h.fark)+' belgeden fazla';
 }
+/* BU FATURAYA HALA YAZILABILECEK ADET: belge kalandan fazlasini yaziyor ama
+   Miktar kutusu kalana henuz ulasmamis - "+7 fazla"nin bir kismi aslinda
+   girilebilir. Yalnizca 'fazla' durumda: 'eksik girilmis' rozeti ayni sayiyi
+   zaten "N girilmemis" diye soyluyor; alim yoksa kalan 0'dir, cikmaz. */
+function fatYazilabilir(h){
+  if(!h||h.durum!=='fazla') return 0;
+  const y=Math.round((h.kalan-h.sistem)*1e6)/1e6;
+  return y>FAT_EPS?y:0;
+}
+// Rozetin HTML'i: [+N Yazılabilir] + fark metni - ilk cizim ve canli guncelleme ayni yerden
+function fatFarkRozetIc(h){
+  const y=fatYazilabilir(h), say=v=>fmtNum(Math.round(v*1e6)/1e6);
+  return (y?`<span class="yaz" title="Faturalanabilir kalan ${say(h.kalan)}, bu faturaya ${say(h.sistem)} girildi - Miktar kutusuna ${say(y)} daha yazilabilir">+${say(y)} Yazılabilir</span>`:'')
+    +esc(fatFarkRozetMetni(h));
+}
 // Satir rozetleri + panel + sayac; DOM'a dokunur, sayfayi yeniden cizmez
 function fatFarkGuncelle(){
   const st=_FAT; if(!st) return;
@@ -37102,7 +37128,7 @@ function fatFarkGuncelle(){
     if(!(b>0)){ el.className='fat-fark-rozet'; el.textContent=''; el.title=''; return; }
     const h=fatFarkHesapla(hav.get(sr.key)||null,b,fatSayi(st.qty[sr.key]));
     el.className='fat-fark-rozet '+h.durum.replace(/ /g,'-');
-    el.textContent=fatFarkRozetMetni(h);
+    el.innerHTML=fatFarkRozetIc(h);
     el.title=h.neden||'Belgede yazan adet ile bu faturaya girilen adet ayni';
   });
   const p=document.getElementById('fatFarkPanel'); if(p) p.innerHTML=fatFarkPanelIc();
@@ -37368,7 +37394,7 @@ function renderFaturaForm(){
         value="${bv!==undefined&&bv!==''?esc(bv):''}" placeholder="-" oninput="fatSetBeyan(${i},this)"
         title="Tedarikcinin KENDI faturasinda bu urun icin yazdigi adet. Yalnizca karsilastirma icindir: hicbir hesaba girmez, kalani tuketmez, tutari degistirmez. Tamami faturalanmis satirlara da yazilabilir - fazla faturalama tam orada gorunur.">
         <div class="fat-fark-rozet${bfh?' '+bfh.durum.replace(/ /g,'-'):''}" id="fatFR${i}"
-          title="${bfh?esc(bfh.neden||'Belgede yazan adet ile bu faturaya girilen adet ayni'):''}">${bfh?esc(fatFarkRozetMetni(bfh)):''}</div></td>
+          title="${bfh?esc(bfh.neden||'Belgede yazan adet ile bu faturaya girilen adet ayni'):''}">${bfh?fatFarkRozetIc(bfh):''}</div></td>
       <td><input type="number" step="any" min="0" class="num ${fatSayi(v)>0?'dolu':''}" ${bitti?'disabled':''}
         value="${v!==undefined&&v!==''?esc(v):''}" placeholder="0" oninput="fatSetQty(${i},this)"
         title="${bitti?'Bu urunun tamami faturalanmis - kalan yok':'En fazla '+fmtNum(u.kalan)}"></td>
