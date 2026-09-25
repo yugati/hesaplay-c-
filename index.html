@@ -3549,6 +3549,10 @@ label.nord-sart-row input{width:auto;margin:0;cursor:pointer;flex:none}
 .nok-kat.ok{background:color-mix(in srgb,var(--green) 14%,transparent);color:var(--green);border:1px solid color-mix(in srgb,var(--green) 38%,transparent)}
 .nok-kat.yok{background:color-mix(in srgb,var(--amber) 12%,transparent);color:var(--amber);border:1px dashed color-mix(in srgb,var(--amber) 42%,transparent)}
 .nok-kat.bos{border:1px dashed var(--line);color:var(--mute)}
+/* ayni urunde daha once kullanilmis kod: satir ve rozet kirmizi, kirilim uygulanmaz */
+.nok-kat.tekrar{background:color-mix(in srgb,var(--red) 12%,transparent);color:var(--red);border:1px solid color-mix(in srgb,var(--red) 45%,transparent);font-weight:700}
+.nok-row.tekrar{border-color:var(--red);background:color-mix(in srgb,var(--red) 7%,var(--panel))}
+.nok-row.tekrar input.nok-kod{color:var(--red)}
 .nok-unit{width:58px;flex-shrink:0;font-size:11px;color:var(--mute);font-family:var(--mono);line-height:1.25;overflow-wrap:anywhere}
 .nord-ozel.uyumsuz>button:first-child{border-color:var(--red)88;background:color-mix(in srgb,var(--red) 9%,transparent);color:var(--red)}
 .nord-ozel.uyumsuz>button:first-child b{color:var(--red)}
@@ -28515,6 +28519,79 @@ function ozelPayOzet(pay){ return (pay||[]).map(p=>`${p.kod||'kod yok'}: ${fmtNu
 // Kirilim satirin miktariyla uyusuyor mu? (kirilim yazildiktan SONRA miktar degistirilmis olabilir)
 function ozelPayUyumsuz(l){ const p=ozelPaylari(l); if(!p.length) return false;
   return Math.abs(ozelPayToplam(p)-(Number(l.qty)||0))>1e-9; }
+/* OZEL KOD AYNI URUNDE TEKRAR KULLANILAMAZ. Ozel kod bir YERLESIMIN kimligidir; o
+   yerlesime bir urun bir kez alinir. Ayni kodun ayni urune ikinci kez yazilmasi - ayni
+   siparisin baska satirinda ya da baska bir sipariste - mukerrer alimdir.
+   Engel yalnizca AYNI URUNDE: farkli urunler ayni kodu paylasabilir.
+   Ayni urun = STOK KODU kimligi (matKey): varyant kodu kutuphanedeki ana koda cevrilir,
+   kodsuz urunde ad. Alternatif alimda fiilen alinan urun (satirin kodu) esas alinir.
+   Kod karsilastirmasi bosluk/tire farkini yutar (ktopKey): "00UYB14 EM0222" = "00UYB14EM0222".
+   TAMAMEN IADE edilmis urunun kodlari serbest kalir - malzeme geri gitti, o yerlesime
+   yeniden alinmasi mukerrer degildir. Kismi iadede hangi kodun gittigi bilinmez, dolu sayilir.
+   Taslaklar sayilmaz: kesinlesmemis siparis bir alim degildir. */
+function ozelKodUrunCozucu(){
+  const byId=new Map(), byKod=new Map();
+  (DB.proje.materials||[]).forEach(mt=>{ if(!mt||mt.is_deleted) return; byId.set(mt.id,mt);
+    const k=matKey(mt.code,mt.name);
+    matAllCodes(mt).forEach(c=>{ const ck='c:'+_kimlikTemiz(c); if(!byKod.has(ck)) byKod.set(ck,k); }); });
+  const specs=new Map((DB.proje.specs||[]).map(s=>[s.id,s]));
+  return l=>{
+    const sid=l.altId?'':(l.specId||l.srcSpecId||'');
+    const sp=sid?specs.get(sid):null, mt=sp&&sp.matId?byId.get(sp.matId):null;
+    if(mt) return matKey(mt.code,mt.name);
+    const k=matKey(l.code,l.ad); return byKod.get(k)||k;
+  };
+}
+// Kayitli siparislerde kullanilmis kodlar: urun anahtari -> (ktopKey(kod) -> {yer})
+function ozelKodKullanimlari(haricOrderId,uk){
+  uk=uk||ozelKodUrunCozucu();
+  const m=new Map();
+  (DB.proje.orders||[]).forEach(o=>{
+    if(!o||o.is_deleted||(haricOrderId&&o.id===haricOrderId)) return;
+    let alinan=null;   // iade varsa urun bazinda alinan miktar (bkz. iadeUrunKey)
+    (o.lines||[]).forEach(l=>{
+      const kodlar=ozelPayKodlari(l); if(!kodlar.length) return;
+      if(orderIadeler(o).length){
+        if(!alinan){ alinan=new Map();
+          (o.lines||[]).forEach(x=>{ const k=iadeUrunKey(x); alinan.set(k,(alinan.get(k)||0)+(Number(x.qty)||0)); }); }
+        const top=alinan.get(iadeUrunKey(l))||0;
+        if(top>0&&orderLineIadeMik(o,l)>=top-1e-9) return;
+      }
+      const u=uk(l); let km=m.get(u); if(!km){ km=new Map(); m.set(u,km); }
+      const yer=`Siparis ${o.no||'?'}${o.date?' ('+fmtDate(o.date)+')':''}`;
+      kodlar.forEach(kod=>{ const k=ktopKey(kod); if(k&&!km.has(k)) km.set(k,{yer}); });
+    });
+  });
+  return m;
+}
+/* Taslagin her satiri icin tekrar eden kodlar: [{kod,yer}]. Ayni siparisin iki satirinda
+   tekrar varsa IKISI de isaretlenir - hangisinin yanlis oldugunu kullanici bilir. */
+function nordOzelTekrarlar(){
+  const out=NORD.lines.map(()=>[]);
+  if(!NORD.lines.some(l=>ozelPayKodlari(l).length)) return out;
+  const uk=ozelKodUrunCozucu(), kayitli=ozelKodKullanimlari(NORD.editId||null,uk);
+  const taslak=new Map();   // urun + kod -> [{i,kod}]
+  NORD.lines.forEach((l,i)=>{
+    if(!nordLineOk(l)) return;
+    const u=uk(l), km=kayitli.get(u), gor=new Set();
+    ozelPayKodlari(l).forEach(kod=>{ const k=ktopKey(kod); if(!k||gor.has(k)) return; gor.add(k);
+      const v=km&&km.get(k); if(v) out[i].push({kod,yer:v.yer});
+      const tk=u+'\u0001'+k; if(!taslak.has(tk)) taslak.set(tk,[]); taslak.get(tk).push({i,kod}); });
+  });
+  taslak.forEach(arr=>{ if(arr.length<2) return;
+    arr.forEach(a=>arr.forEach(b=>{ if(a.i!==b.i) out[a.i].push({kod:a.kod,yer:`bu siparisin ${b.i+1}. satiri`}); })); });
+  return out;
+}
+// Kirilim modali icin: bu satirin urununde BASKA yerde (kayitli siparisler + taslagin diger
+// satirlari) kullanilmis kodlar. Modal acilirken bir kez kurulur - yazarken yalnizca Map'e bakilir.
+function nordOzelTekrarIndex(i){
+  const l=NORD.lines[i]; if(!l||!nordLineOk(l)) return new Map();
+  const uk=ozelKodUrunCozucu(), u=uk(l);
+  const km=new Map(ozelKodKullanimlari(NORD.editId||null,uk).get(u)||[]);
+  NORD.lines.forEach((x,j)=>{ if(j===i||!nordLineOk(x)||!ozelPayKodlari(x).length||uk(x)!==u) return;
+    ozelPayKodlari(x).forEach(kod=>{ const k=ktopKey(kod); if(k&&!km.has(k)) km.set(k,{yer:`bu siparisin ${j+1}. satiri`}); }); });
+  return km;
+}
 /* Tedarik kaynagi SISTEM DISI olabilir: malzeme, bu projede kaydi olmayan (kullanicinin
    sorumlu olmadigi) bir binanin sartnamesinden gelmis olabilir. Bu yuzden bina ve sartname
    serbest metin olarak yazilabilir - kayitli olanlar yalnizca oneri listesi olarak sunulur.
@@ -29957,7 +30034,7 @@ function nordOzelOpen(i){
     toast('Bu satirda tedarik kirilimi var - ayni satirda iki bolme birden olmaz. Once tedarik kirilimini kaldirin.','err'); return; }
   if(l.dagitimId){
     toast('Bu satir kalemlere dagitilmis - ozel kodlari olusan satirlarda ayri ayri girin','err'); return; }
-  _NOK={i,pay:ozelPaylari(l).map(p=>({kod:p.kod||'',qty:p.qty==null?'':String(p.qty)}))};
+  _NOK={i,pay:ozelPaylari(l).map(p=>({kod:p.kod||'',qty:p.qty==null?'':String(p.qty)})),tekrar:nordOzelTekrarIndex(i)};
   nordOzelRender();
 }
 function nordOzelClose(){ _NOK=null; closeModal(); }
@@ -29982,14 +30059,18 @@ function nordOzelDurum(){
   const h=nordParseQty(l.qty), hedef=h>0?h:0;
   const kodlu=(f.pay||[]).filter(p=>String(p.kod||'').trim());
   const girilen=kodlu.reduce((s,p)=>{ const n=nordParseQty(p.qty); return s+(n>0?n:0); },0);
-  return {hedef,girilen,kodlu:kodlu.length,artan:Math.round((hedef-girilen)*1e6)/1e6};
+  const tekrar=kodlu.filter(p=>nokTekrar(p.kod)).length;
+  return {hedef,girilen,kodlu:kodlu.length,tekrar,artan:Math.round((hedef-girilen)*1e6)/1e6};
 }
+// Kod bu satirin urununde baska yerde kullanilmis mi? (bkz. nordOzelTekrarIndex)
+function nokTekrar(kod){ const f=_NOK, k=ktopKey(kod); return (f&&f.tekrar&&k)?(f.tekrar.get(k)||null):null; }
 function nordOzelSayacHtml(d){
   const renk=!(d.hedef>0)?'var(--mute)':(Math.abs(d.artan)<=1e-9?'var(--green)':(d.artan>0?'var(--amber)':'var(--red)'));
   return `<span class="t-meta">Satir miktari: <b style="color:var(--ink)">${d.hedef?fmtNum(d.hedef):'-'}</b></span>
     <span class="t-meta">Kod: <b style="color:var(--ink)">${d.kodlu}</b></span>
     <span class="t-meta">Girilen: <b style="color:var(--ink)">${fmtNum(d.girilen)}</b></span>
     <span class="t-meta">${d.artan<0?'Fazla girildi':'Artan'}: <b style="color:${renk}">${fmtNum(Math.abs(d.artan))}</b></span>
+    ${d.tekrar?`<span class="t-meta" title="Ayni ozel kod ayni urune ikinci kez yazilamaz - kirmizi satirlari cikarin">Tekrar: <b style="color:var(--red)">${d.tekrar} kod</b></span>`:''}
     ${nokKatOzetHtml()}`;
 }
 /* KAT OZETI: kirilim kac kata dagiliyor, kacinin kati defterde yok. Satirin lokasyonu
@@ -30014,7 +30095,7 @@ function nordOzelSayac(){
   const d=nordOzelDurum();
   const el=document.getElementById('nokSayac'); if(el) el.innerHTML=nordOzelSayacHtml(d);
   const btn=document.getElementById('nokApply');
-  if(btn){ const blok=!(d.hedef>0)||!d.kodlu||Math.abs(d.artan)>1e-9;
+  if(btn){ const blok=!(d.hedef>0)||!d.kodlu||d.tekrar>0||Math.abs(d.artan)>1e-9;
     btn.disabled=blok; btn.style.opacity=blok?'.5':''; btn.style.cursor=blok?'not-allowed':''; }
 }
 /* Kod alani serbest metin oldugu icin her tusa basista modal YENIDEN CIZILMEZ - cizilse
@@ -30022,14 +30103,20 @@ function nordOzelSayac(){
 /* KOD DEFTERI ROZETI (kirilim modali): kodun hangi kata dustugu satirin yaninda
    ANINDA gorunur - kullanici yanlis/eksik kodu yazarken fark eder, kaydettikten
    sonra raporda aramaz. Defterde olmayan kod ENGELLENMEZ, kehribar isaretlenir. */
+/* TEKRAR eden kod (bkz. ozelKodUrunCozucu) rozette kat bilgisinin YERINE gecer: o kod
+   uygulanamayacagi icin kati onemsiz, once nerede kullanildigi gorunmeli. */
 function nokKatSinif(kod){ if(!String(kod||'').trim()) return 'bos';
+  if(nokTekrar(kod)) return 'tekrar';
   return ozelKodLokId(NORD.bina,kod)?'ok':'yok'; }
 function nokKatEtiket(kod){
   if(!String(kod||'').trim()) return '—';
+  if(nokTekrar(kod)) return 'kullanildi';
   const ad=ozelKodKatAdi(NORD.bina,kod); return ad?ad:'kat ?';
 }
 function nokKatIpucu(kod){
   if(!String(kod||'').trim()) return 'Kod yazilinca kat defterden cozulur';
+  const t=nokTekrar(kod);
+  if(t) return `Bu kod bu urunde zaten kullanildi: ${t.yer}. Ayni ozel kod ayni urune ikinci kez yazilamaz.`;
   const ad=ozelKodKatAdi(NORD.bina,kod);
   return ad?`Kod defterinde tanimli: ${ad}`
     :'Bu kod Kod Defteri\'nde yok - kaydedilir ama kat bazli raporlarda "lokasyonsuz" sayilir. Kod Defteri sayfasindan kata ekleyebilirsiniz.';
@@ -30038,7 +30125,9 @@ function nordOzelSet(k,alan,v){
   const f=_NOK; if(!f||!f.pay[k]) return;
   f.pay[k][alan]=v;
   const row=document.getElementById('nokRow'+k);
-  if(row) row.classList.toggle('on',nordParseQty(f.pay[k].qty)>0&&!!String(f.pay[k].kod||'').trim());
+  if(row){ const tk=!!nokTekrar(f.pay[k].kod);
+    row.classList.toggle('on',!tk&&nordParseQty(f.pay[k].qty)>0&&!!String(f.pay[k].kod||'').trim());
+    row.classList.toggle('tekrar',tk); }
   // kod alani serbest metin - modal yeniden CIZILMEZ (odak kaybolurdu), yalnizca rozet tazelenir
   if(alan==='kod'){ const kt=document.getElementById('nokKat'+k);
     if(kt){ kt.className='nok-kat '+nokKatSinif(v); kt.textContent=nokKatEtiket(v); kt.title=nokKatIpucu(v); } }
@@ -30094,6 +30183,8 @@ function nordOzelYapistir(){
     else f.pay.push({kod:it.kod,qty:String(adet)});
   });
   nordOzelRender();
+  const tk=new Set(items.filter(it=>nokTekrar(it.kod)).map(it=>ktopKey(it.kod))).size;
+  if(tk){ toast(`${items.length} kod okundu - ${tk} tanesi bu urunde daha once kullanilmis (kirmizi), cikarmadan uygulanamaz`,'err'); return; }
   toast(`${items.length} kod okundu${mikVar?` · toplam ${fmtNum(nordOzelDurum().girilen)}`:''}`);
 }
 // KALANI YAZ: satir miktarindan geriye kalani ilk bos miktarli koda yazar
@@ -30113,8 +30204,9 @@ function nordOzelRender(){
   if(!f.pay.length) f.pay.push({kod:'',qty:'1'});
   const d=nordOzelDurum();
   const rows=f.pay.map((p,k)=>{
-    const dolu=nordParseQty(p.qty)>0&&!!String(p.kod||'').trim();
-    return `<div class="nok-row${dolu?' on':''}" id="nokRow${k}">
+    const tk=!!nokTekrar(p.kod);
+    const dolu=!tk&&nordParseQty(p.qty)>0&&!!String(p.kod||'').trim();
+    return `<div class="nok-row${dolu?' on':''}${tk?' tekrar':''}" id="nokRow${k}">
       <span class="nok-no">${k+1}</span>
       <input class="nok-kod" type="text" placeholder="00UYB16EM0258" value="${esc(p.kod||'')}" oninput="nordOzelSet(${k},'kod',this.value)">
       <input class="nok-qty" type="number" step="any" min="0" placeholder="0" value="${esc(p.qty||'')}" oninput="nordOzelSet(${k},'qty',this.value)">
@@ -30136,7 +30228,8 @@ function nordOzelRender(){
     <div class="kata-intro nok-bilgi" id="nokBilgi"${_nokBilgi?'':' hidden'}>Alinan miktarin hangi <b>yerlesim (ozel) koduna</b> gittigi burada yazilir - katlari farkli olabilir.
       Kodlar <b>yalnizca kunyedir</b>: satir tek kalir, tek hareket kaydi uretir; hicbir kalemin hedef, alim ve montaj sayisi degismez.
       Faturadaki kod sutununu oldugu gibi asagiya yapistirabilirsiniz; <b>bosluk yuzunden ikiye kopmus kodlar</b> ("00UYB16 EM0258") otomatik birlestirilir.
-      <b>Miktar sutununu da</b> ayni sirayla yandaki kutuya yapistirabilirsiniz (kod satirinin sonundaki sayi da miktar sayilir); miktari yazilmayan kod 1 alir.</div>
+      <b>Miktar sutununu da</b> ayni sirayla yandaki kutuya yapistirabilirsiniz (kod satirinin sonundaki sayi da miktar sayilir); miktari yazilmayan kod 1 alir.
+      <b>Ayni ozel kod ayni urune ikinci kez yazilamaz</b>: bu urunde baska bir sipariste ya da bu siparisin baska satirinda kullanilmis kod <b>kirmizi</b> isaretlenir ve kirilim uygulanmaz.</div>
     <div class="frow nok-paste" style="margin:14px 0 10px">
       <div><label>Kodlari yapistir</label>
         <textarea id="nokPaste" rows="4" placeholder="00UYB16 EM0258&#10;00UYB16 EM0260&#10;00UYB16 EM0262"></textarea></div>
@@ -30170,6 +30263,9 @@ function nordOzelApply(){
   if(!pay.length){ toast('En az bir koda miktar yazin','err'); return; }
   const hedef=nordParseQty(l.qty);
   if(!(hedef>0)){ toast('Once satirin miktarini girin','err'); return; }
+  // AYNI KOD AYNI URUNE IKINCI KEZ YAZILAMAZ (bkz. ozelKodUrunCozucu)
+  const tk=pay.find(p=>nokTekrar(p.kod));
+  if(tk){ toast(`"${tk.kod}" bu urunde zaten kullanildi (${nokTekrar(tk.kod).yer}) - ayni ozel kod ayni urune ikinci kez yazilamaz`,'err'); return; }
   const birlesik=[];
   pay.forEach(p=>{ const v=birlesik.find(x=>norm(x.kod)===norm(p.kod));
     if(v) v.qty=Math.round((v.qty+p.qty)*1e6)/1e6; else birlesik.push({...p}); });
@@ -30380,9 +30476,13 @@ function nordTedChipHtml(i){
 function nordTedRozetTazele(i){ const el=document.getElementById('ntdChip'+i); if(el) el.outerHTML=nordTedChipHtml(i); }
 /* OZEL KOD ROZETI: tedarik rozetiyle ayni gerekce - satirin miktari degistiginde tum liste
    yeniden cizilmeden (miktar kutusundaki odak kaybolmadan) yalnizca bu rozet tazelenebilsin. */
-function nordOzelChipHtml(i){
+// tekrar: bu satirin tekrar eden kodlari (nordOzelTekrarlar) - verilmezse burada hesaplanir
+function nordOzelChipHtml(i,tekrar){
   const l=NORD.lines[i]; if(!l) return '';
-  const pay=ozelPaylari(l), uyumsuz=ozelPayUyumsuz(l);
+  const pay=ozelPaylari(l);
+  if(!tekrar) tekrar=pay.length?(nordOzelTekrarlar()[i]||[]):[];
+  // TEKRAR EDEN KOD da uyumsuzluk gibi kirmizi gosterilir: ikisi de kaydi engeller
+  const uyumsuz=ozelPayUyumsuz(l)||tekrar.length>0;
   // Kod sayisi arttikca "1 + 1 + 1 + ..." okunmaz hale gelir; dortten sonrasi toplama doner.
   // Kodlarin tamami zaten ipucunda (hover) duruyor.
   const ic=pay.length
@@ -30391,9 +30491,10 @@ function nordOzelChipHtml(i){
         :'toplam '+fmtNum(ozelPayToplam(pay))}${uyumsuz?' &#9888;':''}`
     :'+ Ozel kod kirilimi';
   const ipucu=pay.length
-    ?`Ozel kod kirilimi - ${ozelPayOzet(pay)}`+(uyumsuz
-      ?`\nUYARI: kirilim toplami ${fmtNum(ozelPayToplam(pay))}, satir miktari ${fmtNum(Number(l.qty)||0)} - duzeltilmeden kaydedilemez`
-      :`\nYalnizca kunyedir - hicbir kalemden dusum yapilmaz`)
+    ?`Ozel kod kirilimi - ${ozelPayOzet(pay)}`
+      +(ozelPayUyumsuz(l)?`\nUYARI: kirilim toplami ${fmtNum(ozelPayToplam(pay))}, satir miktari ${fmtNum(Number(l.qty)||0)} - duzeltilmeden kaydedilemez`:'')
+      +(tekrar.length?`\nUYARI: bu urunde daha once kullanilmis kod - duzeltilmeden kaydedilemez:\n`+tekrar.map(t=>`${t.kod} → ${t.yer}`).join('\n'):'')
+      +(uyumsuz?'':`\nYalnizca kunyedir - hicbir kalemden dusum yapilmaz`)
     :'Alinan miktar birden fazla yerlesim koduna gidiyorsa (katlari farkli olabilir) kodlari burada yazin - yalnizca kunye, hicbir dusum yapilmaz.';
   return `<span class="nord-yerine nord-ozel${pay.length?' has':''}${uyumsuz?' uyumsuz':''}" id="nokChip${i}">
       <button type="button" onclick="nordOzelOpen(${i})" title="${esc(ipucu)}">${ic}</button>
@@ -30497,6 +30598,7 @@ function nordDragEnd(){
 }
 function nordLinesHtml(){
   const dupCounts=nordDupCounts();
+  const ozTekrar=nordOzelTekrarlar();   // tum satirlar icin bir kez - rozet basina yeniden kurulmaz
   const rows=NORD.lines.map((l,i)=>{
     const ok=nordLineOk(l);
     const isDup=ok&&dupCounts[nordDupKey(l)]>1;
@@ -30559,7 +30661,7 @@ function nordLinesHtml(){
     const tedSel=ok?nordTedChipHtml(i):'';
     // OZEL KOD KIRILIMI: miktarin hangi yerlesim kodlarina gittigi. Kalemlere dagitimdan
     // farki, kodun sartnamede kalem karsiligi olmamasidir - salt kunye (bkz. ozelPaylari).
-    const ozelSel=ok?nordOzelChipHtml(i):'';
+    const ozelSel=ok?nordOzelChipHtml(i,ozTekrar[i]):'';
     // OZEL KODSUZ ALIM: urun bu sartnamede birden fazla kalem olarak tanimliysa (her ozel kod
     // icin bir kalem) faturadaki miktar kalemlere dagitilabilir. Alternatif ve atama
     // satirlarinda hic cikmaz - nordDagitGrupOf onlar icin bos doner.
@@ -30596,6 +30698,8 @@ function nordSummaryHtml(){
   if(dupRows) warn+=`<span class="nord-pill err">${dupRows} satir mukerrer urun</span>`;
   if(tedUyumsuz) warn+=`<span class="nord-pill err">${tedUyumsuz} satirda tedarik kirilimi miktarla uyusmuyor</span>`;
   if(ozUyumsuz) warn+=`<span class="nord-pill err">${ozUyumsuz} satirda ozel kod kirilimi miktarla uyusmuyor</span>`;
+  const ozTekrar=nordOzelTekrarlar().filter(t=>t.length).length;
+  if(ozTekrar) warn+=`<span class="nord-pill err" title="Ayni ozel kod ayni urune ikinci kez yazilamaz - kirmizi 'Ozel kod' rozetinin uzerine gelin">${ozTekrar} satirda ozel kod bu urunde zaten kullanilmis</span>`;
   // Taslak butonu: kesinlesmemis siparisleri saklamak icin - gercek siparis duzenlerken (editId) gizli
   const draftBtn=NORD.editId?'':`<button class="btn btn-ghost" onclick="nordSaveDraft()" title="Kesinlestirmeden sakla - stok/ilerlemeyi etkilemez, Taslaklar sekmesinde durur">${NORD.draftId?'Taslagi Guncelle':'Taslak Kaydet'}</button>`;
   return `<div class="nord-sum-left"><b>${ok.length}</b> gecerli satir · toplam <b>${fmtNum(totQty)}</b> birim ${NORD.draftId?'<span class="nord-pill" style="background:var(--amber)22;color:var(--amber)">taslak</span>':''} ${warn}</div>
@@ -30746,6 +30850,12 @@ async function saveNewOrder(){
   // OZEL KOD KIRILIMI de ayni sekilde satir miktariyla tutmali
   const ozUyumsuz=NORD.lines.find(l=>nordLineOk(l)&&ozelPayUyumsuz(l));
   if(ozUyumsuz){ toast(`"${ozUyumsuz.ad||ozUyumsuz.code}" satirinda ozel kod kirilimi ${fmtNum(ozelPayToplam(ozelPaylari(ozUyumsuz)))}, satir miktari ${fmtNum(Number(ozUyumsuz.qty)||0)} - esitleyin`,"err"); return; }
+  // AYNI OZEL KOD AYNI URUNE IKINCI KEZ YAZILAMAZ - modal zaten engelliyor; bu son suzgec
+  // modalin gormedigi yollari yakalar (bina degisimiyle tasinan kirilim, urunu sonradan
+  // degistirilen satir, o arada baska kullanicinin kaydettigi siparis)
+  const ozTekrar=nordOzelTekrarlar(), ozTi=ozTekrar.findIndex(t=>t.length);
+  if(ozTi>=0){ const t=ozTekrar[ozTi][0], tl=NORD.lines[ozTi];
+    toast(`${ozTi+1}. satir "${tl.ad||tl.code}": "${t.kod}" ozel kodu bu urunde zaten kullanildi (${t.yer}) - ayni ozel kod ayni urune ikinci kez yazilamaz`,"err"); return; }
   let companyId='', companyName='';
   if(NORD.companyId==='__new'){
     companyName=(NORD.newCompany||'').trim();
