@@ -25632,12 +25632,17 @@ function slinkKatSecenek(y){
 }
 function slinkSartKalem(y,code){ return (DB.proje.specs||[]).filter(s=>!s.is_deleted&&s.bina===y.bina&&s.cat===y.cat&&specGroupKey(s)===code).length; }
 function slinkKalemSayisi(y){ const set=new Set(y.sartlar); return (DB.proje.specs||[]).filter(s=>!s.is_deleted&&s.bina===y.bina&&s.cat===y.cat&&(!set.size||set.has(specGroupKey(s)))).length; }
-// linkte kalemlerin ardindan gelecek alternatif urun sayisi (sunucu linkKapsami ile ayni kural:
-// yalniz 'kullanımda' / 'onaylandi' - activeAltsFor)
+// linkte kalemlerin ardindan gelecek alternatif urunler (sunucu linkKapsami ile ayni kural:
+// yalniz 'kullanımda' / 'onaylandi' - activeAltsFor). alimli: ALIMI OLANLAR - linkte yalniz
+// bunlara miktar girilir, digerleri kilitli gorunur (alim = specProgress: type!=='out', iade eksi)
 function slinkAltSayisi(y){
   const set=new Set(y.sartlar);
   const ids=new Set((DB.proje.specs||[]).filter(s=>!s.is_deleted&&s.bina===y.bina&&s.cat===y.cat&&(!set.size||set.has(specGroupKey(s)))).map(s=>s.id));
-  return (DB.proje.alternatives||[]).filter(a=>ids.has(a.specId)&&(a.status==='kullanımda'||a.status==='onaylandi')).length;
+  const alts=(DB.proje.alternatives||[]).filter(a=>ids.has(a.specId)&&(a.status==='kullanımda'||a.status==='onaylandi'));
+  if(!alts.length) return {toplam:0,alimli:0};
+  const alim=new Map();
+  (DB.proje.items||[]).forEach(it=>{ if(it.type==='out'||!it.altId) return; alim.set(it.altId+'|'+it.specId,(alim.get(it.altId+'|'+it.specId)||0)+(Number(it.qty)||0)); });
+  return {toplam:alts.length, alimli:alts.filter(a=>(alim.get(a.id+'|'+a.specId)||0)>0).length};
 }
 /* ADAM SAYISI GUNLUK YAZI'DAN: linkin TARIHINE yazilmis Gunluk Yazi'nin dolu basliklari
    (TAVA-KMK 16, AYDINLATMA 6...) cip olarak listelenir; secilenlerin kisi toplami adam
@@ -25756,9 +25761,11 @@ function slinkYeniHtml(){
   const sarts=slinkSartListesi(y);
   const kats=slinkKatSecenek(y);
   const n=y.cat?slinkKalemSayisi(y):0;
-  const na=n?slinkAltSayisi(y):0;
+  const alt=n?slinkAltSayisi(y):{toplam:0,alimli:0}, na=alt.toplam;
+  const altNot=!na?'':alt.alimli===na?' <span class="t-meta">Alternatifler ana kalemlerinin altında çıkar; girilen miktar ana kalemin ilerlemesine sayılır.</span>'
+    :` <span class="t-meta">Alternatifler ana kalemlerinin altında çıkar; yalnız <b>alımı olan ${alt.alimli}</b> alternatife miktar girilir, ${na-alt.alimli} tanesi alımı olmadığı için kilitli görünür.</span>`;
   const ozet=!y.cat?'<div class="slink-ozet">Bölüm seçince şartnameler listelenir ve linkte görünecek kalem sayısı burada çıkar.</div>'
-    :n?`<div class="slink-ozet">Linki açan kişi <b>${n}</b> kalem${na?` + <b>${na}</b> alternatif ürün`:''} görecek${y.sartlar.length>1?` (${y.sartlar.length} şartname)`:''}${kats.length&&!y.katId?`, her kalemde katı seçecek (${kats.length} kat)`:''}.${na?' <span class="t-meta">Alternatifler ana kalemlerinin altında çıkar; girilen miktar ana kalemin ilerlemesine sayılır.</span>':''}</div>`
+    :n?`<div class="slink-ozet">Linki açan kişi <b>${n}</b> kalem${na?` + <b>${na}</b> alternatif ürün`:''} görecek${y.sartlar.length>1?` (${y.sartlar.length} şartname)`:''}${kats.length&&!y.katId?`, her kalemde katı seçecek (${kats.length} kat)`:''}.${altNot}</div>`
     :'<div class="slink-ozet bos">Bu seçimde kalem yok - link boş açılırdı. Bölüm / şartname seçimini kontrol edin.</div>';
   const sartAlani=!y.cat?'<div class="slink-bos" style="padding:6px 0">Önce bölüm seçin.</div>'
     :!sarts.length?'<div class="slink-bos" style="padding:6px 0">Bu binada bu bölüme ait şartname yok - linkte bölümün tüm kalemleri görünür.</div>'
