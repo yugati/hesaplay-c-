@@ -4381,7 +4381,30 @@ main:has(>.iht-form-wrap){max-width:none}
 .fat-toplam-ic .sat.odenecek span{color:var(--ink)}
 .fat-toplam-ic .sat.odenecek b{font-size:15px}
 .fat-toplam-ic .fark{margin-top:7px;font-size:11.5px;line-height:1.5;color:var(--amber)}
+/* Hata payi icinde kalan fark: uyari DEGIL, iz. Sari yazilsaydi pay hicbir seyi susturmamis olurdu. */
+.fat-toplam-ic .fark.tol{color:var(--mute)}
 .fat-toplam-ic .kur{margin-top:6px;font-size:11.5px;color:var(--mute);text-align:right}
+/* HATA PAYI KAYDIRICISI (fatura formu, "Belgedeki Odenecek Tutar"in yaninda).
+   Uygulamada baska kaydirici yok; ".frow input" (genislik, dolgu, zemin, cerceve)
+   range'e de uyuyor ve onu kutuya ceviriyordu - asagidaki kurallar ozgullukle ezer.
+   Hucre diger kutularla ayni yukseklikte (40px): izgara satiri kaymasin.
+   Dolu kisim --dolu degiskeniyle cizilir (WebKit'te range'in "progress" kismi yok). */
+.fat-tol{display:flex;align-items:center;gap:10px;height:40px}
+.fat-tol input[type=range]{flex:1 1 auto;min-width:0;width:auto;height:18px;padding:0;margin:0;border:0;border-radius:0;
+  background:transparent;box-shadow:none;cursor:pointer;-webkit-appearance:none;appearance:none;--dolu:0%}
+.fat-tol input[type=range]:focus{border:0;box-shadow:none;outline:none}
+.fat-tol input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:4px;
+  background:linear-gradient(to right,var(--blue) var(--dolu),color-mix(in srgb,var(--dim) 38%,transparent) var(--dolu))}
+.fat-tol input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;margin-top:-6px;
+  border:0;border-radius:50%;background:var(--blue);box-shadow:0 0 0 4px color-mix(in srgb,var(--blue) 26%,transparent);transition:box-shadow .15s}
+.fat-tol input[type=range]:focus-visible::-webkit-slider-thumb,
+.fat-tol input[type=range]:active::-webkit-slider-thumb{box-shadow:0 0 0 6px color-mix(in srgb,var(--blue) 34%,transparent)}
+.fat-tol input[type=range]::-moz-range-track{height:4px;border-radius:4px;background:color-mix(in srgb,var(--dim) 38%,transparent)}
+.fat-tol input[type=range]::-moz-range-progress{height:4px;border-radius:4px;background:var(--blue)}
+.fat-tol input[type=range]::-moz-range-thumb{width:16px;height:16px;border:0;border-radius:50%;background:var(--blue);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--blue) 26%,transparent)}
+.fat-tol input[type=number]{flex:0 0 74px;width:74px;padding:9px 8px;font-family:var(--mono);font-size:13px;text-align:right}
+.fat-tol .pb{flex:0 0 auto;font-size:11px;font-weight:700;color:var(--mute)}
 /* DUZENLEME GECMISI: her kayit kim/ne zaman + alan alan degisiklik listesi.
    Kilit acildiktan SONRA yapilanlar kirmizi seritle ayrilir - bir belgenin
    kapatildiktan sonra degistirilmis olmasi, sonradan bakan icin en kritik bilgi. */
@@ -35431,11 +35454,24 @@ function fatPara(n,pb){ return (Math.round((Number(n)||0)*100)/100).toLocaleStri
 /* BELGE ile HESAP farki. Kullanici faturanin uzerindeki "Odenecek Tutar"i yazar;
    satirlardan hesaplanan tutar ondan sapiyorsa bu ya eksik/yanlis girilmis bir
    satir ya da belgenin kendi aritmetiginde bir hatadir - ikisi de gorulmeli.
-   1 kurus tolerans: yuvarlama farki uyari sayilmaz. */
-function fatTutarFarki(beyan,hesap){
+   1 kurus tolerans: yuvarlama farki uyari sayilmaz.
+   HATA PAYI (tol): tedarikci KDV'yi satir satir yuvarlayip toplar, biz toplamdan
+   hesaplariz - 8.564,39 / 8.564,44 gibi kurus farklari olagandir. Fark kurusa
+   yuvarlandiginda paya ESIT ya da altindaysa uyari sayilmaz. Pay FATURAYLA
+   kaydedilir (farkTolerans, faturanin para biriminde): liste rozeti, detay, Excel
+   ve mutabakat ayni faturada ayni karari versin diye her cagiran kaydin payini
+   gecirir. Alan yoksa 0 - eski kayitlarda davranis degismez. */
+const FAT_TOL_MAX=5;
+function fatTolerans(x){ const t=fatSayi(x); return t>0?t:0; }
+// Payi YOK SAYAN ham fark: "pay icinde kaldi" izini gostermek icin
+function fatTutarFarkiHam(beyan,hesap){
   const b=fatSayi(beyan); if(!(b>0)) return 0;
   const f=b-(Number(hesap)||0);
   return Math.abs(f)<0.01?0:f;
+}
+function fatTutarFarki(beyan,hesap,tol){
+  const f=fatTutarFarkiHam(beyan,hesap);
+  return (f && Math.round(Math.abs(f)*100)/100<=fatTolerans(tol)+1e-9)?0:f;
 }
 function fatKayitlar(){ return (DB.faturalar||[]).filter(Boolean); }
 /* ---------- FATURANIN DURUMU ----------
@@ -36275,7 +36311,7 @@ function renderFaturaListe(){
     const uy=fatKayitUyarisi(f,durumMap);
     const sat=fatSatirlari(f);
     const top=fatKayitToplam(f);
-    const tutarFarki=fatTutarFarki(f.beyanTutar,top.toplam);
+    const tutarFarki=fatTutarFarki(f.beyanTutar,top.toplam,f.farkTolerans);
     const belge=fatBelgeTutari(f);
     if(tutarFarki){ const fpb=f.paraBirimi||'TRY';
       const g=farkOzet.get(fpb)||{pb:fpb,net:0,mutlak:0,adet:0};
@@ -36562,7 +36598,7 @@ function renderFaturaDetay(){
   const satirlar=fatSatirlari(f);
   const pb=f.paraBirimi||'TRY';
   const top=fatKayitToplam(f);
-  const fark=fatTutarFarki(f.beyanTutar,top.toplam);
+  const fark=fatTutarFarki(f.beyanTutar,top.toplam,f.farkTolerans);
   const kodOzet=fatKayitKodOzeti(f,dm);
   // bu faturadaki urunlerden kaci alinandan FAZLA faturalanmis durumda
   const fazlalar=satirlar.map(r=>dm.get(String(r.key||''))).filter(u=>u&&u.durum==='fazla');
@@ -36674,7 +36710,9 @@ function renderFaturaDetay(){
     ['Para Birimi',(f.paraBirimi||'TRY')+(f.kur?' · kur '+fmtNum(f.kur):'')],
     /* Belgenin kendi odenecek tutari kunyede de yazar: bu sayfada "bankadan ne
        cikacak" sorusunun cevabi, hesapla farki olmasa bile gorunur olmali. */
-    ['Belgedeki Odenecek Tutar',fatBelgeTutari(f)?fatPara(fatBelgeTutari(f),pb):'']]
+    ['Belgedeki Odenecek Tutar',fatBelgeTutari(f)?fatPara(fatBelgeTutari(f),pb):''],
+    // pay bir uyariyi susturabildigi icin kunyede gorunur - sifirsa satir hic cikmaz
+    ['Tutar Hata Payi',fatTolerans(f.farkTolerans)?fatPara(fatTolerans(f.farkTolerans),pb):'']]
     .filter(x=>x[1]).map(([l,v])=>`<div><div class="et">${esc(l)}</div><div class="dg">${esc(v)}</div></div>`).join('');
 
   return `<div class="tut-wrap">
@@ -36898,7 +36936,7 @@ function fatYeni(){
     companyId:fatFirmalar().length===1?fatFirmalar()[0].id:'',
     senaryo:'TICARIFATURA', faturaTipi:'SATIS', ozellestirmeNo:'TR1.2', ettn:'',
     irsaliyeNo:'', irsaliyeTarihi:'', paraBirimi:'TRY', kur:'', varsayilanKdv:20,
-    beyanTutar:'', not:'', pdf:null, sozlesmePdf:null, irsaliyePdf:null, durum:'taslak',
+    beyanTutar:'', farkTolerans:fatTolVarsayilan(), not:'', pdf:null, sozlesmePdf:null, irsaliyePdf:null, durum:'taslak',
     qty:{}, sb:{}, oz:{}, bq:{}, bqBilgi:{}, fq:'', fbina:'', fbolum:'', fsart:'', ftum:false, fgizleBitmis:false,
     fyalnizGirilen:false };
   fatImzala();                       // bu andan sonraki her degisiklik korunur
@@ -36928,7 +36966,8 @@ function fatDuzenle(id){
     ozellestirmeNo:f.ozellestirmeNo||'TR1.2', ettn:f.ettn||'',
     irsaliyeNo:f.irsaliyeNo||'', irsaliyeTarihi:f.irsaliyeTarihi?new Date(f.irsaliyeTarihi).toISOString().slice(0,10):'',
     paraBirimi:f.paraBirimi||'TRY', kur:f.kur||'', varsayilanKdv:20,
-    beyanTutar:f.beyanTutar||'', not:f.not||'', durum:fatDurumu(f),
+    // eski kayitta pay yoksa 0 kalir - hatirlanan varsayilan ona sessizce yazilmaz
+    beyanTutar:f.beyanTutar||'', farkTolerans:fatTolerans(f.farkTolerans), not:f.not||'', durum:fatDurumu(f),
     pdf:f.pdf||null, sozlesmePdf:f.sozlesmePdf||null, irsaliyePdf:f.irsaliyePdf||null,
     qty, sb, oz, bq, bqBilgi, fq:'', fbina:'', fbolum:'', fsart:'', ftum:true, fgizleBitmis:false,
     fyalnizGirilen:false };
@@ -36961,7 +37000,7 @@ function fatFormImza(st){
   return JSON.stringify([ String(st.no||'').trim(), st.tarih||'', st.saat||'', st.companyId||'',
     st.senaryo||'', st.faturaTipi||'', String(st.ozellestirmeNo||'').trim(),
     String(st.ettn||'').trim(), String(st.irsaliyeNo||'').trim(), st.irsaliyeTarihi||'',
-    st.paraBirimi||'', st.kur||'', st.beyanTutar||'', String(st.not||'').trim(),
+    st.paraBirimi||'', st.kur||'', st.beyanTutar||'', fatTolerans(st.farkTolerans), String(st.not||'').trim(),
     FAT_BELGELER.map(b=>(st[b.k]&&(st[b.k].path||st[b.k].name))||''),
     q, sb, oz, bq ]);
 }
@@ -37028,6 +37067,27 @@ function fatFirmaDegistir(v){
   st.companyId=yeni; render();
 }
 function fatSetFiltre(k,v){ if(_FAT){ _FAT[k]=v; render(); } }
+/* HATA PAYI KAYDIRICISI. Surukleme sirasinda render() YOK: sayfa her adimda yeniden
+   cizilse kaydirici elden kacardi - yalnizca toplam blogu ve iki kutu tazelenir.
+   Kaydirici ile sayi kutusu birbirini izler; kutuya elle kurusu kurusuna yazilir.
+   Son secilen deger tarayicida saklanir (FAT_GENIS gibi) ve YENI faturada hazir gelir. */
+function fatTolVarsayilan(){
+  try{ const t=fatTolerans(localStorage.getItem('faturaHataPayi')); return Math.min(t,FAT_TOL_MAX); }
+  catch(e){ return 0; }
+}
+function fatTolHatirla(){
+  try{ localStorage.setItem('faturaHataPayi',String(fatTolerans(_FAT&&_FAT.farkTolerans))); }catch(e){}
+}
+function fatSetTolerans(v,kutudan){
+  const st=_FAT; if(!st) return;
+  const t=Math.round(Math.min(fatTolerans(v),FAT_TOL_MAX)*100)/100;
+  st.farkTolerans=t;
+  const k=document.getElementById('fatTolKay'), s=document.getElementById('fatTolSayi');
+  if(k){ if(kutudan) k.value=String(t); k.style.setProperty('--dolu',(t/FAT_TOL_MAX*100)+'%'); }
+  if(s) s.value=t.toFixed(2);
+  if(kutudan) fatTolHatirla();
+  fatOzetGuncelle();
+}
 
 /* GENIS CALISMA ALANI: fatura girisi boyunca sol menuyu kaldirir (232px).
    Sayfayi genisletmenin en buyuk tek kazanci budur - 1366px'lik bir ekranda
@@ -37797,7 +37857,10 @@ function fatToplamBlokIc(kayit){
   const t=kayit?fatKayitToplam(kayit):fatGirilenOzet().t;
   const beyan=kayit?kayit.beyanTutar:(_FAT&&_FAT.beyanTutar);
   const kur=fatSayi(kayit?kayit.kur:(_FAT&&_FAT.kur));
-  const fark=fatTutarFarki(beyan,t.toplam);
+  const tol=fatTolerans(kayit?kayit.farkTolerans:(_FAT&&_FAT.farkTolerans));
+  const fark=fatTutarFarki(beyan,t.toplam,tol);
+  // pay icinde kalan fark SESSIZCE kaybolmaz: soluk bir iz satiri olarak durur
+  const payIci=!fark&&fatTutarFarkiHam(beyan,t.toplam);
   // odenecek: belgede yazan tutar; belgede yoksa satirlardan hesaplanan
   const bt=fatSayi(beyan)>0?fatSayi(beyan):0, od=bt||t.toplam;
   const sat=(l,v,cls)=>`<div class="sat${cls?' '+cls:''}"><span>${l}</span><b>${v}</b></div>`;
@@ -37815,7 +37878,9 @@ function fatToplamBlokIc(kayit){
     +(fark?`<div class="fark">&#9888; Belgede yazan odenecek tutar <b>${fatPara(beyan,pb)}</b>,
         satirlardan hesaplanan <b>${fatPara(t.toplam,pb)}</b> &mdash; fark <b>${fatPara(Math.abs(fark),pb)}</b>.
         ${fark>0?'Belge daha yuksek: eksik girilmis bir satir ya da belgede fazla hesaplanmis bir tutar olabilir.'
-                :'Hesap daha yuksek: fazla girilmis bir satir ya da belgede eksik hesaplanmis bir tutar olabilir.'}</div>`:'');
+                :'Hesap daha yuksek: fazla girilmis bir satir ya da belgede eksik hesaplanmis bir tutar olabilir.'}</div>`
+      :payIci?`<div class="fark tol">Belgede yazan <b>${fatPara(beyan,pb)}</b>, satirlardan hesaplanan <b>${fatPara(t.toplam,pb)}</b>
+        &mdash; fark <b>${fatPara(Math.abs(payIci),pb)}</b> hata payi (<b>${fatPara(tol,pb)}</b>) icinde, uyari sayilmadi.</div>`:'');
 }
 // Ekranda gorunen tum urunlerin kalanini doldurur - "fatura tum kalani kapsiyor" hali
 function fatHepsiniDoldur(){
@@ -37999,6 +38064,16 @@ function renderFaturaForm(){
             ${KDV_ORANLARI.map(o=>`<option value="${o}" ${fatSayi(st.varsayilanKdv)===o?'selected':''}>%${fmtNum(o)}</option>`).join('')}</select></div>
         <div class="frow"><label>Belgedeki Odenecek Tutar <span class="t-meta">(opsiyonel)</span><span class="bbal" tabindex="0">B<span>Bankadan bu firma adina cikacak tutar. Odenecek tutar olarak listede, detayda ve toplam blogunda BU yazar; satirlardan hesaplanan tutar onu yalnizca dogrular, tutmazsa uyari cikar.</span></span></label>
           <input type="number" step="any" min="0" value="${esc(st.beyanTutar)}" placeholder="0" onchange="fatSetHead('beyanTutar',this.value)"></div>
+        ${(()=>{ const tol=Math.min(fatTolerans(st.farkTolerans),FAT_TOL_MAX);
+          return `<div class="frow"><label>Hata Payi <span class="t-meta">(tutar farki)</span><span class="bbal" tabindex="0">B<span>Belgede yazan odenecek tutar ile satirlardan hesaplanan tutar arasindaki fark bu degere ESIT ya da ALTINDAYSA uyari cikmaz - kurus yuvarlama farklari icin. 0 = yalnizca 1 kurusun alti yok sayilir. Pay faturayla birlikte kaydedilir; liste, detay, Excel ve mutabakat da bu payi kullanir. Son secilen deger yeni faturalarda hazir gelir.</span></span></label>
+          <div class="fat-tol">
+            <input type="range" id="fatTolKay" min="0" max="${FAT_TOL_MAX}" step="0.01" value="${tol}" style="--dolu:${tol/FAT_TOL_MAX*100}%"
+              oninput="fatSetTolerans(this.value)" onchange="fatTolHatirla()" aria-label="Tutar farki hata payi"
+              title="Bu tutara kadar olan fark uyari sayilmaz">
+            <input type="number" id="fatTolSayi" min="0" max="${FAT_TOL_MAX}" step="0.01" value="${tol.toFixed(2)}"
+              onchange="fatSetTolerans(this.value,true)" aria-label="Hata payi tutari">
+            <span class="pb">${esc(st.paraBirimi||'TRY')}</span>
+          </div></div>`; })()}
         ${FAT_BELGELER.map(bl=>{ const v=st[bl.k];
           return `<div class="frow"><label>${esc(bl.ad)} (PDF)<span class="bbal" tabindex="0">B<span>${esc(bl.ip)}</span></span></label>
           <div class="drop ${v?'has':''}" title="${esc(bl.ip)}" onclick="${v&&v.yukleniyor?'':`document.getElementById('fatPdfInput_${bl.k}').click()`}">${v
@@ -38452,6 +38527,8 @@ function fatDegisimOzeti(a,b){
   alan('Para birimi',a.paraBirimi,b.paraBirimi);
   alan('Kur',a.kur,b.kur,fmtNum);
   alan('Belgedeki odenecek tutar',a.beyanTutar,b.beyanTutar,fmtNum);
+  // pay bir tutar farki uyarisini susturabilir - kilit sonrasi degismesi izlenmeli
+  alan('Tutar hata payi',fatTolerans(a.farkTolerans)||'',fatTolerans(b.farkTolerans)||'',fmtNum);
   alan('Not',a.not,b.not);
   FAT_BELGELER.forEach(bl=>alan(bl.ad,(a[bl.k]&&a[bl.k].name)||'',(b[bl.k]&&b[bl.k].name)||''));
   alan('Durum',FAT_KAYIT_DURUM[fatDurumu(a)].ad,FAT_KAYIT_DURUM[fatDurumu(b)].ad);
@@ -38644,6 +38721,8 @@ async function fatKaydet(kesin){
     // beyanTutar = BELGEDE yazan odenecek tutar. Toplamlar satirlardan hesaplanir
     // (fatKayitToplam), kayitta tutulmaz - iki yerde tutulup ayrisamasin.
     beyanTutar:(st.beyanTutar===''||st.beyanTutar==null)?null:fatSayi(st.beyanTutar),
+    // hata payi yalnizca verilmisse yazilir: 0 = eski davranis, kaydi sisirmesin
+    ...(fatTolerans(st.farkTolerans)>0?{farkTolerans:fatTolerans(st.farkTolerans)}:{}),
     kur:(st.kur===''||st.kur==null)?null:fatSayi(st.kur),
     paraBirimi:st.paraBirimi||'TRY', not:String(st.not||'').trim(),
     /* DURUM. Kilit burada ASLA kurulmaz - kilitleme ayri ve bilincli bir islemdir
@@ -38711,7 +38790,7 @@ async function fatKaydet(kesin){
     +(eski?'Fatura duzenlendi: ':'Fatura kaydedildi: ')+(kesin?'':'[TASLAK] ')+(no||'(no yok)')
     +' · '+((firma&&firma.ad)||'firma yok')+' · '+fmtNum(satirlar.length)+' urun · toplam miktar '+fmtNum(toplam)
     +(_od>0?' · odenecek '+fatPara(_od,kayit.paraBirimi)
-        +(fatTutarFarki(kayit.beyanTutar,_tp.toplam)?' (satirlardan hesaplanan '+fatPara(_tp.toplam,kayit.paraBirimi)+')':''):'')
+        +(fatTutarFarki(kayit.beyanTutar,_tp.toplam,kayit.farkTolerans)?' (satirlardan hesaplanan '+fatPara(_tp.toplam,kayit.paraBirimi)+')':''):'')
     +(degisimler.length?' · DEGISIKLIKLER: '+degisimler.slice(0,8).join(' ; ')
         +(degisimler.length>8?` (+${degisimler.length-8} degisiklik daha)`:''):''));
   _FAT=null; FATV.mode='liste'; FATV.durum=kesin?'':'taslak'; render();
@@ -39148,6 +39227,7 @@ const FKX_SOZLUK={
   alimYok:'ALIM YOK', toplam:'TOPLAM',
   kdvBand:'KDV KIRILIMI', kdvTh:['Oran','Matrah','KDV'],
   odBand:'ODENECEK TUTAR', odBelge:'Belgede yazan', odHesap:'Satirlardan hesaplanan',
+  odTol:'Hata payi (bu tutara kadar fark yok sayilir)',
   odFark:'FARK',
   odFarkNot:'Belgede yazan tutar ile satirlardan hesaplanan tutar tutmuyor - satirlar eksik girilmis ya da belgede baska bir kalem var.',
   frmBaslik:'FIRMA OZETI',
@@ -39254,6 +39334,7 @@ const FKX_SOZLUK={
   alimYok:'НЕТ ЗАКУПКИ', toplam:'ИТОГО',
   kdvBand:'РАЗБИВКА ПО НДС', kdvTh:['Ставка','Налоговая база','НДС'],
   odBand:'СУММА К ОПЛАТЕ', odBelge:'Указано в документе', odHesap:'Рассчитано по строкам',
+  odTol:'Допуск (расхождение до этой суммы не учитывается)',
   odFark:'РАСХОЖДЕНИЕ',
   odFarkNot:'Сумма, указанная в документе, не совпадает с рассчитанной по строкам — строки введены не полностью либо в документе есть другая позиция.',
   frmBaslik:'СВОДКА ПО КОМПАНИЯМ',
@@ -39353,6 +39434,7 @@ const FKX_SOZLUK={
   alimYok:'NO PURCHASE', toplam:'TOTAL',
   kdvBand:'VAT BREAKDOWN', kdvTh:['Rate','Taxable Amount','VAT'],
   odBand:'AMOUNT PAYABLE', odBelge:'Stated on document', odHesap:'Calculated from lines',
+  odTol:'Tolerance (differences up to this amount are ignored)',
   odFark:'DIFFERENCE',
   odFarkNot:'The amount stated on the document does not match the amount calculated from the lines - the lines may be incomplete or the document contains another item.',
   frmBaslik:'COMPANY SUMMARY',
@@ -39646,11 +39728,13 @@ function fatKitapKur(dil){
       top.kdvListe.forEach(k=>s.satir([{v:k.oran,b:B.yuz},{v:Number(k.matrah.toFixed(2)),b:B.par},{v:Number(k.kdv.toFixed(2)),b:B.par}]));
       s.bos();
     }
-    const fark=fatTutarFarki(f.beyanTutar,top.toplam);
+    const fark=fatTutarFarki(f.beyanTutar,top.toplam,f.farkTolerans);
     s.birlestir('A'+(s.satirlar.length+1)+':Q'+(s.satirlar.length+1));
     s.satir([{v:L.odBand,b:B.band}],{h:20});
     s.satir([{v:L.odBelge,b:B.etiket},{v:'',b:B.etiket},{v:fatSayi(f.beyanTutar)||'',b:fatBelgeTutari(f)?B.parB:B.par},{v:pb,b:B.tdS}]);
     s.satir([{v:L.odHesap,b:B.etiket},{v:'',b:B.etiket},{v:Number(top.toplam.toFixed(2)),b:fatBelgeTutari(f)?B.par:B.parB},{v:pb,b:B.tdS}]);
+    // pay verilmisse yazilir: iki sayi tutmadigi halde FARK satiri yoksa nedeni bu satirdir
+    if(fatTolerans(f.farkTolerans)) s.satir([{v:L.odTol,b:B.etiket},{v:'',b:B.etiket},{v:fatTolerans(f.farkTolerans),b:B.par},{v:pb,b:B.tdS}]);
     if(fark){
       s.satir([{v:L.odFark,b:B.etiket},{v:'',b:B.etiket},{v:Number(fark.toFixed(2)),b:B.fark},{v:pb,b:B.tdS}]);
       s.birlestir('E'+s.satirlar.length+':Q'+s.satirlar.length);
@@ -39770,7 +39854,7 @@ function fatKitapKur(dil){
        tekPara?fatPara(tumTop.toplam,tekPara):L.karma]);
   sOzet.bos();
   const fazlaUrun=genel.filter(u=>u.durum==='fazla').length;
-  const farkli=list.filter(f=>fatTutarFarki(f.beyanTutar,fatKayitToplam(f).toplam)).length;
+  const farkli=list.filter(f=>fatTutarFarki(f.beyanTutar,fatKayitToplam(f).toplam,f.farkTolerans)).length;
   const kilitDeg=list.filter(fatKilitSonrasiDegisti).length;
   sOzet.birlestir('A'+(sOzet.satirlar.length+1)+':M'+(sOzet.satirlar.length+1));
   sOzet.satir([{v:L.ozDikkat,b:B.band}],{h:20});
@@ -39789,7 +39873,7 @@ function fatKitapKur(dil){
   list.forEach((f,i)=>{
     const z=i%2?1:0, td=z?B.tdZ:B.td, mik=z?B.mikZ:B.mik, par=z?B.parZ:B.par, ts=z?B.tdSZ:B.tdS;
     const t=fatKayitToplam(f), dur=fatDurumu(f), sayfa=sayfaEsle.get(f.id);
-    const fark=fatTutarFarki(f.beyanTutar,t.toplam);
+    const fark=fatTutarFarki(f.beyanTutar,t.toplam,f.farkTolerans);
     const hav=firmaHavuzu(f.companyId);
     const fazla=fatSatirlari(f).filter(r=>{ const u=hav.get(String(r.key||'')); return u&&u.durum==='fazla'; }).length;
     const uy=[]; if(fazla) uy.push(L.uyFazla(fmtNum(fazla)));
