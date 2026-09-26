@@ -3057,6 +3057,29 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .slink-sart-arac{display:flex;align-items:center;gap:12px;margin-top:7px;font-size:12px;color:var(--mute)}
 .slink-sart-arac span{flex:1}
 .slink-sart-arac button{padding:0;border:0;background:none;color:var(--grid);font:600 12px var(--sans);cursor:pointer}
+/* adam sayisi Gunluk Yazi'dan: baslik cipleri (dugme - .frow label kurallari ezmesin) */
+.slink-gy{padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.slink-gy-h{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px}
+.slink-gy-h .kay{flex:1 1 200px;min-width:0;font:11.5px/1.5 var(--mono);color:var(--ink);overflow-wrap:break-word}
+.slink-gy-h .kay .t{margin-right:4px;font:12px var(--sans);color:var(--mute)}
+.slink-gy-top{flex-shrink:0;padding:2px 9px;border-radius:7px;background:rgba(34,197,94,.14);color:var(--green);font:700 12px var(--mono)}
+.slink-gy-kay{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.slink-gy-kay button{padding:4px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--mute);font:11px var(--mono);cursor:pointer}
+.slink-gy-kay button.on{border-color:var(--grid);color:var(--ink);background:rgba(0,180,166,.1)}
+.slink-gy-not{margin-top:7px;font-size:11.5px;color:var(--amber)}
+.slink-gy-bas{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px;margin-top:9px;max-height:214px;overflow:auto;padding:2px}
+.slink-gy-b{display:flex;align-items:center;gap:8px;min-width:0;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);text-align:left;cursor:pointer;font:inherit}
+.slink-gy-b:hover{border-color:rgba(34,197,94,.5)}
+.slink-gy-b.on{border-color:var(--green);background:rgba(34,197,94,.08)}
+.slink-gy-b .slink-sart-kutu{width:16px;height:16px}
+.slink-gy-b.on .slink-sart-kutu{border-color:var(--green);background:var(--green);color:#000}
+.slink-gy-b .ad{flex:1;min-width:0;font:11.5px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slink-gy-b .alt{display:block;font:10px var(--sans);color:var(--dim);margin-top:1px}
+.slink-gy-b .onr{flex-shrink:0;padding:1px 5px;border-radius:5px;background:rgba(240,160,32,.14);color:var(--amber);font:600 9.5px var(--sans);text-transform:uppercase;letter-spacing:.3px}
+.slink-gy-b .n{flex-shrink:0;min-width:26px;text-align:right;font:700 12.5px var(--mono)}
+.slink-gy .slink-sart-arac{margin-top:8px}
+.slink-gy-bos{font-size:12px;color:var(--dim);line-height:1.5}
+.frow input.slink-adam-gy{border-color:var(--green);background:rgba(34,197,94,.07)}
 .rblock-title{display:inline-flex;align-items:center;gap:5px;flex:0 0 auto;color:var(--mute);font-family:var(--mono);font-size:11px;font-weight:800;letter-spacing:.55px;text-transform:uppercase}
 .rblock-title b{color:var(--ink);font-size:12px}
 .rblock input,.rblock select{width:100%;min-width:0;background:var(--bg);border:1px solid var(--line);color:var(--ink);padding:10px 12px;border-radius:9px;font-size:14px;line-height:1.25;outline:none;transition:border-color .15s,box-shadow .15s,background .15s;appearance:auto}
@@ -25604,9 +25627,93 @@ function slinkKatSecenek(y){
 }
 function slinkSartKalem(y,code){ return (DB.proje.specs||[]).filter(s=>!s.is_deleted&&s.bina===y.bina&&s.cat===y.cat&&specGroupKey(s)===code).length; }
 function slinkKalemSayisi(y){ const set=new Set(y.sartlar); return (DB.proje.specs||[]).filter(s=>!s.is_deleted&&s.bina===y.bina&&s.cat===y.cat&&(!set.size||set.has(specGroupKey(s)))).length; }
+/* ADAM SAYISI GUNLUK YAZI'DAN: linkin TARIHINE yazilmis Gunluk Yazi'nin dolu basliklari
+   (TAVA-KMK 16, AYDINLATMA 6...) cip olarak listelenir; secilenlerin kisi toplami adam
+   sayisina yazilir. Etkilesimlidir: tarih / bina / yazi degisince secili basliklar yeni
+   yazidan yeniden toplanir; adam sayisi elle yazilinca secim birakilir (sayi artik yazidan
+   gelmiyor). Secim baslik ADIYLA (norm) tutulur - basliklar ortak oldugu icin ayni baslik
+   baska gunun/firmanin yazisinda da aynidir. Linke yalniz SAYI gider; sunucu degismez.
+   Kaynak: o gunun tum yazilari (her firma kendi yazisini tutar), linkin binasininkiler once. */
+function slinkGyAnahtar(x){ return gyFirmaAnahtar(x)+'|'+String(x.bina||''); }
+function slinkGyKaynaklar(y){
+  const b=String(y.bina||'');
+  return gyGun(y.tarih).filter(x=>gyToplam(x)>0)
+    .sort((a,c)=>(String(a.bina||'')===b?0:1)-(String(c.bina||'')===b?0:1));
+}
+function slinkGyKaynak(y){
+  const l=slinkGyKaynaklar(y);
+  return l.find(x=>slinkGyAnahtar(x)===y.gyKaynak)||l.find(x=>String(x.bina||'')===String(y.bina||''))||l[0]||null;
+}
+// yazinin DOLU basliklari; odali baslikta oda dokumu ipucu olarak tasinir
+function slinkGyBasliklar(yz){
+  return ((yz&&yz.gruplar)||[]).filter(g=>g&&String(g.ad||'').trim()&&gyGrupToplam(g)>0).map(g=>({
+    k:norm(String(g.ad).trim()), ad:String(g.ad).trim(), n:gyGrupToplam(g),
+    odalar:g.odali?(g.satirlar||[]).filter(r=>r&&String(r.oda||'').trim()&&gySayi(r.kisi)).map(r=>String(r.oda).trim()+' / '+gySayi(r.kisi)):[] }));
+}
+function slinkGyToplam(y){ const set=new Set(y.gySec); return slinkGyBasliklar(slinkGyKaynak(y)).filter(b=>set.has(b.k)).reduce((s,b)=>s+b.n,0); }
+// adam kutusu yerinde guncellenir (tum form yeniden cizilmez - odak ve yazilan kaybolmasin)
+function slinkGyKutu(){
+  const y=SLINK.yeni, inp=document.getElementById('slinkAdam'); if(!y||!inp) return;
+  if(inp.value!==String(y.adam)) inp.value=y.adam;
+  inp.classList.toggle('slink-adam-gy', y.gySec.length>0&&String(y.adam)!=='');
+}
+// secim varsa adam sayisi eldeki yazidan yeniden hesaplanir; hicbiri o yazida yoksa bosalir
+function slinkGyUygula(){
+  const y=SLINK.yeni; if(!y||!y.gySec.length) return;
+  const t=slinkGyToplam(y); y.adam=t?String(t):'';
+  slinkGyKutu();
+}
+function slinkGyCiz(){ const e=document.getElementById('slinkGy'); if(e&&SLINK.yeni) e.innerHTML=slinkGyHtml(SLINK.yeni); }
+// i = slinkGyBasliklar sirasi; 'hepsi' / 'hic' toplu secim
+function slinkGySec(i){
+  const y=SLINK.yeni; if(!y) return;
+  const bs=slinkGyBasliklar(slinkGyKaynak(y));
+  if(i==='hepsi') y.gySec=bs.map(b=>b.k);
+  else if(i==='hic') y.gySec=[];
+  else { const b=bs[i]; if(!b) return; y.gySec=y.gySec.includes(b.k)?y.gySec.filter(k=>k!==b.k):[...y.gySec,b.k]; }
+  if(y.gySec.length) slinkGyUygula(); else { y.adam=''; slinkGyKutu(); }
+  slinkGyCiz();
+}
+function slinkGyKaynakSec(i){
+  const y=SLINK.yeni; if(!y) return;
+  const x=slinkGyKaynaklar(y)[i]; if(!x) return;
+  y.gyKaynak=slinkGyAnahtar(x);
+  slinkGyUygula(); slinkGyCiz();
+}
+// adam sayisi ELLE yazildi: sayi artik yazidan gelmiyor, cipler "secili" gorunmesin
+function slinkAdamYaz(v){
+  const y=SLINK.yeni; if(!y) return;
+  y.adam=v;
+  if(y.gySec.length){ y.gySec=[]; slinkGyKutu(); slinkGyCiz(); }
+}
+function slinkTarihDegis(v){
+  const y=SLINK.yeni; if(!y) return;
+  y.tarih=v; slinkGyUygula(); slinkGyCiz();
+}
+function slinkGyHtml(y){
+  const tarihTR=y.tarih?fmtDate(y.tarih):'';
+  const kaynaklar=y.tarih?slinkGyKaynaklar(y):[];
+  if(!kaynaklar.length) return `<div class="slink-gy-bos">${tarihTR?`<b>${esc(tarihTR)}</b> tarihine girilmiş Günlük Yazı yok`:'Önce tarih seçin'} - adam sayısını elle girin ya da boş bırakın (linkte sorulur).${y.gySec.length?' Seçtiğiniz başlıklar bu tarihte bulunamadı.':''}</div>`;
+  const yz=slinkGyKaynak(y);
+  const bs=slinkGyBasliklar(yz);
+  const set=new Set(y.gySec);
+  const secili=bs.filter(b=>set.has(b.k));
+  const top=secili.reduce((s,b)=>s+b.n,0);
+  const etiket=x=>[x.firma||'', x.bina||'Genel'].filter(Boolean).join(' · ')+' · '+gyToplam(x)+' kişi';
+  // bolum adini iceren baslik (Tava -> TAVA-KMK) oneri olarak isaretlenir, secilmez
+  const bol=norm(String(y.cat||'').trim());
+  const oneri=b=>bol.length>=3&&b.k.includes(bol);
+  const eksik=y.gySec.length-secili.length;
+  return `<div class="slink-gy-h"><span class="kay"><span class="t">${esc(tarihTR)} Günlük Yazı${kaynaklar.length>1?` - ${kaynaklar.length} yazı, birini seçin`:':'}</span>${kaynaklar.length===1?esc(etiket(yz)):''}</span>${secili.length?`<span class="slink-gy-top" title="Seçilen başlıkların kişi toplamı - adam sayısına yazıldı">= ${top} adam</span>`:''}</div>
+    ${kaynaklar.length>1?`<div class="slink-gy-kay">${kaynaklar.map((x,i)=>`<button type="button" class="${x===yz?'on':''}" onclick="slinkGyKaynakSec(${i})" aria-pressed="${x===yz}">${esc(etiket(x))}</button>`).join('')}</div>`:''}
+    ${String(yz.bina||'')!==String(y.bina||'')?`<div class="slink-gy-not">Bu yazı ${esc(yz.bina||'bina bağımsız')} için - linkin binası ${esc(y.bina||'-')}.</div>`:''}
+    <div class="slink-gy-bas">${bs.map((b,i)=>{ const on=set.has(b.k);
+      return `<button type="button" class="slink-gy-b${on?' on':''}" onclick="slinkGySec(${i})" aria-pressed="${on}" title="${esc(b.ad+(b.odalar.length?'\n'+b.odalar.join('\n'):''))}"><span class="slink-sart-kutu">${on?icoCheckSm():''}</span><span class="ad">${esc(b.ad)}${b.odalar.length?`<span class="alt">${b.odalar.length} oda</span>`:''}</span>${oneri(b)&&!on?'<span class="onr">bölüm</span>':''}<span class="n">${b.n}</span></button>`; }).join('')}</div>
+    <div class="slink-sart-arac"><span>${secili.length?`${secili.length} başlık seçili - toplamı adam sayısına yazıldı`:'Başlık seçin - seçilenlerin kişi toplamı adam sayısına yazılır'}${eksik>0?` · ${eksik} seçili başlık bu yazıda yok`:''}</span>${bs.length>1?`<button type="button" onclick="slinkGySec('hepsi')">Tümünü seç</button>`:''}${y.gySec.length?`<button type="button" onclick="slinkGySec('hic')">Temizle</button>`:''}</div>`;
+}
 function slinkYeniAc(){
   const binalar=binaOptsFor('');
-  SLINK.yeni={tarih:rISO(Date.now()), vardiya:VARDIYALAR[0], bina:binalar[0]||'', cat:'', ekip:'', sartlar:[], katId:'', dolduran:'', adam:'', sure:'6s', stokDus:true};
+  SLINK.yeni={tarih:rISO(Date.now()), vardiya:VARDIYALAR[0], bina:binalar[0]||'', cat:'', ekip:'', sartlar:[], katId:'', dolduran:'', adam:'', gySec:[], gyKaynak:'', sure:'6s', stokDus:true};
   SLINK.gorunum='yeni'; slinkModalCiz(true);
 }
 // bina/bolum/sartname birbirine bagli: bina degisince sartname ve kat, bolum degisince o bolume
@@ -25614,7 +25721,8 @@ function slinkYeniAc(){
 function slinkYeniSet(k,v){
   const y=SLINK.yeni; if(!y) return;
   y[k]=v;
-  if(k==='bina'){ y.sartlar=[]; y.katId=''; }
+  // bina degisince Gunluk Yazi kaynagi yeni binanin yazisina doner, secili basliklar oradan toplanir
+  if(k==='bina'){ y.sartlar=[]; y.katId=''; y.gyKaynak=''; slinkGyUygula(); }
   if(k==='cat'){ const ok=new Set(slinkSartListesi(y).map(s=>s.code)); y.sartlar=y.sartlar.filter(c=>ok.has(c)); }
   if(y.katId&&!slinkKatSecenek(y).some(x=>x.id===y.katId)) y.katId='';
   slinkModalCiz(true);
@@ -25647,13 +25755,14 @@ function slinkYeniHtml(){
   return `<div class="modal-head"><div style="display:flex;align-items:center;gap:9px"><button class="mini-btn" onclick="slinkListeyeDon()" title="Listeye dön"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h3>Yeni Saha Linki</h3></div><button class="mini-btn" onclick="closeModal()">x</button></div>
   <div class="modal-body">
     <p class="t-meta" style="margin-bottom:12px;line-height:1.55">Linki açan kişi hesap açmadan bu seçime ait kalemleri görür, miktar girip gönderir. Gönderilenler burada onayınıza düşer; siz kabul edene kadar rapora ve stoğa işlenmez. Link seçtiğiniz <b>geçerlilik süresi</b> boyunca açık kalır; istediğiniz an iptal edebilirsiniz.</p>
-    <div class="frow two"><div><label>Tarih *</label><input type="date" value="${esc(y.tarih)}" onchange="SLINK.yeni.tarih=this.value"></div>
+    <div class="frow two"><div><label>Tarih *</label><input type="date" value="${esc(y.tarih)}" onchange="slinkTarihDegis(this.value)"></div>
       <div><label>Vardiya *</label><select onchange="SLINK.yeni.vardiya=this.value">${VARDIYALAR.map(v=>opt(v,v,y.vardiya===v)).join('')}</select></div></div>
     <div class="frow two"><div><label>Bina *</label><select onchange="slinkYeniSet('bina',this.value)">${binaOptsFor(y.bina).map(b=>opt(b,b,y.bina===b)).join('')}</select></div>
       <div><label>Bölüm *</label><select onchange="slinkYeniSet('cat',this.value)">${opt('','- bölüm seçin -',!y.cat)}${(DB.proje.sections||[]).map(s=>opt(s,s,y.cat===s)).join('')}</select></div></div>
     <div class="frow"><label>Ekip *</label><select onchange="SLINK.yeni.ekip=this.value">${opt('','- ekip seçin -',!y.ekip)}${(DB.rapor.ekipler||[]).map(e=>opt(e,e,y.ekip===e)).join('')}</select></div>
     <div class="frow two"><div><label>Dolduracak kişi</label><input maxlength="60" value="${esc(y.dolduran)}" placeholder="boş bırakılırsa linkte sorulur" oninput="SLINK.yeni.dolduran=this.value"></div>
-      <div><label>Adam sayısı</label><input type="number" min="0" max="999" step="1" value="${esc(y.adam)}" placeholder="boş bırakılırsa linkte sorulur" oninput="SLINK.yeni.adam=this.value"></div></div>
+      <div><label>Adam sayısı</label><input id="slinkAdam" type="number" min="0" max="999" step="1" value="${esc(y.adam)}" placeholder="boş bırakılırsa linkte sorulur" oninput="slinkAdamYaz(this.value)"${y.gySec.length&&String(y.adam)!==''?' class="slink-adam-gy" title="Günlük Yazı başlıklarından toplandı - elle yazarsanız seçim bırakılır"':''}></div></div>
+    <div class="frow"><label>Adam sayısını Günlük Yazı'dan al <span class="t-meta" style="text-transform:none;letter-spacing:0">(birden fazla başlık seçilebilir)</span></label><div class="slink-gy" id="slinkGy">${slinkGyHtml(y)}</div></div>
     <div class="frow"><label>Şartnameler <span class="t-meta" style="text-transform:none;letter-spacing:0">(birden fazla seçilebilir)</span></label>${sartAlani}</div>
     <div class="frow two"><div><label>Kat</label><select onchange="SLINK.yeni.katId=this.value">${opt('',kats.length?'- linki açan kişi her kalemde seçsin -':'- binada kat tanımı yok -',!y.katId)}${kats.map(k=>opt(k.id,k.name+(k.kot!=null&&k.kot!==''?' ('+k.kot+')':''),y.katId===k.id)).join('')}</select></div>
       <div><label>Geçerlilik</label><select onchange="SLINK.yeni.sure=this.value">${SLINK_SURELER.map(([v,t])=>opt(v,t,y.sure===v)).join('')}</select></div></div>
@@ -25673,7 +25782,9 @@ async function slinkOlustur(){
   if(adam && !/^\d{1,3}$/.test(adam)){ toast('Adam sayısı 0-999 arası tam sayı olmalı','err'); return; }
   const btn=document.getElementById('slinkOlusturBtn'); if(btn){ btn.disabled=true; btn.textContent='Oluşturuluyor...'; }
   try{
-    const r=await sbSahaLinkIslem({op:'olustur', ...y, dolduran:y.dolduran.trim(), adam:adam===''?'':Number(adam)});
+    // gySec/gyKaynak formun Gunluk Yazi seciminin durumu - linke yalniz sonuc sayisi (adam) gider
+    const {gySec, gyKaynak, ...gonder}=y;
+    const r=await sbSahaLinkIslem({op:'olustur', ...gonder, dolduran:y.dolduran.trim(), adam:adam===''?'':Number(adam)});
     SLINK.linkler=[r.link, ...(SLINK.linkler||[])];
     SLINK.sonuc=r.link; SLINK.gorunum='sonuc'; slinkModalCiz(true);
   }catch(e){
