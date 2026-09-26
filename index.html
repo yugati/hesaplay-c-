@@ -3453,7 +3453,9 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .ac-item:last-child{border-bottom:none}
 .ac-item:hover,.ac-item.hl{background:var(--bg)}
 .ac-item .ac-name{font-weight:600}
-.ac-item .ac-name mark{background:var(--amber);color:#1a1200;border-radius:2px;padding:0 1px}
+/* :not(.mkr) - marker modunun isareti kendi ayarli gorunumunu tasir (bkz. mark.mkr);
+   bu kural daha ozgul oldugu icin onu ezip her seyi sabit amber'e boyardi */
+.ac-item .ac-name mark:not(.mkr){background:var(--amber);color:#1a1200;border-radius:2px;padding:0 1px}
 .ac-item .ac-sub{font-size:11px;color:var(--mute);font-family:var(--mono);margin-top:2px}
 /* siparis aramasinda "baska bina" satirlari: yanlislikla secilmesin diye acikca ayrisir */
 .ac-item .ac-sub[data-x],.nxb-src-h{letter-spacing:.4px}
@@ -26963,7 +26965,8 @@ function rLinePick(bi,li){
   const specs=DB.proje.specs.filter(s=>!s.is_deleted && s.bina===bina && (!lockedCat||s.cat===lockedCat));
   // POZ NO (proje yerlesim kodu, orn. 00UYB12EM0051) da aranabilir ve listede gorunur:
   // raporcu sahada elindeki tekil yerlesim koduyla dogru kalemi bulur, yuzdeler o kaleme isler
-  const specSrc=specs.map(s=>({ad:s.name, alt:(s.code||'')+' '+(s.poz||'')+' '+(s.ozelNo||'')+' '+((s.ozelNolar||[]).join(' '))+' '+specGroupKey(s), sub:[s.ozelNo?'Özel '+s.ozelNo:'',s.kat?_katEtiket(s.kat):'',s.poz?'Poz '+s.poz:'',s.code,specGroupKey(s),s.unit].filter(Boolean).join(' · '), img:specImgOf(s), obj:{specId:s.id,matId:s.matId||null,code:s.code||'',ad:s.name,name:s.name,unit:s.unit||'',cat:s.cat||'',bina:s.bina,grup:specGroupKey(s)}}));
+  // iz: alt satirda gorunmeyen aranan alan - marker o ozel koddan tutan satiri acikca gosterir
+  const specSrc=specs.map(s=>({ad:s.name, alt:(s.code||'')+' '+(s.poz||'')+' '+(s.ozelNo||'')+' '+((s.ozelNolar||[]).join(' '))+' '+specGroupKey(s), sub:[s.ozelNo?'Özel '+s.ozelNo:'',s.kat?_katEtiket(s.kat):'',s.poz?'Poz '+s.poz:'',s.code,specGroupKey(s),s.unit].filter(Boolean).join(' · '), iz:[['Ozel kod',(s.ozelNolar||[]).filter(x=>x!==s.ozelNo)]], img:specImgOf(s), obj:{specId:s.id,matId:s.matId||null,code:s.code||'',ad:s.name,name:s.name,unit:s.unit||'',cat:s.cat||'',bina:s.bina,grup:specGroupKey(s)}}));
   const specMatIds=new Set(specs.map(s=>s.matId).filter(Boolean));
   const libSrc=matLibSrc().filter(m=>!specMatIds.has(m.obj.matId)).map(m=>({...m, obj:{...m.obj, specId:null, bina, grup:bk.sart||''}}));
   const src=[...specSrc, ...libSrc];
@@ -28046,7 +28049,8 @@ function acHighlight(name,q){
    (bkz. markHay; aramaIsaret'teki aramaHay ile ayni kalip).
 
    NEREDE CALISIR: Fatura Kontrol (defter, mutabakat, fatura formu), Malzeme
-   Kutuphanesi (dort sekme) ve Tum Siparisler. Her ekran KENDI arama kuralinin
+   Kutuphanesi (dort sekme), Tum Siparisler ve ACILIR ARAMA LISTELERI (acRender -
+   rapor is kalemi, siparis satiri, kutuphane secici...). Her ekran KENDI arama kuralinin
    baktigi alanlari isaretler; listede sutunu olmayan bir alandan tutan satir
    icin markGizliIz o alani satirin altina yazar.
 
@@ -28246,7 +28250,7 @@ function mkrPillCiz(){
   const e=document.getElementById('mkrPillAd');
   if(e) e.textContent=MKR.acik?'Marker · acik':'Marker';
   b.title=MKR.acik
-    ? 'Marker modu ACIK - arama kutusuna yazdiginiz harf ve rakamlardan TUTANLAR listede isaretlenir (Kutuphane, Tum Siparisler, Fatura Kontrol). Kapatmak icin tiklayin; renk ve gorunum yanindaki okta.'
+    ? 'Marker modu ACIK - arama kutusuna yazdiginiz harf ve rakamlardan TUTANLAR listede isaretlenir (Kutuphane, Tum Siparisler, Fatura Kontrol, rapor ve siparis satirlarindaki acilir arama listeleri). Kapatmak icin tiklayin; renk ve gorunum yanindaki okta.'
     : 'Marker modu kapali - aramada eslesen karakterler isaretlenmiyor. Acmak icin tiklayin; renk ve gorunum yanindaki okta.';
   const m=document.getElementById('mkrMenu'); if(m&&m.classList.contains('open')) mkrMenuCiz();
 }
@@ -28356,12 +28360,28 @@ function acPos(){
   else { d.style.bottom=(vh-r.top+3)+'px'; d.style.top='auto'; }
 }
 function acInput(e){ AC.q=e.target.value; AC.hl=-1; acRender(); }
+/* MARKER MODU ACIKKEN acilir liste de isaretlenir (rapor is kalemi, siparis satiri,
+   kutuphane secici... hepsi bu listeyi kullanir). Kod cogu zaman ALT satirda
+   (Poz · kod · sartname) durdugu icin isaret yalniz ada degil alt satira da konur.
+   acFilter rakamli sorguda da harf-sirasi eslesmesi kabul ediyor ("124713" ->
+   "124719 ... 0179 ... 3"); marker orada bilerek isaret KOYMAZ - isaretsiz kalan
+   satir "kodu tutmuyor, sirayla gecti" demektir. Sirada one alma gerekmez: acScore
+   birebir tutanlari zaten basa diziyor.
+   Ad ve alt satirda isaret yoksa ama satir listeye girdiyse, aranan alanlardan
+   (it.iz - verilmemisse ham it.alt) tutan kisim iz olarak altina yazilir. */
+function acSatirIsaret(it,q){
+  if(!MKR.acik||!String(q||'').trim()) return {ad:acHighlight(it.ad,q),sub:it.sub?esc(it.sub):'',iz:''};
+  const gor=markVarMi(it.ad,q)||(it.sub&&markVarMi(it.sub,q));
+  return {ad:markIsaret(it.ad,q), sub:it.sub?markIsaret(it.sub,q):'',
+    iz:gor?'':markGizliIz(it.iz||[['Arama',it.alt]],q)};
+}
 function acRender(){
   if(!AC.drop)return;
   const list=acFilter(AC.src,AC.q);
-  let html=list.map((it,i)=>`<div class="ac-item ${i===AC.hl?'hl':''}" onmousedown="acPick(${i})" style="${it.img!==undefined?'display:flex;align-items:center;gap:9px':''}">
+  let html=list.map((it,i)=>{ const mk=acSatirIsaret(it,AC.q);
+    return `<div class="ac-item ${i===AC.hl?'hl':''}" onmousedown="acPick(${i})" style="${it.img!==undefined?'display:flex;align-items:center;gap:9px':''}">
     ${it.img!==undefined?(it.img?`<img src="${it.img}" style="width:34px;height:34px;border-radius:6px;object-fit:contain;background:#fff;flex-shrink:0">`:`<div style="width:34px;height:34px;border-radius:6px;background:var(--dim)22;display:flex;align-items:center;justify-content:center;flex-shrink:0">${phIcoSm()}</div>`):''}
-    <div style="min-width:0;flex:1"><div class="ac-name">${acHighlight(it.ad,AC.q)}</div>${it.sub?`<div class="ac-sub">${esc(it.sub)}</div>`:''}</div></div>`).join('');
+    <div style="min-width:0;flex:1"><div class="ac-name">${mk.ad}</div>${mk.sub?`<div class="ac-sub">${mk.sub}</div>`:''}${mk.iz}</div></div>`; }).join('');
   if(AC.allowNew && AC.q.trim() && !list.some(it=>it.ad.toLowerCase()===AC.q.trim().toLowerCase()))
     html+=`<div class="ac-new" onmousedown="acPickNew()">+ "${esc(AC.q.trim())}" yeni olarak ekle</div>`;
   if(!html) html=`<div class="ac-item" style="color:var(--mute)">Sonuc yok</div>`;
@@ -28396,14 +28416,16 @@ function specLibSrc(){
 }
 // MERKEZI MALZEME KUTUPHANESI arama kaynagi - tum bilgi (kod, ad, marka, birim, standart, etiket, FOTO)
 function matLibSrc(){
-  return (DB.proje.materials||[]).filter(m=>!m.is_deleted).map(m=>({
-    ad:gorAd(m), alt:(m.name||'')+' '+(m.code||'')+' '+(m.altCodes||[]).join(' ')+' '+matPiyasaAdlari(m).join(' ')+' '+(m.brand||'')+' '+(m.cat||'')+' '+(m.standart||'')+' '+(m.tags||[]).join(' '),
+  return (DB.proje.materials||[]).filter(m=>!m.is_deleted).map(m=>{ const ad=gorAd(m), pa=matPiyasaAdlari(m); return {
+    ad, alt:(m.name||'')+' '+(m.code||'')+' '+(m.altCodes||[]).join(' ')+' '+pa.join(' ')+' '+(m.brand||'')+' '+(m.cat||'')+' '+(m.standart||'')+' '+(m.tags||[]).join(' '),
     // piyasa adi alt satirda da gorunur: kullanici neden eslestigini gorsun
-    sub:[m.code,matPiyasaAdlari(m)[0],m.brand,m.cat,m.unit].filter(Boolean).join(' · '),
+    sub:[m.code,pa[0],m.brand,m.cat,m.unit].filter(Boolean).join(' · '),
+    // marker izi: aranan ama listede gorunmeyen alanlar (piyasa adi modunda resmi ad da gizli kalir)
+    iz:[['Resmi ad',m.name!==ad?m.name:''],['Varyant kod',m.altCodes||[]],['Piyasa adi',pa.slice(1)],['Standart',m.standart],['Etiket',m.tags||[]]],
     img:m.img||null,
     obj:{matId:m.id,code:m.code||'',ad:m.name,brand:m.brand||'',cat:m.cat||'',unit:m.unit||'',img:m.img||null,
          standart:m.standart||'',weight:m.weight!=null?m.weight:null,tags:(m.tags||[]).slice()}
-  }));
+  };});
 }
 function openProjeOrderModal(){ modalPdf=null; _poDraftId=null; pOrderLines=[{specId:'',code:'',ad:'',cat:'',unit:'',grup:'',qty:''}]; window._poGrup=(PSPEC&&PSPEC!=='__all')?PSPEC:'';
   if(DB.proje.specs.filter(s=>!s.is_deleted).length===0){ toast("Once Sartname sekmesinden kalem ekleyin","err"); setTab('spec'); return; }
