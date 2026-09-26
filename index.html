@@ -26053,7 +26053,8 @@ function renderRapor(){
     <div class="iht-sag rap-tools">
       <button class="rap-tool" onclick="openRaporUserModal()" title="Kim hangi raporu girdi - kullanıcı bazlı giriş listesi">${icoUserSm()} Kim Girdi</button>
       <span class="rap-tool-sep"></span>
-      <button class="rap-tool" onclick="exportRaporExcel()" title="Günlük Plan formatında Excel indir">${icoXlsDis()} Plan Excel</button>
+      <button class="rap-tool" onclick="exportRaporExcel()" title="Sahadaki Günlük Plan şablonunun birebir biçimi: renkli başlıklar, birleşik adam sayısı, her gün ayrı sayfa. Ekrandaki bina/tarih süzgecine göre alınır.">${icoXlsDis()} Plan Excel</button>
+      <button class="rap-tool" onclick="exportRaporListeExcel()" title="Düz liste: tüm kayıtlar tek sayfada, Şartname Kalemi ve Oluşturan sütunlarıyla (biçimsiz)">${icoXlsDis()} Liste Excel</button>
       <button class="rap-tool" onclick="document.getElementById('rimpFile').click()" title="Günlük Plan formatındaki Excel'leri toplu yükle - satırlar şartname kalemleriyle otomatik eşleştirilir, kaydetmeden önce tek tek onaylarsınız">${icoXlsIc()} Excel'den Al</button>
       <input type="file" id="rimpFile" class="hidden" accept=".xlsx,.xls,.csv" multiple onchange="rimpPickFiles(event)">
       ${isAdmin()?`<button class="rap-tool del" onclick="openRaporSil()" title="Rapor kayıtlarını toplu sil: bina/ay seçilir, günler listelenir, yönetici şifresi istenir. Silinen kayıtların stok çıkış hareketleri de geri alınır.">${icoTrash()} Rapor Sil</button>`:''}
@@ -27549,10 +27550,138 @@ async function delRaporEntry(id){
   logAction('delete',`Saha kaydi silindi: ${e.tarih} ${e.bina} ${e.malzeme} (${e.miktar} ${e.birim||''})`);
   render(); rDayReopen(_rDayOpen); toast('Kayit silindi');
 }
-function exportRaporExcel(){
+// Ekrandaki suzgecle ayni kayitlar. '__son2' (acilis varsayilani "Dun ve bugun") bir tarih
+// DEGIL - eskiden tarih gibi karsilastirildigi icin varsayilan gorunumde cikti bos gelirdi.
+function rCiktiKayitlari(){
   let list=rEntries();
   if(RV.filterBina) list=list.filter(e=>e.bina===RV.filterBina);
-  if(RV.filterTarih) list=list.filter(e=>e.tarih===RV.filterTarih);
+  const bugun=rISO(Date.now()), dun=rISO(Date.now()-86400000);
+  if(RV.filterTarih==='__son2') list=list.filter(e=>e.tarih===bugun||e.tarih===dun);
+  else if(RV.filterTarih) list=list.filter(e=>e.tarih===RV.filterTarih);
+  return list;
+}
+
+/* PLAN EXCEL - sahadaki "Akkuyu_00U_Daily Report" sablonunun Plan sayfasinin BIREBIR bicimi
+   (renk kodlari, sutun genislikleri, satir yukseklikleri, kenarliklar o dosyadan olculdu).
+   Her GUN ayri sayfa: 2. satir baslik, 3. satir "<binalar> binasi icin Gunluk Imalat Raporu |
+   Tarih", 4. satir iki dilli sutun basliklari, 5'ten itibaren kayitlar. Kayit mantigina
+   dokunmaz - yalniz cikti.
+   - ADAM SAYISI malzeme satirlarinda BIRLESIK hucredir: bir ekip bir gunde bir binada bir
+     BOLUMDE tek gorevlendirmedir (rAdamBloklari ile ayni anahtar: bina + bolum + ekip +
+     vardiya, bolum _rAdamBolum). Degeri grubun en yuksek adam sayisi. ISGUCU satirlari
+     (AMBAR / GENEL SAHA) sonda, her biri kendi adam sayisiyla, gorev iki satira bolunur.
+   - Sablonda M sutunu basliksiz ve bostur; oldugu gibi korunur.
+   - Rapor ice aktarma (rimpParseWb) bu dosyayi geri okuyabilir: birlesik hucreler asagi tasinir.
+   Stil yazmak icin xlsx-js-style gerekir (window.xlsxStilYukle, yalniz burada yuklenir).
+   Dondurulmus baslik / %70 yakinlastirma / A4 yatay sayfa kutuphanece yazilmadigi icin
+   sayfa XML'ine sonradan eklenir (rPlanSonIsle). */
+const RPLAN_BASLIK='Akkuyu Nukleer Guc Santrali Bykara Firmasi Gunluk Plan / Ежедневный план компании Байкара по АЭС Аккую';
+const RPLAN_SUTUNLAR=['Дата\nTarih','Наименование здания\nBina Adı','Бригада\nEkip','Код проекта\nProje Kodu','Этаж\nKat','Отм.\nKot',
+  'Вид работ\nİş Kalemi','Объем выполненных работ\nYapılan İmalat Miktarı','Ед. изм.\nBirim','Количество рабочих\nAdam Sayısı','Смена\nVardiya','','Примечание\nNotlar'];
+// B..N sutunlari: dolgu (S=acik sari FEF3C7, M=acik mavi DBEAFE) + yatay hizalama - sablondan
+const RPLAN_DOLGU='SSSMMSSSMSSMS', RPLAN_SOLA=new Set([6,11,12]);   // H (is kalemi), M, N sola
+const RPLAN_GENISLIK=[2,12,13,39,39.7109375,8,12,35,23.28515625,12,14,14,22,35];
+// Excel tarih seri numarasi (1899-12-30 tabanli) - hucre gercek TARIH olur, gg.aa.yyyy gorunur
+function rPlanSeri(iso){ const p=String(iso||'').split('-').map(Number); return p.length===3?(Date.UTC(p[0],p[1]-1,p[2])-Date.UTC(1899,11,30))/86400000:null; }
+const rPlanSayiMi=v=>/^-?\d+(?:[.,]\d+)?$/.test(String(v==null?'':v).trim());
+const rPlanSayi=v=>Number(String(v).trim().replace(',','.'));
+// bir gunun kayitlari -> sirali satir listesi + adam birlesim gruplari
+function rPlanSatirlari(list){
+  const tr=(a,b)=>String(a||'').localeCompare(String(b||''),'tr',{numeric:true});
+  const vs=v=>v==='GECE'?1:0;
+  const mal=list.filter(e=>!e.isgucu), isg=list.filter(e=>e.isgucu);
+  const grup=e=>[e.bina||'',e.ekip||'',vs(e.vardiya),_rAdamBolum(e)].join('¦');
+  // bolum gruplari ILK GIRILDIKLERI sirayla (alfabetik degil - sahadaki yazim sirasi), grup ici
+  // proje koduna gore, ayni kodda giris sirasi
+  const ilk=new Map(); mal.forEach(e=>{ const k=grup(e), t=e.created||0; if(!ilk.has(k)||t<ilk.get(k)) ilk.set(k,t); });
+  mal.sort((a,b)=>tr(a.bina,b.bina)||tr(a.ekip,b.ekip)||vs(a.vardiya)-vs(b.vardiya)||(ilk.get(grup(a))-ilk.get(grup(b)))
+    ||tr(grup(a),grup(b))||tr(a.projeKodu,b.projeKodu)||(a.created||0)-(b.created||0));
+  isg.sort((a,b)=>tr(a.bina,b.bina)||tr(a.ekip,b.ekip)||vs(a.vardiya)-vs(b.vardiya)||(a.created||0)-(b.created||0));
+  const satirlar=[], gruplar=[];
+  mal.forEach(e=>{ const k=grup(e), son=gruplar[gruplar.length-1];
+    if(son&&son.k===k) son.bit=satirlar.length; else gruplar.push({k,bas:satirlar.length,bit:satirlar.length});
+    satirlar.push({e,g:gruplar.length-1}); });
+  gruplar.forEach(g=>{ g.adam=Math.max(0,...satirlar.slice(g.bas,g.bit+1).map(s=>Number(s.e.adamSayisi)||0)); });
+  isg.forEach(e=>satirlar.push({e,g:-1}));
+  return {satirlar,gruplar};
+}
+function rPlanSayfa(X,tarih,list){
+  const {satirlar,gruplar}=rPlanSatirlari(list);
+  const ince={style:'thin',color:{rgb:'FF9BA3AF'}}, kalin={style:'medium',color:{rgb:'FF1F2937'}};
+  const dort=k=>({top:k,bottom:k,left:k,right:k});
+  const orta={horizontal:'center',vertical:'center',wrapText:true};
+  const S={
+    baslik:{fill:{patternType:'solid',fgColor:{rgb:'FF1E3A8A'}},font:{name:'Arial',sz:14,bold:true,color:{rgb:'FFFFFFFF'}},alignment:orta},
+    alt:{fill:{patternType:'solid',fgColor:{rgb:'FFDBEAFE'}},font:{name:'Arial',sz:12,bold:true,color:{rgb:'FF1E3A8A'}},alignment:orta,border:dort(kalin)},
+    kafa:{fill:{patternType:'solid',fgColor:{rgb:'FF2563EB'}},font:{name:'Arial',sz:10,bold:true,color:{rgb:'FFFFFFFF'}},alignment:orta,border:dort(kalin)},
+  };
+  const veriStil=(ci,kirmizi)=>({fill:{patternType:'solid',fgColor:{rgb:RPLAN_DOLGU[ci]==='M'?'FFDBEAFE':'FFFEF3C7'}},
+    font:{name:'Arial',sz:10,...(kirmizi?{color:{rgb:'FFFF0000'}}:{})}, border:dort(ince),
+    alignment:{horizontal:RPLAN_SOLA.has(ci)?'left':'center',vertical:'center',wrapText:true}});
+  const ws={}, merges=[];
+  const koy=(r,c,v,s,z)=>{ const ref=X.utils.encode_cell({r,c}); const cell=(v===''||v==null)?{t:'s',v:''}:(typeof v==='number'?{t:'n',v}:{t:'s',v:String(v)}); if(z) cell.z=z; cell.s=s; ws[ref]=cell; };
+  // 2-3. satir: birlesik baslik ve alt baslik (kenarlik her hucrede olmali)
+  const binalar=[]; satirlar.forEach(({e})=>{ if(e.bina&&!binalar.includes(e.bina)) binalar.push(e.bina); });
+  for(let c=1;c<=13;c++){ koy(1,c,c===1?RPLAN_BASLIK:'',S.baslik); koy(2,c,c===1?`${binalar.join(', ')} binası için Günlük İmalat Raporu | Tarih: ${fmtDateISO(tarih)}`:'',S.alt); koy(3,c,RPLAN_SUTUNLAR[c-1],S.kafa); }
+  merges.push({s:{r:1,c:1},e:{r:1,c:13}},{s:{r:2,c:1},e:{r:2,c:13}});
+  const seri=rPlanSeri(tarih);
+  satirlar.forEach(({e,g},i)=>{
+    const r=4+i, onceki=i?satirlar[i-1]:null;
+    const kat=e.isgucu?'':(e.kat||''), kot=e.isgucu?'':(e.kot||'');
+    // gorev "AMBAR / СКЛАД" -> iki satir (sablondaki gibi); malzeme adlarina dokunulmaz
+    const ad=e.isgucu?String(e.malzeme||'').split(/\s+\/\s+/).join('\n'):(e.malzeme||'');
+    const adam=g>=0?(gruplar[g].bas===i&&gruplar[g].adam?gruplar[g].adam:''):(Number(e.adamSayisi)||'');
+    // not: ayni formdan gelen ardisik satirlarda bir kez (grubun ilk satiri)
+    const not=String(e.notlar||'').trim(), notYaz=not&&!(onceki&&onceki.g===g&&g>=0&&String(onceki.e.notlar||'').trim()===not);
+    const deger=[seri, e.bina||'', e.ekip||'', e.isgucu?'':(e.projeKodu||''),
+      rPlanSayiMi(kat)?rPlanSayi(kat):kat, rPlanSayiMi(kot)?rPlanSayi(kot):kot, ad,
+      rPlanSayiMi(e.miktar)?rPlanSayi(e.miktar):(e.miktar==null?'':e.miktar), e.birim||'', adam,
+      e.vardiya==='GECE'?'GECE':'GÜNDÜZ', '', notYaz?not:''];
+    deger.forEach((v,ci)=>koy(r,ci+1,v,veriStil(ci,ci===12&&notYaz),ci===0&&seri!=null?'dd.mm.yyyy':null));
+  });
+  gruplar.forEach(g=>{ if(g.bit>g.bas) merges.push({s:{r:4+g.bas,c:10},e:{r:4+g.bit,c:10}}); });
+  ws['!ref']=X.utils.encode_range({s:{r:0,c:0},e:{r:Math.max(4,3+satirlar.length),c:13}});
+  ws['!merges']=merges;
+  ws['!cols']=RPLAN_GENISLIK.map(width=>({width}));
+  ws['!rows']=[{},{hpt:34.5},{hpt:31.5},{hpt:54.75},...satirlar.map(()=>({hpt:30}))];
+  ws['!margins']={left:0.25,right:0.25,top:0.5,bottom:0.5,header:0.3,footer:0.3};
+  return ws;
+}
+// dondurulmus baslik (4. satir), %70 yakinlastirma, A4 yatay + genislige sigdir - sablondaki gibi
+function rPlanSonIsle(X,dizi){
+  const z=X.CFB.read(new Uint8Array(dizi),{type:'array'});
+  z.FullPaths.forEach((p,i)=>{
+    if(!/xl\/worksheets\/sheet\d+\.xml$/.test(p)) return;
+    let x=new TextDecoder().decode(z.FileIndex[i].content);
+    x=x.replace('<dimension','<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension')
+      .replace('<sheetView workbookViewId="0"/>','<sheetView zoomScale="70" zoomScaleNormal="70" workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="B5" sqref="B5"/></sheetView>')
+      .replace(/(<pageMargins[^>]*\/>)/,'$1<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>');
+    z.FileIndex[i].content=new TextEncoder().encode(x); z.FileIndex[i].size=z.FileIndex[i].content.length;
+  });
+  return X.CFB.write(z,{fileType:'zip',type:'array'});
+}
+async function exportRaporExcel(){
+  const list=rCiktiKayitlari();
+  if(!list.length){ toast('Disa aktarilacak kayit yok','err'); return; }
+  let X;
+  try{ X=await window.xlsxStilYukle(); }catch(e){ toast('Excel bileseni yuklenemedi - baglantiyi kontrol edip tekrar deneyin','err'); return; }
+  const gunler=[...new Set(list.map(e=>e.tarih).filter(Boolean))].sort();
+  const wb=X.utils.book_new();
+  gunler.forEach(t=>X.utils.book_append_sheet(wb, rPlanSayfa(X,t,list.filter(e=>e.tarih===t)),
+    gunler.length===1?'Plan':('Plan '+fmtDateISO(t)).slice(0,31)));
+  let dizi=X.write(wb,{bookType:'xlsx',type:'array'});
+  try{ dizi=rPlanSonIsle(X,dizi); }catch(e){ console.warn('Plan Excel son isleme atlandi',e); }   // olmazsa dosya yine gecerli
+  const kisa=t=>{ const p=String(t).split('-'); return p.length===3?`${p[2]}.${p[1]}.${p[0].slice(2)}`:t; };
+  const ad=`Daily Report ${gunler.length===1?kisa(gunler[0]):kisa(gunler[0])+' - '+kisa(gunler[gunler.length-1])}.xlsx`;
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([dizi],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+  a.download=ad; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  toast(gunler.length===1?'Plan Excel indirildi':`Plan Excel indirildi - ${gunler.length} gun, her gun ayri sayfa`);
+}
+// DUZ LISTE (eski Plan Excel): Sartname Kalemi + Olusturan sutunlu, stilsiz, tek sayfa
+function exportRaporListeExcel(){
+  let list=rCiktiKayitlari();
   if(!list.length){ toast('Disa aktarilacak kayit yok','err'); return; }
   list.sort((a,b)=>(a.tarih||'').localeCompare(b.tarih||'')||(a.bina||'').localeCompare(b.bina||''));
   const wb=XLSX.utils.book_new();
@@ -27588,8 +27717,8 @@ function exportRaporExcel(){
   const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:12},{wch:18},{wch:30},{wch:22},{wch:20},{wch:6},{wch:8},{wch:34},{wch:14},{wch:10},{wch:12},{wch:10},{wch:22},{wch:16}];
   XLSX.utils.book_append_sheet(wb,ws,"Plan");
-  const fn=RV.filterTarih?`Daily_Report_${RV.filterTarih}.xlsx`:`Daily_Report_${new Date().toISOString().slice(0,10)}.xlsx`;
-  XLSX.writeFile(wb,fn); toast("Plan formatinda Excel indirildi");
+  const fn=RV.filterTarih&&RV.filterTarih!=='__son2'?`Daily_Report_${RV.filterTarih}.xlsx`:`Daily_Report_${new Date().toISOString().slice(0,10)}.xlsx`;
+  XLSX.writeFile(wb,fn); toast("Liste Excel indirildi");
 }
 function fmtDateISO(s){ if(!s)return''; const d=new Date(s); if(isNaN(d))return s; return d.toLocaleDateString('tr-TR'); }
 

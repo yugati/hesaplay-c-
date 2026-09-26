@@ -205,6 +205,17 @@ import {
 
 // xlsx global
 window.XLSX = XLSX
+// STILLI Excel (renk/kenarlik/birlesik hucre yazabilen SheetJS catali). Yalnizca stilli cikti
+// alinirken (Rapor > Plan Excel) yuklenir - Vite ayri parcaya boler, acilis paketine girmez.
+// Paket UMD'dir: window.XLSX bossa kendi IC nesnesini oraya yazar (tarayicida olculdu, utils'siz).
+// Uygulamada window.XLSX once dolar, yine de ezilirse diger tum Excel islevleri bozulmasin diye geri konur.
+window.xlsxStilYukle = () => {
+  const asil = window.XLSX
+  return import('xlsx-js-style').then(m => {
+    if (asil && window.XLSX !== asil) window.XLSX = asil
+    return m.default || m
+  })
+}
 
 // Supabase hataları için güvenli sarmalayıcı:
 // fn hata fırlatsa bile çağıran kod devam eder (closeModal/render/toast çalışır).
