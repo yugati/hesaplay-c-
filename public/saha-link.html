@@ -120,6 +120,13 @@ input::placeholder,textarea::placeholder{color:var(--dim)}
 .k-sil svg{width:16px;height:16px}
 .k-satir.hata select,.k-satir.hata input{border-color:var(--red);box-shadow:0 0 0 3px rgba(239,68,68,.2)}
 .k-ekle{align-self:flex-start;padding:4px 2px;border:0;background:none;color:var(--grid);font:700 13px var(--sans);cursor:pointer}
+/* alternatif urun: ana kaleminin hemen altinda, iceri kaymis + turuncu sol cizgi - ayri bir
+   kalem gibi degil, "bunun yerine takildiysa" secenegi gibi okunur. Sinif 'alt' DEGIL: .alt
+   sayfanin sabit alt cubugudur (position:fixed) - kart ona yapisirdi */
+.kalem.k-alter{margin:-4px 0 10px 18px;border-left:3px solid var(--amber);border-radius:4px 14px 14px 4px}
+.k-altet{display:inline-block;margin-right:6px;padding:1px 6px;border-radius:5px;background:rgba(240,160,32,.16);color:var(--amber);font:800 10px var(--sans);letter-spacing:.04em;vertical-align:1px}
+.k-yerine{margin-top:3px;font-size:12px;color:var(--mute);overflow-wrap:anywhere}
+.k-yerine b{font-weight:600;color:var(--ink)}
 .bos{padding:26px 10px;text-align:center;font-size:14px;color:var(--dim)}
 
 /* alt cubuk */
@@ -274,9 +281,12 @@ async function yukle() {
   V.sartKodlar = sirali.filter(c => V.kalemler.some(k => k.sart === c));
   V.sartKisa = sartKisalt(V.sartKodlar);
   V.kalemler.forEach(k => {
-    k._ara = norm([k.kod, k.ad, k.ozelNo, k.poz, V.sartKisa[k.sart] || ''].join(' ') + ' ' + String(k.kod || '').replace(/[\s._-]/g, ''));
+    // alternatif, ana kalemin adi/koduyla da bulunur: ana kalemi arayan onun alternatifini de gorur
+    const ana = k.ana ? [k.ana.kod, k.ana.ad, 'alternatif'] : [];
+    k._ara = norm([k.kod, k.ad, k.ozelNo, k.poz, V.sartKisa[k.sart] || '', ...ana].join(' ') + ' ' + String(k.kod || '').replace(/[\s._-]/g, ''));
     kalemMap.set(k.id, k);
   });
+  V.altSay = V.kalemler.filter(k => k.ana).length;
   baslat();
 }
 
@@ -305,6 +315,8 @@ function satirlar(id) {
   return S.g[id];
 }
 function kalemDolu(id) { return (S.g[id] || []).some(r => sayi(r.miktar) > 0); }
+// "84 kalem + 3 alternatif" - alternatifler ana kalem sayisini sisirmesin
+function kalemSayisi() { const ana = V.kalemler.length - V.altSay; return ana + ' kalem' + (V.altSay ? ' + ' + V.altSay + ' alternatif' : ''); }
 function katOpts(sec) { return V.katlar.map(k => `<option value="${esc(k.id)}" ${k.id === sec ? 'selected' : ''}>${esc(katEtiket(k.ad))}</option>`).join(''); }
 
 function ciz() {
@@ -322,7 +334,7 @@ function ciz() {
     katSecilir() ? `<label class="alan tam"><span>Çalışılan kat</span><select id="f_vkat"><option value="">- seçin -</option>${katOpts(S.varsayilanKat)}</select><small>Miktar girdiğiniz kaleme otomatik yazılır; kalemin kendi satırında değiştirebilirsiniz.</small></label>` : '',
   ].filter(Boolean);
   const sartSuz = cokSartname()
-    ? `<select id="f_sart" class="sart-suz" aria-label="Şartnameye göre süz"><option value="">Tüm şartnameler</option>${V.sartKodlar.map(c => `<option value="${esc(c)}">${esc(V.sartKisa[c])} (${V.kalemler.filter(k => k.sart === c).length})</option>`).join('')}</select>` : '';
+    ? `<select id="f_sart" class="sart-suz" aria-label="Şartnameye göre süz"><option value="">Tüm şartnameler</option>${V.sartKodlar.map(c => `<option value="${esc(c)}">${esc(V.sartKisa[c])} (${V.kalemler.filter(k => k.sart === c && !k.ana).length})</option>`).join('')}</select>` : '';
   const bitis = new Date(L.bitis).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const onceki = V.gonderimSayisi ? ` · bu linkten ${V.gonderimSayisi} gönderim yapıldı` : '';
   window.scrollTo(0, 0);
@@ -341,7 +353,7 @@ function ciz() {
     <div class="ara">${IKON.ara}<input id="f_q" type="search" placeholder="Kalem ara" autocomplete="off" enterkeyhint="search" aria-label="Kalem ara: kod, ad veya özel no" title="Kod, ad veya özel no ile arayın"></div>
     <button id="f_dolu" class="filtre" type="button" aria-pressed="false" title="Yalnızca miktar girilen kalemleri göster">Girilenler<b id="f_dolu_n">0</b></button>
   </div>
-  <div class="liste-bas"><span id="f_say">${V.kalemler.length} kalem</span>${sartSuz}</div>
+  <div class="liste-bas"><span id="f_say">${esc(kalemSayisi())}</span>${sartSuz}</div>
   <div id="liste">${V.kalemler.map(kalemHtml).join('')}</div>
   <div id="f_bos" class="bos" hidden>Aramaya uyan kalem yok.</div>
   ${V.kalemler.length ? '' : '<div class="bos">Bu linkte kalem yok - yöneticiye haber verin.</div>'}
@@ -352,11 +364,14 @@ function ciz() {
 }
 
 function kalemHtml(k) {
-  const alt = [k.ozelNo ? 'Özel ' + k.ozelNo : '', k.poz ? 'Poz ' + k.poz : '', k.hedef ? 'Hedef ' + fmt(k.hedef) + (k.birim ? ' ' + k.birim : '') : ''].filter(Boolean);
-  const sartEt = cokSartname() && k.sart ? `<span class="k-sart" title="${esc(k.sart)}">${esc(V.sartKisa[k.sart] || k.sart)}</span>` : '';
-  return `<article class="kalem${kalemDolu(k.id) ? ' dolu' : ''}" data-id="${esc(k.id)}">
+  // alternatifte hedef yok (ana kaleme sayilir); poz/ozel no zaten hemen ustteki ana kartta
+  const alt = k.ana ? [] : [k.ozelNo ? 'Özel ' + k.ozelNo : '', k.poz ? 'Poz ' + k.poz : '', k.hedef ? 'Hedef ' + fmt(k.hedef) + (k.birim ? ' ' + k.birim : '') : ''].filter(Boolean);
+  const sartEt = cokSartname() && k.sart && !k.ana ? `<span class="k-sart" title="${esc(k.sart)}">${esc(V.sartKisa[k.sart] || k.sart)}</span>` : '';
+  const altEt = k.ana ? '<span class="k-altet" title="Ana kalemin yerine montajlandıysa buraya girin">ALTERNATİF</span>' : '';
+  const yerine = k.ana ? `<div class="k-yerine">Yerine: <b>${esc(k.ana.ad || k.ana.kod)}</b> · ana kaleme sayılır</div>` : '';
+  return `<article class="kalem${k.ana ? ' k-alter' : ''}${kalemDolu(k.id) ? ' dolu' : ''}" data-id="${esc(k.id)}">
     <div class="k-ust">${k.img ? `<img class="k-foto" src="${esc(k.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
-      <div class="k-bilgi">${(k.kod || sartEt) ? `<div class="k-kod">${sartEt}${esc(k.kod)}</div>` : ''}<div class="k-ad">${esc(k.ad)}</div>${alt.length ? `<div class="k-alt">${alt.map(esc).join(' · ')}</div>` : ''}</div>
+      <div class="k-bilgi">${(k.kod || sartEt || altEt) ? `<div class="k-kod">${altEt}${sartEt}${esc(k.kod)}</div>` : ''}<div class="k-ad">${esc(k.ad)}</div>${yerine}${alt.length ? `<div class="k-alt">${alt.map(esc).join(' · ')}</div>` : ''}</div>
     </div>
     <div class="k-satirlar">${satirlarHtml(k)}</div>
   </article>`;
@@ -443,7 +458,7 @@ function suz() {
     if (gorunur) n++;
   });
   $('f_bos').hidden = n > 0 || !V.kalemler.length;
-  $('f_say').textContent = n === V.kalemler.length ? V.kalemler.length + ' kalem' : n + ' / ' + V.kalemler.length + ' kalem';
+  $('f_say').textContent = n === V.kalemler.length ? kalemSayisi() : n + ' / ' + V.kalemler.length + ' kalem';
 }
 
 function ozetGuncelle() {
@@ -509,7 +524,8 @@ function onayAc() {
   const satirHtml = out.map(o => {
     const kat = o.katId ? katAdi(o.katId) : (o.kat ? 'Kat ' + o.kat : (V.katSabit ? katEtiket(V.katSabit.ad) : ''));
     const sart = cokSartname() && o.k.sart ? `<span class="k-sart">${esc(V.sartKisa[o.k.sart] || o.k.sart)}</span>` : '';
-    return `<li><span class="o-ad">${sart}${o.k.kod ? `<span class="mono">${esc(o.k.kod)}</span> ` : ''}${esc(o.k.ad)}${kat ? ` <span class="o-kat">${esc(kat)}</span>` : ''}</span><span class="o-mik">${fmt(o.miktar)} ${esc(o.k.birim || '')}</span></li>`;
+    const altEt = o.k.ana ? `<span class="k-altet" title="${esc('Yerine: ' + (o.k.ana.ad || o.k.ana.kod))}">ALT</span>` : '';
+    return `<li><span class="o-ad">${altEt}${sart}${o.k.kod ? `<span class="mono">${esc(o.k.kod)}</span> ` : ''}${esc(o.k.ad)}${kat ? ` <span class="o-kat">${esc(kat)}</span>` : ''}</span><span class="o-mik">${fmt(o.miktar)} ${esc(o.k.birim || '')}</span></li>`;
   }).join('');
   const d = document.createElement('div');
   d.className = 'perde'; d.id = 'f_onay';

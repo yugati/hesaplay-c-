@@ -3031,6 +3031,7 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .slink-chip{flex-shrink:0;padding:2px 7px;border-radius:6px;background:var(--hover);color:var(--mute);font:600 10px var(--mono);white-space:nowrap}
 .slink-chip.ok{background:rgba(34,197,94,.14);color:var(--green)}
 .slink-chip.red{background:rgba(239,68,68,.14);color:var(--red)}
+.slink-chip.alt{background:rgba(240,160,32,.16);color:var(--amber)}
 .slink-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin-top:10px}
 .slink-actions svg{width:13px;height:13px;vertical-align:-2px}
 .slink-url{width:100%;margin-top:9px;font-family:var(--mono);font-size:11.5px}
@@ -25590,9 +25591,11 @@ function slinkListeHtml(){
   return `<div class="modal-head"><h3>${icoSahaLink()} Saha Linkleri</h3><div style="display:flex;gap:8px;align-items:center"><button class="btn btn-add" onclick="slinkYeniAc()" ${SLINK.kurulu?'':'disabled'}>${icoPlus()} Yeni Link</button><button class="mini-btn" onclick="closeModal()">x</button></div></div>
     <div class="modal-body">${body}</div>`;
 }
+// alternatif satirin ana kaleminin adi (onay kartindaki ALT ipucu)
+function slinkAnaAd(s){ const sp=s&&s.specId?(DB.proje.specs||[]).find(x=>x.id===s.specId):null; return sp?(sp.name||sp.code||''):''; }
 function slinkGonderimKart(g){
   const sat=g.satirlar||[];
-  const satirHtml=sat.slice(0,8).map(s=>`<div class="slink-satir"><span class="k">${esc(s.kod||'')}</span><span class="a" title="${esc(s.ad||'')}">${esc(s.ad||'')}</span>${(s.katAd||s.kat)?`<span class="slink-chip">Kat ${esc(s.katAd||s.kat)}</span>`:''}<span class="q">${fmtNum(s.miktar)} ${esc(s.birim||'')}</span></div>`).join('')
+  const satirHtml=sat.slice(0,8).map(s=>`<div class="slink-satir"><span class="k">${esc(s.kod||'')}</span>${s.altId?`<span class="slink-chip alt" title="Alternatif ürün - ana kalemin ilerlemesine sayılır${slinkAnaAd(s)?': '+esc(slinkAnaAd(s)):''}">ALT</span>`:''}<span class="a" title="${esc(s.ad||'')}">${esc(s.ad||'')}</span>${(s.katAd||s.kat)?`<span class="slink-chip">Kat ${esc(s.katAd||s.kat)}</span>`:''}<span class="q">${fmtNum(s.miktar)} ${esc(s.birim||'')}</span></div>`).join('')
     +(sat.length>8?`<div class="t-meta" style="font-size:11px">+${sat.length-8} kalem daha</div>`:'');
   const meta=[sat.length+' kalem', g.adam!=null?g.adam+' adam':'', g.dolduran?'Dolduran: '+g.dolduran:''].filter(Boolean).map(esc).join(' · ');
   return `<div class="slink-card bekliyor">
@@ -25629,6 +25632,13 @@ function slinkKatSecenek(y){
 }
 function slinkSartKalem(y,code){ return (DB.proje.specs||[]).filter(s=>!s.is_deleted&&s.bina===y.bina&&s.cat===y.cat&&specGroupKey(s)===code).length; }
 function slinkKalemSayisi(y){ const set=new Set(y.sartlar); return (DB.proje.specs||[]).filter(s=>!s.is_deleted&&s.bina===y.bina&&s.cat===y.cat&&(!set.size||set.has(specGroupKey(s)))).length; }
+// linkte kalemlerin ardindan gelecek alternatif urun sayisi (sunucu linkKapsami ile ayni kural:
+// yalniz 'kullanımda' / 'onaylandi' - activeAltsFor)
+function slinkAltSayisi(y){
+  const set=new Set(y.sartlar);
+  const ids=new Set((DB.proje.specs||[]).filter(s=>!s.is_deleted&&s.bina===y.bina&&s.cat===y.cat&&(!set.size||set.has(specGroupKey(s)))).map(s=>s.id));
+  return (DB.proje.alternatives||[]).filter(a=>ids.has(a.specId)&&(a.status==='kullanımda'||a.status==='onaylandi')).length;
+}
 /* ADAM SAYISI GUNLUK YAZI'DAN: linkin TARIHINE yazilmis Gunluk Yazi'nin dolu basliklari
    (TAVA-KMK 16, AYDINLATMA 6...) cip olarak listelenir; secilenlerin kisi toplami adam
    sayisina yazilir. Etkilesimlidir: tarih / bina / yazi degisince secili basliklar yeni
@@ -25746,8 +25756,9 @@ function slinkYeniHtml(){
   const sarts=slinkSartListesi(y);
   const kats=slinkKatSecenek(y);
   const n=y.cat?slinkKalemSayisi(y):0;
+  const na=n?slinkAltSayisi(y):0;
   const ozet=!y.cat?'<div class="slink-ozet">Bölüm seçince şartnameler listelenir ve linkte görünecek kalem sayısı burada çıkar.</div>'
-    :n?`<div class="slink-ozet">Linki açan kişi <b>${n}</b> kalem görecek${y.sartlar.length>1?` (${y.sartlar.length} şartname)`:''}${kats.length&&!y.katId?`, her kalemde katı seçecek (${kats.length} kat)`:''}.</div>`
+    :n?`<div class="slink-ozet">Linki açan kişi <b>${n}</b> kalem${na?` + <b>${na}</b> alternatif ürün`:''} görecek${y.sartlar.length>1?` (${y.sartlar.length} şartname)`:''}${kats.length&&!y.katId?`, her kalemde katı seçecek (${kats.length} kat)`:''}.${na?' <span class="t-meta">Alternatifler ana kalemlerinin altında çıkar; girilen miktar ana kalemin ilerlemesine sayılır.</span>':''}</div>`
     :'<div class="slink-ozet bos">Bu seçimde kalem yok - link boş açılırdı. Bölüm / şartname seçimini kontrol edin.</div>';
   const sartAlani=!y.cat?'<div class="slink-bos" style="padding:6px 0">Önce bölüm seçin.</div>'
     :!sarts.length?'<div class="slink-bos" style="padding:6px 0">Bu binada bu bölüme ait şartname yok - linkte bölümün tüm kalemleri görünür.</div>'
@@ -25823,11 +25834,22 @@ async function slinkReddet(id){
 }
 // Gonderim satiri -> Saha Kaydi formunun kalem satiri. Kat, linkte secilen KAT DUGUMUDUR:
 // satirin lokasyonu o kata baglanir, kat no ve kot ondan dolar (rSetLok ile ayni sonuc).
+// ALTERNATIF satir (s.altId): bag ANA kaleme kurulur, ad/kod/malzeme montajlanan urunden gelir
+// (doLinkRapor ile ayni model - ilerleme ana kaleme sayilir). Alternatif kaydi o arada silinmisse
+// altId yine tasinir ve ad/kod gonderimdeki haliyle kalir: kayit "ana urun" gibi gorunmesin.
 function slinkSatirToLine(s,g){
   const sp=s.specId?(DB.proje.specs||[]).find(x=>x.id===s.specId&&!x.is_deleted):null;
+  const al=sp&&s.altId?(DB.proje.alternatives||[]).find(a=>a.id===s.altId&&a.specId===sp.id)||null:null;
+  const la=al?altLive(al):null;
   const l={..._rEmptyLine(), specId:sp?sp.id:null, matId:sp?(sp.matId||null):null,
     code:sp?(sp.code||''):(s.kod||''), name:sp?sp.name:(s.ad||''), unit:s.birim||(sp&&sp.unit)||'',
     grup:sp?specGroupKey(sp):(s.sart||g.sart||''), miktar:String(s.miktar)};
+  if(sp&&s.altId){
+    l.altId=String(s.altId);
+    l.code=la?(la.code||''):(s.kod||''); l.name=la?(la.name||s.ad||''):(s.ad||'');
+    l.matId=al?(al.matId||(altMaterial(al)||{}).id||null):null;
+    l.unit=s.birim||(la&&la.unit)||(sp.unit||'');
+  }
   const lk=s.katId?getLok(s.katId):null;
   if(lk){ l.lokId=lk.id; const kn=parseKatNo(lk.name); if(kn!=null) l.kat=String(kn); if(lk.kot!=null&&lk.kot!=='') l.kot=String(lk.kot); }
   else if(s.kat) l.kat=String(s.kat);
@@ -26846,8 +26868,11 @@ function rLineHtml(bk,bi,l,li,bina,parcali){
   // OZEL NO ROZETI: ayni urun bircok kaleme dagildiginda (welding box) hangi kalemin secildigi
   // ozel no'dan gorunur - kod rozetinin yaninda kucuk turuncu rozet olarak durur
   const ozelChip=linked?specOzelBadge(l.specId,';font-size:9px'):'';
+  // ALTERNATIF: satir ana kaleme bagli ama montajlanan urun alternatif (ilerleme ana kaleme sayilir)
+  const _altAna=linked&&l.altId?(DB.proje.specs||[]).find(s=>s.id===l.specId):null;
+  const altChip=linked&&l.altId?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)55;font-size:9px" title="Alternatif urun - ilerleme ana kaleme sayilir${_altAna?': '+esc(_altAna.name||_altAna.code||''):''}">ALT</span>`:'';
   const codeChip=linked
-    ?`<span class="rl-code" title="${esc((l.code||'')+(bk.cat?' · '+bk.cat:''))}">${imgThumb}${esc(l.code||'')}${bk.cat?' · '+esc(bk.cat):''}</span>`
+    ?`<span class="rl-code" title="${esc((l.code||'')+(bk.cat?' · '+bk.cat:''))}">${altChip}${imgThumb}${esc(l.code||'')}${bk.cat?' · '+esc(bk.cat):''}</span>`
     :hasName
       ?`<span class="rl-code warn" title="Sartname disi is kalemi${l.matId?' (kutuphane kaydi ile eslesti)':''} - sartname acildiginda ${l.matId?'otomatik baglanir':'listeden baglanir'}">${libThumb}Sartname disi</span>`
       :'';
@@ -26971,11 +26996,13 @@ function rLinePick(bi,li){
   const libSrc=matLibSrc().filter(m=>!specMatIds.has(m.obj.matId)).map(m=>({...m, obj:{...m.obj, specId:null, bina, grup:bk.sart||''}}));
   const src=[...specSrc, ...libSrc];
   el.removeAttribute('readonly'); el.value=''; el.focus();
+  // altId: satirda yeni urun secilince onceki alternatif bagi (link / duzenleme) birakilir -
+  // yoksa kayit sectigi urun yerine eski alternatifin kimligini tasirdi
   acOpen(el, src, (it,isNew)=>{ if(isNew){
-      bk.lines[li]={...(bk.lines[li]||{}),specId:null,matId:null,code:'',name:it.ad||'',grup:bk.sart||''};
+      bk.lines[li]={...(bk.lines[li]||{}),specId:null,altId:'',matId:null,code:'',name:it.ad||'',grup:bk.sart||''};
       el.setAttribute('readonly',''); rRenderBlocks(); return;
     }
-    bk.lines[li]={...(bk.lines[li]||{}),specId:it.specId||null,matId:it.matId||null,code:it.code||'',name:it.name||it.ad||'',grup:it.grup||bk.sart||''};
+    bk.lines[li]={...(bk.lines[li]||{}),specId:it.specId||null,altId:'',matId:it.matId||null,code:it.code||'',name:it.name||it.ad||'',grup:it.grup||bk.sart||''};
     // KAT ATA -> RAPOR: secilen kalemin atanmis kati/kotu satira otomatik gelir (lok secili degilse)
     if(it.specId){ const _sp=DB.proje.specs.find(s=>s.id===it.specId); if(_sp) _rApplySpecKat(bk.lines[li],_sp); }
     // BIRIM: once kutuphanedeki urunun birimi (tek kaynak), yoksa secilen kalemin birimi
