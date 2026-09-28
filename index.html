@@ -37899,8 +37899,49 @@ async function kgtSil(id){
   render(); toast('Kagit silindi');
 }
 function kgtPdfAc(id,k){ const x=kgtKayitlar().find(y=>y.id===id); acPdf(x&&KGT_BELGELER.some(b=>b.k===k)?x[k]:null); }
-function kgtDetayAc(id){ FATV.kdetay=id; FATV.mode='kagitDetay'; render(); try{ window.scrollTo(0,0); }catch(e){} }
-function kgtDetayKapat(){ FATV.kdetay=''; FATV.mode='kagit'; render(); try{ window.scrollTo(0,0); }catch(e){} }
+function kgtDetayAc(id){ KGT_SIRA=null; FATV.kdetay=id; FATV.mode='kagitDetay'; render(); try{ window.scrollTo(0,0); }catch(e){} }
+function kgtDetayKapat(){ KGT_SIRA=null; FATV.kdetay=''; FATV.mode='kagit'; render(); try{ window.scrollTo(0,0); }catch(e){} }
+/* ---------- SIRALAMA MODU (kagit detayi) ----------
+   Kagittaki sira = satirlar dizisinin sirasi: form, Excel ve nihai fatura formu
+   oradan okur, ayri bir 'sira' alani yoktur. Sira yalnizca GORUNUMDUR (miktar,
+   onay, tutar degismez) - bu yuzden onayli kagitta da degistirilebilir. Nihai
+   fatura satirlari kagit satirina indeksle degil kagitId+urun anahtariyla
+   bagli oldugu icin sira degisimi onlari bozmaz. Bekleyen sira KGT_SIRA'da
+   durur, yalnizca "Sirayi Kaydet" ile yazilir (ham faturadaki desen). */
+let KGT_SIRA=null;   // {id, keys:[...]} - duzenlenmekte olan sira
+function kgtSiraAnahtarlari(k){ return kgtSatirlari(k).map(r=>String(r.key||'')); }
+function kgtSiraDegisebilir(k){ return !!k&&kgtIslenebilir(k); }
+function kgtSiraBasla(id){
+  const k=kgtBul(id); if(!k) return;
+  if(!kgtSiraDegisebilir(k)){ toast(kgtKapaliNedeni(k)||'Bu kagidin sirasini degistiremezsiniz','err'); return; }
+  KGT_SIRA={ id, keys:kgtSiraAnahtarlari(k) }; render();
+}
+function kgtSiraTasi(i,hedef){
+  const a=KGT_SIRA&&KGT_SIRA.keys; if(!a||i<0||i>=a.length) return;
+  const h=Math.round(Number(hedef));
+  if(!isFinite(h)){ render(); return; }
+  const j=Math.max(1,Math.min(a.length,h))-1;
+  if(j===i){ render(); return; }
+  const x=a.splice(i,1)[0]; a.splice(j,0,x); render();
+}
+function kgtSiraAdim(i,d){ kgtSiraTasi(i,i+1+d); }
+function kgtSiraVazgec(){ KGT_SIRA=null; render(); }
+async function kgtSiraKaydet(id){
+  const k=kgtBul(id); if(!k) return;
+  if(!kgtSiraDegisebilir(k)){ toast(kgtKapaliNedeni(k)||'Bu kagidin sirasini degistiremezsiniz','err'); return; }
+  if(!KGT_SIRA||KGT_SIRA.id!==id) return;
+  const keys=KGT_SIRA.keys.slice(), eski=kgtSiraAnahtarlari(k);
+  if(keys.length===eski.length&&keys.every((x,i)=>x===eski[i])){ KGT_SIRA=null; render(); toast('Sira degismedi'); return; }
+  // kagit bu arada baska yerden degistiyse (satir eklendi/cikti) bekleyen sira uygulanmaz
+  if(keys.length!==eski.length||!keys.every(x=>eski.includes(x))){
+    KGT_SIRA=null; render(); toast('Kagit bu arada degismis - sirayi yeniden duzenleyin','err'); return; }
+  const m=new Map(kgtSatirlari(k).map(r=>[String(r.key||''),r]));
+  const tasinan=keys.filter((x,i)=>eski[i]!==x).length;
+  const ok=await kgtDurumYaz(k,{satirlar:keys.map(x=>m.get(x))},
+    'Satir sirasi degistirildi - '+fmtNum(tasinan)+' satirin yeri degisti (yalnizca gorunum; miktar ve tutar degismedi)',
+    'satir sirasi degistirildi');
+  if(ok){ KGT_SIRA=null; render(); toast('Sira kaydedildi'); }
+}
 // Satirdaki islem dugmeleri - liste ve detay ayni kurali kullanir
 function kgtEylemler(k,detayda){
   const d=kgtDurumu(k), b=[];
@@ -38044,11 +38085,22 @@ function renderKagitDetay(){
   // NIHAI FATURA IZI: onayli kagidin her satirinda ne kadari faturalandi, ne kadari kaldi
   const fm=d==='onayli'?kgtFaturalanan(k):new Map();
   const kullanan=nhfKullanan(k.id);
-  const rows=sat.map((r,i)=>{
+  /* Sira duzenlenirken bekleyen sira (KGT_SIRA) gosterilir - kaydedilene kadar kayda yazilmaz */
+  const siraModu=!!(KGT_SIRA&&KGT_SIRA.id===k.id);
+  const satMap=new Map(sat.map(r=>[String(r.key||''),r]));
+  const gorunen=siraModu?KGT_SIRA.keys.map(x=>satMap.get(x)).filter(Boolean):sat;
+  const siraHucre=i=>siraModu
+    ?`<td class="tl-no fat-sira-td"><input type="number" class="fat-sira-inp" min="1" max="${gorunen.length}"
+        value="${i+1}" onchange="kgtSiraTasi(${i},this.value)" onkeydown="if(event.key==='Enter')this.blur()"
+        title="Kagittaki satir numarasini yazin - satir o siraya tasinir">
+        <div class="fat-sira-ok"><button class="mini-btn" ${i===0?'disabled':''} onclick="kgtSiraAdim(${i},-1)" title="Bir yukari">&#9650;</button><button
+        class="mini-btn" ${i===gorunen.length-1?'disabled':''} onclick="kgtSiraAdim(${i},1)" title="Bir asagi">&#9660;</button></div></td>`
+    :`<td class="tl-no">${i+1}</td>`;
+  const rows=gorunen.map((r,i)=>{
     const yz=fatSayi(r.yazan), on=fatSayi(r.onay), h=fatSatirHesap({qty:yz,fiyat:r.fiyat,kdvOrani:r.kdvOrani});
     const asim=asimMi(r), az=on>0&&on<yz-FAT_EPS, fat=fm.get(String(r.key||''))||0, ay=alimsiz.has(String(r.key||''));
     return `<tr class="${asim?'kgt-asim':(ay?'kgt-alimsiz':'')}">
-      <td class="tl-no">${i+1}</td>
+      ${siraHucre(i)}
       <td style="font-family:var(--mono);font-size:11.5px">${esc(r.sartname||'-')}</td>
       <td><div style="font-size:12.5px">${esc(r.ad||'-')}</div><div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(r.code||'')}</div>${
         ay?`<div class="kgt-alimsiz-not"><span class="fat-rozet hic">ALIM YOK</span> bu firmadan alinmamis urun kagida yazilmis</div>`:''}${
@@ -38111,7 +38163,16 @@ function renderKagitDetay(){
       </div>
     </div>
     <div class="tut-card">
-      <h4>Kagittaki Urunler <i>${fmtNum(sat.length)} satir · kagittaki sirayla</i></h4>
+      <h4 class="fat-sat-h4"><span>Kagittaki Urunler <i>${fmtNum(sat.length)} satir · kagittaki sirayla</i></span>
+        ${siraModu?`<span class="fat-sira-bar">
+            <button class="btn btn-ghost" onclick="kgtSiraVazgec()">Vazgec</button>
+            <button class="btn btn-add" onclick="kgtSiraKaydet('${k.id}')">Sirayi Kaydet</button></span>`
+          :(kgtSiraDegisebilir(k)&&sat.length>1)?`<button class="btn btn-ghost fat-sira-ac" onclick="kgtSiraBasla('${k.id}')"
+            title="Satirlari kagittaki siraya dizin - form, Excel ve nihai fatura bu sirayi kullanir">&#8645; Sirayi Degistir</button>`:''}
+      </h4>
+      ${siraModu?`<div class="fat-uyari bilgi" style="margin:0 0 10px"><p style="margin:0">Her satirin solundaki kutuya
+        <b>kagittaki satir numarasini</b> yazin (ya da oklarla tasiyin). Sira yalnizca <b>gorunumdur</b>: miktarlar, onaylananlar
+        ve tutarlar degismez - bu yuzden onayli kagitta da degistirilebilir. <b>Sirayi Kaydet</b> denene kadar hicbir sey yazilmaz.</p></div>`:''}
       <div class="tablewrap"><table class="tut-lines fat-lines kgt-lines"><thead><tr>
         <th>Sira No</th><th>Cekildigi Sartname</th><th>Ekipman</th><th>Birim</th>
         <th class="num">Kagitta Yazan</th><th class="num">Onaylanan</th>
