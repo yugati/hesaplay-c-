@@ -1211,6 +1211,13 @@ tbody tr:hover{background:var(--hover)}
    olur ve ortalanan islem tuslari fatura numarasindan cok asagida kalirdi -
    tuslar satirin UST cizgisinde, numarayla ayni hizada durur. */
 .fat-liste tbody td.ust{vertical-align:top}
+/* FATURA LISTESI GENIS: Fatura No / Sartname No / Sozlesme No / Irsaliye No
+   yan yana durdugu icin 1240px'lik ortak sinir tabloyu sikistiriyordu - liste
+   ekrani kendi sinirini kullanir, form/detay eski genislikte kalir. */
+.tut-wrap.fat-genis{max-width:1680px}
+.fat-liste td.fat-ref{font-family:var(--mono);font-size:12px;white-space:nowrap}
+.fat-liste td.fat-ref .bos{color:var(--dim)}
+.fat-liste td.fat-ref .alt{font-size:10.5px;color:var(--dim);margin-top:2px}
 /* LISTEDEKI FATURA NOTU: serbest metin, kimi belgede on satiri buluyor ve o
    faturanin satirini tek basina ekran boyu uzatiyordu. Not artik IKI SATIRA
    kirpik durur; uzerine basilinca fatura numarasinin satiri onunla birlikte
@@ -36596,7 +36603,7 @@ function fatUyariSayisi(liste){
 /* ---------- 1) FATURALAR (defter) ---------- */
 function fatAramaEsler(f,q){
   if(!q) return true;
-  return matchText([f.no,fatCompany(f),f.not,...fatSatirlari(f).map(r=>[r.ad,r.code].filter(Boolean).join(' '))].join(' '),q);
+  return matchText([f.no,f.sartnameNo,f.sozlesmeNo,f.irsaliyeNo,fatCompany(f),f.not,...fatSatirlari(f).map(r=>[r.ad,r.code].filter(Boolean).join(' '))].join(' '),q);
 }
 // FATV.durum liste ekraninda KAYIT durumunu (taslak/kesin/kilitli), mutabakat
 // ekraninda URUN durumunu (fazla/kismi/...) suzer - iki ekran ayni alani kendi
@@ -36720,9 +36727,9 @@ function renderFaturaListe(){
   const farkOzet=new Map();
   let rows='';
   if(!yuklendi) rows=window.__faturaTableMissing
-    ? emptyRow(7,'Fatura tablosu henuz kurulmamis','Yukaridaki uyaridaki SQL dosyasini bir kez calistirin')
-    : emptyRow(7,'Fatura kayitlari yukleniyor...','Defter acilista inmez, bu ekrana girilince bir kez cekilir',true);
-  else if(!list.length) rows=emptyRow(7,filtreVar?'Eslesen fatura yok':'Henuz fatura kaydi girilmedi',
+    ? emptyRow(10,'Fatura tablosu henuz kurulmamis','Yukaridaki uyaridaki SQL dosyasini bir kez calistirin')
+    : emptyRow(10,'Fatura kayitlari yukleniyor...','Defter acilista inmez, bu ekrana girilince bir kez cekilir',true);
+  else if(!list.length) rows=emptyRow(10,filtreVar?'Eslesen fatura yok':'Henuz fatura kaydi girilmedi',
     filtreVar?'Filtreleri degistirin':'"Yeni Fatura" ile tedarikciden gelen faturadaki urunleri ve miktarlarini girin');
   else list.forEach(f=>{
     const uy=fatKayitUyarisi(f,durumMap);
@@ -36763,6 +36770,10 @@ function renderFaturaListe(){
         ${f.not?(()=>{ const ac=markVarMi(f.not,q);   // tutan not ACIK gelir: isaret 2 satirlik kirpmanin altinda kalmasin
           return `<button class="fat-not${ac?' acik':''}" onclick="fatNotAc(this)" aria-expanded="${ac?'true':'false'}"
           title="Belgeyle ilgili not - tiklayin, bu faturanin satiri genisler ve notun tamami gorunur; ikinci tik kapatir"><span class="mt">${markIsaret(f.not,q)}</span><svg class="ok" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button>`; })():''}</td>
+      <td class="fat-ref">${f.sartnameNo?markIsaret(f.sartnameNo,q):'<span class="bos">-</span>'}</td>
+      <td class="fat-ref">${f.sozlesmeNo?markIsaret(f.sozlesmeNo,q):'<span class="bos">-</span>'}</td>
+      <td class="fat-ref">${f.irsaliyeNo?markIsaret(f.irsaliyeNo,q):'<span class="bos">-</span>'}${
+        f.irsaliyeTarihi?`<div class="alt">${esc(fmtDate(f.irsaliyeTarihi))}</div>`:''}</td>
       <td class="t-meta">${esc(fmtDate(f.tarih))}${fatSaatGoster(f)
         ?`<div style="font-family:var(--mono);font-size:11px;color:var(--dim)" title="Belgedeki saat - ayni gunun faturalari saate gore siralanir">${esc(fatSaatGoster(f))}</div>`:''}</td>
       <td class="t-meta">${markIsaret(fatCompany(f)||'-',q)}</td>
@@ -36819,7 +36830,7 @@ function renderFaturaListe(){
   const farkNet=farkListe.map(g=>(g.net>0?'+':'−')+fatPara(Math.abs(g.net),g.pb)).join(' · ');
   const farkKarma=farkListe.some(g=>g.mutlak-Math.abs(g.net)>0.005);
   const farkSapma=farkListe.map(g=>fatPara(g.mutlak,g.pb)).join(' · ');
-  return `<div class="tut-wrap">
+  return `<div class="tut-wrap fat-genis">
     <div class="sel-bc"><button onclick="closeFatura()">${icoArr('left')} Geri Don</button></div>
     <div class="sel-head"><h2>Fatura Kontrol</h2><p>Tedarikciden gelen faturadaki <b>urunler ve miktarlar</b> girilir; miktar o urunun
       <b>toplam alimindan</b> dusulur. Alinandan fazlasi yazilamaz - ayni malin ikinci kez faturalanmasi boyle onlenir.
@@ -36868,7 +36879,7 @@ function renderFaturaListe(){
       farkAdet?` · <span class="fark" title="${esc(fmtNum(farkAdet)+' belgede, belgede yazan odenecek tutar ile satirlardan hesaplanan tutar tutmuyor. Yazan sayi NET toplamdir: + belgenin, − hesabin daha yuksek oldugu anlamina gelir.'+(farkKarma?' Artilarla eksiler birbirini goturdugu icin toplam sapma ayrica yazildi.':''))}">${fmtNum(farkAdet)} belgede tutar farki · net ${esc(farkNet)}${farkKarma?` · toplam sapma ${esc(farkSapma)}`:''}</span>`:''}${
       filtreVar?` <span class="t-meta">· ${fmtNum(tumu.length)} kayit icinden suzuldu</span>`:''}</div>
     <div class="tablewrap"><table class="fat-liste"><thead><tr>
-      <th>Fatura No</th><th>Tarih</th><th>Firma</th><th class="ic" title="Faturadaki urunler - bilgi topuna tiklayin">Icerik</th><th>Miktar</th><th>Odenecek Tutar</th><th></th>
+      <th>Fatura No</th><th>Sartname No</th><th>Sozlesme No</th><th>Irsaliye No</th><th>Tarih</th><th>Firma</th><th class="ic" title="Faturadaki urunler - bilgi topuna tiklayin">Icerik</th><th>Miktar</th><th>Odenecek Tutar</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
@@ -37123,6 +37134,8 @@ function renderFaturaDetay(){
     ['Ozellestirme No',f.ozellestirmeNo],
     ['Irsaliye No',f.irsaliyeNo],
     ['Irsaliye Tarihi',f.irsaliyeTarihi?fmtDate(f.irsaliyeTarihi):''],
+    ['Sartname No',f.sartnameNo],
+    ['Sozlesme No',f.sozlesmeNo],
     ['ETTN',f.ettn],
     ['Para Birimi',(f.paraBirimi||'TRY')+(f.kur?' · kur '+fmtNum(f.kur):'')],
     /* Belgenin kendi odenecek tutari kunyede de yazar: bu sayfada "bankadan ne
@@ -37352,7 +37365,7 @@ function fatYeni(){
   _FAT={ id:uid(), editId:null, no:'', tarih:new Date().toISOString().slice(0,10), saat:'',
     companyId:fatFirmalar().length===1?fatFirmalar()[0].id:'',
     senaryo:'TICARIFATURA', faturaTipi:'SATIS', ozellestirmeNo:'TR1.2', ettn:'',
-    irsaliyeNo:'', irsaliyeTarihi:'', paraBirimi:'TRY', kur:'', varsayilanKdv:20,
+    irsaliyeNo:'', irsaliyeTarihi:'', sartnameNo:'', sozlesmeNo:'', paraBirimi:'TRY', kur:'', varsayilanKdv:20,
     beyanTutar:'', farkTolerans:fatTolVarsayilan(), not:'', pdf:null, sozlesmePdf:null, irsaliyePdf:null, durum:'taslak',
     qty:{}, sb:{}, oz:{}, bq:{}, bqBilgi:{}, fq:'', fbina:'', fbolum:'', fsart:'', ftum:false, fgizleBitmis:false,
     fyalnizGirilen:false };
@@ -37382,6 +37395,7 @@ function fatDuzenle(id){
     senaryo:f.senaryo||'TICARIFATURA', faturaTipi:f.faturaTipi||'SATIS',
     ozellestirmeNo:f.ozellestirmeNo||'TR1.2', ettn:f.ettn||'',
     irsaliyeNo:f.irsaliyeNo||'', irsaliyeTarihi:f.irsaliyeTarihi?new Date(f.irsaliyeTarihi).toISOString().slice(0,10):'',
+    sartnameNo:f.sartnameNo||'', sozlesmeNo:f.sozlesmeNo||'',
     paraBirimi:f.paraBirimi||'TRY', kur:f.kur||'', varsayilanKdv:20,
     // eski kayitta pay yoksa 0 kalir - hatirlanan varsayilan ona sessizce yazilmaz
     beyanTutar:f.beyanTutar||'', farkTolerans:fatTolerans(f.farkTolerans), not:f.not||'', durum:fatDurumu(f),
@@ -37417,6 +37431,7 @@ function fatFormImza(st){
   return JSON.stringify([ String(st.no||'').trim(), st.tarih||'', st.saat||'', st.companyId||'',
     st.senaryo||'', st.faturaTipi||'', String(st.ozellestirmeNo||'').trim(),
     String(st.ettn||'').trim(), String(st.irsaliyeNo||'').trim(), st.irsaliyeTarihi||'',
+    String(st.sartnameNo||'').trim(), String(st.sozlesmeNo||'').trim(),
     st.paraBirimi||'', st.kur||'', st.beyanTutar||'', fatTolerans(st.farkTolerans), String(st.not||'').trim(),
     FAT_BELGELER.map(b=>(st[b.k]&&(st[b.k].path||st[b.k].name))||''),
     q, sb, oz, bq ]);
@@ -38468,6 +38483,10 @@ function renderFaturaForm(){
           <input value="${esc(st.irsaliyeNo)}" placeholder="belgedeki irsaliye no" onchange="fatSetHead('irsaliyeNo',this.value)"></div>
         <div class="frow"><label>Irsaliye Tarihi</label>
           <input type="date" value="${esc(st.irsaliyeTarihi)}" onchange="fatSetHead('irsaliyeTarihi',this.value)"></div>
+        <div class="frow"><label>Sartname No</label>
+          <input value="${esc(st.sartnameNo||'')}" placeholder="faturanin ait oldugu sartname" onchange="fatSetHead('sartnameNo',this.value)"></div>
+        <div class="frow"><label>Sozlesme No</label>
+          <input value="${esc(st.sozlesmeNo||'')}" placeholder="faturanin dayandigi sozlesme" onchange="fatSetHead('sozlesmeNo',this.value)"></div>
         <div class="frow"><label>ETTN<span class="bbal" tabindex="0">B<span>Belgedeki ETTN - ayni belgenin ikinci kez girilip girilmedigini kesin ayirt eder</span></span></label>
           <input value="${esc(st.ettn)}" placeholder="e-fatura evrensel tekil no" onchange="fatSetHead('ettn',this.value)"></div>
         <div class="frow"><label>Para Birimi / Kur<span class="bbal" tabindex="0">B<span>${st.paraBirimi==='TRY'?'TL faturada kur gerekmez':'TL karsiligi toplam blogunda gosterilir'}</span></span></label>
@@ -38941,6 +38960,8 @@ function fatDegisimOzeti(a,b){
   alan('ETTN',a.ettn,b.ettn);
   alan('Irsaliye no',a.irsaliyeNo,b.irsaliyeNo);
   alan('Irsaliye tarihi',a.irsaliyeTarihi,b.irsaliyeTarihi,tarihBic);
+  alan('Sartname no',a.sartnameNo,b.sartnameNo);
+  alan('Sozlesme no',a.sozlesmeNo,b.sozlesmeNo);
   alan('Para birimi',a.paraBirimi,b.paraBirimi);
   alan('Kur',a.kur,b.kur,fmtNum);
   alan('Belgedeki odenecek tutar',a.beyanTutar,b.beyanTutar,fmtNum);
@@ -39135,6 +39156,9 @@ async function fatKaydet(kesin){
     ettn:String(st.ettn||'').trim(),
     irsaliyeNo:String(st.irsaliyeNo||'').trim(),
     irsaliyeTarihi:st.irsaliyeTarihi?new Date(st.irsaliyeTarihi).getTime():null,
+    // referans numaralari: elle yazilir, hicbir hesaba girmez - liste sutunlari ve arama icin
+    sartnameNo:String(st.sartnameNo||'').trim(),
+    sozlesmeNo:String(st.sozlesmeNo||'').trim(),
     // beyanTutar = BELGEDE yazan odenecek tutar. Toplamlar satirlardan hesaplanir
     // (fatKayitToplam), kayitta tutulmaz - iki yerde tutulup ayrisamasin.
     beyanTutar:(st.beyanTutar===''||st.beyanTutar==null)?null:fatSayi(st.beyanTutar),
@@ -39543,14 +39567,14 @@ function exportFaturaXlsx(){
   const list=fatListeFiltreli();
   /* Sutunlar TC e-Faturasinin satir duzeniyle ayni sirada: kagitla yan yana
      konup satir satir karsilastirilabilsin. */
-  const aoa=[["durum","kilit_sonrasi_degisti","fatura_no","fatura_tarihi","fatura_saati","firma","senaryo","fatura_tipi","irsaliye_no","irsaliye_tarihi","ettn",
+  const aoa=[["durum","kilit_sonrasi_degisti","fatura_no","fatura_tarihi","fatura_saati","firma","senaryo","fatura_tipi","irsaliye_no","irsaliye_tarihi","sartname_no","sozlesme_no","ettn",
     "para_birimi","kur","sira_no","urun_kodu","mal_hizmet","birim","miktar","birim_fiyat",
     "iskonto_orani","iskonto_tutari","matrah","kdv_orani","kdv_tutari","diger_vergiler","mal_hizmet_tutari",
     "yerlesim_kodlari","belge_odenecek_tutar","hesaplanan_odenecek_tutar","not","kaydeden"]];
   list.forEach(f=>{
     const sat=fatSatirlari(f), top=fatKayitToplam(f);
     const bas=[FAT_KAYIT_DURUM[fatDurumu(f)].ad, fatKilitSonrasiDegisti(f)?'EVET':'', f.no||'', fmtDate(f.tarih), fatSaatGoster(f), fatCompany(f)||'', f.senaryo||'', f.faturaTipi||'',
-      f.irsaliyeNo||'', f.irsaliyeTarihi?fmtDate(f.irsaliyeTarihi):'', f.ettn||'',
+      f.irsaliyeNo||'', f.irsaliyeTarihi?fmtDate(f.irsaliyeTarihi):'', f.sartnameNo||'', f.sozlesmeNo||'', f.ettn||'',
       f.paraBirimi||'TRY', f.kur||''];
     const kuyruk=[f.beyanTutar||'', Number(top.toplam.toFixed(2)), f.not||'', kisiAd(f.olusturan)];
     if(!sat.length){ aoa.push(bas.concat(['','','','',0,'',0,0,0,0,0,0,0,''],kuyruk)); return; }
@@ -39563,7 +39587,7 @@ function exportFaturaXlsx(){
   });
   if(aoa.length===1) aoa.push(new Array(aoa[0].length).fill(''));
   const wb=XLSX.utils.book_new(), ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=[{wch:9},{wch:20},{wch:18},{wch:12},{wch:20},{wch:14},{wch:11},{wch:14},{wch:12},{wch:36},{wch:7},{wch:8},
+  ws['!cols']=[{wch:9},{wch:20},{wch:18},{wch:12},{wch:20},{wch:14},{wch:11},{wch:14},{wch:12},{wch:14},{wch:14},{wch:36},{wch:7},{wch:8},
     {wch:7},{wch:16},{wch:34},{wch:8},{wch:11},{wch:12},{wch:11},{wch:12},{wch:12},{wch:9},{wch:12},{wch:12},{wch:14},
     {wch:30},{wch:14},{wch:16},{wch:22},{wch:14}];
   ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:aoa[0].length-1}})};
@@ -39633,7 +39657,7 @@ const FKX_SOZLUK={
   numarasiz:'(numarasiz)', firmaYok:'firma yok',
   belgeBilgi:'BELGE BILGILERI',
   eFaturaNo:'Fatura No', eSenaryo:'Senaryo', eTarih:'Fatura Tarihi', eTip:'Fatura Tipi',
-  eFirma:'Firma', ePara:'Para Birimi', eIrsaliye:'Irsaliye', eBelgeDurum:'Belge Durumu',
+  eFirma:'Firma', ePara:'Para Birimi', eIrsaliye:'Irsaliye', eSartnameNo:'Sartname No', eSozlesmeNo:'Sozlesme No', eBelgeDurum:'Belge Durumu',
   eEttn:'ETTN', eKaydeden:'Kaydeden', eNot:'Not', kur:'kur',
   kilitDegisti:'KILIT SONRASI DEGISTI',
   satirBand:n=>'FATURA SATIRLARI  ('+n+' urun)',
@@ -39740,7 +39764,7 @@ const FKX_SOZLUK={
   numarasiz:'(без номера)', firmaYok:'компания не указана',
   belgeBilgi:'ДАННЫЕ ДОКУМЕНТА',
   eFaturaNo:'Номер счёта', eSenaryo:'Сценарий', eTarih:'Дата счёта', eTip:'Тип счёта',
-  eFirma:'Компания', ePara:'Валюта', eIrsaliye:'Накладная', eBelgeDurum:'Статус документа',
+  eFirma:'Компания', ePara:'Валюта', eIrsaliye:'Накладная', eSartnameNo:'№ спецификации', eSozlesmeNo:'№ договора', eBelgeDurum:'Статус документа',
   eEttn:'ETTN', eKaydeden:'Внёс', eNot:'Примечание', kur:'курс',
   kilitDegisti:'ИЗМЕНЁН ПОСЛЕ БЛОКИРОВКИ',
   satirBand:n=>'СТРОКИ СЧЁТА  ('+n+' поз.)',
@@ -39840,7 +39864,7 @@ const FKX_SOZLUK={
   numarasiz:'(no number)', firmaYok:'no company',
   belgeBilgi:'DOCUMENT DETAILS',
   eFaturaNo:'Invoice No', eSenaryo:'Scenario', eTarih:'Invoice Date', eTip:'Invoice Type',
-  eFirma:'Company', ePara:'Currency', eIrsaliye:'Delivery Note', eBelgeDurum:'Document Status',
+  eFirma:'Company', ePara:'Currency', eIrsaliye:'Delivery Note', eSartnameNo:'Specification No', eSozlesmeNo:'Contract No', eBelgeDurum:'Document Status',
   eEttn:'ETTN', eKaydeden:'Entered By', eNot:'Note', kur:'rate',
   kilitDegisti:'CHANGED AFTER LOCK',
   satirBand:n=>'INVOICE LINES  ('+n+' products)',
@@ -40100,6 +40124,7 @@ function fatKitapKur(dil){
     ikili(L.eIrsaliye, (f.irsaliyeNo||'-')+(f.irsaliyeTarihi?'  ·  '+fmtDate(f.irsaliyeTarihi):''),
       B.deger, L.eBelgeDurum, durAd+(fatKilitSonrasiDegisti(f)?'  ·  '+L.kilitDegisti:''),
       fatKilitSonrasiDegisti(f)?B.uyari:B.deger);
+    if(f.sartnameNo||f.sozlesmeNo) ikili(L.eSartnameNo, f.sartnameNo||'-', B.kod, L.eSozlesmeNo, f.sozlesmeNo||'-', B.kod);
     ikili(L.eEttn, f.ettn||'-', B.kod, L.eKaydeden, f.olusturan?kisiAd(f.olusturan):'-');
     if(String(f.not||'').trim()){
       const n=s.satir([{v:L.eNot,b:B.etiket},{v:'',b:B.etiket},{v:String(f.not).trim(),b:B.not},
