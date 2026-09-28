@@ -1240,6 +1240,11 @@ tbody tr:hover{background:var(--hover)}
 .kgt-lines input.num.kgt-onay:disabled{opacity:.45}
 .kgt-lines tr.kgt-bitti .kgt-urun,.kgt-lines tr.kgt-bitti .fat-alim{opacity:.6}
 .kgt-lines tr.kgt-asim td{background:color-mix(in srgb,var(--red) 8%,transparent)}
+.kgt-lines tr.kgt-alimsiz td{background:color-mix(in srgb,var(--red) 6%,transparent)}
+.kgt-alimsiz-not{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px;font-size:10.5px;color:var(--red)}
+.kgt-alimsiz-not .fat-rozet{font-size:9.5px}
+.fat-lines tr.kgt-dis-bas td{border-top:2px solid color-mix(in srgb,var(--red) 55%,transparent);color:var(--red)}
+.fat-lines tr.kgt-dis-bas .t-meta{font-weight:400;margin-left:8px}
 .kgt-toplam-wrap{display:flex;justify-content:flex-end;margin-top:12px}
 .kgt-toplam{width:auto;min-width:360px;border-collapse:collapse;font-size:12px}
 /* alt cubukta pasif dugme (kagitta imzali PDF yokken Onayla, faturada miktar yokken Kaydet) etkin gorunuyordu */
@@ -15242,7 +15247,6 @@ const MOZ_SAYFALAR=[
   ['oz','Ozet','urun basina hedef, siparis, iade, montaj, yuzdeler, faturalanan ve tutar'],
   ['mx','Sartname Matrisi','urun basina TEK satir - her sartname ayri Hedef / Alinan / Kalan sutunu, sonunda toplam'],
   ['sp','Siparis Alimlari','her alim, iade ve yerine alinan satiri - firma, sartname, tedarik, ozel kod, belge durumu'],
-  ['ft','Fatura Satirlari','her fatura satiri - birim fiyat, iskonto, matrah, KDV, toplam, irsaliye, ETTN'],
   ['sr','Sartname Ilerlemesi','urunun gectigi her kalemin siparis ve montaj yuzdesi']];
 function matOzelKitapKur(kap,veri,sec){
   const {V,montajSpec,fatVar,genel}=veri;
@@ -15253,7 +15257,7 @@ function matOzelKitapKur(kap,veri,sec){
   // Acilan ILK sayfa secili sekme olur - Ozet kapatildiginda kitap bos sekmeyle acilmasin.
   let ilkVar=false;
   const acSayfa=(k,ad)=>{ if(!ac(k)) return null; const s=wb.sayfa(ad,!ilkVar); ilkVar=true; return s; };
-  const sOz=acSayfa('oz',OZ), sMx=acSayfa('mx',MX), sSp=acSayfa('sp',SP), sFt=acSayfa('ft',FT), sSr=acSayfa('sr',SR);
+  const sOz=acSayfa('oz',OZ), sMx=acSayfa('mx',MX), sSp=acSayfa('sp',SP), sFt=null /* ham fatura kaldirildi (28 Eyl 2026) - satir sayfasi yok */, sSr=acSayfa('sr',SR);
   if(!ilkVar) throw new Error('En az bir sayfa secilmeli');   // sayfasiz kitap acilamayan dosya olur
   const kenar={b:{c:FKX.cizgi}};
   const saatB=[0,1].map(z=>wb.bicim({fmt:'dd"."mm"."yyyy  hh:mm',font:{sz:10.5},yatay:'center',dikey:'center',kenar,dolgu:z?FKX.zebra:null}));
@@ -36111,7 +36115,7 @@ function xlsxIndir(ad,bayt){
 
    KOTA: kayitlar acilista INMEZ, ilk ihtiyacta faturaYukle() ile bir kez cekilir.
    ================================================================== */
-let FATV={ mode:'liste', q:'', comp:'', bina:'', bolum:'', sart:'', durum:'', from:'', to:'',
+let FATV={ mode:'kagit', q:'', comp:'', bina:'', bolum:'', sart:'', durum:'', from:'', to:'',
   detay:'', detayGeri:'liste' }; // liste | mutabakat | form | detay
 let _FAT=null;                                    // duzenlenmekte olan fatura taslagi
 const FAT_EPS=1e-6;                               // kayan nokta toleransi (0.1+0.2 tuzagi)
@@ -36201,8 +36205,12 @@ function fatTutarFarki(beyan,hesap,tol){
    (tur:'kagit' = sartname kagidi, bkz. kgtKayitlar). 'tur' alani OLMAYAN kayit
    ham faturadir - mevcut kayitlarin hicbirinde alan yok, hepsi burada kalir.
    Tavan, mutabakat, Excel ve kunye bu fonksiyondan okur; baska tur buraya
-   sizarsa satirlari faturalanmis gibi sayilirdi. */
-function fatKayitlar(){ return (DB.faturalar||[]).filter(f=>f&&!f.tur); }
+   sizarsa satirlari faturalanmis gibi sayilirdi.
+   28 Eyl 2026: HAM FATURA KALDIRILDI - zincir artik siparis -> sartname kagidi ->
+   nihai fatura. Tek bogaz noktasi burasi oldugu icin bos liste dondurmek ham
+   faturayi butun hesaplardan (tavan, mutabakat, kunye, Excel) cikarir; tabloda
+   'tur' alani olmayan eski bir kayit kalmis olsa bile hicbir hesaba girmez. */
+function fatKayitlar(){ return []; }
 /* ---------- FATURANIN DURUMU ----------
    taslak : yarim kalmis giris. MIKTARI TUKETMEZ - tavan hesabina hic girmez.
             Gerekce: taslak bir belge degil, not defteridir; kalani rezerve
@@ -36941,14 +36949,14 @@ async function openFatura(){
   PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false;
   PNEWORD=false; PBINAY=false; PKATA=false; PODM=false; PSPECF=false; PRIMP=false; PINV=false;
   PTUT=false; PIHT=false; PKODD=false; _KODD=null; _INV=null; _TUT=null; _IHT=null;
-  FATV={ mode:'liste', q:'', comp:'', bina:'', bolum:'', sart:'', durum:'', from:'', to:'',
+  FATV={ mode:'kagit', q:'', comp:'', bina:'', bolum:'', sart:'', durum:'', from:'', to:'',
     detay:'', detayGeri:'liste' }; _FAT=null; _KGT=null; _NHF=null; SEARCH="";
   render(); try{ window.scrollTo(0,0); }catch(e){}
   // veri acilista inmiyor: once bos liste cizilir, defter gelince yeniden cizilir
   await faturaYukle(); if(PFAT) render();
   return true;
 }
-function closeFatura(){ if(!fatAyrilmaOnayi()) return; PFAT=false; FATV={mode:'liste',q:'',comp:'',bina:'',bolum:'',sart:'',durum:'',
+function closeFatura(){ if(!fatAyrilmaOnayi()) return; PFAT=false; FATV={mode:'kagit',q:'',comp:'',bina:'',bolum:'',sart:'',durum:'',
   from:'',to:'',detay:'',detayGeri:'liste'}; _FAT=null; _KGT=null; _NHF=null; render(); }
 /* Sekme degisiminde DURUM SUZGECI SIFIRLANIR. FATV.durum iki ekranda ayri anlam
    tasiyor: listede KAYIT durumu (taslak/kesin/kilitli), mutabakatta URUN durumu
@@ -36987,11 +36995,9 @@ function renderFaturaPage(){
   if(FATV.mode==='nihai'||FATV.mode==='nihaiForm'||FATV.mode==='nihaiDetay') return renderNihaiListe();
   if(FATV.mode==='kagitForm'&&_KGT) return renderKagitForm();
   if(FATV.mode==='kagitDetay'&&FATV.kdetay) return renderKagitDetay();
-  if(FATV.mode==='kagit'||FATV.mode==='kagitForm'||FATV.mode==='kagitDetay') return renderKagitListe();
-  if(FATV.mode==='form'&&_FAT) return renderFaturaForm();
-  if(FATV.mode==='detay'&&FATV.detay) return renderFaturaDetay();
   if(FATV.mode==='mutabakat') return renderFaturaMutabakat();
-  return renderFaturaListe();
+  // Ham fatura ekranlari (liste/form/detay) kaldirildi - eski bir mod kalmissa kagit listesine duser
+  return renderKagitListe();
 }
 // iki sekme: defterin kendisi (Faturalar) ve kontrol ekrani (Mutabakat)
 function fatSekmeler(liste){
@@ -36999,7 +37005,6 @@ function fatSekmeler(liste){
   return `<div style="display:flex;gap:8px;margin:4px 0 14px;flex-wrap:wrap">
     <button class="def-sec-chip ${FATV.mode==='kagit'?'on':''}" onclick="fatSetMode('kagit')" title="Tedarikcinin getirdigi sartname kagitlari (sozlesme ekleri) - onaylanan miktarlar nihai faturanin kaynagidir">Sartname Kagitlari (${fmtNum(kgtKayitlar().length)})</button>
     <button class="def-sec-chip ${FATV.mode==='nihai'?'on':''}" onclick="fatSetMode('nihai')" title="Muhasebeye giden gercek faturalar - onayli sartname kagitlarindan kesilir">Nihai Faturalar (${fmtNum(nhfKayitlar().length)})</button>
-    <button class="def-sec-chip ${FATV.mode==='liste'?'on':''}" onclick="fatSetMode('liste')" title="Tedarikcinin gonderdigi faturalarin kaydi (eski usul) - urun alimindan dusulur">Ham Faturalar (${fmtNum(fatKayitlar().length)})</button>
     <button class="def-sec-chip ${FATV.mode==='mutabakat'?'on':''}" onclick="fatSetMode('mutabakat')" title="Urun bazinda alinan - faturalanan karsilastirmasi ve uyarilar">Mutabakat${uy?` (${fmtNum(uy)} uyari)`:''}</button>
   </div>`;
 }
@@ -37395,6 +37400,15 @@ function kgtUrunListesi(haricId,companyId){
   return fatUrunListesi('',companyId).map(u=>{ const kg=ix.get(u.key)||0;
     return {...u, kagitta:kg, kgKalan:u.net-(u.hamFat||0)-kg}; });
 }
+/* ALIMSIZ SATIR: kagittaki urun bu firmadan HIC alinmamis - tedarikcinin kagida
+   alinmamis mal yazdiginin en acik isareti. Onaylanamaz (tavan sifir) ama kayitta
+   durur ve her ekranda kirmizi gorunur. Havuz firma basina bir kez kurulur. */
+function kgtAlimsizSatirlar(k,onbellek){
+  const cid=String((k&&k.companyId)||''), c=onbellek||new Map();
+  if(!c.has(cid)) c.set(cid,fatUrunHavuzu(cid));
+  const hav=c.get(cid);
+  return kgtSatirlari(k).filter(r=>{ const g=hav.get(String(r.key||'')); return !g||!(g.alinan>0); });
+}
 // Kagidin iki toplami: kagitta yazan ve onaylanan. Ayni aritmetik (fatToplamlar), iki ayri miktar
 function kgtToplamlar(satirlar){
   const t=alan=>fatToplamlar((satirlar||[]).map(r=>({qty:fatSayi(r[alan]),fiyat:r.fiyat,kdvOrani:r.kdvOrani})));
@@ -37496,7 +37510,7 @@ function kgtSetHead(k,v){
          yoksa listede gorunmeyen satirlar sessizce kaydedilirdi. */
       if(st.sira.length&&!confirm('Firma degisirse bu kagida girilen '+fmtNum(st.sira.length)
         +' urun satiri silinir - kagit yalnizca secili firmanin alimlarindan yazilir.\n\nDevam edilsin mi?')){ render(); return; }
-      st.sira=[]; st.yazan={}; st.onay={}; st.fiyat={}; st.kdv={}; st.sart={}; st.bilgi={}; st.oz={}; st.fsart=''; st.fyalniz=false;
+      st.sira=[]; st.yazan={}; st.onay={}; st.fiyat={}; st.kdv={}; st.sart={}; st.bilgi={}; st.oz={}; st.disU={}; st.fsart=''; st.fyalniz=false;
     }
     st.companyId=yeni; render(); return;
   }
@@ -37694,7 +37708,7 @@ function kgtOzelOpen(i){
     baslik:'SARTNAME KAGIDI SATIRI',
     altMetin:(fatSayi(st.onay[s.key])>0?'onaylanan':'kagitta yazan')+' miktarin hangi yerlesim kodlarina ait oldugunu isaretleyin',
     fatEtiket:'kullanilan',
-    fatAciklama:'kagitsiz ham faturalarda ve baska onayli kagitlarda <b>kullanilani</b>',
+    fatAciklama:'baska onayli kagitlarda <b>kullanilani</b>',
     uygula:liste=>{ if(_KGT!==st) return;
       if(liste.length) st.oz[s.key]=liste; else delete st.oz[s.key]; } };
   fatOzelRender(true);
@@ -37731,7 +37745,7 @@ async function kgtKaydet(hedef){
       alert('Onaylanamadi - '+fmtNum(asan.length)+' urunde onaylanan, urunun kalanini asiyor:\n\n'
         +asan.slice(0,10).map(x=>'· '+(x.r.ad||x.r.code||'urun')+': onaylanan '+fmtNum(x.r.onay)+', kalan '+fmtNum(x.kalan)).join('\n')
         +(asan.length>10?'\n(+'+fmtNum(asan.length-10)+' urun daha)':'')
-        +'\n\nKalan = alinan - iade - ham faturalarda faturalanan - baska onayli kagitlarda onaylanan.'
+        +'\n\nKalan = alinan - iade - baska onayli kagitlarda onaylanan.'
         +'\nOnaylanan miktarlari duzeltip tekrar deneyin.');
       return;
     }
@@ -37771,12 +37785,14 @@ async function kgtKaydet(hedef){
   }
   if(hedef==='onayli'){
     const hic=satirlar.filter(r=>r.yazan>0&&!(r.onay>0)).length;
+    const alimsizN=kgtAlimsizSatirlar({companyId:st.companyId,satirlar}).length;
     const az=onayli.filter(r=>r.onay<r.yazan-FAT_EPS).length;
     if(!confirm('Sartname kagidi ONAYLANACAK:\n\n'
       +'Sartname No: '+no+'\nFirma: '+(firma.ad||'-')+'\n'
       +fmtNum(onayli.length)+' urun · onaylanan toplam '+fmtNum(onayTop)+'\n'
       +(az?fmtNum(az)+' urunde kagitta yazandan AZ onaylandi\n':'')
       +(hic?fmtNum(hic)+' urun hic onaylanmadi (0)\n':'')
+      +(alimsizN?fmtNum(alimsizN)+' urun bu firmadan HIC ALINMAMIS - kagitta hata olarak kalir\n':'')
       +'\nOnaylanan miktarlar bu andan itibaren urunlerin kalanindan dusulur.\nOnayli kagit, onayi geri alinmadan degistirilemez. Devam edilsin mi?')) return;
   }
   const simdi=Date.now();
@@ -37922,6 +37938,7 @@ function renderKagitListe(){
   const yuklendi=_FAT_YUKLENDI, list=kgtListeFiltreli(), tumu=kgtKayitlar(), firmalar=fatFirmalar();
   const filtreVar=!!(FATV.kq||FATV.kcomp||FATV.kdurum), q=FATV.kq||'';
   const nix=nhfIndeks('');   // nihai faturalarda faturalanan - tek kez kurulur
+  const havOnbellek=new Map();   // alimsiz satir kontrolu: firma basina bir havuz
   let rows='';
   if(!yuklendi) rows=window.__faturaTableMissing
     ? emptyRow(8,'Fatura tablosu henuz kurulmamis','Yukaridaki uyaridaki SQL dosyasini bir kez calistirin')
@@ -37932,6 +37949,7 @@ function renderKagitListe(){
     const d=kgtDurumu(k), sat=kgtSatirlari(k), pb=k.paraBirimi||'TRY';
     const {y,o}=kgtToplamlar(sat), yz=kgtMiktar(k,'yazan'), on=kgtMiktar(k,'onay');
     const ft=d==='onayli'?kgtFatToplam(k,nix):0;
+    const alimsizN=d==='red'?0:kgtAlimsizSatirlar(k,havOnbellek).length;
     rows+=`<tr>
       <td><b style="font-family:var(--mono);font-size:12.5px">${markIsaret(k.no||'(no yok)',q)}</b>
         ${k.not?(()=>{ const ac=markVarMi(k.not,q);
@@ -37945,6 +37963,7 @@ function renderKagitListe(){
         d==='red'&&k.redNeden?`<div class="t-meta" style="font-size:11px;margin-top:3px;max-width:220px">${esc(k.redNeden)}</div>`:''}</td>
       <td class="t-qty">${fmtNum(yz)}<div class="t-meta" style="font-size:11px">${fmtNum(sat.length)} urun${
         d==='onayli'?` · <b style="color:var(--green)">${fmtNum(on)}</b> onayli`:''}</div>${
+        alimsizN?`<div style="margin-top:3px"><span class="fat-rozet hic" title="Bu firmadan hic alinmamis urun kagitta yaziyor - detayda isaretli">${fmtNum(alimsizN)} ALIM YOK</span></div>`:''}${
         d==='onayli'?`<div class="t-meta" style="font-size:11px" title="Nihai faturalarda faturalanan / onaylanan">${
           ft>=on-FAT_EPS?'<b style="color:var(--green)">tamami faturalandi</b>'
           :`<b>${fmtNum(ft)}</b> faturalandi · kalan <b>${fmtNum(on-ft)}</b>`}</div>`:''}</td>
@@ -38016,6 +38035,7 @@ function renderKagitDetay(){
   const hav=new Map(kgtUrunListesi(k.id,k.companyId).map(u=>[u.key,u]));
   const asimMi=r=>d==='onayli'&&fatSayi(r.onay)>Math.max(0,(hav.get(String(r.key||''))||{kgKalan:0}).kgKalan)+FAT_EPS;
   const asanlar=sat.filter(asimMi);
+  const alimsiz=new Set(kgtAlimsizSatirlar(k).map(r=>String(r.key||'')));
   const kunye=[['Firma',fatCompany(k)],['Sartname No',k.no],['Kagit Tarihi',k.tarih?fmtDate(k.tarih):''],
     ['Sozlesme No',k.sozlesmeNo],['Sozlesme Tarihi',k.sozlesmeTarihi?fmtDate(k.sozlesmeTarihi):''],
     ['Para Birimi',pb+(k.kur?' · kur '+fmtNum(k.kur):'')],
@@ -38026,11 +38046,12 @@ function renderKagitDetay(){
   const kullanan=nhfKullanan(k.id);
   const rows=sat.map((r,i)=>{
     const yz=fatSayi(r.yazan), on=fatSayi(r.onay), h=fatSatirHesap({qty:yz,fiyat:r.fiyat,kdvOrani:r.kdvOrani});
-    const asim=asimMi(r), az=on>0&&on<yz-FAT_EPS, fat=fm.get(String(r.key||''))||0;
-    return `<tr class="${asim?'kgt-asim':''}">
+    const asim=asimMi(r), az=on>0&&on<yz-FAT_EPS, fat=fm.get(String(r.key||''))||0, ay=alimsiz.has(String(r.key||''));
+    return `<tr class="${asim?'kgt-asim':(ay?'kgt-alimsiz':'')}">
       <td class="tl-no">${i+1}</td>
       <td style="font-family:var(--mono);font-size:11.5px">${esc(r.sartname||'-')}</td>
       <td><div style="font-size:12.5px">${esc(r.ad||'-')}</div><div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(r.code||'')}</div>${
+        ay?`<div class="kgt-alimsiz-not"><span class="fat-rozet hic">ALIM YOK</span> bu firmadan alinmamis urun kagida yazilmis</div>`:''}${
         fatSatirPaylari(r).length?`<div class="t-meta" style="font-size:11px;font-family:var(--mono);color:var(--green)" title="Yerlesim kodu kirilimi">${esc(fatSatirPaylari(r).map(x=>x.kod+': '+fmtNum(fatSayi(x.qty))).join(' · '))}</div>`:''}</td>
       <td class="t-meta">${esc(r.unit||'')}</td>
       <td class="num">${fmtNum(yz)}</td>
@@ -38062,9 +38083,13 @@ function renderKagitDetay(){
     :`<div class="fat-uyari bilgi"><h5>${d==='taslak'?'Taslak':'Kontrolde'} - henuz hicbir hesaba girmiyor</h5>
       <p>Onaylanan miktarlar ancak kagit <b>onaylandiginda</b> urunlerin kalanindan dusulur. Onay icin imzali nushayi yukleyip
       formdaki <b>Onayla</b> dugmesini kullanin.</p></div>`}
+    ${alimsiz.size?`<div class="fat-uyari kritik">
+      <h5>&#9888; ${fmtNum(alimsiz.size)} urun bu firmadan HIC ALINMAMIS ama kagitta yaziyor</h5>
+      <p>${esc(sat.filter(r=>alimsiz.has(String(r.key||''))).slice(0,4).map(r=>(r.ad||r.code||'urun')+' (kagitta '+fmtNum(fatSayi(r.yazan))+')').join(' ; '))}${alimsiz.size>4?' (+'+fmtNum(alimsiz.size-4)+' urun daha)':''}.
+      Bu satirlar onaylanamaz - tedarikcinin kagidinda hata ya da eksik bir siparis kaydi olabilir. Satirlar asagida isaretli.</p></div>`:''}
     ${asanlar.length?`<div class="fat-uyari kritik">
       <h5>&#9888; ${fmtNum(asanlar.length)} urunde onaylanan, bugunku kalani asiyor</h5>
-      <p>Kagit onaylandiktan sonra alim azaltilmis, iade girilmis ya da ayni mal icin ham fatura kesinlestirilmis olabilir:
+      <p>Kagit onaylandiktan sonra alim azaltilmis ya da iade girilmis olabilir:
       ${esc(asanlar.slice(0,4).map(r=>(r.ad||r.code||'urun')+' (onaylanan '+fmtNum(r.onay)+')').join(' ; '))}${asanlar.length>4?' (+'+fmtNum(asanlar.length-4)+' urun daha)':''}.
       Asan satirlar asagida kirmizi.</p></div>`:''}
     <div class="tut-card">
@@ -38123,7 +38148,9 @@ function renderKagitForm(){
   const girilen=new Set(st.sira);
   /* Girilmis ama havuzda olmayan satir (alim sonradan silinmis) KAYBOLMAZ:
      kayittaki ad/kodla, kalani 0 olarak listede durur. */
+  if(!st.disU) st.disU={};
   const yetim=st.sira.filter(k=>!st._havuz.has(k)).map(k=>{ const b=st.bilgi[k]||{};
+    if(st.disU[k]) return st.disU[k];      // bu oturumda aramadan eklenen alimsiz urun: katalog bilgisiyle
     return {key:k,matId:b.matId||'',code:b.code||'',ad:b.ad||'(bilinmeyen urun)',unit:b.unit||'',
       alinan:0,iade:0,net:0,fat:0,kagitta:0,kgKalan:0,binalar:[],bolumler:[],sartnameler:[],firmalar:[],
       ozelKodlar:[],kodlar:[],alimVar:false}; });
@@ -38141,28 +38168,48 @@ function renderKagitForm(){
   }
   const bitmisN=liste.filter(bitmis).length;
   const LIMIT=80, gosterilen=liste.slice(0,LIMIT);
+  /* ALIMI OLMAYAN URUNLER. Tedarikci bu firmadan hic alinmamis (ya da baska
+     firmadan alinmis) bir urunu kagida yazmis olabilir - kagidin en onemli hatasi
+     budur ve gorunur olmalidir. Arama sistemdeki butun urunlerde yapilir
+     (kutuphane, sartname kalemleri, alimlar - ham faturadaki "HIC ALINMADI"
+     paneliyle ayni motor). Bulunan urune KAGITTA YAZAN girilebilir; tavan sifir
+     oldugu icin ONAYLANAN kapali kalir. Satir kayda girer, detayda ve listede
+     "alim yok" diye kirmizi gorunur. */
+  const dis=(st.companyId&&araQ&&!st.fyalniz)
+    // gorunen = listede satiri olanlar. Havuzda olup ALIMI OLMAYAN (yalnizca bir
+    // faturada gecen) urun ana listeye girmez - burada cikmazsa hic eklenemezdi.
+    ?fatAlinmamisAra(st.fq,st.companyId,new Set(tum.filter(u=>u.alimVar).map(u=>u.key).concat(st.sira)),
+      st.fsart?(u=>(u.sartnameler||[]).includes(st.fsart)):null):null;
+  const disListe=(dis?dis.liste.slice(0,FAT_ALINMAMIS_GOSTER):[]).map(u=>{
+    const r={...u, kodlar:[], alinan:0, iade:0, net:0, fat:0, hamFat:0, kagitta:0, kgKalan:0,
+      firmalar:[], alimVar:false, disDurum:u.durum};
+    st.disU[u.key]=r; return r; });
+  const sistemdeYok=!!(dis&&!dis.bilinen&&!liste.some(u=>eslesir(u)));
   st._satirlar=[];
   const sat=kgtFormSatirlari(st);
   const yazanli=sat.some(r=>r.yazan>0);
   const oranlar=v=>[...new Set(KDV_ORANLARI.concat(v===''||v==null?[]:[fatSayi(v)]))].sort((x,y)=>x-y);
-  const satirlar=gosterilen.map(u=>{
+  const satirHtml=u=>{
     const i=st._satirlar.length; st._satirlar.push({key:u.key,u});
     const yz=st.yazan[u.key], on=st.onay[u.key], fy=st.fiyat[u.key], kd=st.kdv[u.key], sr=st.sart[u.key]||'';
     const tavan=Math.max(0,u.kgKalan), bitti=!(tavan>FAT_EPS), p=st.sira.indexOf(u.key);
     const h=fatSatirHesap({qty:fatSayi(yz),fiyat:fy,kdvOrani:kd});
     const sartSec=[...new Set((u.sartnameler||[]).concat(sr?[sr]:[]))];
     const dolu=v=>v!==undefined&&v!==''&&v!=null;
-    return `<tr class="${bitti&&p<0?'kgt-bitti':''}">
+    const dd=u.disDurum?(FAT_ALINMAMIS_DURUM[u.disDurum]||FAT_ALINMAMIS_DURUM.hic):null;
+    return `<tr class="${!u.alimVar?'kgt-alimsiz':(bitti&&p<0?'kgt-bitti':'')}">
       <td class="tl-no" id="kgtNo${i}" title="Kagittaki satir sirasi - urunu doldurdugunuz sira">${p>=0?p+1:''}</td>
       <td class="kgt-urun"><div style="font-size:12.5px">${markIsaret(u.ad||'-',st.fq)}</div>
         <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${markIsaret(u.code||'-',st.fq)}${u.unit?' · '+esc(u.unit):''}${
           u.binalar.length?' · '+markIsaret(u.binalar.join(', '),st.fq):''}${
           u.bolumler.length?' · <span style="color:var(--blue)">'+markIsaret(u.bolumler.join(', '),st.fq)+'</span>':''}</div>
         ${u.ozelKodlar&&u.ozelKodlar.length?`<div class="t-meta" style="font-size:11px;font-family:var(--mono)">${fatOzelKodOzet(u,0,st.fq)}</div>`:''}
-        ${u.alimVar?'':`<div class="fat-arama-disi" title="Bu urun icin secili firmadan alim kaydi yok - kagitta yazan girilebilir ama onaylanamaz">bu firmadan alim kaydi yok</div>`}
-        ${(araQ&&!eslesir(u))?`<div class="fat-arama-disi">aramaya uymuyor · kagida girildigi icin listede</div>`:''}
+        ${u.alimVar?'':dd?`<div class="kgt-alimsiz-not"><span class="fat-rozet ${esc(u.disDurum)}" title="${esc(dd.aciklama)}">${dd.ad}</span>
+            ${u.disDurum==='baska'&&(u.alinanFirmalar||[]).length?'alindigi firma: '+esc(u.alinanFirmalar.slice(0,2).join(', '))+' · ':''}kagitta yazan girilebilir, onaylanamaz</div>`
+          :`<div class="kgt-alimsiz-not"><span class="fat-rozet hic">ALIM YOK</span> bu firmadan alim kaydi yok - kagitta yazan girilebilir, onaylanamaz</div>`}
+        ${(araQ&&!(u.disDurum&&p<0)&&!eslesir(u))?`<div class="fat-arama-disi">aramaya uymuyor · kagida girildigi icin listede</div>`:''}
         ${((u.kodlar&&u.kodlar.length)||kgtFormPay(st,u.key).length)?kgtKodBtnHtml(i,u.key):''}</td>
-      <td class="fat-alim" title="Alinan ${fmtNum(u.alinan)} · iade ${fmtNum(u.iade)} · kagitsiz ham faturalarda faturalanan ${fmtNum(u.hamFat||0)} · baska onayli kagitlarda ${fmtNum(u.kagitta)}">
+      <td class="fat-alim" title="Alinan ${fmtNum(u.alinan)} · iade ${fmtNum(u.iade)} · baska onayli kagitlarda ${fmtNum(u.kagitta)}">
         <b>${fmtNum(u.alinan)}</b>${u.iade>0?` · <span style="color:var(--amber)">-${fmtNum(u.iade)}</span>`:''}${
           (u.hamFat||0)>0?` · <span style="color:var(--mute)">F${fmtNum(u.hamFat)}</span>`:''}${u.kagitta>0?` · <span style="color:var(--mute)">K${fmtNum(u.kagitta)}</span>`:''}</td>
       <td class="num" style="font-weight:700;color:${bitti?'var(--dim)':'var(--ink)'}" title="Bu kagitta en fazla onaylanabilecek miktar">${fmtNum(tavan)}${
@@ -38180,9 +38227,14 @@ function renderKagitForm(){
       <td class="satir-tutar"><div class="ktutar haric"><b id="kgtT${i}" title="Kagitta yazan x birim fiyat (KDV haric)">${h.matrah>0?fatPara(h.matrah,''):'-'}</b></div></td>
       <td><input type="number" step="any" min="0" class="num kgt-onay ${fatSayi(on)>0?'dolu':''}" id="kgtON${i}" ${bitti&&!(fatSayi(on)>0)?'disabled':''}
         value="${dolu(on)?esc(on):''}" placeholder="-" oninput="kgtSetOnay(${i},this)"
-        title="${bitti?'Bu urunun kalani yok - onaylanamaz':'Imzali kagitta kabul edilen miktar. En fazla kagitta yazan ve '+fmtNum(tavan)+' (kalan). Kagit onaylaninca tavandan duser'}"></td>
+        title="${!u.alimVar?'Bu firmadan alim kaydi yok - onaylanamaz':bitti?'Bu urunun kalani yok - onaylanamaz':'Imzali kagitta kabul edilen miktar. En fazla kagitta yazan ve '+fmtNum(tavan)+' (kalan). Kagit onaylaninca tavandan duser'}"></td>
     </tr>`;
-  }).join('');
+  };
+  const satirlar=gosterilen.map(satirHtml).join('')
+    +(disListe.length?`<tr class="nhf-grup kgt-dis-bas"><td colspan="10"><b>ALIM KAYDI OLMAYAN URUNLER</b>
+        <span class="t-meta">"${esc(araQ)}" ile eslesen ${fmtNum(dis.n)} urun${dis.n>disListe.length?' (ilk '+fmtNum(disListe.length)+')':''} ·
+        kagitta yaziyorsa miktarini girin - onaylanamaz, kagittaki hata olarak kayitta ve raporda gorunur</span></td></tr>`
+      +disListe.map(satirHtml).join(''):'');
   const ayniNo=String(st.no||'').trim()?kgtKayitlar().filter(k=>k.id!==st.id&&kgtDurumu(k)!=='red'
     &&(k.companyId||'')===st.companyId&&norm(String(k.no||'').trim())===norm(String(st.no).trim())):[];
   const imzali=!!(st.imzaliPdf&&st.imzaliPdf.path);
@@ -38240,7 +38292,7 @@ function renderKagitForm(){
         Ayni kagit ikinci kez giriliyorsa <b>vazgecin</b>.</p></div>`:''}
     </div>
     <div class="tut-card">
-      <h4>Kagittaki Urunler <i>kalan = alinan - iade - ham faturalarda faturalanan - baska onayli kagitlar</i></h4>
+      <h4>Kagittaki Urunler <i>kalan = alinan - iade - baska onayli kagitlar</i></h4>
       <div class="fat-ara">
         <div class="ust">
           <div class="kutu">
@@ -38271,9 +38323,10 @@ function renderKagitForm(){
               ${sartnameler.map(s=>`<option ${st.fsart===s?'selected':''}>${esc(s)}</option>`).join('')}</select></label>
         </div>`:''}
       </div>
-      ${gosterilen.length?`<div class="tablewrap fat-lines-alan"><table class="tut-lines fat-lines kgt-lines"><thead><tr>
+      ${sistemdeYok?fatAlinmamisPanel(null,st.fq,st.companyId,'kagit',true):''}
+      ${(gosterilen.length||disListe.length)?`<div class="tablewrap fat-lines-alan"><table class="tut-lines fat-lines kgt-lines"><thead><tr>
           <th>Sira No</th><th>Ekipman</th>
-          <th title="Alinan · iade · F: ham faturalarda faturalanan · K: baska onayli kagitlarda">Alim Durumu</th>
+          <th title="Alinan · iade · K: baska onayli kagitlarda">Alim Durumu</th>
           <th class="num" title="Bu kagitta en fazla onaylanabilecek miktar">Kalan</th>
           <th>Cekildigi Sartname</th>
           <th class="num" title="Kagitta yazan miktar - tedarikcinin istedigi, hicbir hesaba girmez">Kagitta Yazan</th>
@@ -38285,7 +38338,7 @@ function renderKagitForm(){
       :`<div class="empty" style="padding:22px"><p>${st.fyalniz?'Bu kagida henuz satir girilmemis'
           :(st.companyId?(araQ||st.fsart?'Suzgece uyan urun yok':'Bu firmadan alinmis urun yok'):'Once firma secin')}</p>
         <span style="font-size:12px">${st.fyalniz?`<button class="fat-link" onclick="kgtSetFiltre('fyalniz',false)">Butun urunleri goster</button>`
-          :(st.companyId?'Liste yalnizca BU FIRMADAN alinan urunleri icerir':'Kagit yalnizca secili firmanin alimlarindan yazilir')}</span></div>`}
+          :(st.companyId?'Liste bu firmadan alinan urunleri icerir - alinmamis bir urunu kagida yazmak icin adini ya da kodunu aratin':'Kagit yalnizca secili firmanin alimlarindan yazilir')}</span></div>`}
       ${liste.length>LIMIT?`<p class="t-meta" style="font-size:11.5px;margin-top:8px">+ ${fmtNum(liste.length-LIMIT)} urun daha var - listeyi daraltmak icin arama ya da sartname suzgeci kullanin</p>`:''}
       <div id="kgtToplam">${kgtToplamIc(sat,pb,st.beyanToplam,true)}</div>
     </div>
@@ -38839,15 +38892,14 @@ function nhfExcel(){
   const list=nhfListeFiltreli();
   const aoa=[["durum","fatura_no","fatura_tarihi","firma","sartname_no","sozlesme_no","cekildigi_sartname","sira_no",
     "urun_kodu","urun","birim","miktar","birim_fiyat","kagit_fiyati","birim_fiyat_farki","kdv_orani","matrah","kdv","toplam",
-    "para_birimi","kur","belge_odenecek_tutar","bagli_ham_faturalar","muhasebeye_gonderen","muhasebe_tarihi","not"]];
+    "para_birimi","kur","belge_odenecek_tutar","muhasebeye_gonderen","muhasebe_tarihi","not"]];
   list.forEach(f=>{
-    const hamlar=nhfBagliHamlar(f.id).map(h=>h.no||'(no yok)').join(', ');
     nhfSatirlari(f).forEach((r,i)=>{ const h=fatSatirHesap({qty:r.qty,fiyat:r.fiyat,kdvOrani:r.kdvOrani});
       aoa.push([NHF_DURUM[nhfDurumu(f)].ad, f.no||'', fmtDate(f.tarih), fatCompany(f)||'', r.kagitNo||'', r.sozlesmeNo||'', r.sartname||'', i+1,
         r.code||'', r.ad||'', r.unit||'', fatSayi(r.qty), r.fiyat==null?'':fatSayi(r.fiyat), r.kagitFiyat==null?'':fatSayi(r.kagitFiyat),
         nhfFiyatFarkli(r)?Number(((r.fiyat==null?0:fatSayi(r.fiyat))-fatSayi(r.kagitFiyat)).toFixed(4)):'',
         r.kdvOrani==null?'':fatSayi(r.kdvOrani), Number(h.matrah.toFixed(2)), Number(h.kdv.toFixed(2)), Number(h.toplam.toFixed(2)),
-        f.paraBirimi||'TRY', f.kur||'', f.beyanTutar||'', hamlar, f.kilitBy?kisiAd(f.kilitBy):'', f.kilitTs?fmtDate(f.kilitTs):'', f.not||'']); });
+        f.paraBirimi||'TRY', f.kur||'', f.beyanTutar||'', f.kilitBy?kisiAd(f.kilitBy):'', f.kilitTs?fmtDate(f.kilitTs):'', f.not||'']); });
   });
   if(aoa.length===1) aoa.push(new Array(aoa[0].length).fill(''));
   const wb=XLSX.utils.book_new(), ws=XLSX.utils.aoa_to_sheet(aoa);
@@ -38936,7 +38988,7 @@ function renderNihaiListe(){
         ${firmalar.map(c=>`<option value="${esc(c.id)}" ${FATV.ncomp===c.id?'selected':''}>${esc(c.ad||'-')}</option>`).join('')}</select>
       <div class="iht-sag">
         ${filtreVar?`<button class="iht-reset" onclick="nhfFiltreTemizle()">Filtreleri temizle</button>`:''}
-        ${list.length?`<button class="btn btn-ghost" onclick="nhfExcel()" title="Duz liste: her nihai fatura SATIRI bir Excel satiri - sartname no, kagit fiyati, fiyat farki ve bagli ham faturalarla">${icoXls()} Duz Excel</button>`:''}
+        ${list.length?`<button class="btn btn-ghost" onclick="nhfExcel()" title="Duz liste: her nihai fatura SATIRI bir Excel satiri - sartname no, kagit fiyati ve fiyat farkiyla">${icoXls()} Duz Excel</button>`:''}
         ${fatCanEdit()?`<button class="btn btn-add" onclick="nhfYeni()" ${onayliKagit.length?'':'disabled'}
           title="${onayliKagit.length?'Onayli sartname kagitlarindan nihai fatura kes':'Once bir sartname kagidini onaylayin'}">${icoPlus()} Yeni Nihai Fatura</button>`:''}
       </div>
@@ -39044,15 +39096,6 @@ function renderNihaiDetay(){
       <p class="t-meta" style="font-size:11.5px;margin:8px 0 0">Toplam fark <b style="color:${ffTop>0?'var(--red)':'var(--green)'}">${ffTop>0?'+':'&minus;'}${esc(fatPara(Math.abs(ffTop),pb))}</b>
         - arti, faturanin kagittan PAHALI kesildigi anlamina gelir.</p>
     </div>`:''}
-    <div class="tut-card">
-      <h4>Bagli Ham Faturalar <i>tedarikcinin gonderdigi belgeler - bag ham fatura formundaki "Bagli Nihai Fatura" alanindan kurulur</i></h4>
-      ${(()=>{ const hl=nhfBagliHamlar(f.id);
-        if(!hl.length) return `<p class="t-meta" style="font-size:12px;margin:0">Bu nihai faturaya bagli ham fatura yok.</p>`;
-        return `<div class="kgt-gec" style="margin-bottom:12px">${hl.map(h=>`<div><time>${esc(fmtDate(h.tarih))}</time><span>
-          <button class="fat-link" onclick="openFaturaDetay('${h.id}')">${esc(h.no||'(no yok)')}</button> ${fatKayitRozeti(h)}
-          · ${fmtNum(fatToplamMiktar(h))} miktar · odenecek ${esc(fatPara(fatOdenecek(h),h.paraBirimi||'TRY'))}</span></div>`).join('')}</div>
-          ${nhfKarsilastirHtml(f,hl)}`; })()}
-    </div>
     ${gec?`<div class="tut-card"><h4>Gecmis <i>${fmtNum((f.history||[]).length)} kayit · en yenisi ustte</i></h4><div class="kgt-gec">${gec}</div></div>`:''}
     <div class="tut-card">
       <h4>Kayit Bilgisi</h4>
@@ -41892,7 +41935,7 @@ function renderFaturaMutabakat(){
       <td class="t-qty" style="color:${u.iade>0?'var(--amber)':'var(--dim)'}">${u.iade>0?fmtNum(u.iade):'-'}</td>
       <td class="t-qty">${fmtNum(u.net)}</td>
       <td class="t-qty" style="color:${u.durum==='fazla'?'var(--red)':(u.fat>0?'var(--ink)':'var(--dim)')}"
-        title="Faturalanan = kagitsiz ham faturalar ${fmtNum(u.hamFat||0)} + nihai faturalar ${fmtNum(u.nhfFat||0)}${(u.kagitOnay||0)>(u.nhfFat||0)+FAT_EPS?' · onayli kagitlarda nihai faturasi henuz kesilmemis '+fmtNum((u.kagitOnay||0)-(u.nhfFat||0)):''}">${fmtNum(u.fat)}${(u.nhfFat||0)>0?`<div style="font-size:10.5px;color:var(--mute)">nihai ${fmtNum(u.nhfFat)}</div>`:''}</td>
+        title="Faturalanan = nihai faturalar ${fmtNum(u.nhfFat||0)}${(u.kagitOnay||0)>(u.nhfFat||0)+FAT_EPS?' · onayli kagitlarda nihai faturasi henuz kesilmemis '+fmtNum((u.kagitOnay||0)-(u.nhfFat||0)):''}">${fmtNum(u.fat)}</td>
       <td class="t-qty" style="color:${u.kalan>FAT_EPS?'var(--amber)':(u.kalan<-FAT_EPS?'var(--red)':'var(--green)')};font-weight:700">${fmtNum(u.kalan)}
         <div>${fatRozet(u.durum)}</div>${fatSerit(u.net,u.fat)}</td>
     </tr>`;
@@ -41926,7 +41969,6 @@ function renderFaturaMutabakat(){
         ${sartnameler.map(b=>`<option ${FATV.sart===b?'selected':''}>${esc(b)}</option>`).join('')}</select>
       <div class="iht-sag">
         ${filtreVar?`<button class="iht-reset" onclick="fatFiltreTemizle()">Filtreleri temizle</button>`:''}
-        <button class="btn btn-ghost" onclick="fatKitapDilSor()" title="Cok sayfali renkli rapor: her fatura KENDI sayfasinda, ozet sayfasindan koprulerle gezilir; ayrica urun mutabakati ve firma ozeti sayfalari. Turkce / Rusca / Ingilizce secilebilir">${icoKitap()} Excel Kitabi</button>
         <button class="btn btn-ghost" onclick="exportMutabakatXlsx()" title="Duz liste: her urun bir Excel satiri - pivot/filtre cekmek icin">${icoXls()} Duz Excel</button>
       </div>
     </div>
@@ -41953,16 +41995,16 @@ function renderFaturaMutabakat(){
 function exportMutabakatXlsx(){
   const {liste}=fatMutabakatVeri();
   const aoa=[["urun_kodu","urun_adi","birim","ozel_kodlar","binalar","bolumler","sartnameler","firmalar",
-    "alinan","iade","net_alinan","faturalanan","kagitsiz_ham_faturalanan","nihai_faturalanan","onayli_kagitta","kalan","durum"]];
+    "alinan","iade","net_alinan","faturalanan","onayli_kagitta","kalan","durum"]];
   liste.forEach(u=>{
     const dur={fazla:'FAZLA',tam:'TAM',kismi:'KISMI',yok:'FATURASIZ'}[u.durum]||'';
     aoa.push([u.code||'', u.ad||'', u.unit||'', (u.ozelKodlar||[]).join(', '), u.binalar.join(', '),
       (u.bolumler||[]).join(', '), (u.sartnameler||[]).join(', '), u.firmalar.join(', '),
-      u.alinan||0, u.iade||0, u.net||0, u.fat||0, u.hamFat||0, u.nhfFat||0, u.kagitOnay||0, Number((u.kalan||0).toFixed(4)), dur]);
+      u.alinan||0, u.iade||0, u.net||0, u.fat||0, u.kagitOnay||0, Number((u.kalan||0).toFixed(4)), dur]);
   });
   if(aoa.length===1) aoa.push(new Array(aoa[0].length).fill(''));
   const wb=XLSX.utils.book_new(), ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=[{wch:16},{wch:34},{wch:8},{wch:28},{wch:20},{wch:18},{wch:22},{wch:24},{wch:10},{wch:9},{wch:11},{wch:12},{wch:14},{wch:12},{wch:12},{wch:10},{wch:11}];
+  ws['!cols']=[{wch:16},{wch:34},{wch:8},{wch:28},{wch:20},{wch:18},{wch:22},{wch:24},{wch:10},{wch:9},{wch:11},{wch:12},{wch:12},{wch:10},{wch:11}];
   ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:aoa[0].length-1}})};
   XLSX.utils.book_append_sheet(wb,ws,"Mutabakat");
   XLSX.writeFile(wb,`fatura-mutabakat_${new Date().toISOString().slice(0,10)}.xlsx`);
@@ -43272,11 +43314,9 @@ async function matDetailGoFatura(id,q){
   if(!(await openFatura())) return false;
   closeModal();
   if(id){
-    // nihai fatura kendi detayina gider (fatKayitlar yalnizca ham faturayi tasir)
     if(nhfKayitlar().some(x=>x.id===id)){ nhfDetayAc(id); return true; }
     // belge arada silinmis olabilir: liste ekraninda birakilir, sessizce yutulmaz
-    if(!fatKayitlar().some(x=>x.id===id)){ toast('Fatura bulunamadi - silinmis olabilir','err'); return false; }
-    openFaturaDetay(id); return true;
+    toast('Fatura bulunamadi - silinmis olabilir','err'); return false;
   }
   FATV.mode='mutabakat'; FATV.q=String(q||''); render();
   try{ window.scrollTo(0,0); }catch(e){}
