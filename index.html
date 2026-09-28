@@ -36720,22 +36720,36 @@ function fatIndeks(haricId,companyId){
    Alan adi siparis tarafiyla ayni (ozelPay) - ayni kavram, ayni kelime. */
 function fatSatirPaylari(r){ const p=r&&r.ozelPay; return Array.isArray(p)?p:[]; }
 function fatKodAnahtar(kod){ return (typeof ktopKey==='function')?ktopKey(kod):String(kod||'').trim().toLowerCase(); }
-/* 'urunKey|kod' -> BASKA faturalarda o koda yazilan miktar. Urun tavaniyla ayni
-   kural: TASLAKLAR SAYILMAZ (yarim kalmis giris kimsenin kalanini yiyemez). */
-function fatKodIndeksi(haricId,companyId){
+/* 'urunKey|kod' -> BASKA belgelerde o koda yazilan miktar. Urun tavaniyla AYNI
+   kural (bkz. fatHamHavuzu / kgtUrunListesi): TASLAKLAR SAYILMAZ (yarim kalmis
+   giris kimsenin kalanini yiyemez).
+   - nihaiId yok (kagit formu, nihaiye bagsiz ham): kagitsiz ham faturalar +
+     ONAYLI kagitlarin kod kirilimi. Nihaiye bagli ham sayilmaz - mali zaten
+     onayli kagidin icinde.
+   - nihaiId var (bagli ham): yalnizca ayni nihaiye bagli diger ham faturalar. */
+function fatKodIndeksi(haricId,companyId,nihaiId){
   const cid=String(companyId||'');
   const m=new Map();
+  const ekle=r=>{
+    const k=String((r&&r.key)||''); if(!k) return;
+    fatSatirPaylari(r).forEach(p=>{
+      const kk=fatKodAnahtar(p.kod); if(!kk) return;
+      const id=k+'|'+kk;
+      m.set(id,(m.get(id)||0)+fatSayi(p.qty));
+    });
+  };
+  const nm=fatNihaiHaritasi();
   fatKesinler().forEach(f=>{
     if(haricId&&f.id===haricId) return;
     if(cid && String(f.companyId||'')!==cid) return;   // firma izolasyonu kod bazinda da gecerli
-    fatSatirlari(f).forEach(r=>{
-      const k=String((r&&r.key)||''); if(!k) return;
-      fatSatirPaylari(r).forEach(p=>{
-        const kk=fatKodAnahtar(p.kod); if(!kk) return;
-        const id=k+'|'+kk;
-        m.set(id,(m.get(id)||0)+fatSayi(p.qty));
-      });
-    });
+    const bag=fatHamNihai(f,nm);
+    if(nihaiId?(!bag||bag.id!==nihaiId):!!bag) return;
+    fatSatirlari(f).forEach(ekle);
+  });
+  if(!nihaiId) kgtKayitlar().forEach(k=>{
+    if(kgtDurumu(k)!=='onayli'||(haricId&&k.id===haricId)) return;
+    if(cid && String(k.companyId||'')!==cid) return;
+    kgtSatirlari(k).forEach(ekle);
   });
   return m;
 }
@@ -36745,9 +36759,9 @@ function fatKodIndeksi(haricId,companyId){
    bilinmeyen alimlar) hicbir koda yazilmaz. Bu yuzden kod bazli kalanlarin
    toplami urunun kalanindan BUYUK olabilir - fark fatDagitilmamis ile hesaplanip
    ekranda acikca soylenir, sessizce yutulmaz. */
-function fatKodTablosu(u,haricId,companyId){
+function fatKodTablosu(u,haricId,companyId,nihaiId){
   if(!u) return [];
-  const ix=fatKodIndeksi(haricId,companyId);
+  const ix=fatKodIndeksi(haricId,companyId,nihaiId);
   return (u.kodlar||[]).map(k=>{
     const fat=ix.get(u.key+'|'+fatKodAnahtar(k.kod))||0;
     return { ...k, fat, kalan:k.net-fat };
@@ -37411,7 +37425,7 @@ function kgtBosForm(){
   return { id:uid(), editId:null, durum:'taslak', companyId:fl.length===1?fl[0].id:'',
     no:'', tarih:new Date().toISOString().slice(0,10), sozlesmeNo:'', sozlesmeTarihi:'',
     paraBirimi:'TRY', kur:'', varsayilanKdv:20, beyanToplam:'', not:'', kagitPdf:null, imzaliPdf:null,
-    sira:[], yazan:{}, onay:{}, fiyat:{}, kdv:{}, sart:{}, bilgi:{}, silinecek:[],
+    sira:[], yazan:{}, onay:{}, fiyat:{}, kdv:{}, sart:{}, bilgi:{}, oz:{}, silinecek:[],
     fq:'', fsart:'', fyalniz:false };
 }
 function kgtYeni(){
@@ -37436,6 +37450,7 @@ function kgtDuzenle(id){
     st.kdv[key]=r.kdvOrani==null?'':r.kdvOrani;
     st.sart[key]=r.sartname||'';
     st.bilgi[key]={matId:r.matId||'',code:r.code||'',ad:r.ad||'',unit:r.unit||''};
+    const pay=fatPayTemizle(r.ozelPay); if(pay.length) st.oz[key]=pay;
   });
   st.fyalniz=st.sira.length>0;      // duzenleme "bu kagitta ne var" sorusuyla acilir
   _KGT=st; kgtImzala();
@@ -37444,7 +37459,7 @@ function kgtDuzenle(id){
 // Ayrilma korumasi faturadakiyle ayni olcut: "dolu" degil, acildigindan beri "degisti"
 function kgtImza(st){
   if(!st) return '';
-  const sat=st.sira.map(k=>[k,st.yazan[k],st.onay[k],st.fiyat[k],st.kdv[k],st.sart[k]].map(x=>x==null?'':String(x)).join('|'));
+  const sat=st.sira.map(k=>[k,st.yazan[k],st.onay[k],st.fiyat[k],st.kdv[k],st.sart[k],fatPayOzetMetni({ozelPay:kgtFormPay(st,k)})].map(x=>x==null?'':String(x)).join('|'));
   return JSON.stringify([st.companyId,String(st.no||'').trim(),st.tarih,String(st.sozlesmeNo||'').trim(),st.sozlesmeTarihi,
     st.paraBirimi,String(st.kur),String(st.varsayilanKdv),String(st.beyanToplam),String(st.not||'').trim(),
     KGT_BELGELER.map(b=>(st[b.k]&&(st[b.k].path||st[b.k].name))||''),sat]);
@@ -37481,7 +37496,7 @@ function kgtSetHead(k,v){
          yoksa listede gorunmeyen satirlar sessizce kaydedilirdi. */
       if(st.sira.length&&!confirm('Firma degisirse bu kagida girilen '+fmtNum(st.sira.length)
         +' urun satiri silinir - kagit yalnizca secili firmanin alimlarindan yazilir.\n\nDevam edilsin mi?')){ render(); return; }
-      st.sira=[]; st.yazan={}; st.onay={}; st.fiyat={}; st.kdv={}; st.sart={}; st.bilgi={}; st.fsart=''; st.fyalniz=false;
+      st.sira=[]; st.yazan={}; st.onay={}; st.fiyat={}; st.kdv={}; st.sart={}; st.bilgi={}; st.oz={}; st.fsart=''; st.fyalniz=false;
     }
     st.companyId=yeni; render(); return;
   }
@@ -37599,17 +37614,18 @@ function kgtOnayDoldur(){
 }
 function kgtHepsiniTemizle(){
   const st=_KGT; if(!st||!st.sira.length) return;
-  if(!confirm(fmtNum(st.sira.length)+' satirdaki kagitta yazan / onaylanan miktarlar, fiyatlar ve sartname secimleri silinecek.\n\nDevam edilsin mi?')) return;
-  st.sira=[]; st.yazan={}; st.onay={}; st.fiyat={}; st.kdv={}; st.sart={}; st.fyalniz=false; render();
+  if(!confirm(fmtNum(st.sira.length)+' satirdaki kagitta yazan / onaylanan miktarlar, fiyatlar, sartname secimleri ve yerlesim kodu kirilimlari silinecek.\n\nDevam edilsin mi?')) return;
+  st.sira=[]; st.yazan={}; st.onay={}; st.fiyat={}; st.kdv={}; st.sart={}; st.oz={}; st.fyalniz=false; render();
 }
 // Formdaki kagit satirlari, KAYITTAKI bicimde (kagit sirasiyla)
 function kgtFormSatirlari(st){
   if(!st) return [];
   return st.sira.map(k=>{
-    const b=st.bilgi[k]||{}, f=st.fiyat[k], kd=st.kdv[k];
+    const b=st.bilgi[k]||{}, f=st.fiyat[k], kd=st.kdv[k], pay=kgtFormPay(st,k);
     return { key:k, matId:b.matId||'', code:b.code||'', ad:b.ad||'', unit:b.unit||'',
       sartname:String(st.sart[k]||''), yazan:fatSayi(st.yazan[k]), onay:fatSayi(st.onay[k]),
-      fiyat:(f===''||f==null)?null:fatSayi(f), kdvOrani:(kd===''||kd==null)?null:fatSayi(kd) };
+      fiyat:(f===''||f==null)?null:fatSayi(f), kdvOrani:(kd===''||kd==null)?null:fatSayi(kd),
+      ...(pay.length?{ozelPay:pay}:{}) };   // bos dizi yazilmaz - ham faturadaki gibi
   }).filter(r=>r.yazan>0||r.onay>0);
 }
 function kgtOzetGuncelle(){
@@ -37621,11 +37637,67 @@ function kgtOzetGuncelle(){
       el.textContent=h.matrah>0?fatPara(h.matrah,''):'-'; }
     const no=document.getElementById('kgtNo'+i);
     if(no){ const p=st.sira.indexOf(s.key); no.textContent=p>=0?String(p+1):''; }
+    kgtKodBtnGuncelle(i,s.key);            // yazan/onaylanan degisince bolunecek miktar da degisir
   });
   const tb=document.getElementById('kgtToplam'); if(tb) tb.innerHTML=kgtToplamIc(sat,st.paraBirimi||'TRY',st.beyanToplam,true);
   const a=document.getElementById('kgtOzSatir'); if(a) a.textContent=fmtNum(sat.length);
   const b=document.getElementById('kgtOzYazan'); if(b) b.textContent=fmtNum(sat.reduce((x,r)=>x+r.yazan,0));
   const c=document.getElementById('kgtOzOnay'); if(c) c.textContent=fmtNum(sat.reduce((x,r)=>x+r.onay,0));
+}
+
+/* ---------- YERLESIM (OZEL) KOD KIRILIMI ----------
+   Ham faturadaki pencerenin aynisi (fatOzelOpen/fatOzelRender): satirin miktari
+   alimlarda gecen yerlesim kodlarina bolunur, kodlar SECILIR, elle yazilmaz.
+   Bolunen miktar satirin GECERLI miktaridir: onaylanan girildiyse o, girilmediyse
+   kagitta yazan. Onayli kagidin kod paylari, kagitsiz ham faturalar ve diger
+   kagitlarla ayni kod kalanindan duser (fatKodIndeksi). Kirilim zorunlu degil;
+   baslanmissa satir miktarina esit olmali. */
+function kgtPayHedef(st,key){ const on=fatSayi(st.onay[key]); return on>0?on:fatSayi(st.yazan[key]); }
+function kgtFormPay(st,key){ return fatPayTemizle(((st&&st.oz)||{})[key]); }
+const KGT_KODBTN_IPUCU='Bu satirin miktarini (onaylanan girildiyse onu, girilmediyse kagitta yazani) yerlesim kodlarina bol';
+function kgtKodBtnHtml(i,key){
+  const b=_KGT?fatKodBtnBilgi(kgtPayHedef(_KGT,key),kgtFormPay(_KGT,key)):{sinif:'',aktif:false,metin:''};
+  return `<button type="button" id="kgtKB${i}" class="${('fat-kodbtn '+b.sinif).trim()}"${b.aktif?'':' disabled'}
+    style="${b.aktif?'':'opacity:.5;cursor:default'}" onclick="kgtOzelOpen(${i})"
+    title="${esc(b.aktif?KGT_KODBTN_IPUCU:'Once kagitta yazan miktari girin')}">${esc(b.metin)}</button>`;
+}
+// Her tustan sonra (kgtOzetGuncelle) - tablo yeniden CIZILMEZ, yalnizca dugme tazelenir
+function kgtKodBtnGuncelle(i,key){
+  const el=document.getElementById('kgtKB'+i); if(!el||!_KGT) return;
+  const b=fatKodBtnBilgi(kgtPayHedef(_KGT,key),kgtFormPay(_KGT,key));
+  el.className=('fat-kodbtn '+b.sinif).trim();
+  el.disabled=!b.aktif;
+  el.textContent=b.metin;
+  el.title=b.aktif?KGT_KODBTN_IPUCU:'Once kagitta yazan miktari girin';
+  el.style.opacity=b.aktif?'':'.5';
+  el.style.cursor=b.aktif?'':'default';
+}
+function kgtOzelOpen(i){
+  const st=_KGT, s=kgtSatir(i); if(!st||!s) return;
+  const q=kgtPayHedef(st,s.key);
+  if(!(q>0)){ toast('Once bu satira kagitta yazan miktari girin - kirilim o miktari boler','err'); return; }
+  const u=s.u;
+  const tablo=fatKodTablosu(u,st.id,st.companyId,'');
+  const pay={};
+  kgtFormPay(st,s.key).forEach(x=>{ const k=fatKodAnahtar(x.kod); if(k) pay[k]={kod:x.kod,qty:String(x.qty)}; });
+  // kayitta gecip artik alimi olmayan kod "alimi yok" olarak listede kalir (fatOzelOpen ile ayni)
+  const bilinen=new Set(tablo.map(x=>fatKodAnahtar(x.kod)));
+  Object.keys(pay).forEach(k=>{ if(!bilinen.has(k))
+    tablo.push({kod:pay[k].kod, alinan:0, iade:0, net:0, fat:0, kalan:0, yetim:true}); });
+  /* Formda KODLA arandiysa pencere o aramayla acilir: "Kalani Dagit" yalnizca
+     aramaya uyan kodlara yazar - kodu ikinci kez yazmak gerekmez. */
+  const fq=String(st.fq||'').trim(), fk=fatKodAnahtar(fq);
+  const q0=(fk&&tablo.some(x=>fatKodAnahtar(x.kod).indexOf(fk)>=0))?fq:'';
+  _FOK={ key:s.key, i, ad:u.ad||'', unit:u.unit||'', hedef:q,
+    dagitilmamis:fatDagitilmamis({fat:(u.hamFat||0)+(u.kagitta||0)},tablo),
+    kodsuz:(u.kodsuz&&u.kodsuz.net)||0, tablo, pay, q:q0,
+    baslik:'SARTNAME KAGIDI SATIRI',
+    altMetin:(fatSayi(st.onay[s.key])>0?'onaylanan':'kagitta yazan')+' miktarin hangi yerlesim kodlarina ait oldugunu isaretleyin',
+    fatEtiket:'kullanilan',
+    fatAciklama:'kagitsiz ham faturalarda ve baska onayli kagitlarda <b>kullanilani</b>',
+    uygula:liste=>{ if(_KGT!==st) return;
+      if(liste.length) st.oz[s.key]=liste; else delete st.oz[s.key]; } };
+  fatOzelRender(true);
 }
 
 /* KAYDET. hedef: 'taslak' | 'kontrol' | 'onayli'.
@@ -37661,6 +37733,29 @@ async function kgtKaydet(hedef){
         +(asan.length>10?'\n(+'+fmtNum(asan.length-10)+' urun daha)':'')
         +'\n\nKalan = alinan - iade - ham faturalarda faturalanan - baska onayli kagitlarda onaylanan.'
         +'\nOnaylanan miktarlari duzeltip tekrar deneyin.');
+      return;
+    }
+  }
+  /* YERLESIM KODU KIRILIMI (ham fatura kaydiyla ayni kural): girilmisse satirin
+     gecerli miktarina esit olmali; onayda ayrica hicbir kodun kalani asilamaz -
+     kalan TAZE tablodan. Taslak yarim is sayilir, engellenmez. */
+  if(hedef!=='taslak'){
+    const kHav=hedef==='onayli'?new Map(kgtUrunListesi(st.id,st.companyId).map(u=>[u.key,u])):null;
+    const kodSorun=[];
+    satirlar.forEach(r=>{
+      const pay=r.ozelPay||[]; if(!pay.length) return;
+      const ad=r.ad||r.code||'urun', h=r.onay>0?r.onay:r.yazan, pt=pay.reduce((a,x)=>a+x.qty,0);
+      if(Math.abs(pt-h)>FAT_EPS) kodSorun.push(ad+': kod kirilimi '+fmtNum(pt)+', '+(r.onay>0?'onaylanan ':'kagitta yazan ')+fmtNum(h));
+      if(!kHav) return;
+      const kt=new Map(fatKodTablosu(kHav.get(r.key),st.id,st.companyId,'').map(x=>[fatKodAnahtar(x.kod),x]));
+      pay.forEach(x=>{ const e=kt.get(fatKodAnahtar(x.kod));
+        if(!e) kodSorun.push(ad+': "'+x.kod+'" kodu icin alim kaydi yok');
+        else if(x.qty>e.kalan+FAT_EPS) kodSorun.push(x.kod+': '+fmtNum(x.qty)+' yazildi, o yerlesimin kalani '+fmtNum(Math.max(0,e.kalan))); });
+    });
+    if(kodSorun.length){
+      alert('Kaydedilemedi - yerlesim kodu kirilimi tutmuyor:\n\n'
+        +kodSorun.slice(0,10).map(x=>'· '+x).join('\n')+(kodSorun.length>10?'\n(+'+fmtNum(kodSorun.length-10)+' daha)':'')
+        +'\n\nSatirdaki kod dugmesinden kirilimi duzeltin ya da temizleyin.');
       return;
     }
   }
@@ -37935,7 +38030,8 @@ function renderKagitDetay(){
     return `<tr class="${asim?'kgt-asim':''}">
       <td class="tl-no">${i+1}</td>
       <td style="font-family:var(--mono);font-size:11.5px">${esc(r.sartname||'-')}</td>
-      <td><div style="font-size:12.5px">${esc(r.ad||'-')}</div><div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(r.code||'')}</div></td>
+      <td><div style="font-size:12.5px">${esc(r.ad||'-')}</div><div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(r.code||'')}</div>${
+        fatSatirPaylari(r).length?`<div class="t-meta" style="font-size:11px;font-family:var(--mono);color:var(--green)" title="Yerlesim kodu kirilimi">${esc(fatSatirPaylari(r).map(x=>x.kod+': '+fmtNum(fatSayi(x.qty))).join(' · '))}</div>`:''}</td>
       <td class="t-meta">${esc(r.unit||'')}</td>
       <td class="num">${fmtNum(yz)}</td>
       <td class="num" style="font-weight:700;color:${on>0?'var(--green)':'var(--dim)'}">${on>0?fmtNum(on):'-'}${
@@ -38062,8 +38158,10 @@ function renderKagitForm(){
         <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${markIsaret(u.code||'-',st.fq)}${u.unit?' · '+esc(u.unit):''}${
           u.binalar.length?' · '+markIsaret(u.binalar.join(', '),st.fq):''}${
           u.bolumler.length?' · <span style="color:var(--blue)">'+markIsaret(u.bolumler.join(', '),st.fq)+'</span>':''}</div>
+        ${u.ozelKodlar&&u.ozelKodlar.length?`<div class="t-meta" style="font-size:11px;font-family:var(--mono)">${fatOzelKodOzet(u,0,st.fq)}</div>`:''}
         ${u.alimVar?'':`<div class="fat-arama-disi" title="Bu urun icin secili firmadan alim kaydi yok - kagitta yazan girilebilir ama onaylanamaz">bu firmadan alim kaydi yok</div>`}
-        ${(araQ&&!eslesir(u))?`<div class="fat-arama-disi">aramaya uymuyor · kagida girildigi icin listede</div>`:''}</td>
+        ${(araQ&&!eslesir(u))?`<div class="fat-arama-disi">aramaya uymuyor · kagida girildigi icin listede</div>`:''}
+        ${((u.kodlar&&u.kodlar.length)||kgtFormPay(st,u.key).length)?kgtKodBtnHtml(i,u.key):''}</td>
       <td class="fat-alim" title="Alinan ${fmtNum(u.alinan)} · iade ${fmtNum(u.iade)} · kagitsiz ham faturalarda faturalanan ${fmtNum(u.hamFat||0)} · baska onayli kagitlarda ${fmtNum(u.kagitta)}">
         <b>${fmtNum(u.alinan)}</b>${u.iade>0?` · <span style="color:var(--amber)">-${fmtNum(u.iade)}</span>`:''}${
           (u.hamFat||0)>0?` · <span style="color:var(--mute)">F${fmtNum(u.hamFat)}</span>`:''}${u.kagitta>0?` · <span style="color:var(--mute)">K${fmtNum(u.kagitta)}</span>`:''}</td>
@@ -38763,20 +38861,20 @@ function nhfExcel(){
 function kgtExcel(){
   const list=kgtListeFiltreli(), nix=nhfIndeks('');
   const aoa=[["durum","sartname_no","kagit_tarihi","sozlesme_no","sozlesme_tarihi","firma","sira_no","cekildigi_sartname",
-    "urun_kodu","urun","birim","kagitta_yazan","onaylanan","nihai_faturalanan","faturalanacak_kalan","birim_fiyat","kdv_orani",
+    "urun_kodu","urun","birim","yerlesim_kodlari","kagitta_yazan","onaylanan","nihai_faturalanan","faturalanacak_kalan","birim_fiyat","kdv_orani",
     "tutar_kagitta_yazan","tutar_onaylanan","para_birimi","onaylayan","onay_tarihi","red_nedeni","not"]];
   list.forEach(k=>{ const d=kgtDurumu(k), fm=d==='onayli'?kgtFaturalanan(k,nix):new Map();
     kgtSatirlari(k).forEach((r,i)=>{ const on=fatSayi(r.onay), ft=fm.get(String(r.key||''))||0;
       const hy=fatSatirHesap({qty:fatSayi(r.yazan),fiyat:r.fiyat,kdvOrani:r.kdvOrani}), ho=fatSatirHesap({qty:on,fiyat:r.fiyat,kdvOrani:r.kdvOrani});
       aoa.push([KGT_DURUM[d].ad, k.no||'', fmtDate(k.tarih), k.sozlesmeNo||'', k.sozlesmeTarihi?fmtDate(k.sozlesmeTarihi):'', fatCompany(k)||'', i+1, r.sartname||'',
-        r.code||'', r.ad||'', r.unit||'', fatSayi(r.yazan), on||'', d==='onayli'?ft:'', d==='onayli'?Math.max(0,on-ft):'',
+        r.code||'', r.ad||'', r.unit||'', fatSatirPaylari(r).map(x=>x.kod+' ('+fmtNum(fatSayi(x.qty))+')').join(' · '), fatSayi(r.yazan), on||'', d==='onayli'?ft:'', d==='onayli'?Math.max(0,on-ft):'',
         r.fiyat==null?'':fatSayi(r.fiyat), r.kdvOrani==null?'':fatSayi(r.kdvOrani),
         Number(hy.toplam.toFixed(2)), on>0?Number(ho.toplam.toFixed(2)):'', k.paraBirimi||'TRY',
         k.onayBy?kisiAd(k.onayBy):'', k.onayTs?fmtDate(k.onayTs):'', k.redNeden||'', k.not||'']); });
   });
   if(aoa.length===1) aoa.push(new Array(aoa[0].length).fill(''));
   const wb=XLSX.utils.book_new(), ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=aoa[0].map((h,i)=>({wch:i===9?34:([1,3,5,7].includes(i)?18:12)}));
+  ws['!cols']=aoa[0].map((h,i)=>({wch:i===9?34:([1,3,5,7,11].includes(i)?18:12)}));
   ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:aoa[0].length-1}})};
   XLSX.utils.book_append_sheet(wb,ws,"Sartname Kagitlari");
   XLSX.writeFile(wb,`sartname-kagitlari_${new Date().toISOString().slice(0,10)}.xlsx`);
@@ -40224,9 +40322,11 @@ function fatFormFiltreTemizle(){
    yazildiysa toplanir - kayitta ve ekranda hep temiz bir liste durur. */
 function fatFormPay(key){
   const st=_FAT; if(!st) return [];
-  const ham=(st.oz||{})[key]||[];
+  return fatPayTemizle((st.oz||{})[key]);
+}
+function fatPayTemizle(ham){
   const out=[];
-  ham.forEach(x=>{
+  (Array.isArray(ham)?ham:[]).forEach(x=>{
     const kod=String(x.kod||'').trim(), q=fatSayi(x.qty);
     if(!kod||!(q>0)) return;
     const v=out.find(y=>fatKodAnahtar(y.kod)===fatKodAnahtar(kod));
@@ -40241,8 +40341,11 @@ function fatFormPay(key){
    cevap verir. */
 function fatPayDurumu(key){
   const st=_FAT; if(!st) return {durum:'yok',girilen:0,hedef:0,artan:0};
-  const hedef=fatSayi(st.qty[key]);
-  const girilen=fatFormPay(key).reduce((s,x)=>s+x.qty,0);
+  return fatPayDurumHesap(fatSayi(st.qty[key]),fatFormPay(key));
+}
+// Saf hesap - ham fatura ve sartname kagidi formu ayni kurali kullanir
+function fatPayDurumHesap(hedef,pay){
+  const girilen=(pay||[]).reduce((s,x)=>s+x.qty,0);
   const artan=Math.round((hedef-girilen)*1e6)/1e6;
   if(!girilen) return {durum:'yok',girilen,hedef,artan};
   if(Math.abs(artan)<=FAT_EPS) return {durum:'tam',girilen,hedef,artan};
@@ -40959,7 +41062,7 @@ function fatOzelOpen(i){
   const q=fatSayi(st.qty[s.key]);
   if(!(q>0)){ toast('Once bu satira miktar girin - kirilim o miktari boler','err'); return; }
   const u=s.urun||null;
-  const tablo=fatKodTablosu(u,st.editId||'',st.companyId||'');
+  const tablo=fatKodTablosu(u,st.editId||'',st.companyId||'',(u&&u.bagli)?st.nihaiId:'');
   const pay={};
   ((st.oz||{})[s.key]||[]).forEach(x=>{
     const k=fatKodAnahtar(x.kod); if(!k) return;
@@ -41032,7 +41135,7 @@ function fatOzelDagit(){
 }
 function fatOzelTemizle(){ const f=_FOK; if(!f) return; f.pay={}; fatOzelRender(); }
 function fatOzelApply(){
-  const f=_FOK, st=_FAT; if(!f||!st) return;
+  const f=_FOK, st=_FAT; if(!f||!(st||f.uygula)) return;
   const d=fatOzelDurum();
   // Hic dagitilmamis olmasi serbest; BASLANMIS ama tutmayan dagilim kaydedilmez
   if(d.girilen&&Math.abs(d.artan)>FAT_EPS){
@@ -41041,9 +41144,11 @@ function fatOzelApply(){
       :'Satir miktarindan '+fmtNum(-d.artan)+' fazla yazildi','err');
     return;
   }
-  if(!st.oz) st.oz={};
   const liste=Object.keys(f.pay).map(k=>({kod:f.pay[k].kod, qty:fatSayi(f.pay[k].qty)}))
     .filter(x=>x.kod&&x.qty>0).sort((a,b)=>String(a.kod).localeCompare(String(b.kod),'tr'));
+  // Baska formlar (sartname kagidi) ayni pencereyi kendi yazma isleviyle acar
+  if(f.uygula){ f.uygula(liste); fatOzelClose(); render(); return; }
+  if(!st.oz) st.oz={};
   if(liste.length) st.oz[f.key]=liste; else delete st.oz[f.key];
   fatOzelClose(); render();
 }
@@ -41107,7 +41212,7 @@ function fatOzelRender(ilk){
     const stat=sat.yetim
       ? '<span style="color:var(--red)">alimi yok</span>'
       : `alinan <b>${fmtNum(sat.alinan)}</b>${sat.iade>0?' · iade '+fmtNum(sat.iade):''}`
-        +`${sat.fat>0?' · faturali <b style="color:var(--amber)">'+fmtNum(sat.fat)+'</b>':''}`
+        +`${sat.fat>0?' · '+(f.fatEtiket||'faturali')+' <b style="color:var(--amber)">'+fmtNum(sat.fat)+'</b>':''}`
         +` · kalan <b style="color:${sat.kalan>FAT_EPS?'var(--green)':'var(--mute)'}">${fmtNum(Math.max(0,sat.kalan))}</b>`;
     return `<div class="nok-row${fatSayi(q)>0?' on':''}${bitti?' bitti':''}" id="fkoRow${k}">
       <span class="fko-kod" title="${esc(sat.kod)}">${esc(sat.kod)}</span>
@@ -41123,12 +41228,12 @@ function fatOzelRender(ilk){
       <button class="mini-btn" onclick="fatOzelClose()" title="Kapat - girilenler atilir">x</button></div>
     <div class="modal-body">
     <div class="nxb-src">
-      <div class="nxb-src-h">FATURA SATIRI</div>
+      <div class="nxb-src-h">${esc(f.baslik||'FATURA SATIRI')}</div>
       <div class="nxb-name">${esc(f.ad||'?')}</div>
-      <div class="nxb-sub">${fmtNum(f.hedef)} ${esc(f.unit||'')} — bu miktarin hangi yerlesim kodlari icin odendigini isaretleyin</div>
+      <div class="nxb-sub">${fmtNum(f.hedef)} ${esc(f.unit||'')} — ${esc(f.altMetin||'bu miktarin hangi yerlesim kodlari icin odendigini isaretleyin')}</div>
     </div>
     <div class="kata-intro" style="margin:12px 0 0">Kodlar <b>alim kayitlarindan</b> gelir - elle yazilmaz.
-      Her kodun yaninda o yerlesimin <b>alinani</b>, daha once <b>faturalanani</b> ve <b>kalani</b> durur;
+      Her kodun yaninda o yerlesimin <b>alinani</b>, ${f.fatAciklama||'daha once <b>faturalanani</b>'} ve <b>kalani</b> durur;
       kalani biten kod ustu cizili gelir, cunku o yerlesimin parasi zaten odenmistir.
       Kirilim <b>zorunlu degildir</b> - urun tavani degismez, bu yalnizca "hangisi icin odedim" sorusunu kayda gecirir.
       ${f.kodsuz>FAT_EPS?`<br><b style="color:var(--amber)">Not:</b> bu urunun alimlarindan
@@ -41183,9 +41288,11 @@ function fatOzelRender(ilk){
    tustan sonraki DOM guncellemesini besliyor (fatKodBtnGuncelle). */
 function fatKodBtnDurum(key){
   const st=_FAT; if(!st) return {sinif:'',aktif:false,metin:''};
-  const q=fatSayi(st.qty[key]);
+  return fatKodBtnBilgi(fatSayi(st.qty[key]),fatFormPay(key));
+}
+function fatKodBtnBilgi(q,pay){
   if(!(q>0)) return {sinif:'', aktif:false, metin:'Miktar girilince yerlesim kodu secilebilir'};
-  const d=fatPayDurumu(key), pay=fatFormPay(key);
+  const d=fatPayDurumHesap(q,pay);
   if(d.durum==='yok') return {sinif:'', aktif:true, metin:'Hangi yerlesim icin? - kod sec'};
   if(d.durum==='tam') return {sinif:'dolu', aktif:true,
     metin:pay.slice(0,2).map(x=>x.kod+': '+fmtNum(x.qty)).join(' · ')+(pay.length>2?' +'+(pay.length-2):'')};
@@ -41367,7 +41474,7 @@ async function fatKaydet(kesin){
         sorunlar.push(`${u.ad||u.code||'urun'}: kod kirilimi ${fmtNum(pt)}, satir miktari ${fmtNum(q)}`);
         if(kesin) return;
       }
-      const kt=new Map(fatKodTablosu(u,st.editId||'',st.companyId||'').map(x=>[fatKodAnahtar(x.kod),x]));
+      const kt=new Map(fatKodTablosu(u,st.editId||'',st.companyId||'',u.bagli?st.nihaiId:'').map(x=>[fatKodAnahtar(x.kod),x]));
       let kodSorunu=false;
       pay.forEach(x=>{
         const e=kt.get(fatKodAnahtar(x.kod));
