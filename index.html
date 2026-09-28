@@ -1036,6 +1036,15 @@ main{flex:1;padding:clamp(16px,2vw,28px);max-width:1600px;width:100%;margin:0 au
 .nord-prod-txt{min-width:0;flex:1;display:flex;flex-direction:column;gap:3px}
 .nord-prod-txt b{font-size:13px;overflow-wrap:break-word}
 .nord-prod-txt>span{font-size:11px;color:var(--mute);font-family:var(--mono);overflow-wrap:break-word}
+/* urunu yerinde degistirme: arama kutusu urun adinin yerinde, eski urun altinda kucuk not */
+.nord-act{display:flex;flex-direction:column;align-items:center;gap:6px}
+.nord-act .mini-btn.on{color:var(--amber);border-color:var(--amber)}
+.nord-degis{display:flex;flex-direction:column;gap:5px;min-width:0}
+.nord-row .nord-degis .ac-wrap{flex-wrap:nowrap}
+.nord-row .nord-degis .ac-wrap input{border-color:var(--amber)}
+.nord-degis-eski{font-size:11px;color:var(--mute);overflow-wrap:anywhere}
+.nord-degis-eski b{color:var(--ink);font-weight:600}
+.nord-degis-eski span{font-family:var(--mono)}
 .nord-thumb{width:30px;height:30px;border-radius:6px;object-fit:contain;background:#fff;flex-shrink:0}
 .nord-tags{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:1px}
 .nord-tags .cat-tag{font-size:9px;padding:2px 6px}
@@ -31507,21 +31516,41 @@ function nordAdd(){ NORD.lines.push(_nordEmptyLine()); nordRenderLines();
   setTimeout(()=>{ const rows=document.querySelectorAll('#nordLinesWrap .nord-row:not(.nord-row-head)'); const last=rows[rows.length-1]; const inp=last&&last.querySelector('.ac-wrap input'); if(inp)inp.click(); },0); }
 function nordRm(i){ NORD.lines.splice(i,1); if(!NORD.lines.length)NORD.lines.push(_nordEmptyLine()); nordRenderLines(); }
 function nordClear(){ if(NORD.lines.some(l=>nordLineOk(l)||l.raw) && !confirm('Tum satirlar silinsin mi?'))return; NORD.lines=[_nordEmptyLine()]; nordRenderLines(); }
+/* URUNU YERINDE DEGISTIR: eslesmis satirin urunu, satir silinip yeniden eklenmeden (sira,
+   miktar, lokasyon, tedarik ve ozel kod kirilimi korunarak) degistirilir. Eskiden urun adina
+   tiklaninca arama GIZLI (display:none) bir kutuya baglaniyordu - olcusu sifir oldugu icin
+   acilir liste ekranin sol ust kosesinde cikiyordu. Artik satir "degistirme" haline gecer:
+   arama kutusu urun adinin yerinde gorunur, liste onun altinda acilir. Satir index ile degil
+   NESNE ile tutulur - surukle-birak / satir silme index'i kaydirsa da yanlis satira gecmez. */
+let _NORD_DEGIS=null;
+function nordDegis(i){ _NORD_DEGIS=NORD.lines[i]||null; nordRenderLines(); setTimeout(()=>nordAc(i),0); }
+function nordDegisIptal(){ if(!_NORD_DEGIS) return; _NORD_DEGIS=null; acClose(); nordRenderLines(); }
+// kutudan cikilinca (liste secimsiz kapandiysa) satir eski haline doner. Gecikme: listeden
+// secim mousedown'da olur ve _NORD_DEGIS'i zaten sifirlar - o durumda burasi bir sey yapmaz.
+// Liste hala bu kutuya bagliysa (orn. listenin kaydirma cubuguna basildi) iptal edilmez.
+function nordDegisBlur(i){ const l=NORD.lines[i], el=document.getElementById('nord_ad_'+i);
+  setTimeout(()=>{ if(_NORD_DEGIS&&_NORD_DEGIS===l&&!(AC.el&&AC.el===el)) nordDegisIptal(); },150); }
 function nordAc(i){
   const el=document.getElementById('nord_ad_'+i); if(!el)return;
-  el.removeAttribute('readonly'); el.value=NORD.lines[i].raw||''; el.focus(); el.select();
+  const degis=!!_NORD_DEGIS&&_NORD_DEGIS===NORD.lines[i];
+  // degistirme kutusunda yazilmis metin yeniden acilista silinmez
+  el.removeAttribute('readonly'); if(!degis) el.value=NORD.lines[i].raw||''; el.focus(); el.select();
   // ATAMA modunda arama KAYNAK binanin sartnamesinde yapilir; normal modda bu binada.
   acOpen(el, nordAtama()?nordAtamaSrc():nordSpecSrc(), (it,isNew)=>{
+    _NORD_DEGIS=null;   // hangi dal calisirsa calissin satir degistirme halinden cikar
     if(isNew){ nordRenderLines(); return; }
     // atama: satira dogrudan yazilmaz - once hedef binada karsilik kalem acilir/bulunur
     if(it.atama){ nordRenderLines(); nordAtamaBind(i,it.srcSpecId); return; }
     // baska binada tanimli urun: satira YAZILMAZ, once bu binadaki bir kaleme baglanir
     if(it.xbina){ nordRenderLines(); nordXbinaOpen(i,it.srcSpecId); return; }
-    // urun degistirilse de miktar/lokasyon gibi satira ozel tedarik kaynagi da korunur
+    // urun degistirilse de miktar/lokasyon gibi satira ozel tedarik kaynagi da korunur.
+    // Ozel kod kirilimi de satirin kendi kunyesidir (bina degisiminde de tasinir) - korunur;
+    // yeni urunde daha once kullanilmis bir kod varsa tekrar kontrolu kaydi zaten engeller.
     const keepQty=NORD.lines[i].qty, keepLok=NORD.lines[i].lokId;
     const keepTedB=NORD.lines[i].tedarikBina||'', keepTedS=NORD.lines[i].tedarikSart||'';
     const keepTedP=(NORD.lines[i].tedarikPay||[]).map(p=>({...p}));
-    NORD.lines[i]={specId:it.specId,altId:it.altId||'',refSpecId:'',code:it.code,ad:it.ad,cat:it.cat,unit:it.unit,grup:it.grup||'',img:it.img||null,brand:it.brand||'',qty:keepQty,lokId:keepLok,raw:'',tedarikBina:keepTedB,tedarikSart:keepTedS,tedarikPay:keepTedP};
+    const keepOzel=(NORD.lines[i].ozelPay||[]).map(p=>({...p}));
+    NORD.lines[i]={specId:it.specId,altId:it.altId||'',refSpecId:'',code:it.code,ad:it.ad,cat:it.cat,unit:it.unit,grup:it.grup||'',img:it.img||null,brand:it.brand||'',qty:keepQty,lokId:keepLok,raw:'',tedarikBina:keepTedB,tedarikSart:keepTedS,tedarikPay:keepTedP,ozelPay:keepOzel};
     const dupKey=nordDupKey(NORD.lines[i]);
     if(dupKey && NORD.lines.some((l,j)=>j!==i && nordDupKey(l)===dupKey)) toast('Bu urun listede baska bir satirda da var - mukerrer eklendi','err');
     // ayni urunun bu sartnamede birden fazla (ozel kodlu) kalemi varsa kullanici bunu
@@ -31611,11 +31640,16 @@ function nordLinesHtml(){
         ${l.grup?`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(l.grup)}</span>`:''}
         ${l.cat?`<span class="cat-tag" style="background:var(--dim)33;color:var(--mute)">${esc(l.cat)}</span>`:''}
         ${dupBadge}${status}</div>`:'';
-    const prodCell=ok
-      ?`<div class="nord-prod" onclick="nordAc(${i})" title="Degistirmek icin tiklayin">
+    const degis=ok&&_NORD_DEGIS===l;
+    const prodCell=degis
+      ?`<div class="nord-degis">
+          <div class="ac-wrap"><input id="nord_ad_${i}" placeholder="Yeni urunu ara - ozel no, spek no veya ad..." autocomplete="off" onclick="if(AC.el!==this)nordAc(${i})" onblur="nordDegisBlur(${i})" onkeydown="if(event.key==='Escape')nordDegisIptal()">
+            <button type="button" class="mini-btn" onmousedown="event.preventDefault()" onclick="nordDegisIptal()" title="Vazgec - urun degismez">&times;</button></div>
+          <div class="nord-degis-eski">Su anki: <b>${esc(l.ad)}</b>${l.code?` <span>${esc(l.code)}</span>`:''} · miktar, lokasyon, tedarik ve ozel kod korunur</div></div>`
+      :ok
+      ?`<div class="nord-prod" onclick="nordDegis(${i})" title="Urunu degistirmek icin tiklayin">
           ${l.img?`<img src="${l.img}" class="nord-thumb">`:''}
-          <div class="nord-prod-txt"><b>${esc(l.ad)}</b><span>${esc([l.code,l.brand].filter(Boolean).join(' · '))}</span>${tags}</div></div>
-       <div class="ac-wrap" style="display:none"><input id="nord_ad_${i}"></div>`
+          <div class="nord-prod-txt"><b>${esc(l.ad)}</b><span>${esc([l.code,l.brand].filter(Boolean).join(' · '))}</span>${tags}</div></div>`
       :`<div class="ac-wrap"><input id="nord_ad_${i}" placeholder="${l.dagitKey?'Bu urun birden fazla kaleme dagitilacak':l.raw?'Eslesme bulunamadi - urun secin':(nordSartOzet()?esc(nordSartOzet())+' icinde ara...':'Ozel no, spek no veya ad ara...')}" value="${esc(l.raw||'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" onclick="nordAc(${i})" style="cursor:pointer${l.raw?';border-color:var(--red)66':''}">${status}</div>`;
     // parcali giris binasinda satir opsiyonel olarak bir lokasyona baglanabilir (toplu alimlar lokasyonsuz girilebilir)
     /* LOKASYON: satirda ozel kod kirilimi varsa lokasyon KIRILIMDAN gelir - kodlarin
@@ -31660,7 +31694,10 @@ function nordLinesHtml(){
       <span class="nord-idx t-meta">${i+1}</span>
       <div class="nord-prod-col">${prodCell}${yerineSel}${dagitSel}${ctlStrip}</div>
       <div class="nord-qty-col"><input type="number" step="any" min="0" placeholder="0" value="${esc(l.qty)}" oninput="nordUpd(${i},'qty',this.value)">${ok&&l.unit?`<span class="nord-unit">${esc(l.unit)}</span>`:''}</div>
-      <button class="mini-btn del" onclick="nordRm(${i})">${icoTrash()}</button>
+      <div class="nord-act">
+        ${ok?`<button class="mini-btn${degis?' on':''}" onmousedown="event.preventDefault()" onclick="${degis?'nordDegisIptal()':`nordDegis(${i})`}" title="${degis?'Vazgec':'Urunu degistir - satir yerinde kalir, miktar/lokasyon/tedarik/ozel kod korunur'}">${icoPencilSm()}</button>`:''}
+        <button class="mini-btn del" onclick="nordRm(${i})" title="Satiri sil">${icoTrash()}</button>
+      </div>
     </div>`;
   }).join('');
   return `<div class="nord-row nord-row-head"><span></span><span class="t-meta">#</span><span class="t-meta">Urun</span><span class="t-meta" style="text-align:right">Miktar</span><span></span></div>${rows}`;
