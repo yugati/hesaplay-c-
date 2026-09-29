@@ -1922,6 +1922,37 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 /* TAM EKRAN: arac cubugu + tuval tum pencereyi kaplar (Esc ile cikilir) */
 .floww-work.full{position:fixed;inset:0;z-index:95;background:var(--bg);padding:max(12px,env(safe-area-inset-top,0px)) 16px max(12px,env(safe-area-inset-bottom,0px));display:flex;flex-direction:column}
 .floww-work.full .floww-wrap{flex:1;height:auto;min-height:0}
+/* coklu secim + tuvalde baglanti kurma */
+.floww-node.msel{outline:2px dashed var(--blue);outline-offset:3px}
+.floww-node.bag-ok{border-color:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 30%,transparent)}
+.floww-node.bag-no{border-color:var(--red);box-shadow:0 0 0 3px color-mix(in srgb,var(--red) 25%,transparent);cursor:not-allowed}
+.fw-port{position:absolute;width:12px;height:12px;border-radius:50%;background:var(--panel);border:2px solid var(--dim);cursor:crosshair;z-index:3;transition:transform .1s,border-color .1s,background .1s}
+.fw-port:hover{border-color:var(--green);background:color-mix(in srgb,var(--green) 25%,var(--panel));transform:scale(1.4)}
+#flowTmp{z-index:4}
+.fw-edge-hit{pointer-events:stroke;cursor:pointer;stroke:transparent;stroke-width:12;fill:none}
+.fw-edge-hit:hover{stroke:color-mix(in srgb,var(--red) 28%,transparent)}
+.fw-bagmenu{position:absolute;z-index:8;width:300px;max-width:calc(100% - 16px);background:var(--panel);border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow-md);padding:5px;display:flex;flex-direction:column;gap:2px;cursor:default}
+.fw-bagmenu-bas{font-size:11px;font-family:var(--mono);color:var(--mute);padding:6px 9px 4px;word-break:break-word}
+.fw-bagmenu button{text-align:left;border:none;background:none;color:var(--ink);padding:8px 9px;border-radius:8px;cursor:pointer;display:flex;flex-direction:column;gap:2px;font:inherit}
+.fw-bagmenu button:hover{background:var(--hover)}
+.fw-bagmenu button b{font-size:12.5px}
+.fw-bagmenu button span{font-size:11px;color:var(--mute);line-height:1.4}
+.fw-bagmenu button.iptal{color:var(--mute);font-size:12px}
+/* gruplar: dugumlerin arkasinda renkli cerceve; yalniz basligi tutulur */
+.floww-grp{position:absolute;border:1.5px dashed color-mix(in srgb,var(--gc) 60%,transparent);background:color-mix(in srgb,var(--gc) 6%,transparent);border-radius:14px;pointer-events:none}
+.floww-grp-bas{pointer-events:auto;position:absolute;left:0;top:0;right:0;height:28px;display:flex;align-items:center;gap:7px;padding:0 6px 0 12px;cursor:grab;border-radius:13px 13px 0 0;background:color-mix(in srgb,var(--gc) 14%,transparent);-webkit-user-select:none;user-select:none}
+.floww-grp-ad{font-size:12px;font-weight:800;color:var(--gc);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.floww-grp-n{font-size:10px;font-family:var(--mono);color:var(--mute);white-space:nowrap}
+.floww-grp-x{margin-left:auto;border:none;background:none;color:var(--mute);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px;border-radius:6px}
+.floww-grp-x:hover{color:var(--red);background:var(--hover)}
+.floww-kutu{position:absolute;border:1.5px solid var(--blue);background:color-mix(in srgb,var(--blue) 10%,transparent);pointer-events:none;z-index:6}
+.floww-mbar{position:absolute;left:50%;top:10px;transform:translateX(-50%);display:flex;align-items:center;gap:3px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:4px;box-shadow:var(--shadow-md);z-index:7;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 20px);cursor:default}
+.floww-mbar[hidden]{display:none}
+.floww-mbar button{border:none;background:none;color:var(--ink);font:inherit;font-size:12px;font-weight:700;padding:6px 9px;border-radius:7px;cursor:pointer;white-space:nowrap}
+.floww-mbar button:hover:not(:disabled){background:var(--hover)}
+.floww-mbar button:disabled{opacity:.4;cursor:default}
+.fmb-n{font-size:11.5px;color:var(--mute);padding:0 8px;font-family:var(--mono);white-space:nowrap}
+.fmb-ayr{width:1px;height:18px;background:var(--line)}
 /* idari dal (Sartname > Ozel No): fiziksel kirilimden sol serit ve zeminle ayrilir */
 .floww-node.srt{border-left:3px solid var(--cc)}
 .floww-node.srt.open{background:color-mix(in srgb,var(--cc) 8%,var(--panel))}
@@ -17392,7 +17423,7 @@ async function lokwGenKats(bina){
 let BINAYVIEW=localStorage.getItem('binayview')==='list'?'list':'flow'; // kullanicinin son secimi
 // exp: kat id -> sartname dali acik mi | expS: "katId|srId" -> ozel no dali acik mi.
 // Dallar LAZY'dir: kapali dal icin hic dugum uretilmez, kapaliyken tuval eskisiyle birebir ayni.
-let FLOWW={pan:{x:30,y:20},zoom:1,sel:null,moved:false,exp:{},expS:{}};
+let FLOWW={pan:{x:30,y:20},zoom:1,sel:null,moved:false,exp:{},expS:{},msel:new Set()};
 /* ===== AKIS GORUNUMU - IDARI DAL (Bina > Kat > Sartname > Ozel No) =====================
    Lokasyon agaci FIZIKSEL kirilimdir (Aks/Fragment/Oda); bunun yaninda kat dugumunden
    IDARI dal da acilir. flowKatSrt bir kat icin IKI BAGI birlikte dondurur:
@@ -17710,9 +17741,244 @@ function flowOffUygula(nodes){
   nodes.forEach(n=>{ const t=topla(n); n.x+=t[0]; n.y+=t[1]; });
 }
 function flowOffVar(){ return Object.keys(flowOff()).length>0; }
-function flowYerlesimSifirla(){
-  _FLOWOFF={}; flowOffYaz(); render(); setTimeout(flowFit,30);
-  toast('Akis yerlesimi varsayilana dondu');
+/* YERLESIM GECMISI (Ctrl+Z): surukleme, hizalama, gruplama ve otomatik hizalama oncesi
+   kayma + grup durumu saklanir. Yalniz GORUNUMU geri alir - baglanti (veri) degisiklikleri
+   kalicidir, onlar sag panelden / baglanti cizgisinden geri cozulur. */
+const FLOW_GECMIS=[];
+function flowGecmisKaydet(){
+  FLOW_GECMIS.push({k:flowPosKey(),s:JSON.stringify({off:flowOff(),grp:flowGrp()})});
+  if(FLOW_GECMIS.length>40) FLOW_GECMIS.shift();
+}
+function flowGeriAl(){
+  let g=FLOW_GECMIS.pop();
+  while(g&&g.k!==flowPosKey()) g=FLOW_GECMIS.pop(); // baska org/tasarinin adimi atlanir
+  if(!g){ toast('Geri alinacak yerlesim adimi yok'); return; }
+  const o=JSON.parse(g.s);
+  _FLOWOFF=o.off||{}; _FLOWOFF_KEY=flowPosKey(); _FLOWGRP=o.grp||[]; _FLOWGRP_KEY=flowGrpKey();
+  flowOffYaz(); flowGrpYaz(); render();
+}
+// OTOMATIK HIZALA: elle verilen tum kaymalar silinir, dugumler agac duzenine oturur (gruplar kalir)
+function flowOtoHizala(){
+  if(!flowOffVar()){ toast('Dugumler zaten otomatik yerlesimde'); return; }
+  flowGecmisKaydet(); _FLOWOFF={}; flowOffYaz(); render(); setTimeout(flowFit,30);
+  toast('Otomatik hizalandi - Ctrl+Z ile geri alinir');
+}
+// IZGARAYA OTURMA: surukleme 12px adimla ilerler (Alt basiliyken serbest)
+const FLOW_IZ=12;
+let FLOW_IZGARA=(()=>{ try{ return localStorage.getItem('flowIzgara')!=='0'; }catch(e){ return true; } })();
+function flowIzgaraDegis(){ FLOW_IZGARA=!FLOW_IZGARA; try{ localStorage.setItem('flowIzgara',FLOW_IZGARA?'1':'0'); }catch(e){} render(); }
+/* GRUPLAR: secilen dugumleri cerceveye alir (yalniz gorunum - veriye dokunmaz).
+   {id, ad, renk, uyeler:[dugum anahtari]}. Cerceve uyelerin o anki kapsamindan cizilir;
+   basligindan surukleyince tum uyeler alt dallariyla birlikte tasinir. Kapali dalda kalan
+   uye cizilmez ama gruptan dusmez - dal acilinca cerceve onu yine kapsar. */
+const FLOW_GRP_RENK=['var(--blue)','var(--green)','var(--violet)','var(--amber)','var(--red)'];
+function flowGrpKey(){ return 'flowGrp:'+(window.AKTIF_ORG||'-')+'|'+(window.AKTIF_TASARI||'-'); }
+let _FLOWGRP=null, _FLOWGRP_KEY=null;
+function flowGrp(){
+  const k=flowGrpKey();
+  if(_FLOWGRP&&_FLOWGRP_KEY===k) return _FLOWGRP;
+  let g=null; try{ g=JSON.parse(localStorage.getItem(k)||'null'); }catch(e){}
+  _FLOWGRP=Array.isArray(g)?g:[]; _FLOWGRP_KEY=k;
+  return _FLOWGRP;
+}
+function flowGrpYaz(){ try{ localStorage.setItem(flowGrpKey(),JSON.stringify(flowGrp())); }catch(e){ console.warn('Akis gruplari kaydedilemedi:',e); } }
+function flowGrpKutu(g,L){
+  const uy=g.uyeler.map(k=>L.byK[k]).filter(Boolean);
+  if(!uy.length) return null;
+  const bb=flowBBox(uy), P=14, BAS=28;
+  return {x:bb.x-P,y:bb.y-P-BAS,w:bb.w+2*P,h:bb.h+2*P+BAS,n:uy.length};
+}
+function flowGrpHtml(L){
+  return flowGrp().map(g=>{
+    const k=flowGrpKutu(g,L); if(!k) return '';
+    return `<div class="floww-grp" data-g="${esc(g.id)}" style="left:${k.x}px;top:${k.y}px;width:${k.w}px;height:${k.h}px;--gc:${g.renk}">
+      <div class="floww-grp-bas" ondblclick="event.stopPropagation();flowGrpAdlandir('${esc(g.id)}')" title="Surukle: grubu tasi · Cift tikla: yeniden adlandir">
+        <span class="floww-grp-ad">${esc(g.ad)}</span><span class="floww-grp-n">${k.n} dugum</span>
+        <button class="floww-grp-x" title="Grubu coz (dugumler yerinde kalir)" onclick="event.stopPropagation();flowGrpCoz('${esc(g.id)}')">×</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function flowGrupla(){
+  const uy=[...FLOWW.msel].filter(k=>FLOWW._L&&FLOWW._L.byK[k]);
+  if(!uy.length) return;
+  const gs=flowGrp();
+  const ad=prompt('Grup adi:','Grup '+(gs.length+1));
+  if(ad==null) return;
+  flowGecmisKaydet();
+  gs.push({id:'g'+Date.now().toString(36),ad:ad.trim()||('Grup '+(gs.length+1)),renk:FLOW_GRP_RENK[gs.length%FLOW_GRP_RENK.length],uyeler:uy});
+  flowGrpYaz(); FLOWW.msel.clear(); render();
+}
+function flowGrpAdlandir(id){
+  const g=flowGrp().find(x=>x.id===id); if(!g) return;
+  const ad=prompt('Grup adi:',g.ad); if(ad==null||!ad.trim()||ad.trim()===g.ad) return;
+  flowGecmisKaydet(); g.ad=ad.trim(); flowGrpYaz(); render();
+}
+function flowGrpCoz(id){
+  flowGecmisKaydet();
+  _FLOWGRP=flowGrp().filter(x=>x.id!==id); flowGrpYaz(); render();
+  toast('Grup cozuldu - Ctrl+Z ile geri alinir');
+}
+/* COKLU SECIM: Ctrl/Cmd + tik tek tek ekler/cikarir, Shift + bos alanda surukleme kutu
+   icindekileri secer. Secili dugumlerden biri suruklenince hepsi birlikte gider; ustteki
+   cubuktan gruplanir veya hizalanir. */
+function flowMselBarHtml(){
+  const n=FLOWW.msel.size; if(!n) return '';
+  return `<span class="fmb-n">${n} dugum secili</span>
+    <button onclick="flowGrupla()" title="Secili dugumleri cerceveye al">Grupla</button>
+    <span class="fmb-ayr"></span>
+    <button onclick="flowHizala('sol')" ${n<2?'disabled':''} title="Sol kenarlari hizala">Sola Hizala</button>
+    <button onclick="flowHizala('ust')" ${n<2?'disabled':''} title="Ust kenarlari hizala">Uste Hizala</button>
+    <button onclick="flowHizala('yatay')" ${n<3?'disabled':''} title="Yatayda esit aralikla diz">Yatay Dagit</button>
+    <button onclick="flowHizala('dikey')" ${n<3?'disabled':''} title="Dikeyde esit aralikla diz">Dikey Dagit</button>
+    <span class="fmb-ayr"></span>
+    <button onclick="flowMselTemizle()">Secimi Kaldir</button>`;
+}
+function flowMselDom(){
+  document.querySelectorAll('#flowInner .floww-node').forEach(el=>el.classList.toggle('msel',FLOWW.msel.has(el.dataset.k)));
+  const b=document.getElementById('flowMbar'); if(b){ b.innerHTML=flowMselBarHtml(); b.hidden=!FLOWW.msel.size; }
+}
+function flowMselDegis(k){ if(FLOWW.msel.has(k)) FLOWW.msel.delete(k); else FLOWW.msel.add(k); flowMselDom(); }
+function flowMselTemizle(){ FLOWW.msel.clear(); flowMselDom(); }
+// secili dugumleri hizala / esit aralikla diz. Her dugum alt daliyla birlikte kayar.
+function flowHizala(tur){
+  const L=FLOWW._L; if(!L) return;
+  const sec=[...FLOWW.msel].map(k=>L.byK[k]).filter(Boolean);
+  if(sec.length<2) return;
+  flowGecmisKaydet();
+  const off=flowOff();
+  const kay=(n,dx,dy)=>{
+    if(!dx&&!dy) return;
+    const o=off[n.k]||[0,0]; off[n.k]=[o[0]+dx,o[1]+dy];
+    // bellekteki yerler de guncellenir ki siradaki dugumun hesabi dogru olsun
+    const it=m=>{ m.x+=dx; m.y+=dy; m.kids.forEach(it); }; it(n);
+  };
+  if(tur==='sol'){ const x=Math.min(...sec.map(n=>n.x)); sec.forEach(n=>kay(n,x-n.x,0)); }
+  else if(tur==='ust'){ const y=Math.min(...sec.map(n=>n.y)); sec.forEach(n=>kay(n,0,y-n.y)); }
+  else {
+    const X=tur==='yatay', s=[...sec].sort((a,b)=>X?a.x-b.x:a.y-b.y), son=s[s.length-1];
+    const bas=X?s[0].x:s[0].y, bit=X?son.x+son.w:son.y+son.h;
+    const dolu=s.reduce((t,n)=>t+(X?n.w:n.h),0), ara=Math.max(10,(bit-bas-dolu)/(s.length-1));
+    let c=bas; s.forEach(n=>{ if(X) kay(n,c-n.x,0); else kay(n,0,c-n.y); c+=(X?n.w:n.h)+ara; });
+  }
+  flowOffYaz(); render();
+}
+function flowKutuSec(e){
+  const c=document.getElementById('flowCanvas'); if(!c||!FLOWW._L) return;
+  e.preventDefault();
+  const r=c.getBoundingClientRect(), sc=uiScale();
+  const nokta=ev=>({x:(ev.clientX-r.left)/sc,y:(ev.clientY-r.top)/sc});
+  const a=nokta(e); let b=a;
+  const kutu=document.createElement('div'); kutu.className='floww-kutu'; c.appendChild(kutu);
+  FLOWW.moved=false;
+  const ciz=()=>{ kutu.style.left=Math.min(a.x,b.x)+'px'; kutu.style.top=Math.min(a.y,b.y)+'px';
+    kutu.style.width=Math.abs(b.x-a.x)+'px'; kutu.style.height=Math.abs(b.y-a.y)+'px'; };
+  const mv=ev=>{ b=nokta(ev); if(Math.abs(b.x-a.x)+Math.abs(b.y-a.y)>4) FLOWW.moved=true; ciz(); };
+  const up=()=>{
+    window.removeEventListener('mousemove',mv); window.removeEventListener('mouseup',up);
+    kutu.remove(); if(!FLOWW.moved) return;
+    const d=p=>({x:(p.x-FLOWW.pan.x)/FLOWW.zoom,y:(p.y-FLOWW.pan.y)/FLOWW.zoom});
+    const p0=d({x:Math.min(a.x,b.x),y:Math.min(a.y,b.y)}), p1=d({x:Math.max(a.x,b.x),y:Math.max(a.y,b.y)});
+    FLOWW._L.nodes.forEach(n=>{ if(n.x<p1.x&&n.x+n.w>p0.x&&n.y<p1.y&&n.y+n.h>p0.y) FLOWW.msel.add(n.k); });
+    flowMselDom();
+  };
+  window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up);
+}
+// fare birakildiktan hemen sonra gelen click'i yut (surukleme / baglama tiklama sayilmasin)
+function flowKlikYut(){
+  const yut=ce=>{ ce.stopPropagation(); ce.preventDefault(); };
+  window.addEventListener('click',yut,{capture:true,once:true});
+  setTimeout(()=>window.removeEventListener('click',yut,{capture:true}),60);
+}
+/* ===== TUVALDE BAGLANTI KURMA: dallanma ve birlesme =======================================
+   Kaynak dugumun sagindaki porttan surukleyip hedef dugume birakilir. Bag GERCEK veridir:
+   hedefin ebeveyni degisir (proje_lokasyonlar). Kurallar sag paneldeki "Baska Parcaya Da
+   Bagla" ile ayni: seviye binanin kirilim zincirine uymali, dongu olusmamali, ayni ebeveyn
+   altinda ayni adli iki dugum olmamali.
+     Ek baglanti (BIRLESME): oda mevcut baglarini korur, yeni parcaya da baglanir - ayni
+       seviyede ve ayni katta ebeveynler arasinda (paylasimli oda, metraj tek dugumde).
+     Buraya tasi: tum eski baglar birakilir, dugum yalniz yeni ebeveynin altinda durur.
+   Kesikli yesil (paylasimli) bir baglanti cizgisine tiklamak o bagi koparir. */
+function flowBagKontrol(P,C){
+  if(!C||C.type!=='lok') return {ok:false,msg:'Yalnizca kat / aks / fragment / oda dugumune baglanabilir'};
+  const p=P.lok, c=C.lok;
+  if(p.bina!==c.bina) return {ok:false,msg:'Farkli binalarin dugumleri birbirine baglanamaz'};
+  if(!can('define',{bina:c.bina})) return {ok:false,msg:'Bu islem icin yetkiniz yok'};
+  if(!lokChildLevels(fwmLevels(c.bina),p.level).includes(c.level))
+    return {ok:false,msg:`${lokLevelLabel(c.level)}, ${lokLevelLabel(p.level)} altina baglanamaz (binanin kirilim zinciri)`};
+  if(lokSubtreeIds(c.id).has(p.id)) return {ok:false,msg:'Dongu olusur: kaynak, hedefin alt dalinda'};
+  if(lokHasParent(c,p.id)) return {ok:false,msg:'Bu iki dugum zaten bagli'};
+  if(lokChildren(c.bina,p.id).some(x=>x.id!==c.id&&norm(x.name)===norm(c.name)))
+    return {ok:false,msg:`"${p.name}" altinda ayni adli bir ${lokLevelLabel(c.level).toLowerCase()} zaten var`};
+  const ilk=c.parentId?getLok(c.parentId):null, kc=lokKatOf(c.id), kp=lokKatOf(p.id);
+  return {ok:true,birlesme:!!(ilk&&ilk.level===p.level&&kc&&kp&&kc.id===kp.id)};
+}
+function flowPortHtml(n){
+  return `<span class="fw-port" data-k="${esc(n.k)}" style="left:${n.x+n.w-6}px;top:${n.y+n.h/2-6}px" title="Surukleyip baska bir dugume birakin: baglanti kur (dallanma / birlesme)"></span>`;
+}
+function flowBagStart(e,pk){
+  const L=FLOWW._L, P=L&&L.byK[pk]; if(!P||P.type!=='lok') return;
+  e.preventDefault(); e.stopPropagation();
+  const c=document.getElementById('flowCanvas'), svg=document.getElementById('flowTmp'); if(!c||!svg) return;
+  const r=c.getBoundingClientRect(), sc=uiScale(), x1=P.x+P.w, y1=P.y+P.h/2;
+  let hedef=null, hEl=null;
+  const birak=()=>{ if(hEl) hEl.classList.remove('bag-ok','bag-no'); hEl=null; hedef=null; };
+  const mv=ev=>{
+    const x2=((ev.clientX-r.left)/sc-FLOWW.pan.x)/FLOWW.zoom, y2=((ev.clientY-r.top)/sc-FLOWW.pan.y)/FLOWW.zoom;
+    const cc=Math.max(24,Math.abs(x2-x1)/2)*(x2>=x1?1:-1);
+    const nd=(document.elementFromPoint(ev.clientX,ev.clientY)||{closest:()=>null}).closest('.floww-node');
+    if(nd!==hEl){ birak();
+      if(nd&&nd.dataset.k!==pk){ const C=L.byK[nd.dataset.k], k=flowBagKontrol(P,C); hEl=nd; hedef={C,k}; nd.classList.add(k.ok?'bag-ok':'bag-no'); } }
+    const col=hedef?(hedef.k.ok?'var(--green)':'var(--red)'):'var(--dim)';
+    svg.innerHTML=`<path d="M${x1} ${y1} C${x1+cc} ${y1}, ${x2-cc} ${y2}, ${x2} ${y2}" fill="none" stroke="${col}" stroke-width="2" stroke-dasharray="6 4"/>`;
+  };
+  const up=ev=>{
+    window.removeEventListener('mousemove',mv); window.removeEventListener('mouseup',up);
+    svg.innerHTML=''; const h=hedef; birak(); flowKlikYut();
+    if(!h) return;
+    if(!h.k.ok){ toast(h.k.msg,'err'); return; }
+    flowBagMenu(ev,P.lok,h.C.lok,h.k.birlesme);
+  };
+  window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up);
+}
+function flowBagMenuKapat(){ const m=document.getElementById('flowBagMenu'); if(m) m.remove(); }
+function flowBagMenu(ev,p,c,birlesme){
+  const cv=document.getElementById('flowCanvas'); if(!cv) return;
+  flowBagMenuKapat();
+  const r=cv.getBoundingClientRect(), sc=uiScale();
+  const m=document.createElement('div'); m.className='fw-bagmenu'; m.id='flowBagMenu';
+  m.style.left=Math.min((ev.clientX-r.left)/sc,cv.clientWidth-310)+'px';
+  m.style.top=Math.min((ev.clientY-r.top)/sc,cv.clientHeight-190)+'px';
+  const eski=lokParentIds(c).map(x=>{ const l=x?getLok(x):null; return l?l.name:c.bina; }).join(' + ');
+  m.innerHTML=`<div class="fw-bagmenu-bas">${esc(p.name)} → ${esc(c.name)}</div>
+    ${birlesme?`<button onclick="flowBagUygula('${esc(p.id)}','${esc(c.id)}','ek')"><b>Ek baglanti (birlesme)</b><span>${esc(c.name)} ${esc(eski)} baglarini korur, ${esc(p.name)} altina da baglanir. Metraj tek dugumde kalir.</span></button>`:''}
+    <button onclick="flowBagUygula('${esc(p.id)}','${esc(c.id)}','tasi')"><b>Buraya tasi</b><span>${esc(eski)} bagi birakilir; ${esc(c.name)} alt daliyla birlikte yalniz ${esc(p.name)} altinda durur.</span></button>
+    <button class="iptal" onclick="flowBagMenuKapat()">Vazgec</button>`;
+  cv.appendChild(m);
+}
+async function flowBagUygula(pid,cid,tur){
+  flowBagMenuKapat();
+  const p=getLok(pid), c=getLok(cid); if(!p||!c) return;
+  if(!guard('define',{bina:c.bina})) return;
+  const k=flowBagKontrol({lok:p},{type:'lok',lok:c});
+  if(!k.ok){ toast(k.msg,'err'); return; }
+  try{
+    if(tur==='ek'){
+      if(!k.birlesme){ toast('Ek baglanti yalniz ayni kattaki ayni seviye parcalar arasinda kurulur','err'); return; }
+      await lokLinkParent(cid,pid);
+      logAction('define','Lokasyon ek parcaya baglandi (akis tuvali): '+c.bina+' / '+c.name+' <- '+p.name);
+      toast('Baglandi - '+c.name+' artik '+lokParentIds(getLok(cid)).length+' parcaya bagli');
+    } else {
+      const eski=lokParentIds(c).map(x=>{ const l=x?getLok(x):null; return l?l.name:c.bina; }).join(' + ');
+      c.parentId=pid; delete c.parentIds;
+      await sbUpdateProjeLokasyon(cid,{...c});
+      // kayma eski ebeveyne gore tutuluyordu - dugum yeni yerinde agac duzenine otursun
+      const off=flowOff(); if(off[cid]){ delete off[cid]; flowOffYaz(); }
+      logAction('define','Lokasyon tasindi (akis tuvali): '+c.bina+' / '+c.name+': '+eski+' -> '+p.name);
+      toast(c.name+' → '+p.name+' altina tasindi');
+    }
+  }catch(err){ console.error(err); toast('Baglanti kaydedilemedi: '+(err&&err.message||err),'err'); }
+  FLOWW.sel=cid; render();
 }
 // dugum kutularinin kapsadigi alan (surukleme eksiye de tasiyabilir)
 function flowBBox(nodes){
@@ -17741,27 +18007,44 @@ function flowEdgesHtml(edges){
   return edges.map(e=>{
     // paylasimli dugumun baglantilari (ayni oda birden fazla fragmentte) kesikli ve renkli
     const col=e.shared?'var(--green)':e.idari?'color-mix(in srgb,var(--amber) 55%,transparent)':'var(--line)';
-    return `<path d="${flowEdgePath(e)}" fill="none" stroke="${col}" stroke-width="${e.shared?2:1.5}"${e.shared?' stroke-dasharray="5 4"':''}/>`;
+    const d=flowEdgePath(e);
+    // paylasimli bag tiklanarak koparilabilir (onay sorulur; son bag koparilamaz)
+    const kop=e.shared&&e.a.type==='lok'&&can('define',{bina:e.b.lok.bina})
+      ?`<path class="fw-edge-hit" d="${d}" onclick="event.stopPropagation();flowUnlinkParent('${esc(e.b.lok.id)}','${esc(e.a.lok.id)}')"><title>${esc(e.a.lok.name)} → ${esc(e.b.lok.name)} bagini koparmak icin tiklayin</title></path>`:'';
+    return `<path d="${d}" fill="none" stroke="${col}" stroke-width="${e.shared?2:1.5}"${e.shared?' stroke-dasharray="5 4"':''}/>${kop}`;
   }).join('');
 }
-// surukleme: tutulan dugum (+ Shift yoksa alt dali) fareyi izler, kenarlar her karede
-// yeniden cizilir. Birakinca kayma kaydedilir; kisa tiklama (4px alti) normal tiklamadir.
-function flowNodeDragStart(e,el){
-  const L=FLOWW._L; if(!L) return;
-  const n=L.byK[el.dataset.k]; if(!n) return;
+/* SURUKLEME: kok dugumler (tek dugum, coklu secim ya da bir grubun uyeleri) + tek=false ise
+   alt dallari fareyi izler; kenarlar, portlar ve grup cerceveleri her karede yeniden cizilir.
+   Birakinca kayma kaydedilir; kisa tiklama (4px alti) normal tiklamadir.
+   Kayit kurali (her durumda ayni): tasinan her dugumun kaymasina +d, her cocuguna -d
+   eklenir. Tasinan cocukta ikisi birbirini goturur (ebeveyniyle gelir); tasinmayan cocuk
+   ebeveyninin +d'sini kendi -d'siyle dengeler, yerinde kalir. */
+function flowTasi(e,kokler,tek){
+  const L=FLOWW._L; if(!L||!kokler.length) return;
   e.preventDefault();
-  const tek=e.shiftKey, set=[];
-  const topla=m=>{ set.push(m); if(!tek) m.kids.forEach(topla); };
-  topla(n);
-  const inner=document.getElementById('flowInner'), svg=inner&&inner.querySelector('.floww-edges');
-  const els={}; set.forEach(m=>{ els[m.k]=inner.querySelector(`.floww-node[data-k="${CSS.escape(m.k)}"]`); m._x=m.x; m._y=m.y; });
-  const sx=e.clientX, sy=e.clientY, oran=uiScale()*FLOWW.zoom;
+  const set=new Map();
+  const topla=m=>{ if(set.has(m.k)) return; set.set(m.k,m); if(!tek) m.kids.forEach(topla); };
+  kokler.forEach(topla);
+  const inner=document.getElementById('flowInner'); if(!inner) return;
+  const svg=inner.querySelector('.floww-edges'), grpKat=document.getElementById('flowGrps');
+  const els={}, ports={};
+  set.forEach(m=>{ const q=CSS.escape(m.k);
+    els[m.k]=inner.querySelector(`.floww-node[data-k="${q}"]`); ports[m.k]=inner.querySelector(`.fw-port[data-k="${q}"]`);
+    m._x=m.x; m._y=m.y; });
+  const bas=kokler[0], sx=e.clientX, sy=e.clientY, oran=uiScale()*FLOWW.zoom;
   let dx=0, dy=0, oynadi=false, kare=0;
   const ciz=()=>{ kare=0;
-    set.forEach(m=>{ m.x=m._x+dx; m.y=m._y+dy; const x=els[m.k]; if(x){ x.style.left=m.x+'px'; x.style.top=m.y+'px'; } });
-    if(svg) svg.innerHTML=flowEdgesHtml(L.edges); };
+    set.forEach(m=>{ m.x=m._x+dx; m.y=m._y+dy;
+      const x=els[m.k]; if(x){ x.style.left=m.x+'px'; x.style.top=m.y+'px'; }
+      const p=ports[m.k]; if(p){ p.style.left=(m.x+m.w-6)+'px'; p.style.top=(m.y+m.h/2-6)+'px'; } });
+    if(svg) svg.innerHTML=flowEdgesHtml(L.edges);
+    if(grpKat) grpKat.innerHTML=flowGrpHtml(L);
+  };
   const mv=ev=>{
     dx=(ev.clientX-sx)/oran; dy=(ev.clientY-sy)/oran;
+    // izgara: ilk kokun sol ust kosesi 12px adima oturur (Alt: serbest)
+    if(FLOW_IZGARA&&!ev.altKey){ dx=Math.round((bas._x+dx)/FLOW_IZ)*FLOW_IZ-bas._x; dy=Math.round((bas._y+dy)/FLOW_IZ)*FLOW_IZ-bas._y; }
     if(!oynadi&&Math.abs(ev.clientX-sx)+Math.abs(ev.clientY-sy)>4){ oynadi=true; set.forEach(m=>{ const x=els[m.k]; if(x) x.classList.add('drag'); }); }
     if(oynadi&&!kare) kare=requestAnimationFrame(ciz);
   };
@@ -17770,15 +18053,12 @@ function flowNodeDragStart(e,el){
     if(kare) cancelAnimationFrame(kare);
     if(!oynadi) return;
     ciz(); set.forEach(m=>{ const x=els[m.k]; if(x) x.classList.remove('drag'); });
-    const off=flowOff(), ekle=(k,sx_,sy_)=>{ const o=off[k]||[0,0]; off[k]=[o[0]+sx_,o[1]+sy_]; };
-    ekle(n.k,dx,dy);
-    if(tek) n.kids.forEach(c=>ekle(c.k,-dx,-dy)); // cocuklar yerinde kalsin
+    if(!dx&&!dy) { flowKlikYut(); return; }
+    flowGecmisKaydet();
+    const off=flowOff(), ekle=(k,a,b)=>{ const o=off[k]||[0,0]; off[k]=[o[0]+a,o[1]+b]; };
+    set.forEach(m=>{ ekle(m.k,dx,dy); m.kids.forEach(c=>ekle(c.k,-dx,-dy)); });
     flowOffYaz();
-    const rb=document.getElementById('flowResetBtn'); if(rb) rb.hidden=!flowOffVar();
-    // birakis ardindan gelen click dugumu secmesin / dal acmasin
-    const yut=ce=>{ ce.stopPropagation(); ce.preventDefault(); };
-    window.addEventListener('click',yut,{capture:true,once:true});
-    setTimeout(()=>window.removeEventListener('click',yut,{capture:true}),60);
+    flowKlikYut(); // birakis ardindan gelen click dugumu secmesin / dal acmasin
   };
   window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up);
 }
@@ -17789,8 +18069,16 @@ function flowTamEkran(v){
 }
 function flowPanelGizle(){ FLOWW.panelKapali=!FLOWW.panelKapali; render(); }
 window.addEventListener('keydown',e=>{
-  // acik bir pencere varsa Esc once onu kapatir; tam ekran ancak ondan sonra biter
-  if(e.key==='Escape'&&FLOWW.full&&!document.querySelector('.modal-bg')&&document.getElementById('flowCanvas')) flowTamEkran(false);
+  if(!document.getElementById('flowCanvas')||document.querySelector('.modal-bg')) return;
+  const yaz=e.target&&e.target.closest&&e.target.closest('input,textarea,select,[contenteditable]');
+  // Ctrl/Cmd+Z: yerlesim adimini geri al (yazi kutusundayken metnin kendi geri almasi kalir)
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='z'||e.key==='Z')&&!yaz){ e.preventDefault(); flowGeriAl(); return; }
+  // Esc sirasi: baglanti menusu > coklu secim > tam ekran
+  if(e.key==='Escape'){
+    if(document.getElementById('flowBagMenu')){ flowBagMenuKapat(); return; }
+    if(FLOWW.msel.size){ flowMselTemizle(); return; }
+    if(FLOWW.full) flowTamEkran(false);
+  }
 });
 function renderBinaFlow(){
   if(fwmMobil()) return renderBinaFlowMobil(); // telefonda tuval yerine katmanli gezgin (asagida)
@@ -17802,11 +18090,14 @@ function renderBinaFlow(){
   const edgeHtml=flowEdgesHtml(edges);
   const bb=flowBBox(nodes), W=Math.max(1,bb.x+bb.w+60), H=Math.max(1,bb.y+bb.h+30);
   // her dugum kutusuna kimligi (data-k) eklenir: surukleme dugumu bu anahtarla bulur
-  const nodeHtml=nodes.map(n=>flowNodeHtml(n).replace('<div class="floww-node',`<div data-k="${esc(n.k)}" class="floww-node`)).join('');
-  const full=!!FLOWW.full, panel=!FLOWW.panelKapali;
+  [...FLOWW.msel].forEach(k=>{ if(!byK[k]) FLOWW.msel.delete(k); }); // kapanan/silinen dugum secimden duser
+  const nodeHtml=nodes.map(n=>flowNodeHtml(n).replace('<div class="floww-node',`<div data-k="${esc(n.k)}" class="floww-node${FLOWW.msel.has(n.k)?' msel':''}`)).join('');
+  // baglanti portu: altina dugum baglanabilen lokasyon dugumleri (tanim yetkisi olana)
+  const portHtml=nodes.filter(n=>n.type==='lok'&&lokChildLevels(fwmLevels(n.lok.bina),n.lok.level).length&&can('define',{bina:n.lok.bina})).map(flowPortHtml).join('');
+  const full=!!FLOWW.full, panel=!FLOWW.panelKapali, ds=24*FLOWW.zoom;
   return `<div class="sel-wrap floww-work ${full?'full':''}" style="max-width:none">
     ${full?'':`<div class="sel-bc"><button onclick="closeBinalarYonetim()">${icoArr('left')} Bina Secimine Don</button></div>
-    <div class="sel-head" style="margin-bottom:14px"><h2>Binalar — Akis Gorunumu</h2><p>Tum binalar ve kirilimlari tek tuvalde. Dugumleri tutup istediginiz yere surukleyin - baglantilar takip eder, alt dal birlikte gelir (Shift: yalniz o dugum). Bos alani surukleyerek kaydirin, tekerlekle yakinlastirin.</p></div>`}
+    <div class="sel-head" style="margin-bottom:14px"><h2>Binalar — Akis Gorunumu</h2><p>Sinirsiz calisma tuvali. Dugumleri surukleyin (alt dal birlikte gelir, Shift: yalniz o dugum). Sagdaki porttan baska bir dugume cekerek baglanti kurun. Ctrl+tik / Shift+surukle ile coklu secip gruplayin veya hizalayin. Ctrl+Z yerlesimi geri alir.</p></div>`}
     <div class="floww-bar">
       <div class="def-sec-chips" style="flex:0 0 auto">
         <button class="def-sec-chip on" style="--cc:var(--amber)">Akis</button>
@@ -17818,7 +18109,9 @@ function renderBinaFlow(){
         <button title="Yakinlastir" onclick="flowZoom(1.25)">+</button>
       </div>
       <button class="btn btn-ghost" onclick="flowFit()">Sigdir</button>
-      <button class="btn btn-ghost" id="flowResetBtn" ${flowOffVar()?'':'hidden'} onclick="flowYerlesimSifirla()" title="Surukleyerek verdiginiz yerleri silip dugumleri varsayilan agac duzenine dondurur">Yerlesimi Sifirla</button>
+      <button class="btn btn-ghost" onclick="flowOtoHizala()" title="Elle verilen yerleri silip tum dugumleri agac duzenine oturtur (gruplar kalir, Ctrl+Z ile geri alinir)">Otomatik Hizala</button>
+      <button class="def-sec-chip ${FLOW_IZGARA?'on':''}" style="--cc:var(--blue)" onclick="flowIzgaraDegis()" title="Surukleme 12px izgaraya oturur (Alt basiliyken serbest)">Izgara</button>
+      <button class="btn btn-ghost" onclick="flowGeriAl()" title="Son yerlesim adimini geri al (Ctrl+Z)">Geri Al</button>
       <span style="flex:1"></span>
       ${can('define')?`<button class="btn btn-ghost" onclick="openBulkSetupModal()" title="Excel ile odalari toplu gir: oda no, oda adi, alan, Kategori 1 / 2 (istege bagli: oda ici ozel no'lu malzemeler)">${icoXls()} Toplu Kurulum</button>`:''}
       ${can('define')?`<button class="btn btn-ghost" onclick="openBulkUndoModal()" title="Bir toplu kurulumun ekledigi kat/oda/kalem/malzemeleri geri al (bagli kaydi olanlar silinmez)">${icoTrash()} Kurulumu Geri Al</button>`:''}
@@ -17828,11 +18121,15 @@ function renderBinaFlow(){
     </div>
     <div class="floww-wrap">
       <div class="floww-canvas" id="flowCanvas" onmousedown="flowPanStart(event)" onwheel="flowWheel(event)" onclick="flowCanvasClick(event)">
-        <div class="floww-dots"></div>
+        <div class="floww-dots" style="background-size:${ds}px ${ds}px;background-position:${FLOWW.pan.x}px ${FLOWW.pan.y}px"></div>
         <div class="floww-inner" id="flowInner" style="transform:translate(${FLOWW.pan.x}px,${FLOWW.pan.y}px) scale(${FLOWW.zoom})">
+          <div id="flowGrps">${flowGrpHtml(FLOWW._L)}</div>
           <svg class="floww-edges" width="${W}" height="${H}">${edgeHtml}</svg>
           ${nodeHtml}
+          ${portHtml}
+          <svg class="floww-edges" id="flowTmp" width="1" height="1"></svg>
         </div>
+        <div class="floww-mbar" id="flowMbar" ${FLOWW.msel.size?'':'hidden'}>${flowMselBarHtml()}</div>
         ${binas.length?'':`<div class="fw-empty"><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg><p>Henuz bina yok</p><span style="font-size:12px">"Bina Ekle" ile baslayin</span></div>`}
       </div>
       ${panel?`<div class="floww-side">${flowSidePanel()}</div>`:''}
@@ -18188,16 +18485,38 @@ window.addEventListener('resize',()=>{
 /* --- tuval etkilesimi: kaydirma + yakinlastirma (veri degismez, render gerekmez) --- */
 function flowApply(){
   const i=document.getElementById('flowInner'); if(i)i.style.transform=`translate(${FLOWW.pan.x}px,${FLOWW.pan.y}px) scale(${FLOWW.zoom})`;
+  // nokta deseni tuvalle birlikte kayar ve olceklenir - sinirsiz zemin hissi
+  const d=document.querySelector('#flowCanvas .floww-dots');
+  if(d){ const s=24*FLOWW.zoom; d.style.backgroundSize=s+'px '+s+'px'; d.style.backgroundPosition=FLOWW.pan.x+'px '+FLOWW.pan.y+'px'; }
   const z=document.getElementById('flowZoomPct'); if(z)z.textContent=Math.round(FLOWW.zoom*100)+'%';
 }
 function flowPanStart(e){
   if(e.button!==0)return;
+  // tuval ustundeki cubuk / menu kendi tiklamalarini yapar
+  if(e.target.closest('.floww-mbar,.fw-bagmenu,.fw-edge-hit'))return;
+  flowBagMenuKapat();
+  const L=FLOWW._L;
+  const port=e.target.closest('.fw-port');
+  if(port){ flowBagStart(e,port.dataset.k); return; }
+  const gb=e.target.closest('.floww-grp-bas');
+  if(gb){
+    if(e.target.closest('button'))return;
+    const g=flowGrp().find(x=>x.id===gb.parentNode.dataset.g);
+    if(g&&L) flowTasi(e,g.uyeler.map(k=>L.byK[k]).filter(Boolean),false);
+    return;
+  }
   const nd=e.target.closest('.floww-node');
   if(nd){
     // dugum icindeki dugme/rozet/kopyala tiklamasi surukleme baslatmaz
-    if(!e.target.closest('button,a,input,select,.copy-btn,.fw-sart.clk')) flowNodeDragStart(e,nd);
+    if(e.target.closest('button,a,input,select,.copy-btn,.fw-sart.clk')||!L)return;
+    if(e.ctrlKey||e.metaKey){ e.preventDefault(); flowMselDegis(nd.dataset.k); flowKlikYut(); return; }
+    const n=L.byK[nd.dataset.k]; if(!n)return;
+    // secili bir dugum tutulursa secimin tamami birlikte tasinir
+    const kokler=FLOWW.msel.has(n.k)&&FLOWW.msel.size>1?[...FLOWW.msel].map(k=>L.byK[k]).filter(Boolean):[n];
+    flowTasi(e,kokler,e.shiftKey);
     return;
   }
+  if(e.shiftKey){ flowKutuSec(e); return; }
   const c=document.getElementById('flowCanvas'); if(c)c.classList.add('panning');
   const sx=e.clientX,sy=e.clientY,ox=FLOWW.pan.x,oy=FLOWW.pan.y; FLOWW.moved=false;
   const mv=ev=>{ const sc=uiScale(), dx=(ev.clientX-sx)/sc,dy=(ev.clientY-sy)/sc;
@@ -18210,7 +18529,7 @@ function flowWheel(e){
   e.preventDefault();
   const c=document.getElementById('flowCanvas'); if(!c)return;
   const r=c.getBoundingClientRect(), sc=uiScale(), mx=(e.clientX-r.left)/sc, my=(e.clientY-r.top)/sc;
-  const nz=Math.min(2,Math.max(.3,FLOWW.zoom*(e.deltaY<0?1.12:1/1.12)));
+  const nz=Math.min(2.5,Math.max(.12,FLOWW.zoom*(e.deltaY<0?1.12:1/1.12)));
   FLOWW.pan.x=mx-(mx-FLOWW.pan.x)*(nz/FLOWW.zoom);
   FLOWW.pan.y=my-(my-FLOWW.pan.y)*(nz/FLOWW.zoom);
   FLOWW.zoom=nz; flowApply();
@@ -18218,7 +18537,7 @@ function flowWheel(e){
 function flowZoom(f){
   const c=document.getElementById('flowCanvas'); if(!c)return;
   const mx=c.clientWidth/2,my=c.clientHeight/2;
-  const nz=Math.min(2,Math.max(.3,FLOWW.zoom*f));
+  const nz=Math.min(2.5,Math.max(.12,FLOWW.zoom*f));
   FLOWW.pan.x=mx-(mx-FLOWW.pan.x)*(nz/FLOWW.zoom);
   FLOWW.pan.y=my-(my-FLOWW.pan.y)*(nz/FLOWW.zoom);
   FLOWW.zoom=nz; flowApply();
@@ -18229,14 +18548,14 @@ function flowFit(){
   // suruklenen dugumler eksi koordinata da gidebilir: sinir, dugumlerin gercek kapsamindan
   const bb=flowBBox(FLOWW._L.nodes), P=24;
   const W=bb.w+2*P, H=bb.h+2*P;
-  const z=Math.min(1.05,Math.max(.3,Math.min((c.clientWidth-24)/W,(c.clientHeight-24)/H)));
+  const z=Math.min(1.05,Math.max(.12,Math.min((c.clientWidth-24)/W,(c.clientHeight-24)/H)));
   FLOWW.zoom=z;
   FLOWW.pan={x:Math.max(12,(c.clientWidth-W*z)/2)-(bb.x-P)*z,y:Math.max(12,(c.clientHeight-H*z)/2)-(bb.y-P)*z};
   flowApply();
 }
 function flowCanvasClick(e){
-  if(FLOWW.moved||e.target.closest('.floww-node'))return;
-  FLOWW.sel=null; render();
+  if(FLOWW.moved||e.target.closest('.floww-node,.floww-mbar,.fw-bagmenu,.floww-grp-bas,.fw-port'))return;
+  FLOWW.sel=null; FLOWW.msel.clear(); render();
 }
 function flowSel(id){ FLOWW.sel=id; render(); }
 /* --- sag panel: secili dugumun tum islemleri --- */
@@ -18265,7 +18584,13 @@ function flowSidePanel(){
     <div class="fw-stat"><span>Pasif bina</span><b>${binas.filter(isBinaPasif).length}</b></div>
     <div class="fw-stat"><span>Lokasyon dugumu</span><b>${lokTotal}</b></div>
     <div class="fw-sec">Kisayollar</div>
-    <p class="fw-path" style="margin-bottom:0">Surukle: tuvali kaydir · Tekerlek: yakinlastir · Sigdir: tumunu goster.<br>Coklu ekleme: adlari virgulle ayirin. Seri: "Oda 1..8".</p>`;
+    <p class="fw-path" style="margin-bottom:0">Bos alani surukle: kaydir · Tekerlek: yakinlastir · Sigdir: tumunu goster<br>
+      Dugumu surukle: alt daliyla tasi · Shift+surukle: yalniz o dugum · Alt: izgarasiz<br>
+      Sagdaki port → hedef dugum: baglanti (ek bag = birlesme, ya da tasi)<br>
+      Kesikli yesil cizgiye tikla: paylasimli bagi kopar<br>
+      Ctrl+tik / Shift+bos alanda surukle: coklu secim → grupla, hizala, dagit<br>
+      Ctrl+Z: yerlesimi geri al · Esc: secim / tam ekran<br>
+      Coklu ekleme: adlari virgulle ayirin. Seri: "Oda 1..8".</p>`;
 }
 /* SARTNAME dugumu paneli: secili kat + sartname kesisimi. Tuvalde yalnizca kati BU kata
    atanmis kalemler dugum olarak cizildigi icin, panel farki acikca yazar - "kapsamda 150,
