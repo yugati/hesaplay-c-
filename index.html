@@ -5303,7 +5303,7 @@ let ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:'',tur:''}; //
 let ORDVIEW='orders'; // Tum Siparisler alt gorunumu: 'orders' (kesinlesmis) | 'drafts' (taslaklar) | 'mutabakat' (teslimat mutabakati)
 // Teslimat Mutabakati suzgecleri - ORDF'den BAGIMSIZ: sekmeler arasi geciste iki ekranin secimi birbirini bozmaz.
 // comp = orderCompany adi (Sirket suzgeciyle ayni kimlik), to bos = bugun, gor: 'urun' | 'belge', acik: acilan urun satirlari
-let TMUT={comp:'',from:'',to:'',bina:'',sec:'',sart:'',q:'',gor:'urun',acik:{}};
+let TMUT={comp:'',from:'',to:'',bina:'',sec:'',sart:'',ad:'',kod:'',gor:'urun',acik:{}};
 let SPECVIEW=localStorage.getItem('specview')==='list'?'list':'grid';     // sartname kalemleri gorunumu: 'grid' (kart) | 'list' (satir) - kullanicinin son secimi hatirlanir
 function setSpecView(v){ SPECVIEW=v; try{localStorage.setItem('specview',v);}catch(e){} render(); }
 /* SARTNAME ALIM DURUMU SUZGECI: '' (tumu) | 'alinmamis' | 'kismi' | 'tamam'
@@ -11679,10 +11679,24 @@ function tmutBitis(){ return TMUT.to||tutISO(Date.now()); }   // bos = bugun
 function tmutGun(iso){ const p=String(iso||'').split('-'); return p.length===3?`${p[2]}.${p[1]}.${p[0]}`:String(iso||''); }
 // 'acik' yalniz ayni listede anlamli: suzgec degisince acik satirlar kapanir (gorunum degisimi haric)
 function setTmutF(k,v){ TMUT[k]=v; if(k!=='gor') TMUT.acik={}; render(); }
-function clearTmutF(){ TMUT={...TMUT,from:'',to:'',bina:'',sec:'',sart:'',q:'',acik:{}}; render(); }
+function clearTmutF(){ clearTimeout(_TMUT_ARA_T); TMUT={...TMUT,from:'',to:'',bina:'',sec:'',sart:'',ad:'',kod:'',acik:{}}; render(); }
+// Malzeme adi / kod kutulari yazarken suzer (170 ms bekler); yeniden cizimden sonra imlec yerinde kalir
+let _TMUT_ARA_T=null;
+function tmutAra(el,k){
+  const id=el.id, p=el.selectionStart;
+  clearTimeout(_TMUT_ARA_T);
+  _TMUT_ARA_T=setTimeout(()=>{
+    const v=el.value.trim(); if(v===TMUT[k]) return;
+    const bizdeydi=document.activeElement===el;
+    TMUT[k]=v; TMUT.acik={}; render();
+    if(!bizdeydi) return;
+    const n=document.getElementById(id); if(!n||n===el) return;
+    n.focus(); try{ n.setSelectionRange(p,p); }catch(e){}
+  },170);
+}
 function tmutFiltreVar(){ return !!(TMUT.from||TMUT.to||tmutKapsamVar()); }
-// tarih mutabakatin kendi parametresidir; KAPSAMI daraltan yalniz bu dort suzgectir
-function tmutKapsamVar(){ return !!(TMUT.bina||TMUT.sec||TMUT.sart||TMUT.q); }
+// tarih mutabakatin kendi parametresidir; KAPSAMI daraltan yalniz bu bes suzgectir
+function tmutKapsamVar(){ return !!(TMUT.bina||TMUT.sec||TMUT.sart||TMUT.ad||TMUT.kod); }
 // Tum Siparisler suzgeciyle AYNI tarih hesabi: donem basi gun basindan, mutabakat tarihi gun sonuna (dahil)
 function tmutAralik(){
   const t1=TMUT.from?new Date(TMUT.from).getTime():-Infinity;
@@ -11707,16 +11721,30 @@ function tmutVergi(c){ return c?[c.vergiDairesi?c.vergiDairesi+' V.D.':'',c.verg
 function tmutSatirUygun(l,o){
   if(TMUT.sec){ const sp=orderLineSpec(l); if(!sp||(sp.cat||'')!==TMUT.sec) return false; }
   if(TMUT.sart && (l.grup||o.grup||'')!==TMUT.sart) return false;
-  if(TMUT.q){ const q=norm(TMUT.q).replace(/\s+/g,'');
-    // mutabakatta bulanik (harf sirasi) esleme YOK: yanlis urunu dokume katardi - Malzeme suzgeciyle ayni birebir arama
-    if(q && norm((l.code||'')+' '+(l.ad||l.name||'')).replace(/\s+/g,'').indexOf(q)<0) return false; }
+  // mutabakatta bulanik (harf sirasi) esleme YOK: yanlis urunu dokume katardi
+  if(TMUT.kod){ const q=tmutKatla(TMUT.kod); if(q && tmutKatla(l.code).indexOf(q)<0) return false; }
+  if(TMUT.ad){ const q=tmutKatla(TMUT.ad);
+    if(q && !tmutAdBaslar(l.ad||l.name,q) && !tmutAdBaslar(tmutKutAd(l),q)) return false; }
   return true;
+}
+/* Kiril/Latin ikiz harfler (ВВГнг(А) ile ВВГнг(A) ekranda ayni, kodda farkli) tek harfe katlanir;
+   bosluklar atilir. Iki taraf da ayni katlamadan gectigi icin esleme simetrik. */
+const TMUT_IKIZ={'а':'a','в':'b','е':'e','ё':'e','к':'k','м':'m','н':'h','о':'o','р':'p','с':'c','т':'t','у':'y','х':'x','і':'i'};
+function tmutKatla(s){ return norm(s).replace(/\s+/g,'').replace(/[авеёкмнорстухі]/g,c=>TMUT_IKIZ[c]); }
+// Malzeme adi BASLANGICTAN eslesir; "RU / EN" iki dilli adlarda her dil parcasinin basi sayilir
+function tmutAdBaslar(ad,q){ return !!ad && String(ad).split('/').some(p=>tmutKatla(p).startsWith(q)); }
+// ekranda gorunen ad kutuphane adidir - satirdaki ad farkliysa da ona gore suzulsun (cozum ayni tarama boyunca onbellekte)
+let _TMUT_KUT_AD=new Map();
+function tmutKutAd(l){
+  const ck=(l.altId||'')+'|'+(l.specId||'')+'|'+String(l.code||'')+'|'+String(l.ad||l.name||'');
+  if(!_TMUT_KUT_AD.has(ck)){ const mt=lineAlimMaterial(l); _TMUT_KUT_AD.set(ck,(mt&&mt.name)||''); }
+  return _TMUT_KUT_AD.get(ck);
 }
 function tmutSartOf(l,o){ const s=l.grup||o.grup||''; return s.startsWith('Karma (')?'':s; }
 /* TEK HESAP: ekran, yazdirilan belge ve Excel hepsi bundan okur - "ekranda ne goruyorsan
    onu imzalatirsin". */
 function tmutVeri(comp){
-  const {t1,t2}=tmutAralik();
+  const {t1,t2}=tmutAralik(); _TMUT_KUT_AD=new Map();
   const urun=new Map(), belgeler=[], coz=new Map();
   let sonraki=0;   // mutabakat tarihinden SONRA gelen belge: dokume girmez, bilgi olarak soylenir
   // ayni urun yuzlerce satirda tekrar eder - cozumleme ayirt edici alanlar basina bir kez (fatUrunHavuzu ile ayni)
@@ -11773,7 +11801,7 @@ function tmutVeri(comp){
 }
 // Firma secilmemisken: secili donem/suzgecle firmalarin teslimat ozeti - tiklanan firma acilir
 function tmutFirmaOzeti(){
-  const {t1,t2}=tmutAralik(), m=new Map();
+  const {t1,t2}=tmutAralik(), m=new Map(); _TMUT_KUT_AD=new Map();
   const al=ad=>{ let g=m.get(ad); if(!g){ g={ad,belge:0,kalem:0,iade:0,ilk:0,son:0,imzasiz:0}; m.set(ad,g); } return g; };
   (DB.proje.orders||[]).forEach(o=>{
     const ad=orderCompany(o); if(!ad) return;
@@ -11847,7 +11875,8 @@ function renderTeslimatMutabakat(tabs){
     <div class="ord-f"><label>Bina</label><select onchange="setTmutF('bina',this.value)"><option value="">Tumu</option>${binas.map(b=>`<option ${TMUT.bina===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div>
     <div class="ord-f"><label>Bolum</label><select onchange="setTmutF('sec',this.value)"><option value="">Tumu</option>${secs.map(s=>`<option ${TMUT.sec===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
     <div class="ord-f" style="min-width:200px"><label>Sartname</label><select onchange="setTmutF('sart',this.value)"><option value="">Tumu</option>${sarts.map(g=>`<option ${TMUT.sart===g?'selected':''}>${esc(g)}</option>`).join('')}</select></div>
-    <div class="ord-f"><label>Malzeme / Kod</label><input value="${esc(TMUT.q)}" placeholder="ad veya kod ile ara..." onchange="setTmutF('q',this.value.trim())"></div>
+    <div class="ord-f" style="min-width:220px"><label>Malzeme Adi</label><input id="tmutAdKutu" value="${esc(TMUT.ad)}" placeholder="adin basi: orn. ВВГнг(А)" oninput="tmutAra(this,'ad')" title="Adi bu harflerle BASLAYAN malzemeler - yazarken suzulur, Excel de bu listeyi verir"></div>
+    <div class="ord-f"><label>Stok Kodu</label><input id="tmutKodKutu" value="${esc(TMUT.kod)}" placeholder="kodun bir parcasi..." oninput="tmutAra(this,'kod')" title="Stok kodunda bu parcayi iceren malzemeler"></div>
     ${anyF?`<div class="ord-f" style="justify-content:flex-end"><label>&nbsp;</label><button class="btn btn-ghost" style="padding:8px 14px" onclick="clearTmutF()">Filtreyi Temizle</button></div>`:''}
   </div>`;
   const bas=`<div class="sel-wrap" style="max-width:1200px">
@@ -11903,8 +11932,8 @@ function renderTeslimatMutabakat(tabs){
         const acik=!!TMUT.acik[u.key];
         return `<tr class="tmut-row${acik?' acik':''}" onclick="tmutAcKapa(${i})" title="Hangi belgelerle geldigini ${acik?'gizle':'goster'}">
           <td class="t-meta">${i+1}</td>
-          <td class="t-meta tmut-kod">${markIsaret(u.code||'-',TMUT.q)}</td>
-          <td><div class="tmut-ad">${markIsaret(u.ad||'-',TMUT.q)}</div>${u.binalar.length?`<div class="t-meta" style="font-size:11px">${esc(u.binalar.join(', '))}</div>`:''}</td>
+          <td class="t-meta tmut-kod">${markIsaret(u.code||'-',TMUT.kod)}</td>
+          <td><div class="tmut-ad">${markIsaret(u.ad||'-',TMUT.ad)}</div>${u.binalar.length?`<div class="t-meta" style="font-size:11px">${esc(u.binalar.join(', '))}</div>`:''}</td>
           <td class="t-meta">${esc(u.unit||'-')}</td>
           <td class="t-qty r">${fmtNum(u.alinan)}</td>
           <td class="t-qty r" style="color:${u.iade>0?'var(--amber)':'var(--dim)'}">${u.iade>0?'−'+fmtNum(u.iade):'-'}</td>
@@ -11925,7 +11954,8 @@ function tmutKapsamMetni(){
   if(TMUT.bina) p.push('Bina: '+TMUT.bina);
   if(TMUT.sec) p.push('Bölüm: '+TMUT.sec);
   if(TMUT.sart) p.push('Şartname: '+TMUT.sart);
-  if(TMUT.q) p.push('Malzeme/Kod: "'+TMUT.q+'"');
+  if(TMUT.ad) p.push('Malzeme adı "'+TMUT.ad+'" ile başlayan');
+  if(TMUT.kod) p.push('Stok kodu: "'+TMUT.kod+'"');
   return p.join(' · ');
 }
 function tmutDonemMetni(){ const bit=tmutGun(tmutBitis());
@@ -12061,7 +12091,7 @@ table.tm tr.tot td{background:#eee;font-weight:bold}
 .tm-foot>span{flex:1;text-align:center}
 .ph-mark{height:6mm;width:auto;object-fit:contain;flex:none;opacity:.85}
 `; }
-/* EXCEL: uc sayfa - Mutabakat (kunye + urun ozeti + imza alani), Belge Dokumu, Hareketler
+/* EXCEL: dort sayfa - Malzeme Listesi (sade: urun x sartname + siparis no'lari), Mutabakat (kunye + urun ozeti + imza alani), Belge Dokumu, Hareketler
    (satir bazli, isaretli miktar - pivot/suzgec icin). Stil xlsx-js-style ile yazilir;
    bilesen yuklenemezse ayni dosya stilsiz uretilir (veri eksiksiz, yalniz renk yok). */
 async function tmutExcel(){
@@ -12143,7 +12173,26 @@ async function tmutExcel(){
   for(let c=0;c<9;c++) ata(ws3,0,c,S.th);
   for(let r=1;r<r3.length;r++) for(let c=0;c<9;c++) ata(ws3,r,c,c===7?S.tdN:(c===0||c===2||c===8?S.tdC:S.td),c===7?NUM:(c===0?TAR:null));
 
+  // 0) MALZEME LISTESI (ilk sekme): urun x sartname basina bir satir, net miktar (iade dusulmus),
+  //    siparis numaralari TEK hucrede alt alta - bir urun iki sartnameye alindiysa miktar karismasin diye ayri satir
+  const r0=[['Malzeme İsmi','Malzeme Kodu','Birimi','Alınmış Olduğu Miktar','Hangi Şartname İçin Alındığı','Hangi Siparişlerle Alındığı']];
+  const sat0=[];
+  v.urunler.forEach(u=>{
+    const m=new Map();
+    u.hareket.forEach(h=>{ const k=h.sart||''; let g=m.get(k); if(!g){ g={sart:k,mik:0,sip:[]}; m.set(k,g); }
+      g.mik+=h.qty; if(h.tip==='alim'&&h.no&&!g.sip.includes(h.no)) g.sip.push(h.no); });
+    [...m.values()].sort((a,b)=>(!a.sart)-(!b.sart)||a.sart.localeCompare(b.sart,'tr',{numeric:true}))
+      .forEach(g=>{ r0.push([u.ad||'',u.code||'',u.unit||'',g.mik,g.sart||'-',g.sip.join('\n')]); sat0.push(Math.max(1,g.sip.length)); });
+  });
+  const ws0=X.utils.aoa_to_sheet(r0);
+  ws0['!cols']=[{wch:48},{wch:18},{wch:9},{wch:14},{wch:30},{wch:22}];
+  ws0['!rows']=[{hpt:30},...sat0.map(n=>({hpt:Math.max(15,n*15)}))];
+  ws0['!autofilter']={ref:X.utils.encode_range({s:{r:0,c:0},e:{r:r0.length-1,c:5}})};
+  for(let c=0;c<6;c++) ata(ws0,0,c,S.th);
+  for(let r=1;r<r0.length;r++) for(let c=0;c<6;c++) ata(ws0,r,c,c===3?S.tdN:(c===2?S.tdC:S.td),c===3?NUM:null);
+
   const wb=X.utils.book_new();
+  X.utils.book_append_sheet(wb,ws0,'Malzeme Listesi');
   X.utils.book_append_sheet(wb,ws1,'Mutabakat');
   X.utils.book_append_sheet(wb,ws2,'Belge Dokumu');
   X.utils.book_append_sheet(wb,ws3,'Hareketler');
