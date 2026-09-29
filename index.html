@@ -916,14 +916,19 @@ main{flex:1;padding:clamp(16px,2vw,28px);max-width:1600px;width:100%;margin:0 au
 .sb-head{display:none}   /* drawer basligi: yalnizca mobil */
 .sb-backdrop{display:none}
 @media(min-width:1024px){
-  #app.sb-none .app-sidebar{display:none}
-  #app:not(.sb-none) main{margin:0 0 0 232px;width:auto}
+  #app.sb-none .app-sidebar,#app.sb-kapali .app-sidebar{display:none}
+  #app:not(.sb-none):not(.sb-kapali) main{margin:0 0 0 232px;width:auto}
 }
 #mainArea.sec-transition{animation:secFadeIn .32s cubic-bezier(.16,.8,.3,1)}
 @keyframes secFadeIn{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
 @media (prefers-reduced-motion:reduce){#mainArea.sec-transition{animation:none}}
-/* Mobil/tablet hamburger menu kontrolu — masaustunde (>=1024px) tamamen gizli, sifir etki */
-.hamburger-btn{display:none}
+/* Sol menu dugmesi: masaustunde menuyu gizler/gosterir (sb-kapali, tercih hatirlanir),
+   tablet/mobilde drawer'i acar. Menu hic yoksa (sb-none) dugme de gizlenir. */
+.hamburger-btn{display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;
+  background:transparent;border:1px solid transparent;color:var(--mute);flex:0 0 auto;cursor:pointer;
+  transition:background .15s,color .15s,border-color .15s}
+.hamburger-btn:hover{color:var(--ink);background:var(--hover)}
+@media(min-width:1024px){ #app.sb-none .hamburger-btn{display:none} }
 
 .subnav{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
 .subnav button{padding:8px 14px;border-radius:9px;background:var(--panel);border:1px solid var(--line);color:var(--mute);font-weight:600;font-size:13px;display:flex;align-items:center;gap:7px;transition:.15s}
@@ -1601,7 +1606,7 @@ tbody tr:hover{background:var(--hover)}
 .kata-main .kata-floor textarea{min-height:74px}
 .kata-page-foot{position:fixed;left:0;right:0;bottom:0;z-index:40;display:flex;align-items:center;gap:10px;padding:12px 22px;background:color-mix(in srgb,var(--panel) 92%,transparent);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border-top:1px solid var(--line)}
 /* masaustunde sidebar 232px yer kaplar - alt cubuk icerik alaniyla hizalanir */
-@media(min-width:1024px){ #app:not(.sb-none) .kata-page-foot{left:232px} }
+@media(min-width:1024px){ #app:not(.sb-none):not(.sb-kapali) .kata-page-foot{left:232px} }
 @media(max-width:980px){
   .kata-layout{grid-template-columns:1fr}
   .kata-side{position:static;max-height:240px}
@@ -4945,8 +4950,8 @@ main:has(>.iht-form-wrap){max-width:none}
 
 <div id="app" class="hidden">
   <header>
-    <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Menu ac/kapat">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    <button class="hamburger-btn" id="sbToggle" onclick="toggleSidebar()" aria-label="Sol menüyü aç/kapat" title="Sol menüyü gizle / göster">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M5.5 8h1M5.5 11h1M5.5 14h1"/></svg>
     </button>
     <a class="hd-home" href="/" onclick="return brandHome(event)" title="Ana sayfa (yeni sekmede acmak icin sag tik / Ctrl+tik)">
       <img class="brand-mark" src="/logo.png" alt="Logo">
@@ -10361,7 +10366,18 @@ function ypAcId(id){
    Masaustunde her ekranda solda sabit durur; tablet/mobilde header'daki
    hamburgerla soldan drawer olarak acilir. Icerik yetkiye gore kurulur,
    render()'in her cagrisinda aktif oge yeniden hesaplanir. */
-function toggleSidebar(){ document.body.classList.toggle('sb-open'); }
+/* Masaustunde (>=1024px) dugme menuyu tamamen gizler/gosterir - tercih hatirlanir;
+   daha dar ekranda ayni dugme drawer'i acar. Genislik degisince tuval/tablolar
+   yeniden olculsun diye resize olayi yayinlanir. */
+let SB_KAPALI=(()=>{ try{ return localStorage.getItem('sbKapali')==='1'; }catch(e){ return false; } })();
+function sbKapaliUygula(){ const app=document.getElementById('app'); if(app) app.classList.toggle('sb-kapali',SB_KAPALI); }
+function toggleSidebar(){
+  if(window.innerWidth<1024){ document.body.classList.toggle('sb-open'); return; }
+  SB_KAPALI=!SB_KAPALI;
+  try{ localStorage.setItem('sbKapali',SB_KAPALI?'1':'0'); }catch(e){}
+  sbKapaliUygula();
+  window.dispatchEvent(new Event('resize'));
+}
 function closeSidebar(){ document.body.classList.remove('sb-open'); }
 function renderSidebar(){
   const el=document.getElementById('appSidebar'); if(!el) return;
@@ -10422,6 +10438,7 @@ function renderSidebar(){
      OLCU YINE 'groups': Araclar herkeste ciktigi icin ona bakilsaydi bayrak bir daha
      hic kalkmazdi - hicbir modul gormeyen kullanicida menu yine gizli kalmali. */
   const app=document.getElementById('app'); if(app) app.classList.toggle('sb-none',!groups||fatGenisAlanAcik());
+  sbKapaliUygula();
   el.innerHTML=`<div class="sb-head"><b>Menü</b><button class="mini-btn" onclick="closeSidebar()">x</button></div>`
     +groups+'<div class="sb-sep"></div>'+arac;
 }
