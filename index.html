@@ -1248,6 +1248,37 @@ tbody tr:hover{background:var(--hover)}
 .sirket-logo,.sirket-logo-ph{width:62px;height:30px;border-radius:6px;vertical-align:middle}
 .sirket-logo{object-fit:contain;background:#fff;border:1px solid var(--line);padding:3px}
 .sirket-logo-ph{border:1px dashed var(--line);display:inline-flex;align-items:center;justify-content:center;color:var(--dim)}
+/* KURUM KARTI: Sirketler ekraninda aktif organizasyonun KENDI sirketi (orgSirketi)
+   listeden ayrilip en uste kimlik karti olarak cikar; diger firmalar onun altinda
+   "<ORG>'ya kayitli firmalar" basligiyla listelenir. Sol kenardaki yesil serit
+   Calisma Alani'ndaki "aktif" isaretiyle ayni dil. */
+.kurum-kart{position:relative;display:grid;grid-template-columns:132px 1fr auto;gap:18px;align-items:center;
+  background:linear-gradient(135deg,color-mix(in srgb,var(--green) 7%,var(--panel)) 0%,var(--panel) 55%);
+  border:1px solid color-mix(in srgb,var(--green) 35%,var(--line));border-radius:var(--radius);padding:16px 18px 16px 22px;
+  margin:4px 0 22px;box-shadow:var(--shadow-sm);overflow:hidden}
+.kurum-kart::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--green)}
+.kurum-logo{width:132px;height:64px;border-radius:10px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;padding:6px}
+.kurum-logo img{max-width:100%;max-height:100%;object-fit:contain}
+.kurum-logo.ph{background:transparent;border-style:dashed;color:var(--dim);font-family:var(--mono);font-weight:700;font-size:20px}
+.kurum-ust{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.kurum-rozet{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--green);
+  border:1px solid color-mix(in srgb,var(--green) 45%,transparent);background:color-mix(in srgb,var(--green) 12%,transparent);border-radius:999px;padding:2px 8px}
+.kurum-ad{font-size:16px;font-weight:700;line-height:1.3}
+.kurum-ad .t-meta{font-weight:600}
+.kurum-bilgi{display:flex;flex-wrap:wrap;gap:6px 22px;margin-top:8px}
+.kurum-bilgi>div{min-width:0}
+.kurum-bilgi .k{font-family:var(--mono);font-size:10px;letter-spacing:.06em;color:var(--dim);text-transform:uppercase}
+.kurum-bilgi .v{font-family:var(--mono);font-size:12px;color:var(--ink);overflow-wrap:anywhere}
+.kurum-not{margin-top:10px;font-size:11.5px;color:var(--mute)}
+.kurum-kart.bos{grid-template-columns:1fr auto;border-style:dashed;border-color:var(--line);background:var(--panel)}
+.kurum-kart.bos::before{background:var(--amber)}
+.kurum-kart.bos .kurum-rozet{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 45%,transparent);background:color-mix(in srgb,var(--amber) 12%,transparent)}
+.kayitli-bas{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin:0 0 10px}
+.kayitli-bas h3{margin:0;font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+@media (max-width:640px){
+  .kurum-kart{grid-template-columns:1fr;gap:12px}
+  .kurum-kart .row-actions{position:absolute;top:12px;right:12px}
+}
 .bal{font-family:var(--mono);font-weight:700;font-size:15px}
 .bal.zero{color:var(--red)}
 .bal.low{color:var(--amber)}
@@ -4392,6 +4423,9 @@ main:has(>.iht-form-wrap){max-width:none}
    tablodaki faturalanma rozetleri (acik zemin) bir faturalanma HALIDIR, bunlar
    ise alimin YOKLUGU - ayni gorunseler FAZLA ile HIC ALINMADI karisirdi. */
 .fat-rozet.hic{color:#fff;background:var(--red)}
+.fat-rozet.eksik{color:#241800;background:var(--amber)}
+.fat-liste tr.kgt-eksik td:first-child{box-shadow:inset 3px 0 0 var(--amber)}
+.kgt-eksik-not{margin-top:3px;font-size:11px;font-weight:700;color:var(--amber)}
 .fat-rozet.baska{color:var(--amber);background:transparent;box-shadow:inset 0 0 0 1px var(--amber)}
 .fat-rozet.firmasec{color:var(--blue);background:transparent;box-shadow:inset 0 0 0 1px var(--blue)}
 .fat-rozet.firmasiz{color:var(--mute);background:transparent;box-shadow:inset 0 0 0 1px var(--mute)}
@@ -10891,8 +10925,42 @@ function closeCompanies(){ PCOMP=false; PEKIP=false; render(); }
 let COMPF={q:'',use:''};
 function setCompF(k,v){ COMPF[k]=v; render(); }
 function clearCompF(){ COMPF={q:'',use:''}; render(); }
+/* Organizasyonun kendi sirketi listede satir olarak durmaz, ustte kimlik karti
+   olarak gorunur: antet ve "biz" tarafi (Teslimat Mutabakati, fatura itiraz
+   ciktisi, Calisma Alani rozeti) bu kayittan okunur. Eslesme orgSirketi ile ayni -
+   burada ayri bir bag saklanmaz. Eslesme yoksa nasil kurulacagini soyleyen kart. */
+function kurumKartiHtml(biz,cntOf){
+  const org=esc(orgAdiGoster());
+  if(!biz) return `<div class="kurum-kart bos"><div>
+      <div class="kurum-ust"><span class="kurum-rozet">KURUM ŞİRKETİ EŞLEŞMEDİ</span></div>
+      <div class="kurum-ad">${org} organizasyonunun kendi şirket kaydı bulunamadı</div>
+      <div class="kurum-not">Kendi şirketinizi ekleyin ya da düzenleyin ve <b>Kısa Ad</b> alanına <b>${org}</b> yazın.
+        Antet, Teslimat Mutabakatı ve fatura itiraz çıktısındaki "biz" tarafı bu kayıttan okunur.</div></div>
+    ${can('define')?`<div class="row-actions"><button class="btn btn-ghost" onclick="openCompanyModal()">${icoPlus()} Kendi Şirketini Ekle</button></div>`:''}</div>`;
+  const alan=(k,v)=>v?`<div><div class="k">${k}</div><div class="v">${v}</div></div>`:'';
+  const iletisim=[biz.tel,biz.email,biz.web].filter(Boolean).map(esc).join(' · ');
+  const mono=esc(kpsMonogram(biz.kisaAd||biz.ad));
+  return `<div class="kurum-kart">
+    <div class="kurum-logo${biz.logo?'':' ph'}">${biz.logo
+      ?`<img src="${esc(biz.logo)}" alt="" onerror="this.parentNode.classList.add('ph');this.outerHTML='${mono}'">`:mono}</div>
+    <div style="min-width:0">
+      <div class="kurum-ust"><span class="kurum-rozet">KURUM ŞİRKETİ</span><span class="t-meta">${org} organizasyonu · ${fmtNum(cntOf(biz))} sipariş</span></div>
+      <div class="kurum-ad">${esc(biz.ad)}${biz.kisaAd?` <span class="t-meta">(${esc(biz.kisaAd)})</span>`:''}</div>
+      <div class="kurum-bilgi">
+        ${alan('Vergi No',biz.vergi?`<span class="mono">${esc(biz.vergi)}</span>`:'')}
+        ${alan('Vergi Dairesi',biz.vergiDairesi?esc(biz.vergiDairesi)+' V.D.':'')}
+        ${alan('Adres',esc(biz.adres||''))}
+        ${alan('İletişim',iletisim)}
+      </div>
+      <div class="kurum-not">Antet ve "biz" tarafı bu kayıttan okunur. Aşağıdaki firmalar <b>${org}</b> organizasyonuna kayıtlıdır; başka organizasyonlar bu listeyi görmez.</div>
+    </div>
+    <div class="row-actions">
+      ${can('define')?`<button class="mini-btn" title="Düzenle" onclick="openCompanyModal('${biz.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>`:''}
+    </div></div>`;
+}
 function renderCompanies(){
-  const all=(DB.companies||[]).slice().sort((a,b)=>(a.ad||'').localeCompare(b.ad||'','tr'));
+  const biz=orgSirketi();
+  const all=(DB.companies||[]).filter(c=>c&&c!==biz).sort((a,b)=>(a.ad||'').localeCompare(b.ad||'','tr'));
   const cntOf=c=>(DB.proje.orders||[]).filter(o=>o.companyId===c.id).length;
   const list=all.filter(c=>{
     if(COMPF.q && !matchText([c.ad,c.kisaAd,c.vergi,c.vergiDairesi,c.adres,c.tel,c.email,c.web].filter(Boolean).join(' '),COMPF.q)) return false;
@@ -10906,9 +10974,9 @@ function renderCompanies(){
     <div class="ord-f"><label>Kullanim</label><select onchange="setCompF('use',this.value)"><option value="">Tumu</option><option value="var" ${COMPF.use==='var'?'selected':''}>Siparisi olan</option><option value="yok" ${COMPF.use==='yok'?'selected':''}>Siparisi olmayan</option></select></div>
     ${anyF?`<div class="ord-f" style="justify-content:flex-end"><label>&nbsp;</label><button class="btn btn-ghost" style="padding:8px 14px" onclick="clearCompF()">Filtreyi Temizle</button></div>`:''}
   </div>`;
-  const sumline=`<div class="ord-sumline"><b>${fmtNum(list.length)}</b> sirket${anyF?` <span class="t-meta">(${fmtNum(all.length)} sirket icinden filtrelendi)</span>`:''}</div>`;
+  const sumline=`<div class="ord-sumline"><b>${fmtNum(list.length)}</b> kayıtlı firma${anyF?` <span class="t-meta">(${fmtNum(all.length)} firma içinden filtrelendi)</span>`:''}</div>`;
   let rows='';
-  if(list.length===0) rows=emptyRow(6,anyF?'Eslesen sirket yok':'Henuz sirket eklenmedi',anyF?'Filtreleri degistirin':'"Sirket Ekle" ile baslayin');
+  if(list.length===0) rows=emptyRow(6,anyF?'Eşleşen firma yok':'Henüz kayıtlı firma yok',anyF?'Filtreleri değiştirin':'"Firma Ekle" ile başlayın');
   else list.forEach(c=>{
     const cnt=cntOf(c);
     const iletisim=[c.tel,c.email,c.web].filter(Boolean).map(v=>`<div>${esc(v)}</div>`).join('');
@@ -10928,16 +10996,18 @@ function renderCompanies(){
       </div></td></tr>`;
   });
   return `<div class="sel-wrap" style="max-width:1080px">
-    <div class="sel-bc"><button onclick="closeCompanies()">${icoArr('left')} Binalara Don</button></div>
-    <div class="sel-head"><h2>Sirketler</h2><p>Proje siparis/fatura girisinde secilecek sirket listesi.
-      Vergi no/dairesi, adres, iletisim ve <b>antet logosu</b> burada tutulur - tutanak ve ihtiyac listesi ciktilarinin
-      ust kosesindeki antet dogrudan bu kayittan okunur.</p></div>
-    <div class="def-sec-bar"><div class="def-sec-chips"></div>
-      ${can('define')?`<button class="btn btn-add" onclick="openCompanyModal()">${icoPlus()} Sirket Ekle</button>`:''}</div>
+    <div class="sel-bc"><button onclick="closeCompanies()">${icoArr('left')} Binalara Dön</button></div>
+    <div class="sel-head"><h2>Şirketler</h2><p>Kurumunuzun kimliği ve ona kayıtlı firmalar (tedarikçi, taşeron, müşteri).
+      Vergi no/dairesi, adres, iletişim ve <b>antet logosu</b> burada tutulur - sipariş/fatura girişinde bu firmalar seçilir,
+      tutanak ve ihtiyaç listesi çıktılarının antedi doğrudan bu kayıttan okunur.</p></div>
     ${antetTasimaSeridi()}
+    ${kurumKartiHtml(biz,cntOf)}
+    <div class="kayitli-bas"><h3>Kayıtlı Firmalar</h3><span class="t-meta">${esc(orgAdiGoster())} organizasyonu · ${fmtNum(all.length)} firma</span>
+      <span style="flex:1"></span>
+      ${can('define')?`<button class="btn btn-add" onclick="openCompanyModal()">${icoPlus()} Firma Ekle</button>`:''}</div>
     ${filterbar}
     ${sumline}
-    <div class="tablewrap"><table><thead><tr><th style="width:86px"></th><th>Sirket Adi</th><th>Vergi No / Dairesi</th><th>Iletisim</th><th>Kullanim</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tablewrap"><table><thead><tr><th style="width:86px"></th><th>Firma Adı</th><th>Vergi No / Dairesi</th><th>İletişim</th><th>Kullanım</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
   </div>`;
 }
 /* kaydet: Kaydet dugmesinin (ve Enter'in) calistiracagi ifade. Verilmezse saveCompany -
@@ -38138,6 +38208,17 @@ function kgtRozet(k){ const d=kgtDurumu(k), x=KGT_DURUM[d];
   return `<span class="fat-rozet ${x.sinif}" title="${esc(x.aciklama)}">${x.ad}</span>`; }
 function kgtSatirlari(k){ const x=k&&k.satirlar; return Array.isArray(x)?x:[]; }
 function kgtMiktar(k,alan){ return kgtSatirlari(k).reduce((s,r)=>s+fatSayi(r[alan]),0); }
+/* EKSIK ONAY: onayli kagitta kagitta yazanin onaylanmayan kismi. Tavan onaylanandan
+   hesaplandigi icin bu kisim HICBIR nihai faturaya giremez - kagit tedarikcinin
+   yazdigi haliyle gecersizdir; duzeltilmis kagitla (onay geri al -> duzenle ->
+   yeniden onayla) is tekrar baslatilmali. Hic onaylanmayan (0) satirlar da sayilir. */
+function kgtOnaylanmayan(k){
+  if(kgtDurumu(k)!=='onayli') return {miktar:0,satir:0};
+  let miktar=0, satir=0;
+  kgtSatirlari(k).forEach(r=>{ const f=fatSayi(r.yazan)-fatSayi(r.onay);
+    if(f>FAT_EPS){ miktar+=f; satir++; } });
+  return {miktar,satir};
+}
 function kgtBelgeYollari(x){ if(!x) return []; return KGT_BELGELER.map(b=>x[b.k]&&x[b.k].path).filter(Boolean); }
 function kgtTarihMs(s){ return s?new Date(s).getTime():null; }
 function kgtTarihStr(ms){ return ms?new Date(ms).toISOString().slice(0,10):''; }
@@ -38640,6 +38721,7 @@ async function kgtKaydet(hedef){
       +'Sartname No: '+no+'\nFirma: '+(firma.ad||'-')+'\n'
       +fmtNum(onayli.length)+' satir · onaylanan toplam '+fmtNum(onayTop)+'\n'
       +(az?fmtNum(az)+' urunde kagitta yazandan AZ onaylandi\n':'')
+      +((az||hic)?'  -> onaylanmayan '+fmtNum(satirlar.reduce((s,r)=>s+Math.max(0,r.yazan-(r.onay>0?r.onay:0)),0))+' FATURALANAMAZ; kagit listede "KAGIT DUZELTILMELI" olarak isaretlenir\n':'')
       +(hic?fmtNum(hic)+' urun hic onaylanmadi (0)\n':'')
       +(alimsizN?fmtNum(alimsizN)+' urun bu firmadan HIC ALINMAMIS - kagitta hata olarak kalir\n':'')
       +'\nOnaylanan miktarlar bu andan itibaren urunlerin kalanindan dusulur.\nOnayli kagit, onayi geri alinmadan degistirilemez. Devam edilsin mi?')) return;
@@ -38711,6 +38793,12 @@ async function kgtOnayGeriAl(id){
   if(await kgtDurumYaz(k,{durum:'kontrol',onayTs:null,onayBy:''},
     'ONAY GERI ALINDI (onaylayan '+(k.onayBy?kisiAd(k.onayBy):'-')+(k.onayTs?', '+fmtDate(k.onayTs):'')+')','onayi geri alindi'))
     toast('Onay geri alindi - kagit kontrolde');
+}
+// Eksik onayli kagidi yeniden isleme alir: onay geri alinir (kendi uyarilariyla), sonra form acilir
+async function kgtDuzeltmeyeAl(id){
+  await kgtOnayGeriAl(id);
+  const k=kgtKayitlar().find(x=>x.id===id);
+  if(k&&kgtDurumu(k)==='kontrol'&&kgtDuzenlenebilir(k)) kgtDuzenle(id);
 }
 async function kgtReddet(id){
   const k=kgtBul(id); if(!k) return;
@@ -38816,7 +38904,8 @@ function kgtEylemler(k,detayda){
 function kgtListeFiltreli(){
   const q=FATV.kq||'';
   return kgtKayitlar().filter(k=>{
-    if(FATV.kdurum&&kgtDurumu(k)!==FATV.kdurum) return false;
+    if(FATV.kdurum==='eksik'){ if(!(kgtOnaylanmayan(k).miktar>0)) return false; }
+    else if(FATV.kdurum&&kgtDurumu(k)!==FATV.kdurum) return false;
     if(FATV.kcomp&&(k.companyId||'')!==FATV.kcomp) return false;
     if(q&&!matchText([k.no,k.sozlesmeNo,fatCompany(k),k.not,
       ...kgtSatirlari(k).map(r=>[r.ad,r.code,r.sartname].filter(Boolean).join(' '))].join(' '),q)) return false;
@@ -38840,7 +38929,8 @@ function renderKagitListe(){
     const {y,o}=kgtToplamlar(sat), yz=kgtMiktar(k,'yazan'), on=kgtMiktar(k,'onay');
     const ft=d==='onayli'?kgtFatToplam(k,nix):0;
     const alimsizN=d==='red'?0:kgtAlimsizSatirlar(k,havOnbellek).length;
-    rows+=`<tr>
+    const eks=kgtOnaylanmayan(k);
+    rows+=`<tr class="${eks.miktar>0?'kgt-eksik':''}">
       <td><b style="font-family:var(--mono);font-size:12.5px">${markIsaret(k.no||'(no yok)',q)}</b>
         ${k.not?(()=>{ const ac=markVarMi(k.not,q);
           return `<button class="fat-not${ac?' acik':''}" onclick="fatNotAc(this)" aria-expanded="${ac?'true':'false'}"
@@ -38850,9 +38940,11 @@ function renderKagitListe(){
       <td class="t-meta">${esc(fmtDate(k.tarih))}</td>
       <td class="t-meta">${markIsaret(fatCompany(k)||'-',q)}</td>
       <td>${kgtRozet(k)}${d==='onayli'&&k.onayBy?`<div class="t-meta" style="font-size:11px;margin-top:3px">${esc(kisiAd(k.onayBy))}${k.onayTs?' · '+esc(fmtDate(k.onayTs)):''}</div>`:''}${
+        eks.miktar>0?`<div style="margin-top:4px"><span class="fat-rozet eksik" title="Kagitta yazanin ${esc(fmtNum(eks.miktar))} kadari onaylanmadi - bu kisim faturalanamaz. Kagit duzeltilip yeniden onaylanmali (onayi geri al, duzenle, yeniden onayla).">KAGIT DUZELTILMELI</span></div>`:''}${
         d==='red'&&k.redNeden?`<div class="t-meta" style="font-size:11px;margin-top:3px;max-width:220px">${esc(k.redNeden)}</div>`:''}</td>
       <td class="t-qty">${fmtNum(yz)}<div class="t-meta" style="font-size:11px">${fmtNum(sat.length)} urun${
         d==='onayli'?` · <b style="color:var(--green)">${fmtNum(on)}</b> onayli`:''}</div>${
+        eks.miktar>0?`<div class="kgt-eksik-not" title="${fmtNum(eks.satir)} satirda kagitta yazandan az onaylandi - onaylanmayan miktar hicbir nihai faturaya giremez">&#9888; ${fmtNum(eks.miktar)} onaylanmadi · faturalanamaz</div>`:''}${
         alimsizN?`<div style="margin-top:3px"><span class="fat-rozet hic" title="Bu firmadan hic alinmamis urun kagitta yaziyor - detayda isaretli">${fmtNum(alimsizN)} ALIM YOK</span></div>`:''}${
         d==='onayli'?`<div class="t-meta" style="font-size:11px" title="Nihai faturalarda faturalanan / onaylanan">${
           ft>=on-FAT_EPS?'<b style="color:var(--green)">tamami faturalandi</b>'
@@ -38895,11 +38987,15 @@ function renderKagitListe(){
           +g('taslak','Taslak',say('taslak'),KGT_DURUM.taslak.aciklama)
           +g('kontrol','Kontrolde',say('kontrol'),KGT_DURUM.kontrol.aciklama)
           +g('onayli','Onayli',say('onayli'),KGT_DURUM.onayli.aciklama)
-          +g('red','Reddedilen',say('red'),KGT_DURUM.red.aciklama); })()}
+          +g('red','Reddedilen',say('red'),KGT_DURUM.red.aciklama)
+          +(()=>{ const n=tumu.filter(k=>kgtOnaylanmayan(k).miktar>0).length;
+            return (n||FATV.kdurum==='eksik')?g('eksik','&#9888; Duzeltilmeli',n,'Onayli ama kagitta yazanin bir kismi onaylanmamis kagitlar - onaylanmayan kisim faturalanamaz, kagit duzeltilip yeniden onaylanmali'):''; })(); })()}
     </div>
     <div class="ord-sumline"><b>${fmtNum(list.length)}</b> kagit gosteriliyor · kagitta yazan toplam <b>${fmtNum(list.reduce((s,k)=>s+kgtMiktar(k,'yazan'),0))}</b>${
       onayliL.length?` · <b>${fmtNum(onayliL.length)}</b> onayli kagitta onaylanan <b>${fmtNum(onayliL.reduce((s,k)=>s+kgtMiktar(k,'onay'),0))}</b>${
         onayPara!=null&&onayPara>0?` (${esc(fatPara(onayPara,paralar[0]))} KDV'li)`:''}`:''}${
+      (()=>{ const e=list.map(kgtOnaylanmayan).filter(x=>x.miktar>0);
+        return e.length?` · <b class="kgt-eksik-not" style="display:inline">&#9888; ${fmtNum(e.length)} kagitta ${fmtNum(e.reduce((s,x)=>s+x.miktar,0))} onaylanmadi - faturalanamaz</b>`:''; })()}${
       filtreVar?` <span class="t-meta">· ${fmtNum(tumu.length)} kagit icinden suzuldu</span>`:''}</div>
     <div class="tablewrap"><table class="fat-liste"><thead><tr>
       <th>Sartname No</th><th>Sozlesme No</th><th>Tarih</th><th>Firma</th><th>Durum</th>
@@ -38928,6 +39024,7 @@ function renderKagitDetay(){
   const asimMi=r=>d==='onayli'&&fatSayi(r.onay)>0&&(urunOnay.get(String(r.key||''))||0)>Math.max(0,(hav.get(String(r.key||''))||{kgKalan:0}).kgKalan)+FAT_EPS;
   const asanlar=sat.filter(asimMi);
   const alimsiz=new Set(kgtAlimsizSatirlar(k).map(r=>String(r.key||'')));
+  const eks=kgtOnaylanmayan(k);
   const kunye=[['Firma',fatCompany(k)],['Sartname No',k.no],['Kagit Tarihi',k.tarih?fmtDate(k.tarih):''],
     ['Sozlesme No',k.sozlesmeNo],['Sozlesme Tarihi',k.sozlesmeTarihi?fmtDate(k.sozlesmeTarihi):''],
     ['Para Birimi',pb+(k.kur?' · kur '+fmtNum(k.kur):'')],
@@ -38959,7 +39056,8 @@ function renderKagitDetay(){
       <td class="t-meta">${esc(r.unit||'')}</td>
       <td class="num">${fmtNum(yz)}</td>
       <td class="num" style="font-weight:700;color:${on>0?'var(--green)':'var(--dim)'}">${on>0?fmtNum(on):'-'}${
-        az?`<div style="color:var(--amber);font-size:10.5px;font-weight:600">${fmtNum(yz-on)} onaylanmadi</div>`:''}${
+        az?`<div style="color:var(--amber);font-size:10.5px;font-weight:600">${fmtNum(yz-on)} onaylanmadi</div>`
+        :(d==='onayli'&&!(on>0)&&yz>0)?`<div style="color:var(--amber);font-size:10.5px;font-weight:600">hic onaylanmadi</div>`:''}${
         asim?`<div style="color:var(--red);font-size:10.5px;font-weight:600">kalan asildi</div>`:''}</td>
       ${d==='onayli'?`<td class="num">${fat>0?fmtNum(fat):'-'}</td>
       <td class="num" style="font-weight:700;color:${on-fat>FAT_EPS?'var(--ink)':'var(--dim)'}">${on>0?fmtNum(Math.max(0,on-fat)):'-'}</td>`:''}
@@ -38979,7 +39077,13 @@ function renderKagitDetay(){
     ${d==='onayli'?`<div class="fat-uyari bilgi" style="border-left-color:var(--green)">
       <h5 style="color:var(--green)">Onaylandi</h5>
       <p><b>${esc(kisiAd(k.onayBy)||'-')}</b>${k.onayTs?' · '+esc(fmtDate(k.onayTs)):''} - onaylanan miktarlar urunlerin kalanindan dusuldu.
-      Kagit, onayi geri alinmadan degistirilemez.</p></div>`
+      Kagit, onayi geri alinmadan degistirilemez.</p></div>${
+      eks.miktar>0?`<div class="fat-uyari dikkat">
+      <h5>&#9888; Kagit duzeltilmeli - kagitta yazan ${fmtNum(kgtMiktar(k,'yazan'))}, onaylanan yalnizca ${fmtNum(kgtMiktar(k,'onay'))}</h5>
+      <p><b>${fmtNum(eks.miktar)}</b> miktar (${fmtNum(eks.satir)} satir) onaylanmadi ve <b>faturalanamaz</b> - nihai fatura yalnizca onaylanan miktardan kesilir.
+      Kagit tedarikcinin yazdigi haliyle gecerli degil: dogru miktarlarla duzeltilmis kagit alinip is yeniden baslatilmali
+      (onayi geri al &rarr; duzenle &rarr; imzali nushayi degistir &rarr; yeniden onayla).</p>
+      ${kgtIslenebilir(k)?`<div style="margin-top:9px"><button class="btn btn-ghost" onclick="kgtDuzeltmeyeAl('${k.id}')">${icoGeriCek()} Onayi geri al ve duzenle</button></div>`:''}</div>`:''}`
     :d==='red'?`<div class="fat-uyari dikkat"><h5>Reddedildi</h5>
       <p><b>${esc(kisiAd(k.redBy)||'-')}</b>${k.redTs?' · '+esc(fmtDate(k.redTs)):''}${k.redNeden?' - neden: <b>'+esc(k.redNeden)+'</b>':' - neden yazilmadi'}.
       Hicbir hesaba girmez.</p></div>`
