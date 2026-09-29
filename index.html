@@ -3328,6 +3328,36 @@ p.yp-ayar-not{margin:2px 0 8px}
 .moz-sayfa.kapali b,.moz-sayfa.kapali span{opacity:.45}
 .moz-say{margin-top:10px;font-size:12px;color:var(--mute)}
 .moz-say b{color:var(--ink)}
+.moz-kapsam.bos{border-left-color:var(--amber)}
+/* Elle urun secimi: katlanir bolum. Liste sabit yukseklikte kayar ki sayfa secimi ve
+   indirme dugmesi pencerede asagi itilip kaybolmasin. */
+.moz-elle{margin-top:10px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.moz-elle-ac{display:flex;align-items:center;gap:8px;width:100%;padding:9px 12px;background:none;border:0;color:var(--ink);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;text-align:left}
+.moz-elle-ac svg{transition:transform .15s;color:var(--mute)}
+.moz-elle.acik .moz-elle-ac svg{transform:rotate(90deg)}
+.moz-elle-ac em{margin-left:auto;font-style:normal;font-family:var(--mono);font-size:11px;color:var(--primary)}
+.moz-elle-govde{display:none;padding:0 12px 10px}
+.moz-elle.acik .moz-elle-govde{display:block}
+.moz-elle-arac{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px}
+.moz-elle-arac .fw-inp{flex:1 1 200px;width:auto;min-width:0;height:30px;padding:0 10px;font-size:12px}
+.moz-elle-arac .mini-btn{width:auto;height:30px;padding:0 10px;font-size:11px;font-family:inherit;white-space:nowrap}
+.moz-elle-arac .mini-btn.on{color:var(--primary);border-color:var(--primary)}
+.moz-elle-arac .mini-btn:disabled{opacity:.45;cursor:default}
+.moz-elle-filtre{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:flex-end;margin-bottom:8px}
+.moz-elle-filtre .ord-f{min-width:130px}
+.moz-elle-filtre .ord-f select{padding:6px 8px;font-size:12px}
+.moz-elle-filtre .mini-btn{width:auto;height:30px;padding:0 10px;font-size:11px;font-family:inherit;white-space:nowrap}
+.moz-elle-liste{max-height:max(260px,calc(46 * var(--vh)));overflow-y:auto;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.moz-urun{display:grid;grid-template-columns:auto 1fr;column-gap:9px;align-items:center;padding:6px 10px;border-bottom:1px solid var(--line);cursor:pointer;font-size:12px}
+.moz-urun:last-child{border-bottom:0}
+.moz-urun:hover{background:var(--panel2)}
+.moz-urun.sec{background:color-mix(in srgb,var(--primary) 10%,transparent)}
+.moz-urun input{grid-row:1 / span 2;margin:0;cursor:pointer}
+.moz-urun-ad{color:var(--ink);line-height:1.35;overflow-wrap:anywhere}
+.moz-urun-alt{grid-column:2;font-family:var(--mono);font-size:10.5px;color:var(--mute);overflow-wrap:anywhere}
+.moz-elle-bos{padding:14px;text-align:center;font-size:12px;color:var(--mute)}
+.moz-elle-not{margin-top:6px;font-size:11px;color:var(--mute)}
+.moz-elle-not b{color:var(--ink)}
 /* BILGI SERIDI: bos bir bolumun aciklamasi. Duz paragraf yerine ikonlu, cerceveli
    ince bir serit - goz "burada icerik yok, ne yapacagim yaziyor" diye bir bakista
    ayirir. Metin KISA tutulur: ornek deger gerekiyorsa duzenleme kutularinin
@@ -15737,8 +15767,11 @@ function exportMaterialLib(){
    sayfalar yine olusur ama "bilgi yok" der: 0 yazmak, veri gelmedigi icin yanlis olurdu.
    Stilli yazici (xlsxKitap) ve bicim sozlugu (fatKitapBicim) Fatura Kitabi ile ortak. */
 const MAT_KULLANIM_ETIKET={used:'kullanilan',unused:'kullanilmayan',multi:'ortak kullanim',alt:'alternatif olarak kullanilan'};
+/* KAPSAM SIRASI: pencerede elle secilen urunler (_MOZ_ELLE) > filtreye uyanlar > tumu.
+   Kutuphanedeki kutucuk secimi (_matSel) pencere acilirken _MOZ_ELLE'ye kopyalanir, yani
+   ikisi ayri kural degil - listede isaretli gorunur, oradan eklenip cikarilabilir. */
 function matOzelKapsam(){
-  const sec=[..._matSel].map(id=>getMaterial(id)).filter(m=>m&&!m.is_deleted)
+  const sec=[..._MOZ_ELLE].map(id=>getMaterial(id)).filter(m=>m&&!m.is_deleted)
     .sort((a,b)=>(a.name||'').localeCompare(b.name||'','tr'));
   if(sec.length) return {mats:sec, secili:true, metin:'Secili '+sec.length+' urun'};
   const mats=matLibFilteredSorted();
@@ -16083,30 +16116,53 @@ function matOzelKitapKur(kap,veri,sec){
    gorunmezse kullanici 8 urun bekleyip 700 urunluk dosya alirdi. Veri bir kez hesaplanir,
    onay dugmesi ayni sonucu kullanir. */
 let _MOZ=null;
+/* ELLE URUN SECIMI: kutuphanede sayfa sayfa kutucuk isaretlemek yerine pencerenin icinde
+   aranip tek tek isaretlenir. Secim pencere DISINDA yasar (_MOZ_SEC gibi): ayni oturumda
+   pes pese indirme alan kullanici listeyi bastan kurmasin. Kapsam kutusu secimi her an
+   yazdigi icin eski bir secimin fark edilmeden inmesi mumkun degil. */
+let _MOZ_ELLE=new Set(), _MOZ_ELLE_Q='', _MOZ_ELLE_SADECE=false, _MOZ_ELLE_ACIK=false;
+// listeyi daraltan suzgecler - kutuphane filtresinden AYRI (o kapsami belirler, bu yalnizca
+// secim listesini daraltir). Bolum = materialAllCats ile ayni kume, Sartname = specGroupKey
+// ("X spek'te" rozetiyle ayni olcut).
+let _MOZ_ELLE_F={cat:'',sart:'',tag:'',brand:''};
+let _mozIdx=null;   // matId -> {cats,sart,marka} ; pencere her acilista yeniden kurulur
+const MOZ_ELLE_MAX=300;   // listede en fazla bu kadar satir cizilir - fazlasi icin arama daraltilir
 async function openMatOzelIndir(){
   if(MATF.scope!=='proje'){ toast('Ozel indirme proje kutuphanesi icindir','warn'); return; }
+  if(!(DB.proje.materials||[]).some(m=>!m.is_deleted)){ toast('Kutuphanede urun yok','err'); return; }
   if(fatCanSee()) await faturaYukle();
-  const kap=matOzelKapsam();
-  if(!kap.mats.length){ toast('Indirilecek urun yok - filtreyi degistirin ya da urun secin','err'); return; }
-  let veri;
-  try{ veri=matOzelVeri(kap.mats); }
-  catch(err){ console.error('ozel indirme',err); toast('Veri hazirlanamadi: '+((err&&err.message)||err),'err'); return; }
-  _MOZ={kap,veri};
-  let alim=0, yerine=0, iade=0, fat=0; const belge=new Set();
-  veri.V.forEach(x=>{ alim+=x.alim.length; yerine+=x.yerine.length; iade+=x.iade.length;
-    fat+=x.fat.length; x.fat.forEach(a=>belge.add(a.f.id)); });
+  // kutuphanede kutucukla secim yapildiysa o en taze niyettir: onceki elle secimin yerine gecer
+  if(_matSel.size){ _MOZ_ELLE=new Set(_matSel); _MOZ_ELLE_SADECE=false; }
+  _MOZ_ELLE.forEach(id=>{ const m=getMaterial(id); if(!m||m.is_deleted) _MOZ_ELLE.delete(id); });
+  if(_MOZ_ELLE.size) _MOZ_ELLE_ACIK=true;
+  _MOZ={kap:null,veri:null}; _mozIdx=null;
+  try{ mozKapsamHesapla(); }
+  catch(err){ console.error('ozel indirme',err); toast('Veri hazirlanamadi: '+((err&&err.message)||err),'err'); _MOZ=null; return; }
   // sayfa secimi pencere ACILDIGINDA sifirlanmaz: ayni oturumda pes pese indirme alan
   // kullanici her seferinde ayni kutulari yeniden isaretlemek zorunda kalmasin
   if(!_MOZ_SEC) _MOZ_SEC={}; MOZ_SAYFALAR.forEach(([k])=>{ if(_MOZ_SEC[k]===undefined) _MOZ_SEC[k]=true; });
   const satir=([k,ad,acik])=>`<label class="moz-sayfa${_MOZ_SEC[k]?'':' kapali'}" data-moz="${k}">
     <input type="checkbox" ${_MOZ_SEC[k]?'checked':''} onchange="mozSecSayfa('${k}',this.checked)"><b>${ad}</b><span>${acik}</span></label>`;
-  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:560px">
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:1100px">
     <div class="modal-head"><h3>Ozel Indirme - Excel</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">
-      <div class="moz-kapsam"><b>${esc(kap.metin)}</b>
-        <span>${kap.secili?'Yalnizca kutucukla sectiginiz urunler iner.':'Secim yok: filtreye uyan urunlerin <b>tamami</b> iner (yalnizca ekrandaki sayfa degil). Belirli urunler icin listeden kutucukla secin.'}</span></div>
-      <div class="ord-sumline" style="margin:12px 0"><b>${fmtNum(alim)}</b> alim kaydi · <b>${fmtNum(iade)}</b> iade · <b>${fmtNum(yerine)}</b> yerine alinan${veri.fatVar?` · <b>${fmtNum(fat)}</b> fatura satiri (${fmtNum(belge.size)} belge)`:''}</div>
-      ${veri.fatVar?'':`<p class="mdp-bosbilgi" style="margin-bottom:12px">${icoInfoSm()}<span>${fatCanSee()?'Fatura defteri yuklenemedi - dosyada fatura bilgisi olmayacak.':'Fatura bolumunu gorme yetkiniz yok - dosyada fatura bilgisi olmayacak.'}</span></p>`}
+      <div class="moz-kapsam" id="mozKapsam"></div>
+      <div class="moz-elle${_MOZ_ELLE_ACIK?' acik':''}" id="mozElle">
+        <button type="button" class="moz-elle-ac" onclick="mozElleAc()">${icoChevron()}<span>Urunleri elle sec</span><em id="mozElleSay"></em></button>
+        <div class="moz-elle-govde">
+          <div class="moz-elle-arac">
+            <input class="fw-inp" id="mozElleQ" placeholder="Urun ara - ad, kod, marka, ozel kod..." value="${esc(_MOZ_ELLE_Q)}" oninput="mozElleAra(this.value)">
+            <button type="button" class="mini-btn${_MOZ_ELLE_SADECE?' on':''}" id="mozElleSadece" onclick="mozElleSadeceSec()">Yalniz secilenler</button>
+            <button type="button" class="mini-btn" id="mozElleHepsi" onclick="mozElleHepsi()">Eslesenleri sec</button>
+            <button type="button" class="mini-btn" onclick="mozElleTemizle()">Temizle</button>
+          </div>
+          <div class="moz-elle-filtre" id="mozElleFiltre"></div>
+          <div class="moz-elle-liste" id="mozElleListe"></div>
+          <div class="moz-elle-not" id="mozElleNot"></div>
+        </div>
+      </div>
+      <div class="ord-sumline" id="mozOzet" style="margin:12px 0"></div>
+      ${_MOZ.veri.fatVar?'':`<p class="mdp-bosbilgi" style="margin-bottom:12px">${icoInfoSm()}<span>${fatCanSee()?'Fatura defteri yuklenemedi - dosyada fatura bilgisi olmayacak.':'Fatura bolumunu gorme yetkiniz yok - dosyada fatura bilgisi olmayacak.'}</span></p>`}
       ${MOZ_SAYFALAR.map(satir).join('')}
       <div class="moz-say" id="mozSay"></div>
     </div>
@@ -16115,7 +16171,159 @@ async function openMatOzelIndir(){
   </div></div>`;
   closeModal();
   document.body.insertAdjacentHTML('beforeend',html);
+  mozKapsamCiz();
+  if(_MOZ_ELLE_ACIK){ mozElleFiltreCiz(); mozElleListeCiz(); }
   mozSecTazele();
+}
+/* Kapsam + sayilar. Her secim degisikliginde yeniden hesaplanir; matOzelVeri butun siparisleri
+   bir kez taradigi icin arka arkaya tiklamalarda gecikmeli (mozKapsamGecikmeli) cagrilir,
+   indirme ise her zaman taze sonucu kullanir (bkz. exportMatOzel). */
+function mozKapsamHesapla(){
+  if(!_MOZ) return;
+  const kap=matOzelKapsam();
+  _MOZ.kap=kap; _MOZ.veri=matOzelVeri(kap.mats); _MOZ.kirli=false;
+}
+let _mozKapT=null;
+function mozKapsamGecikmeli(){
+  if(!_MOZ) return;
+  _MOZ.kirli=true;
+  clearTimeout(_mozKapT);
+  _mozKapT=setTimeout(()=>{ if(!_MOZ||!document.getElementById('mozKapsam')) return;
+    try{ mozKapsamHesapla(); }catch(err){ console.error('ozel indirme',err); }
+    mozKapsamCiz(); mozSecTazele(); },200);
+}
+function mozKapsamCiz(){
+  if(!_MOZ||!_MOZ.kap) return;
+  const {kap,veri}=_MOZ;
+  const kutu=document.getElementById('mozKapsam');
+  if(kutu){
+    kutu.classList.toggle('bos',!kap.mats.length);
+    kutu.innerHTML=`<b>${esc(kap.metin)}</b><span>${kap.secili
+      ?'Yalnizca isaretlediginiz urunler iner - kutuphane filtresi dikkate alinmaz. Filtreye donmek icin secimi temizleyin.'
+      :kap.mats.length?'Secim yok: filtreye uyan urunlerin <b>tamami</b> iner (yalnizca ekrandaki sayfa degil). Belirli urunler icin asagidan <b>Urunleri elle sec</b>.'
+      :'Filtreye uyan urun yok - filtreyi degistirin ya da asagidan urun secin.'}</span>`;
+  }
+  const oz=document.getElementById('mozOzet');
+  if(oz){
+    let alim=0, yerine=0, iade=0, fat=0; const belge=new Set();
+    veri.V.forEach(x=>{ alim+=x.alim.length; yerine+=x.yerine.length; iade+=x.iade.length;
+      fat+=x.fat.length; x.fat.forEach(a=>belge.add(a.f.id)); });
+    oz.innerHTML=`<b>${fmtNum(alim)}</b> alim kaydi · <b>${fmtNum(iade)}</b> iade · <b>${fmtNum(yerine)}</b> yerine alinan${veri.fatVar?` · <b>${fmtNum(fat)}</b> fatura satiri (${fmtNum(belge.size)} belge)`:''}`;
+  }
+  mozElleSayTazele();
+}
+function mozElleSayTazele(){
+  const say=document.getElementById('mozElleSay');
+  if(say) say.textContent=_MOZ_ELLE.size?_MOZ_ELLE.size+' secili':'';
+}
+function mozElleAc(){
+  _MOZ_ELLE_ACIK=!_MOZ_ELLE_ACIK;
+  const el=document.getElementById('mozElle'); if(!el) return;
+  el.classList.toggle('acik',_MOZ_ELLE_ACIK);
+  if(_MOZ_ELLE_ACIK){ mozElleFiltreCiz(); mozElleListeCiz(); const q=document.getElementById('mozElleQ'); if(q) q.focus(); }
+}
+// listede gorunen (aramaya ve "yalniz secilenler"e uyan) urunler - ad sirasiyla.
+// Arama kutuphane aramasiyla ayni eslestiriciyi kullanir: ozel kod, piyasa adi, teknik satir dahil.
+/* materialUsage her cagrida butun sartname kalemlerini tarar; her tusta 700 urun icin
+   tekrarlamak yerine pencere acikken bir kez kurulur (veri pencere acikken degismez). */
+function mozElleIndeks(){
+  if(_mozIdx) return _mozIdx;
+  _mozIdx=new Map();
+  (DB.proje.materials||[]).filter(m=>!m.is_deleted).forEach(m=>{
+    const us=materialUsage(m.id);
+    _mozIdx.set(m.id,{cats:new Set([m.cat,...us.map(x=>x.cat)].filter(Boolean)),
+      sart:new Set(us.map(specGroupKey)), marka:new Set(matBrandParts(m.brand).map(b=>norm(b)))});
+  });
+  return _mozIdx;
+}
+function mozElleFiltreUyar(m,F){
+  const x=mozElleIndeks().get(m.id); if(!x) return false;
+  if(F.cat){ if(F.cat==='Kategorisiz'?x.cats.size:!x.cats.has(F.cat)) return false; }
+  if(F.sart&&!x.sart.has(F.sart)) return false;
+  if(F.tag&&!(m.tags||[]).includes(F.tag)) return false;
+  if(F.brand&&!x.marka.has(norm(F.brand))) return false;
+  return true;
+}
+/* Secenekler mevcut veriden dolar; sayilar DIGER suzgeclere uyan urunlerden sayilir -
+   "Sartname" listesinde secili bolumde hic urunu olmayan sartname cikmasin, sayi 0 olmasin. */
+function mozElleFiltreCiz(){
+  const kutu=document.getElementById('mozElleFiltre'); if(!kutu) return;
+  const F=_MOZ_ELLE_F, idx=mozElleIndeks();
+  const mats=(DB.proje.materials||[]).filter(m=>!m.is_deleted);
+  const say=(alan,anahtar)=>{ const c=new Map(); const G={...F,[alan]:''};
+    mats.forEach(m=>{ if(!mozElleFiltreUyar(m,G)) return; anahtar(m).forEach(k=>c.set(k,(c.get(k)||0)+1)); }); return c; };
+  const cCat=say('cat',m=>{ const cs=idx.get(m.id).cats; return cs.size?[...cs]:['Kategorisiz']; });
+  const cSart=say('sart',m=>[...idx.get(m.id).sart]);
+  const cTag=say('tag',m=>m.tags||[]);
+  const cBr=say('brand',m=>matBrandParts(m.brand));
+  // secili deger artik sifir sonuclu olsa da listede kalir - yoksa select sessizce "Tumu"ye doner
+  const sec=(alan,etiket,c)=>{ const v=F[alan];
+    const ks=[...c.keys()].sort((a,b)=>a==='Kategorisiz'?1:b==='Kategorisiz'?-1:String(a).localeCompare(String(b),'tr'));
+    if(v&&!c.has(v)) ks.unshift(v);
+    return `<div class="ord-f"><label>${etiket}</label><select onchange="mozElleFiltre('${alan}',this.value)"><option value="">Tumu</option>${ks.map(k=>`<option value="${esc(k)}" ${v===k?'selected':''}>${esc(k)} (${c.get(k)||0})</option>`).join('')}</select></div>`; };
+  const acik=Object.values(F).some(Boolean);
+  kutu.innerHTML=sec('cat','Bolum',cCat)+sec('sart','Sartname',cSart)
+    +(allMaterialTags().length?sec('tag','Etiket',cTag):'')+sec('brand','Marka',cBr)
+    +(acik?`<button type="button" class="mini-btn" onclick="mozElleFiltreTemizle()">Filtreyi temizle</button>`:'');
+}
+function mozElleFiltre(alan,v){
+  _MOZ_ELLE_F[alan]=v||'';
+  mozElleFiltreCiz(); mozElleListeCiz();
+}
+function mozElleFiltreTemizle(){
+  _MOZ_ELLE_F={cat:'',sart:'',tag:'',brand:''};
+  mozElleFiltreCiz(); mozElleListeCiz();
+}
+function mozElleEslesen(){
+  let mats=(DB.proje.materials||[]).filter(m=>!m.is_deleted);
+  if(_MOZ_ELLE_SADECE) mats=mats.filter(m=>_MOZ_ELLE.has(m.id));
+  if(Object.values(_MOZ_ELLE_F).some(Boolean)) mats=mats.filter(m=>mozElleFiltreUyar(m,_MOZ_ELLE_F));
+  const q=_MOZ_ELLE_Q.trim();
+  if(q) mats=mats.filter(m=>matMatchesLibSearch(m,q));
+  return mats.sort((a,b)=>(a.name||'').localeCompare(b.name||'','tr'));
+}
+function mozElleListeCiz(){
+  const kutu=document.getElementById('mozElleListe'); if(!kutu) return;
+  const mats=mozElleEslesen(), goster=mats.slice(0,MOZ_ELLE_MAX);
+  kutu.innerHTML=goster.length?goster.map(m=>{
+    const sec=_MOZ_ELLE.has(m.id);
+    const alt=[m.code,m.brand].map(x=>String(x||'').trim()).filter(Boolean).join(' · ');
+    return `<label class="moz-urun${sec?' sec':''}" data-id="${esc(m.id)}"><input type="checkbox" ${sec?'checked':''} onchange="mozElleSec(this)"><span class="moz-urun-ad">${esc(m.name||'(adsiz)')}</span>${alt?`<span class="moz-urun-alt">${esc(alt)}</span>`:''}</label>`;
+  }).join(''):`<div class="moz-elle-bos">${_MOZ_ELLE_SADECE&&!_MOZ_ELLE.size?'Henuz secili urun yok.':'Aramaya ve filtreye uyan urun yok.'}</div>`;
+  const not=document.getElementById('mozElleNot');
+  if(not) not.innerHTML=mats.length>MOZ_ELLE_MAX
+    ?`<b>${fmtNum(mats.length)}</b> eslesmenin ilk ${MOZ_ELLE_MAX} tanesi gosteriliyor - aramayi daraltin`
+    :`<b>${fmtNum(mats.length)}</b> urun listeleniyor`;
+  const hepsi=document.getElementById('mozElleHepsi');
+  if(hepsi){ hepsi.textContent='Eslesenleri sec ('+fmtNum(mats.length)+')'; hepsi.disabled=!mats.length; }
+}
+let _mozAraT=null;
+function mozElleAra(v){
+  _MOZ_ELLE_Q=String(v||'');
+  clearTimeout(_mozAraT);
+  _mozAraT=setTimeout(mozElleListeCiz,150);
+}
+// satir yeniden cizilmez (kaydirma yeri ve odak kaybolmasin) - yalnizca sinifi degisir
+function mozElleSec(cb){
+  const lab=cb.closest('.moz-urun'); if(!lab) return;
+  const id=lab.dataset.id;
+  if(cb.checked) _MOZ_ELLE.add(id); else _MOZ_ELLE.delete(id);
+  lab.classList.toggle('sec',cb.checked);
+  mozElleSayTazele(); mozKapsamGecikmeli();
+}
+function mozElleSadeceSec(){
+  _MOZ_ELLE_SADECE=!_MOZ_ELLE_SADECE;
+  const b=document.getElementById('mozElleSadece'); if(b) b.classList.toggle('on',_MOZ_ELLE_SADECE);
+  mozElleListeCiz();
+}
+function mozElleHepsi(){
+  mozElleEslesen().forEach(m=>_MOZ_ELLE.add(m.id));
+  mozElleListeCiz(); mozElleSayTazele(); mozKapsamGecikmeli();
+}
+function mozElleTemizle(){
+  if(!_MOZ_ELLE.size) return;
+  _MOZ_ELLE.clear();
+  mozElleListeCiz(); mozElleSayTazele(); mozKapsamGecikmeli();
 }
 /* Sayfa secimi pencere disinda yasar: modal HTML'i yeniden kurulmadan guncellenir,
    yoksa her tikta kutular yeniden cizilip odak kaybolurdu. */
@@ -16128,17 +16336,25 @@ function mozSecSayfa(k,acik){
 }
 function mozSecTazele(){
   const n=MOZ_SAYFALAR.filter(([k])=>_MOZ_SEC&&_MOZ_SEC[k]).length;
+  const urun=_MOZ&&_MOZ.kap?_MOZ.kap.mats.length:0;
   const say=document.getElementById('mozSay');
-  if(say) say.innerHTML=n?`<b>${n}</b> sayfa inecek${n===1?' - dosya tek tablodan ibaret olur':''}`
+  if(say) say.innerHTML=!urun?'<b>Kapsamda urun yok</b> - indirmek icin en az bir urun secin'
+    :n?`<b>${n}</b> sayfa inecek${n===1?' - dosya tek tablodan ibaret olur':''}`
     :'<b>Hicbir sayfa secilmedi</b> - indirmek icin en az bir sayfa isaretleyin';
   const btn=document.getElementById('mozIndir');
-  if(btn) btn.disabled=!n;
+  if(btn) btn.disabled=!n||!urun;
 }
 function exportMatOzel(){
   if(!_MOZ) return;
-  const {kap,veri}=_MOZ, sec=_MOZ_SEC||{};
+  const sec=_MOZ_SEC||{};
   if(!MOZ_SAYFALAR.some(([k])=>sec[k])){ toast('En az bir sayfa secin','err'); return; }
   try{
+    // secim az once degistiyse gecikmeli hesap henuz calismamis olabilir: dosya ekrandaki
+    // isaretlerle birebir olsun diye burada tazelenir
+    clearTimeout(_mozKapT);
+    if(_MOZ.kirli||!_MOZ.kap) mozKapsamHesapla();
+    const {kap,veri}=_MOZ;
+    if(!kap.mats.length){ toast('Indirilecek urun yok - urun secin ya da filtreyi degistirin','err'); return; }
     const {wb,spN,ftN}=matOzelKitapKur(kap,veri,sec);
     xlsxIndir('Ozel_Indirme_'+new Date().toISOString().slice(0,10)+'.xlsx',wb.bayt());
     // fatura tutarlari da iniyor: Fatura Kitabi gibi denetim kaydina yazilir. Fatura sayfasi
