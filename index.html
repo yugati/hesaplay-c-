@@ -11903,7 +11903,7 @@ function renderTeslimatMutabakat(tabs){
     </div>
     <div class="tmut-arac-sag">
       <button class="btn btn-ghost" onclick="tmutYazdir()" ${bos?'disabled':''} title="Antetli, iki tarafin imza alanli mutabakat belgesi - yazdirma penceresinden PDF olarak da kaydedilir">${icoDoc()} Mutabakat Belgesi (PDF)</button>
-      <button class="btn btn-grid" onclick="tmutExcel()" ${bos?'disabled':''} title="Ozet + belge dokumu + hareket satirlari, ayri sayfalarda">${icoXls()} Excel</button>
+      <button class="btn btn-grid" onclick="tmutExcelSor()" ${bos?'disabled':''} title="Once baslik dili sorulur (TR / RU / EN) - malzeme listesi + ozet + belge dokumu + hareket satirlari, ayri sayfalarda">${icoXls()} Excel</button>
     </div></div>`;
   const notlar=[];
   if(v.imzasiz.length) notlar.push(`<button class="tmut-not uyar" onclick="setTmutF('gor','belge')" title="${esc(v.imzasiz.map(b=>b.no).join(', '))}">&#9888; ${fmtNum(v.imzasiz.length)} belgenin imzali kagidi elde degil</button>`);
@@ -12091,11 +12091,110 @@ table.tm tr.tot td{background:#eee;font-weight:bold}
 .tm-foot>span{flex:1;text-align:center}
 .ph-mark{height:6mm;width:auto;object-fit:contain;flex:none;opacity:.85}
 `; }
+/* EXCEL BASLIK DILI: indirmeden once sorulur. TR / RU / EN'den biri, ikisi ya da ucu; tiklama sirasi =
+   baslikta dil sirasi. Alt alta (hucrede satir satir) ya da yan yana (" / "). Yalniz BASLIK ve etiketler
+   cevrilir - veri hucreleri (malzeme adi, kapsam metni, TESLIM/IADE) oldugu gibi kalir.
+   Son secim tarayicida hatirlanir. */
+const TMUT_DIL={
+  'Malzeme İsmi':{ru:'Наименование материала',en:'Material Name'},
+  'Malzeme Kodu':{ru:'Код материала',en:'Material Code'},
+  'Birimi':{ru:'Ед. изм.',en:'Unit'},
+  'Alınmış Olduğu Miktar':{ru:'Полученное количество',en:'Quantity Received'},
+  'Hangi Şartname İçin Alındığı':{ru:'Для спецификации',en:'For Specification'},
+  'Hangi Siparişlerle Alındığı':{ru:'Номера заказов',en:'Order Numbers'},
+  'MALZEME TESLİMAT MUTABAKATI':{ru:'АКТ СВЕРКИ ПОСТАВКИ МАТЕРИАЛОВ',en:'MATERIAL DELIVERY RECONCILIATION'},
+  'Teslim Eden (Tedarikçi)':{ru:'Поставщик (сдал)',en:'Delivered By (Supplier)'},
+  'V.D. / Vergi No':{ru:'Налоговый орган / ИНН',en:'Tax Office / Tax No'},
+  'Teslim Alan':{ru:'Получатель (принял)',en:'Received By'},
+  'Dönem':{ru:'Период',en:'Period'},
+  'Mutabakat Tarihi':{ru:'Дата сверки',en:'Reconciliation Date'},
+  'Kapsam':{ru:'Охват',en:'Scope'},
+  'Oluşturma':{ru:'Составлено',en:'Prepared'},
+  'Sıra':{ru:'№',en:'No.'},
+  'Stok Kodu':{ru:'Складской код',en:'Stock Code'},
+  'Malzeme Adı':{ru:'Наименование материала',en:'Material Name'},
+  'Birim':{ru:'Ед. изм.',en:'Unit'},
+  'Teslim Alınan':{ru:'Получено',en:'Received'},
+  'İade':{ru:'Возврат',en:'Returned'},
+  'Net Teslim':{ru:'Нетто поставка',en:'Net Delivered'},
+  'Belge Sayısı':{ru:'Кол-во документов',en:'Document Count'},
+  'İlk Teslim':{ru:'Первая поставка',en:'First Delivery'},
+  'Son Teslim':{ru:'Последняя поставка',en:'Last Delivery'},
+  'TOPLAM':{ru:'ИТОГО',en:'TOTAL'},
+  'MUTABAKAT SONUCU:':{ru:'РЕЗУЛЬТАТ СВЕРКИ:',en:'RECONCILIATION RESULT:'},
+  'Mutabıkız':{ru:'Согласны',en:'Agreed'},
+  'Mutabık değiliz (açıklama: ...............................................)':{ru:'Не согласны (пояснение: ...............................................)',en:'Not agreed (explanation: ...............................................)'},
+  'TESLİM EDEN (TEDARİKÇİ)':{ru:'ПОСТАВЩИК (СДАЛ)',en:'DELIVERED BY (SUPPLIER)'},
+  'TESLİM ALAN':{ru:'ПОЛУЧАТЕЛЬ (ПРИНЯЛ)',en:'RECEIVED BY'},
+  'Ad Soyad':{ru:'Ф.И.О.',en:'Full Name'},
+  'Görevi':{ru:'Должность',en:'Position'},
+  'Tarih':{ru:'Дата',en:'Date'},
+  'Kaşe / İmza':{ru:'Печать / Подпись',en:'Stamp / Signature'},
+  'Belge No':{ru:'Номер документа',en:'Document No'},
+  'Tür':{ru:'Тип',en:'Type'},
+  'Bağlı Sipariş':{ru:'Связанный заказ',en:'Related Order'},
+  'Bina':{ru:'Здание',en:'Building'},
+  'Şartname':{ru:'Спецификация',en:'Specification'},
+  'Kalem':{ru:'Позиций',en:'Items'},
+  'Miktar':{ru:'Количество',en:'Quantity'},
+  'PDF':{ru:'PDF',en:'PDF'},
+  'İmzalı Kağıt':{ru:'Подписанный документ',en:'Signed Paper'},
+  // sayfa adlari (ilk secilen dilde)
+  'Malzeme Listesi':{ru:'Перечень материалов',en:'Material List'},
+  'Mutabakat':{ru:'Акт сверки',en:'Reconciliation'},
+  'Belge Dokumu':{ru:'Документы',en:'Documents'},
+  'Hareketler':{ru:'Движения',en:'Movements'},
+};
+const TMUT_DIL_AD={tr:'Türkçe',ru:'Русский',en:'English'};
+function tmutDilTek(tr,k){ return k==='tr'?tr:((TMUT_DIL[tr]||{})[k]||tr); }
+// ayni metin iki dilde de ayniysa (PDF) bir kez yazilir
+function tmutCevir(tr,dil,ayrac){ return [...new Set(dil.sira.map(k=>tmutDilTek(tr,k)))].join(ayrac!=null?ayrac:(dil.alt?'\n':' / ')); }
+let _TMUT_XDIL=null;
+function tmutDilOku(){
+  let d=null; try{ d=JSON.parse(localStorage.getItem('tmut_excel_dil')||'null'); }catch(e){ d=null; }
+  const sira=(d&&Array.isArray(d.sira)?d.sira:[]).filter(k=>TMUT_DIL_AD[k]);
+  return {sira:sira.length?[...new Set(sira)]:['tr'],alt:!d||d.alt!==false};
+}
+function tmutExcelSor(){
+  if(!TMUT.comp){ toast('Once firma secin','err'); return; }
+  _TMUT_XDIL=tmutDilOku();
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:560px"><div class="modal-head"><h3>Excel Basliklari</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body" id="tmutDilGovde">${tmutDilGovdeHtml()}</div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-grid" id="tmutDilIndir" onclick="tmutDilIndir()">${icoXls()} Excel'i Indir</button></div></div></div>`);
+}
+function tmutDilGovdeHtml(){
+  const d=_TMUT_XDIL;
+  const cip=k=>{ const i=d.sira.indexOf(k), on=i>=0;
+    return `<button class="btn ${on?'btn-add':'btn-ghost'}" style="padding:8px 14px;gap:8px" onclick="tmutDilSec('${k}')">${on?`<b style="display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,.25);font-size:11px">${i+1}</b>`:''}${TMUT_DIL_AD[k]}</button>`; };
+  const ornek=['Malzeme İsmi','Alınmış Olduğu Miktar','Hangi Siparişlerle Alındığı'];
+  return `<p class="t-meta" style="margin:0 0 10px;line-height:1.5">Basliklarin dilini secin. Birden fazla dil secerseniz tiklama sirasi baslikta dil sirasidir. Yalniz basliklar ve etiketler cevrilir; malzeme adlari ve diger veriler oldugu gibi kalir.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${['tr','ru','en'].map(cip).join('')}</div>
+    <div class="frow"><label>Birden fazla dil</label><div style="display:flex;gap:16px;flex-wrap:wrap">
+      <label style="display:flex;gap:6px;align-items:center;cursor:pointer;text-transform:none;letter-spacing:0"><input type="radio" name="tmutDilDuzen" ${d.alt?'checked':''} onchange="tmutDilDuzen(true)"> Alt alta</label>
+      <label style="display:flex;gap:6px;align-items:center;cursor:pointer;text-transform:none;letter-spacing:0"><input type="radio" name="tmutDilDuzen" ${d.alt?'':'checked'} onchange="tmutDilDuzen(false)"> Yan yana ( / ile)</label></div></div>
+    ${d.sira.length?`<div class="t-meta" style="margin:10px 0 6px">Onizleme</div>
+    <div class="tablewrap"><table class="tmut-tbl"><thead><tr>${ornek.map(t=>`<th style="white-space:pre-line;vertical-align:middle">${esc(tmutCevir(t,d))}</th>`).join('')}</tr></thead></table></div>`
+    :'<div class="t-meta" style="color:var(--amber)">En az bir dil secin.</div>'}`;
+}
+function tmutDilYenile(){
+  const g=document.getElementById('tmutDilGovde'); if(g) g.innerHTML=tmutDilGovdeHtml();
+  const b=document.getElementById('tmutDilIndir'); if(b) b.disabled=!_TMUT_XDIL.sira.length;
+}
+function tmutDilSec(k){ const s=_TMUT_XDIL.sira, i=s.indexOf(k); if(i>=0) s.splice(i,1); else s.push(k); tmutDilYenile(); }
+function tmutDilDuzen(alt){ _TMUT_XDIL.alt=alt; tmutDilYenile(); }
+function tmutDilIndir(){
+  const d=_TMUT_XDIL; if(!d||!d.sira.length){ toast('En az bir dil secin','err'); return; }
+  try{ localStorage.setItem('tmut_excel_dil',JSON.stringify(d)); }catch(e){}
+  closeModal(); tmutExcel({sira:d.sira.slice(),alt:d.alt});
+}
 /* EXCEL: dort sayfa - Malzeme Listesi (sade: urun x sartname + siparis no'lari), Mutabakat (kunye + urun ozeti + imza alani), Belge Dokumu, Hareketler
    (satir bazli, isaretli miktar - pivot/suzgec icin). Stil xlsx-js-style ile yazilir;
    bilesen yuklenemezse ayni dosya stilsiz uretilir (veri eksiksiz, yalniz renk yok). */
-async function tmutExcel(){
+async function tmutExcel(dil){
   if(!TMUT.comp){ toast('Once firma secin','err'); return; }
+  dil=dil&&dil.sira&&dil.sira.length?dil:{sira:['tr'],alt:true};
+  const B=t=>tmutCevir(t,dil), n=dil.alt?dil.sira.length:1;
+  const yH=Math.max(15,n*15), thH=Math.max(30,n*15+6);   // cok satirli basligin satir yuksekligi
   const v=tmutVeri(TMUT.comp);
   if(!v.urunler.length){ toast('Disa aktarilacak teslimat yok','err'); return; }
   let X=null;
@@ -12109,7 +12208,7 @@ async function tmutExcel(){
   const ince={style:'thin',color:{rgb:'FF9BA3AF'}}, kenar={top:ince,bottom:ince,left:ince,right:ince};
   const S={
     baslik:{font:{bold:true,sz:14,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FF1E3A8A'}},alignment:{horizontal:'center',vertical:'center'}},
-    etiket:{font:{bold:true,color:{rgb:'FF1E3A8A'}},fill:{fgColor:{rgb:'FFDBEAFE'}},border:kenar,alignment:{vertical:'center'}},
+    etiket:{font:{bold:true,color:{rgb:'FF1E3A8A'}},fill:{fgColor:{rgb:'FFDBEAFE'}},border:kenar,alignment:{vertical:'center',wrapText:true}},
     deger:{border:kenar,alignment:{vertical:'center',wrapText:true}},
     th:{font:{bold:true,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FF2563EB'}},border:kenar,alignment:{horizontal:'center',vertical:'center',wrapText:true}},
     td:{border:kenar,alignment:{vertical:'center',wrapText:true}},
@@ -12117,32 +12216,39 @@ async function tmutExcel(){
     tdC:{border:kenar,alignment:{horizontal:'center',vertical:'center'}},
     top:{font:{bold:true},fill:{fgColor:{rgb:'FFFEF3C7'}},border:kenar},
     topN:{font:{bold:true},fill:{fgColor:{rgb:'FFFEF3C7'}},border:kenar,alignment:{horizontal:'right'}},
-    imza:{font:{bold:true,color:{rgb:'FF1E3A8A'}}},
+    imza:{font:{bold:true,color:{rgb:'FF1E3A8A'}},alignment:{vertical:'top',wrapText:true}},
     cizgi:{border:{bottom:{style:'thin',color:{rgb:'FF6B7280'}}}},
   };
   const NUM='#,##0.##', TAR='dd.mm.yyyy';
-  const ata=(ws,r,c,s,z)=>{ const a=X.utils.encode_cell({r,c}); if(!ws[a]) ws[a]={t:'s',v:''}; if(stilli&&s) ws[a].s=s; if(z&&ws[a].t==='n') ws[a].z=z; };
+  // '#,##0.##' tam sayida sona bos ayirici birakir ("2.973,") - tam sayiya ondaliksiz bicim
+  const ata=(ws,r,c,s,z)=>{ const a=X.utils.encode_cell({r,c}); if(!ws[a]) ws[a]={t:'s',v:''}; if(stilli&&s) ws[a].s=s;
+    if(z&&ws[a].t==='n') ws[a].z=(z===NUM&&Number.isInteger(ws[a].v))?'#,##0':z; };
 
   // 1) MUTABAKAT
   const kapsam=tmutKapsamMetni();
-  const r1=[['MALZEME TESLİMAT MUTABAKATI'],[],
-    ['Teslim Eden (Tedarikçi)',TMUT.comp],['V.D. / Vergi No',tmutVergi(kar)||'-'],
-    ['Teslim Alan',bizAd],['Dönem',tmutDonemMetni()],['Mutabakat Tarihi',bit],
-    ['Kapsam',kapsam?kapsam+' (döküm yalnız bu kapsamı içerir)':'Tüm binalar, tüm bölüm ve şartnameler'],
-    ['Oluşturma',fmtDate(Date.now())+(tmutOlusturan()?' · '+tmutOlusturan():'')],[],
-    ['Sıra','Stok Kodu','Malzeme Adı','Birim','Teslim Alınan','İade','Net Teslim','Belge Sayısı','İlk Teslim','Son Teslim']];
+  const r1=[[tmutCevir('MALZEME TESLİMAT MUTABAKATI',dil,' / ')],[],
+    [B('Teslim Eden (Tedarikçi)'),TMUT.comp],[B('V.D. / Vergi No'),tmutVergi(kar)||'-'],
+    [B('Teslim Alan'),bizAd],[B('Dönem'),tmutDonemMetni()],[B('Mutabakat Tarihi'),bit],
+    [B('Kapsam'),kapsam?kapsam+' (döküm yalnız bu kapsamı içerir)':'Tüm binalar, tüm bölüm ve şartnameler'],
+    [B('Oluşturma'),fmtDate(Date.now())+(tmutOlusturan()?' · '+tmutOlusturan():'')],[],
+    ['Sıra','Stok Kodu','Malzeme Adı','Birim','Teslim Alınan','İade','Net Teslim','Belge Sayısı','İlk Teslim','Son Teslim'].map(B)];
   const H1=r1.length-1;
   v.urunler.forEach((u,i)=>r1.push([i+1,u.code||'',u.ad||'',u.unit||'',u.alinan,u.iade,u.net,u.belge,u.ilk?seri(u.ilk):'',u.son?seri(u.son):'']));
   const T1=r1.length;
-  v.birimler.forEach(b=>r1.push(['TOPLAM','','',b.unit||'',b.alinan,b.iade,b.net]));
+  v.birimler.forEach(b=>r1.push([tmutCevir('TOPLAM',dil,' / '),'','',b.unit||'',b.alinan,b.iade,b.net]));
   const S1=r1.length+1;
-  r1.push([],['MUTABAKAT SONUCU:   ☐ Mutabıkız      ☐ Mutabık değiliz (açıklama: ...............................................)'],[],
-    ['TESLİM EDEN (TEDARİKÇİ)','','','','','TESLİM ALAN'],[TMUT.comp,'','','','',bizAd],
-    ['Ad Soyad','','','','','Ad Soyad'],['Görevi','','','','','Görevi'],['Tarih','','','','','Tarih'],['Kaşe / İmza','','','','','Kaşe / İmza']);
+  // sonuc satiri uzun: her dil kendi satirinda (yan yana secilse bile)
+  const sonuc=[...new Set(dil.sira.map(k=>tmutDilTek('MUTABAKAT SONUCU:',k)+'   ☐ '+tmutDilTek('Mutabıkız',k)+'      ☐ '+tmutDilTek('Mutabık değiliz (açıklama: ...............................................)',k)))].join('\n');
+  const imzaSatir=t=>[B(t),'','','','',B(t)];
+  r1.push([],[sonuc],[],
+    imzaSatir('TESLİM EDEN (TEDARİKÇİ)').map((x,i)=>i===5?B('TESLİM ALAN'):x),[TMUT.comp,'','','','',bizAd],
+    imzaSatir('Ad Soyad'),imzaSatir('Görevi'),imzaSatir('Tarih'),imzaSatir('Kaşe / İmza'));
   const ws1=X.utils.aoa_to_sheet(r1);
   ws1['!merges']=[{s:{r:0,c:0},e:{r:0,c:9}},...[2,3,4,5,6,7,8].map(r=>({s:{r,c:1},e:{r,c:9}})),{s:{r:S1,c:0},e:{r:S1,c:9}}];
   ws1['!cols']=[{wch:22},{wch:18},{wch:48},{wch:8},{wch:14},{wch:11},{wch:14},{wch:12},{wch:12},{wch:12}];
   ws1['!rows']=[{hpt:28}];
+  [2,3,4,5,6,7,8,S1+2,S1+4,S1+5,S1+6,S1+7].forEach(r=>{ ws1['!rows'][r]={hpt:yH}; });
+  ws1['!rows'][H1]={hpt:thH}; ws1['!rows'][S1]={hpt:Math.max(15,dil.sira.length*15)};
   for(let c=0;c<10;c++) ata(ws1,0,c,S.baslik);
   [2,3,4,5,6,7,8].forEach(r=>{ ata(ws1,r,0,S.etiket); for(let c=1;c<10;c++) ata(ws1,r,c,S.deger); });
   for(let c=0;c<10;c++) ata(ws1,H1,c,S.th);
@@ -12153,11 +12259,12 @@ async function tmutExcel(){
   [S1+4,S1+5,S1+6,S1+7].forEach(r=>{ for(let c=1;c<=3;c++) ata(ws1,r,c,S.cizgi); for(let c=6;c<=9;c++) ata(ws1,r,c,S.cizgi); });
 
   // 2) BELGE DOKUMU
-  const r2=[['Sıra','Tarih','Belge No','Tür','Bağlı Sipariş','Bina','Şartname','Kalem','Miktar','PDF','İmzalı Kağıt']];
+  const r2=[['Sıra','Tarih','Belge No','Tür','Bağlı Sipariş','Bina','Şartname','Kalem','Miktar','PDF','İmzalı Kağıt'].map(B)];
   v.belgeler.forEach((b,i)=>{ const iade=b.tip==='iade', pdf=iade?(b.ia&&b.ia.pdf):b.o.pdf;
     r2.push([i+1,seri(b.tarih),b.no||'',iade?'İADE':'TESLİM',iade?(b.o.no||''):'',b.bina||'',b.sartlar.join(', '),b.kalem,b.mik,pdf?'Var':'Yok',iade?'':(b.o.imzaYok?'ELDE DEĞİL':'Elde')]); });
   const ws2=X.utils.aoa_to_sheet(r2);
   ws2['!cols']=[{wch:6},{wch:12},{wch:20},{wch:9},{wch:16},{wch:12},{wch:30},{wch:8},{wch:12},{wch:7},{wch:13}];
+  ws2['!rows']=[{hpt:thH}];
   ws2['!autofilter']={ref:X.utils.encode_range({s:{r:0,c:0},e:{r:r2.length-1,c:10}})};
   for(let c=0;c<11;c++) ata(ws2,0,c,S.th);
   for(let r=1;r<r2.length;r++) for(let c=0;c<11;c++) ata(ws2,r,c,c===7||c===8?S.tdN:(c===0||c===1||c===3||c>=9?S.tdC:S.td),c===8||c===7?NUM:(c===1?TAR:null));
@@ -12166,16 +12273,17 @@ async function tmutExcel(){
   const har=[];
   v.urunler.forEach(u=>u.hareket.forEach(h=>har.push([seri(h.tarih),h.no||'',h.tip==='iade'?'İADE':'TESLİM',h.bina||'',h.sart||'',u.code||'',u.ad||'',h.qty,u.unit||''])));
   har.sort((a,b)=>a[0]-b[0]);   // Array.sort kararlidir: ayni gunun satirlari urun sirasinda kalir
-  const r3=[['Tarih','Belge No','Tür','Bina','Şartname','Stok Kodu','Malzeme Adı','Miktar','Birim'],...har];
+  const r3=[['Tarih','Belge No','Tür','Bina','Şartname','Stok Kodu','Malzeme Adı','Miktar','Birim'].map(B),...har];
   const ws3=X.utils.aoa_to_sheet(r3);
   ws3['!cols']=[{wch:12},{wch:20},{wch:9},{wch:12},{wch:24},{wch:18},{wch:48},{wch:12},{wch:8}];
+  ws3['!rows']=[{hpt:thH}];
   ws3['!autofilter']={ref:X.utils.encode_range({s:{r:0,c:0},e:{r:r3.length-1,c:8}})};
   for(let c=0;c<9;c++) ata(ws3,0,c,S.th);
   for(let r=1;r<r3.length;r++) for(let c=0;c<9;c++) ata(ws3,r,c,c===7?S.tdN:(c===0||c===2||c===8?S.tdC:S.td),c===7?NUM:(c===0?TAR:null));
 
   // 0) MALZEME LISTESI (ilk sekme): urun x sartname basina bir satir, net miktar (iade dusulmus),
   //    siparis numaralari TEK hucrede alt alta - bir urun iki sartnameye alindiysa miktar karismasin diye ayri satir
-  const r0=[['Malzeme İsmi','Malzeme Kodu','Birimi','Alınmış Olduğu Miktar','Hangi Şartname İçin Alındığı','Hangi Siparişlerle Alındığı']];
+  const r0=[['Malzeme İsmi','Malzeme Kodu','Birimi','Alınmış Olduğu Miktar','Hangi Şartname İçin Alındığı','Hangi Siparişlerle Alındığı'].map(B)];
   const sat0=[];
   v.urunler.forEach(u=>{
     const m=new Map();
@@ -12186,16 +12294,17 @@ async function tmutExcel(){
   });
   const ws0=X.utils.aoa_to_sheet(r0);
   ws0['!cols']=[{wch:48},{wch:18},{wch:9},{wch:14},{wch:30},{wch:22}];
-  ws0['!rows']=[{hpt:30},...sat0.map(n=>({hpt:Math.max(15,n*15)}))];
+  ws0['!rows']=[{hpt:thH},...sat0.map(n=>({hpt:Math.max(15,n*15)}))];
   ws0['!autofilter']={ref:X.utils.encode_range({s:{r:0,c:0},e:{r:r0.length-1,c:5}})};
   for(let c=0;c<6;c++) ata(ws0,0,c,S.th);
   for(let r=1;r<r0.length;r++) for(let c=0;c<6;c++) ata(ws0,r,c,c===3?S.tdN:(c===2?S.tdC:S.td),c===3?NUM:null);
 
   const wb=X.utils.book_new();
-  X.utils.book_append_sheet(wb,ws0,'Malzeme Listesi');
-  X.utils.book_append_sheet(wb,ws1,'Mutabakat');
-  X.utils.book_append_sheet(wb,ws2,'Belge Dokumu');
-  X.utils.book_append_sheet(wb,ws3,'Hareketler');
+  const sayfa=t=>tmutDilTek(t,dil.sira[0]);   // sayfa adi ilk secilen dilde
+  X.utils.book_append_sheet(wb,ws0,sayfa('Malzeme Listesi'));
+  X.utils.book_append_sheet(wb,ws1,sayfa('Mutabakat'));
+  X.utils.book_append_sheet(wb,ws2,sayfa('Belge Dokumu'));
+  X.utils.book_append_sheet(wb,ws3,sayfa('Hareketler'));
   const kisa=(sirketKisaltma(kar)||kodNorm(TMUT.comp,8)||'FIRMA');
   const ad=`Teslimat_Mutabakati_${kisa}_${tmutBitis()}.xlsx`;
   const dizi=X.write(wb,{bookType:'xlsx',type:'array'});
