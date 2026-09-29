@@ -4141,6 +4141,10 @@ datalist{display:none}
 .iht-sart-coklu{margin:12px 0 0}
 .iht-ad{font-weight:600;font-size:13px}
 .iht-ad i{display:block;font-style:normal;font-size:11px;color:var(--dim);font-weight:500}
+.iht-ack-btn{background:none;border:1px solid var(--line);border-radius:4px;color:var(--mute);font:inherit;font-size:10.5px;padding:0 6px;cursor:pointer;line-height:16px}
+.iht-ack-btn:hover:not(:disabled),.iht-ack-btn.on{color:var(--text);border-color:var(--mute)}
+.iht-ack-btn:disabled{cursor:default}
+.iht-ack{display:block;margin-top:5px;white-space:pre-wrap;max-width:720px}
 /* belge kodu: satirda gozle taranabilsin diye esaralikli ve bir ton koyu */
 .iht-kod{font-family:Consolas,"Courier New",monospace;font-weight:600;color:var(--mute);letter-spacing:.2px}
 /* form basindaki hedef ozeti: "UYB Kat 3 · 4 kalem" seklinde kirilim */
@@ -34876,6 +34880,20 @@ function ihtAramaEsler(x,q){
 function ihtFiltreVar(){ return !!(IHTV.q||IHTV.bina||IHTV.durum); }
 function ihtFiltreTemizle(){ IHTV.q=''; IHTV.bina=''; IHTV.durum=''; render(); }
 
+/* Aciklama listede KAPALI durur: uzun tutanak metinleri satiri sayfa boyu
+   uzatiyordu. Acik olanlar id kumesinde tutulur (render'lar arasi kalir);
+   arama aciklamada tuttuysa kendiliginden acilir - yoksa satirin neden
+   eslestigi gorunmezdi. */
+const _IHT_ACK=new Set();
+function ihtAciklamaToggle(id){ if(_IHT_ACK.has(id)) _IHT_ACK.delete(id); else _IHT_ACK.add(id); render(); }
+function ihtAciklamaHtml(x,q){
+  if(!x.aciklama) return '';
+  const qn=norm(q||'').trim();
+  const aramaTuttu=!!qn&&norm(x.aciklama).indexOf(qn)>=0;
+  const acik=_IHT_ACK.has(x.id)||aramaTuttu;
+  return ` · <button class="iht-ack-btn${acik?' on':''}" onclick="ihtAciklamaToggle('${x.id}')" title="${acik?'Aciklamayi gizle':'Aciklamayi goster'}"${aramaTuttu?' disabled':''}>${acik?'&#9662;':'&#9656;'} Aciklama</button>`
+    +(acik?`<span class="iht-ack">${esc(x.aciklama)}</span>`:'');
+}
 function renderIhtiyacList(){
   const all=(DB.ihtiyaclar||[]).slice().sort((a,b)=>(b.tarih||0)-(a.tarih||0));
   const q=IHTV.q;
@@ -34897,9 +34915,9 @@ function renderIhtiyacList(){
     const tamam=x.durum==='tamam';
     const hedef=ihtHedefOzet(x);
     rows+=`<tr>
-      <td><span class="iht-ad">${esc(x.ad||'(adsiz liste)')}<span class="iht-durum ${tamam?'tamam':'acik'}" style="margin-left:7px">${tamam?'TAMAM':'ACIK'}</span>${
+      <td><span class="iht-ad">${esc(ihtAdGoster(x,'(adsiz liste)'))}<span class="iht-durum ${tamam?'tamam':'acik'}" style="margin-left:7px">${tamam?'TAMAM':'ACIK'}</span>${
         x.siparisGonderildi?'<span class="iht-durum gonderildi" style="margin-left:4px" title="Bu listenin siparisi gonderildi">GONDERILDI</span>':''}
-        <i>${x.kod?`<b class="iht-kod">${esc(x.kod)}</b> · `:''}${ihtIstenenFirmaAd(x)?`<span title="Istenen firma: ${esc(ihtIstenenFirmaAd(x))}">&#8594; ${esc(ihtIstenenFirmaKisa(x))}</span> · `:''}${ihtSartlar(x).length?`<span class="iht-kod" title="Sartname: ${esc(ihtSartlar(x).join(', '))}">${esc(ihtSartOzet(x))}</span> · `:''}${esc(x.olusturan?kisiAd(x.olusturan):'-')}${x.aciklama?' · '+esc(x.aciklama):''}</i></span></td>
+        <i>${x.kod&&x.ad?`<b class="iht-kod">${esc(x.kod)}</b> · `:''}${ihtIstenenFirmaAd(x)?`<span title="Istenen firma: ${esc(ihtIstenenFirmaAd(x))}">&#8594; ${esc(ihtIstenenFirmaKisa(x))}</span> · `:''}${ihtSartlar(x).length?`<span class="iht-kod" title="Sartname: ${esc(ihtSartlar(x).join(', '))}">${esc(ihtSartOzet(x))}</span> · `:''}${esc(x.olusturan?kisiAd(x.olusturan):'-')}${ihtAciklamaHtml(x,q)}</i></span></td>
       <td class="t-meta">${esc(fmtDate(x.tarih))}</td>
       <td class="t-meta">${esc(x.bina||'-')}</td>
       <td class="t-qty">${fmtNum(tt.kalem)} kalem <span style="color:var(--mute)">· ${fmtNum(tt.miktar)}</span>${
@@ -34970,7 +34988,7 @@ function openIhtiyacDetay(id){
     :`<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--mute);font-size:12.5px">Bu listede dolu satir yok</td></tr>`;
   document.body.insertAdjacentHTML('beforeend',
     `<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:780px">
-      <div class="modal-head"><h3>${esc(x.ad||'Ihtiyac Listesi')}</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+      <div class="modal-head"><h3>${esc(ihtAdGoster(x))}</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
       <div class="modal-body">
         <p class="t-meta" style="margin-bottom:12px">${esc(fmtDate(x.tarih))}${ihtIstenenFirmaAd(x)?' · Istenen: '+esc(ihtIstenenFirmaAd(x)):''}${x.bina?' · '+esc(x.bina):''}${ihtSartlar(x).length?' · '+esc(ihtSartlar(x).join(', ')):''} · ${fmtNum(tt.kalem)} kalem · toplam ${fmtNum(tt.miktar)}${
           tt.eksik?` · <span class="iht-uyari">&#9888; ${fmtNum(tt.eksik)} satirda bina/kat yok</span>`:''}</p>
@@ -35126,7 +35144,7 @@ function renderIhtiyacForm(){
     .map(k=>`<span class="iht-hedef">${esc(k)}<b>${fmtNum(grup[k])}</b></span>`).join('');
   return `<div class="tut-wrap iht-form-wrap">
     <div class="sel-bc"><button onclick="ihtBackToList()">${icoArr('left')} Ihtiyac Listeleri</button> ${icoChevron()}
-      <b>${esc(x.ad||'Yeni Liste')}</b></div>
+      <b>${esc(ihtAdGoster(x,'Yeni Liste'))}</b></div>
     <div class="page-head"><h1>${x._yeni?'Yeni Ihtiyac Listesi':'Ihtiyac Listesi Duzenle'}</h1>
       <p class="page-sub">Kutuphaneden urun ekleyin, miktarini yazin ve her satirin hangi binanin hangi katina gidecegini secin.</p></div>
     ${ihtMissingWarn()}
@@ -35142,7 +35160,7 @@ function renderIhtiyacForm(){
            Parantezli aciklamalar etiketten IPUCUNA alindi: etiket iki satira
            tastiginda alanini asagi itiyor, hizayi bozuyordu. -->
       <div class="tut-grid hizali dort">
-        <div class="frow"><label>Liste Adi *<span class="bbal" tabindex="0">B<span>Listeyi tanimlayan serbest ad</span></span></label>
+        <div class="frow"><label>Liste Adi${ihtKodGoster(x)?'':' *'}<span class="bbal" tabindex="0">B<span>${ihtKodGoster(x)?'Istege bagli serbest ad - bos birakilirsa liste koduyla anilir':'Firma secilmedigi icin kod uretilemiyor; bu durumda ad zorunlu'}</span></span></label>
           <input value="${esc(x.ad||'')}" placeholder="orn. UYB 3. kat eksikleri" onchange="ihtSet('ad',this.value.trim())"></div>
         <div class="frow"><label>Liste Kodu<span class="bbal" tabindex="0">B<span>${ihtKodIpucu(x)}</span></span></label>
           <input value="${esc(ihtKodGoster(x)||'-')}" readonly tabindex="-1" style="font-family:Consolas,monospace;letter-spacing:.4px"></div>
@@ -35385,6 +35403,9 @@ function ihtSonrakiKod(x){
   return max<0?cik:onek+(max+1);
 }
 function ihtKodGoster(x){ return (x&&x.kod)||ihtSonrakiKod(x)||''; }
+/* Liste adi ISTEGE BAGLI: kod varsa liste onunla tanimlanir. Adin gorundugu
+   her yer (liste, baslik, onay, log) bos adda koda duser. */
+function ihtAdGoster(x,yedek){ return (x&&(x.ad||x.kod))||yedek||'Ihtiyac Listesi'; }
 function ihtKodIpucu(x){
   if(x&&x.kod) return 'Kod verildi - tarih ya da firma degisse bile ayni kalir';
   if(ihtKodOnek(x)) return 'Kaydedince bu kod verilir; o ana kadar degisebilir';
@@ -35395,7 +35416,7 @@ function ihtKodIpucu(x){
 function newIhtiyac(){
   if(!ihtCanEdit()){ toast('Bu islem icin yetkiniz yok','err'); return; }
   const bina=IHTV.bina||'';   // liste ekranindaki bina filtresi on deger olur
-  _IHT={ id:uid(), ad:'Ihtiyac Listesi - '+fmtDate(Date.now()), tarih:Date.now(),
+  _IHT={ id:uid(), ad:'', tarih:Date.now(),
     bina, sartlar:[], sartCoklu:false, firmaId:ihtVarsayilanFirma(), istenenFirmaId:'', istenenFirmaAd:'', durum:'acik', siparisGonderildi:false, aciklama:'', lines:[ihtBlankLine(bina)],
     olusturan:(CURRENT_USER&&CURRENT_USER.username)||'', olusturmaTs:Date.now(),
     guncelleyen:'', guncellemeTs:Date.now(), _yeni:true };
@@ -35416,7 +35437,7 @@ function copyIhtiyac(id){
   const c=JSON.parse(JSON.stringify(x));
   c.id=uid(); c.tarih=Date.now(); c.durum='acik'; c.siparisGonderildi=false; c._yeni=true;
   delete c.kod;   // kopya YENI bir belgedir: kaydedilince kendi kodunu alir
-  c.ad=(x.ad||'Ihtiyac Listesi')+' (kopya)';
+  c.ad=x.ad?x.ad+' (kopya)':'';   // adsiz listenin kopyasi da adsiz: yeni kodunu alir
   c.olusturan=(CURRENT_USER&&CURRENT_USER.username)||''; c.olusturmaTs=Date.now();
   c.guncelleyen=''; c.guncellemeTs=Date.now();
   (c.lines||[]).forEach(l=>{ l.id=uid(); });
@@ -35428,7 +35449,7 @@ async function delIhtiyac(id){
   if(!ihtCanDelete()){ toast('Silme yetkiniz yok','err'); return; }
   const x=(DB.ihtiyaclar||[]).find(y=>y.id===id); if(!x)return;
   const tt=ihtTotals(x);
-  if(!confirm('"'+(x.ad||'Ihtiyac listesi')+'" silinecek.\n\nTarih: '+fmtDate(x.tarih)
+  if(!confirm('"'+ihtAdGoster(x)+'" silinecek.\n\nTarih: '+fmtDate(x.tarih)
     +'\nBina: '+(x.bina||'-')
     +'\nIcerik: '+tt.kalem+' kalem · toplam '+fmtNum(tt.miktar)
     +'\n\nBu islem geri alinamaz. Devam edilsin mi?'))return;
@@ -35436,7 +35457,7 @@ async function delIhtiyac(id){
   catch(e){ ihtYazHatasi(e,'silinemedi'); return; }
   DB.ihtiyaclar=(DB.ihtiyaclar||[]).filter(y=>y.id!==id);
   if(_IHT&&_IHT.id===id){ _IHT=null; IHTV.mode='list'; }
-  logAction('delete','Ihtiyac listesi silindi: '+(x.ad||id));
+  logAction('delete','Ihtiyac listesi silindi: '+ihtAdGoster(x,id));
   render(); toast('Ihtiyac listesi silindi');
 }
 // listeden tek tikla acik <-> tamamlandi (formu acmadan)
@@ -35451,7 +35472,7 @@ async function ihtDurumToggle(id){
   const i=(DB.ihtiyaclar||[]).findIndex(y=>y.id===id);
   if(i>=0) DB.ihtiyaclar[i]=kayit;
   window.__ihtiyacTableMissing=false;
-  logAction('define','Ihtiyac listesi durumu: '+(kayit.ad||id)+' -> '+(kayit.durum==='tamam'?'tamamlandi':'acik'));
+  logAction('define','Ihtiyac listesi durumu: '+ihtAdGoster(kayit,id)+' -> '+(kayit.durum==='tamam'?'tamamlandi':'acik'));
   render(); toast(kayit.durum==='tamam'?'Liste tamamlandi olarak isaretlendi':'Liste yeniden acildi');
 }
 // listeden tek tikla siparis gonderildi isaretlenir - forma girmeden
@@ -35466,7 +35487,7 @@ async function ihtSiparisToggle(id,on){
   const i=(DB.ihtiyaclar||[]).findIndex(y=>y.id===id);
   if(i>=0) DB.ihtiyaclar[i]=kayit;
   window.__ihtiyacTableMissing=false;
-  logAction('define','Ihtiyac listesi siparisi: '+(kayit.ad||id)+' -> '+(kayit.siparisGonderildi?'gonderildi':'gonderilmedi'));
+  logAction('define','Ihtiyac listesi siparisi: '+ihtAdGoster(kayit,id)+' -> '+(kayit.siparisGonderildi?'gonderildi':'gonderilmedi'));
   render(); toast(kayit.siparisGonderildi?'Siparis gonderildi olarak isaretlendi':'Siparis isareti kaldirildi');
 }
 
@@ -35475,7 +35496,8 @@ async function saveIhtiyac(){
   if(!ihtCanEdit()){ toast('Bu islem icin yetkiniz yok','err'); return; }
   if(!_IHT)return;
   const ad=String(_IHT.ad||'').trim();
-  if(!ad){ toast('Liste adi zorunlu','err'); return; }
+  // ad istege bagli; ama ne ad ne kod varsa liste tanimsiz kalir (kod firmasiz uretilemez)
+  if(!ad&&!ihtKodGoster(_IHT)){ toast('Kod uretilemiyor: firma secin ya da liste adi yazin','err'); return; }
   if(!ihtFilledLines(_IHT).length){ toast('En az bir malzeme satiri girin','err'); return; }
   _IHT.ad=ad;
   _IHT.durum=(_IHT.durum==='tamam')?'tamam':'acik';
@@ -35511,7 +35533,7 @@ async function saveIhtiyac(){
   delete _IHT._yeni;                                // yazma gectiyse bundan sonrasi guncelleme
   window.__ihtiyacTableMissing=false;               // yazabildiysek uyari bandi kalksin
   logAction('define',(yeni?'Ihtiyac listesi olusturuldu: ':'Ihtiyac listesi guncellendi: ')
-    +kayit.ad+' ('+kayit.lines.length+' kalem)');
+    +ihtAdGoster(kayit)+' ('+kayit.lines.length+' kalem)');
   ihtBackToList();
   toast(yeni?'Ihtiyac listesi kaydedildi':'Ihtiyac listesi guncellendi');
 }
