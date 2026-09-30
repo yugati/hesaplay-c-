@@ -41246,7 +41246,7 @@ function renderKagitListe(){
         ${firmalar.map(c=>`<option value="${esc(c.id)}" ${FATV.kcomp===c.id?'selected':''}>${esc(c.ad||'-')}</option>`).join('')}</select>
       <div class="iht-sag">
         ${filtreVar?`<button class="iht-reset" onclick="kgtFiltreTemizle()">Filtreleri temizle</button>`:''}
-        ${list.length?`<button class="btn btn-ghost" onclick="kgtExcel()" title="Duz liste: her kagit SATIRI bir Excel satiri - kagitta yazan, onaylanan, nihai faturalanan ve kalan">${icoXls()} Duz Excel</button>`:''}
+        ${list.length?`<button class="btn btn-ghost" onclick="kgtExcel()" title="Teslimat teyidi: her kagit SATIRI bir Excel satiri - kagitta yazan, firmanin net teslimiyle karsilastirilir (Faturalanabilir / Kismen / Faturalanamaz / Inceleme Tekrari). Tek firmalidir: firma secili degilse once sorulur.">${icoXls()} Duz Excel</button>`:''}
         ${fatCanEdit()?`<button class="btn btn-add" onclick="kgtYeni()">${icoPlus()} Yeni Kagit</button>`:''}
       </div>
     </div>
@@ -42236,28 +42236,182 @@ function nhfExcel(){
   logAction('fatura','Nihai fatura Excel ciktisi alindi ('+fmtNum(list.length)+' fatura, '+fmtNum(aoa.length-1)+' satir)');
   toast('Nihai faturalar Excel indirildi');
 }
-function kgtExcel(){
-  const list=kgtListeFiltreli(), nix=nhfIndeks('');
-  const aoa=[["durum","sartname_no","kagit_tarihi","sozlesme_no","sozlesme_tarihi","firma","sira_no","cekildigi_sartname",
-    "urun_kodu","urun","birim","yerlesim_kodlari","kagitta_yazan","onaylanan","nihai_faturalanan","faturalanacak_kalan","birim_fiyat","kdv_orani",
-    "tutar_kagitta_yazan","tutar_onaylanan","para_birimi","onaylayan","onay_tarihi","red_nedeni","not"]];
+/* TESLIMAT TEYIDI - sartname kagidi Excel'i (30 Eyl 2026).
+   Kagitta YAZAN her satir, firmanin Teslimat Mutabakati'ndaki net teslimiyle
+   karsilastirilir: "bu kagit faturalanabilir mi" sorusunun onaydan BAGIMSIZ teyidi.
+   Salt okumadir - onay, tavan ve nihai fatura hesaplarina dokunmaz.
+   Kullanicinin onayladigi kurallar:
+   - Karsilastirilan KAGITTA YAZAN miktardir; onaylanan yaninda bilgi sutunudur.
+   - Teslim BUGUNE KADAR sayilir (Teslimat Mutabakati'nin varsayilani): alim siparis
+     tarihiyle, iade kendi tarihiyle. Kagit tarihindeki teslim ayrica bilgi sutunudur.
+   - Ayni urun birden cok kagitta: kagitlar SARTNAME NO sirasiyla teslimati tuketir
+     (kagit icinde satir sirasiyla). Reddedilen kagit tuketmez, taslak/kontrol tuketir.
+     Hesap firmanin BUTUN kagitlariyla yapilir - ekrandaki suzgec yalniz hangi
+     satirlarin Excel'e inecegini belirler, tuketim sirasini degil.
+   - Urun bazli (kagit satirindaki sartname bilgi) - kagit tavaniyla ayni kural.
+   - Firma kimligi companyId (kagit tavaniyla ayni). Teslimat Mutabakati ekrani firmayi
+     addan gruplar; siparislerde companyId oldugu surece ikisi ayni sayiyi verir.
+   - KGT_TEYIT_TOL altindaki fark yok sayilir: 301,8633540... gibi kesirli bir giris
+     komsu kagitta "0,003 fazla" diye KISMEN uretmesin. */
+const KGT_TEYIT_TOL=0.01;
+const KGT_TEYIT={   // renk: [dolgu, yazi] - yesil uyumlu / turuncu kismi / kirmizi fazla / mor teslimatta yok
+  ok:    {ad:'FATURALANABİLİR',  renk:['FFDCFCE7','FF166534']},
+  kismi: {ad:'KISMEN',           renk:['FFFFEDD5','FF9A3412']},
+  yok:   {ad:'FATURALANAMAZ',    renk:['FFFEE2E2','FF991B1B']},
+  incele:{ad:'İNCELEME TEKRARI', renk:['FFEDE9FE','FF5B21B6']},
+  disi:  {ad:'HESAP DIŞI',       renk:['FFF3F4F6','FF6B7280']},   // reddedilen kagit - teslimati tuketmez
+};
+// firmanin urun bazli teslimi, bugun dahil: net + tarihli hareket (kagit tarihindeki teslim buradan)
+function kgtTeslimIndeksi(cid){
+  const t2=new Date(tutISO(Date.now())).getTime()+86399999;   // tmutAralik ile ayni gun sonu
+  const m=new Map(), coz=new Map();
+  const ekle=(l,t,q,iade)=>{
+    if(!q||t>t2) return;
+    // cozumleme ayirt edici alanlar basina bir kez (tmutVeri ile ayni anahtar)
+    const ck=(l.altId||'')+'|'+(l.specId||'')+'|'+String(l.code||'')+'|'+String(l.ad||l.name||'');
+    if(!coz.has(ck)) coz.set(ck,fatAnahtar(l,lineAlimMaterial(l)));
+    const k=coz.get(ck); let g=m.get(k); if(!g){ g={alinan:0,net:0,har:[]}; m.set(k,g); }
+    if(!iade) g.alinan+=q;
+    g.net+=iade?-q:q; g.har.push({t,q:iade?-q:q});
+  };
+  (DB.proje.orders||[]).forEach(o=>{
+    if(fatSiparisFirmasi(o)!==cid) return;
+    const t=Number(o.date)||0;
+    (o.lines||[]).forEach(l=>ekle(l,t,Number(l.qty)||0,false));
+    orderIadeler(o).forEach(ia=>{ const ti=Number(ia.tarih)||0;
+      iadeSatirlari(ia).forEach(r=>ekle(r,ti,Number(r.qty)||0,true)); });
+  });
+  return m;
+}
+// tuketim sirasi: Sartname No (sayisal), no'suz kagit sonda; esitlikte kagit tarihi
+function kgtNoSira(a,b){
+  return (!a.no)-(!b.no)||String(a.no||'').localeCompare(String(b.no||''),'tr',{numeric:true})
+    ||(a.tarih||0)-(b.tarih||0)||(a.olusturmaTs||0)-(b.olusturmaTs||0);
+}
+// "kagitId|satirSid" -> {d, net, once, fb, fazla, tarihte}; reddedilen kagidin satiri haritada yoktur
+function kgtTeyit(cid){
+  const tes=kgtTeslimIndeksi(cid), once=new Map(), m=new Map();
+  kgtKayitlar().filter(k=>String(k.companyId||'')===cid&&kgtDurumu(k)!=='red').sort(kgtNoSira).forEach(k=>{
+    const tEnd=k.tarih?Number(k.tarih)+86399999:null;   // kagit gunu dahil
+    kgtSatirlari(k).forEach(r=>{
+      const key=String(r.key||''), g=tes.get(key), yz=fatSayi(r.yazan), on=once.get(key)||0;
+      once.set(key,on+yz);
+      const net=g?g.net:0;
+      let fb=Math.min(yz,Math.max(0,net-on)), d;
+      if(!g||!(g.alinan>0)){ d='incele'; fb=0; }
+      else if(yz-fb<=KGT_TEYIT_TOL){ d='ok'; fb=yz; }
+      else if(fb<=KGT_TEYIT_TOL){ d='yok'; fb=0; }
+      else d='kismi';
+      m.set(k.id+'|'+kgtSid(r),{d,net,once:on,fb,fazla:yz-fb,
+        tarihte:tEnd==null?null:(g?g.har.reduce((s,h)=>s+(h.t<=tEnd?h.q:0),0):0)});
+    });
+  });
+  return m;
+}
+/* "Tum firmalar" seciliyken Excel once firmayi sorar: teyit tek firmalidir, firma adi
+   basliga yazilir (sutun olarak tekrarlanmaz). */
+function kgtExcelFirmaSor(){
+  const m=new Map();
+  kgtListeFiltreli().forEach(k=>{ const id=String(k.companyId||''); if(!id) return;
+    const g=m.get(id)||{id,ad:fatCompany(k)||'-',n:0,s:0}; g.n++; g.s+=kgtSatirlari(k).length; m.set(id,g); });
+  const fl=[...m.values()].sort((a,b)=>a.ad.localeCompare(b.ad,'tr'));
+  if(!fl.length){ toast('Listede firmasi belli bir kagit yok','err'); return; }
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:520px">
+    <div class="modal-head"><h3>Teslimat Teyidi - Firma</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body">
+      <p class="t-meta" style="margin:0 0 10px;line-height:1.5">Excel tek firma icin cikar, firma adi tablonun basligina yazilir. Kagitta yazan her satir firmanin bugune kadarki net teslimiyle karsilastirilir: <b>Faturalanabilir</b>, <b>Kismen</b>, <b>Faturalanamaz</b>; urun firmanin teslimatinda hic yoksa <b>Inceleme Tekrari</b>.</p>
+      <div class="nord-sart-liste">${fl.map((f,i)=>`<label class="nord-sart-row${i?'':' on'}">
+        <input type="radio" name="kgtXFirma" value="${esc(f.id)}" ${i?'':'checked'} onchange="this.closest('.nord-sart-liste').querySelectorAll('.nord-sart-row').forEach(x=>x.classList.toggle('on',x.contains(this)))">
+        <span class="nss-text"><b style="font-size:12.5px">${esc(f.ad)}</b></span>
+        <span class="nss-n">${fmtNum(f.n)} kagit · ${fmtNum(f.s)} satir</span></label>`).join('')}</div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="kgtExcelFirmaIndir()">${icoXls()} Excel'i Indir</button></div>
+  </div></div>`);
+}
+function kgtExcelFirmaIndir(){
+  const s=document.querySelector('input[name="kgtXFirma"]:checked');
+  if(!s){ toast('Once firma secin','err'); return; }
+  const id=s.value; closeModal(); kgtExcel(id);
+}
+/* Her kagit SATIRI bir Excel satiri, satirlar tuketim sirasinda (Sartname No). Ustte firma
+   basligi + ozet; stil xlsx-js-style ile, bilesen yuklenemezse ayni dosya stilsiz iner. */
+async function kgtExcel(cid){
+  cid=String(cid||FATV.kcomp||'');
+  if(!cid){ kgtExcelFirmaSor(); return; }
+  const tumu=kgtKayitlar().filter(k=>String(k.companyId||'')===cid);
+  const list=kgtListeFiltreli().filter(k=>String(k.companyId||'')===cid).sort(kgtNoSira);
+  if(!list.length){ toast('Bu firmanin listede kagidi yok','err'); return; }
+  const c=(DB.companies||[]).find(x=>x&&x.id===cid), firma=(c&&c.ad)||fatCompany(list[0])||'-';
+  let X=null;
+  try{ X=await window.xlsxStilYukle(); }catch(e){ X=null; }
+  const stilli=!!(X&&X.utils);
+  if(!stilli) X=XLSX;
+  const tey=kgtTeyit(cid), nix=nhfIndeks(''), bugun=tutISO(Date.now());
+  const q6=x=>Math.round(x*1e6)/1e6;   // kayan nokta artigi (966,99999999) hucreye tasinmasin
+  const H=["durum","kagit_durumu","sartname_no","kagit_tarihi","sozlesme_no","sozlesme_tarihi","sira_no","cekildigi_sartname",
+    "urun_kodu","urun","birim","yerlesim_kodlari","kagitta_yazan","teslim_neti","onceki_kagitlarda","faturalanabilir","fazla",
+    "kagit_tarihinde_teslim","onaylanan","nihai_faturalanan","faturalanacak_kalan","birim_fiyat","kdv_orani",
+    "tutar_kagitta_yazan","tutar_onaylanan","para_birimi","onaylayan","onay_tarihi","red_nedeni","not"];
+  const say={ok:0,kismi:0,yok:0,incele:0,disi:0}, veri=[], dk=[];
   list.forEach(k=>{ const d=kgtDurumu(k), fm=d==='onayli'?kgtFaturalanan(k,nix):new Map();
-    kgtSatirlari(k).forEach((r,i)=>{ const on=fatSayi(r.onay), ft=fm.get(kgtSid(r))||0;
+    kgtSatirlari(k).forEach((r,i)=>{ const on=fatSayi(r.onay), ft=fm.get(kgtSid(r))||0, t=tey.get(k.id+'|'+kgtSid(r));
+      const td=t?t.d:'disi'; say[td]++; dk.push(td);
       const hy=fatSatirHesap({qty:fatSayi(r.yazan),fiyat:r.fiyat,kdvOrani:r.kdvOrani}), ho=fatSatirHesap({qty:on,fiyat:r.fiyat,kdvOrani:r.kdvOrani});
-      aoa.push([KGT_DURUM[d].ad, k.no||'', fmtDate(k.tarih), k.sozlesmeNo||'', k.sozlesmeTarihi?fmtDate(k.sozlesmeTarihi):'', fatCompany(k)||'', i+1, r.sartname||'',
-        r.code||'', r.ad||'', r.unit||'', fatSatirPaylari(r).map(x=>x.kod+' ('+fmtNum(fatSayi(x.qty))+')').join(' · '), fatSayi(r.yazan), on||'', d==='onayli'?ft:'', d==='onayli'?Math.max(0,on-ft):'',
+      veri.push([KGT_TEYIT[td].ad, KGT_DURUM[d].ad, k.no||'', fmtDate(k.tarih), k.sozlesmeNo||'', k.sozlesmeTarihi?fmtDate(k.sozlesmeTarihi):'', i+1, r.sartname||'',
+        r.code||'', r.ad||'', r.unit||'', fatSatirPaylari(r).map(x=>x.kod+' ('+fmtNum(fatSayi(x.qty))+')').join(' · '), fatSayi(r.yazan),
+        t?q6(t.net):'', t?q6(t.once):'', t?q6(t.fb):'', t?q6(t.fazla):'', t&&t.tarihte!=null?q6(t.tarihte):'',
+        on||'', d==='onayli'?ft:'', d==='onayli'?Math.max(0,on-ft):'',
         r.fiyat==null?'':fatSayi(r.fiyat), r.kdvOrani==null?'':fatSayi(r.kdvOrani),
         Number(hy.toplam.toFixed(2)), on>0?Number(ho.toplam.toFixed(2)):'', k.paraBirimi||'TRY',
         k.onayBy?kisiAd(k.onayBy):'', k.onayTs?fmtDate(k.onayTs):'', k.redNeden||'', k.not||'']); });
   });
-  if(aoa.length===1) aoa.push(new Array(aoa[0].length).fill(''));
-  const wb=XLSX.utils.book_new(), ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols']=aoa[0].map((h,i)=>({wch:i===9?34:([1,3,5,7,11].includes(i)?18:12)}));
-  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:aoa.length-1,c:aoa[0].length-1}})};
-  XLSX.utils.book_append_sheet(wb,ws,"Sartname Kagitlari");
-  XLSX.writeFile(wb,`sartname-kagitlari_${new Date().toISOString().slice(0,10)}.xlsx`);
-  logAction('fatura','Sartname kagidi Excel ciktisi alindi ('+fmtNum(list.length)+' kagit, '+fmtNum(aoa.length-1)+' satir)');
-  toast('Sartname kagitlari Excel indirildi');
+  const ozet=`${fmtNum(list.length)} kağıt · ${fmtNum(veri.length)} satır  —  ${['ok','kismi','yok','incele','disi']
+    .filter(x=>x!=='disi'||say.disi).map(x=>KGT_TEYIT[x].ad+' '+fmtNum(say[x])).join(' · ')}`;
+  const kural='Kağıtlar Şartname No sırasıyla teslimattan düşülür (reddedilen kağıt düşülmez) · 0,01 altı fark yok sayılır · '
+    +'İNCELEME TEKRARI: ürün bu firmanın teslimatında yok'
+    +(list.length<tumu.length?` · Liste süzgeci: firmanın ${fmtNum(tumu.length)} kağıdından ${fmtNum(list.length)} tanesi listelendi, hesap tüm kağıtlarla yapıldı`:'');
+  const aoa=[[firma],
+    [`Şartname Kağıtları – Teslimat Teyidi · kağıtta yazan miktar, firmanın ${tmutGun(bugun)} tarihine kadarki net teslimiyle karşılaştırıldı`],
+    [ozet],[kural],[],H,...veri];
+  const HR=5, son=H.length-1, ws=X.utils.aoa_to_sheet(aoa);
+  ws['!merges']=[0,1,2,3].map(r=>({s:{r,c:0},e:{r,c:son}}));
+  ws['!cols']=H.map((h,i)=>({wch:i===9?40:i===7?26:i===0?19:([4,8,11,28,29].includes(i)?16:(i===6?7:12))}));
+  ws['!rows']=[{hpt:26}];
+  ws['!autofilter']={ref:X.utils.encode_range({s:{r:HR,c:0},e:{r:Math.max(HR,aoa.length-1),c:son}})};
+  if(stilli){
+    const ince={style:'thin',color:{rgb:'FF9BA3AF'}}, kenar={top:ince,bottom:ince,left:ince,right:ince};
+    const S={
+      baslik:{font:{bold:true,sz:14,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FF1E3A8A'}},alignment:{vertical:'center'}},
+      alt:{font:{bold:true,color:{rgb:'FF1E3A8A'}}}, bilgi:{font:{color:{rgb:'FF4B5563'}}},
+      th:{font:{bold:true,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FF2563EB'}},border:kenar,alignment:{horizontal:'center',vertical:'center',wrapText:true}},
+      td:{border:kenar,alignment:{vertical:'center'}}, tdN:{border:kenar,alignment:{horizontal:'right',vertical:'center'}},
+      tdC:{border:kenar,alignment:{horizontal:'center',vertical:'center'}},
+    };
+    const NUM='#,##0.##', TUT='#,##0.00';
+    // '#,##0.##' tam sayida sona bos ayirici birakir ("2.973,") - tam sayiya ondaliksiz bicim (tmutExcel ile ayni)
+    const ata=(r,c,s,z)=>{ const a=X.utils.encode_cell({r,c}); if(!ws[a]) ws[a]={t:'s',v:''}; ws[a].s=s;
+      if(z&&ws[a].t==='n') ws[a].z=(z===NUM&&Number.isInteger(ws[a].v))?'#,##0':z; };
+    for(let c=0;c<=son;c++){ ata(0,c,S.baslik); ata(1,c,S.alt); ata(2,c,S.bilgi); ata(3,c,S.bilgi); ata(HR,c,S.th); }
+    ws['!rows'][HR]={hpt:30};
+    veri.forEach((row,i)=>{ const r=HR+1+i, x=KGT_TEYIT[dk[i]];
+      for(let c=0;c<=son;c++){
+        if(c===0){ ata(r,c,{...S.tdC,font:{bold:true,color:{rgb:x.renk[1]}},fill:{fgColor:{rgb:x.renk[0]}}}); continue; }
+        if(c===16&&row[c]>0){ ata(r,c,{...S.tdN,font:{bold:true,color:{rgb:'FF991B1B'}}},NUM); continue; }
+        ata(r,c,c>=12&&c<=24?S.tdN:([1,2,3,5,6,10,25,27].includes(c)?S.tdC:S.td),c===23||c===24?TUT:(c>=12&&c<=22?NUM:null));
+      }
+    });
+  }
+  const wb=X.utils.book_new();
+  X.utils.book_append_sheet(wb,ws,"Sartname Kagitlari");
+  const kisa=sirketKisaltma(c)||kodNorm(firma,8)||'FIRMA';
+  const dizi=X.write(wb,{bookType:'xlsx',type:'array'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([dizi],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+  a.download=`sartname-kagitlari-teyit_${kisa}_${bugun}.xlsx`; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  logAction('fatura','Sartname kagidi teslimat teyidi Excel ciktisi alindi ('+firma+', '+fmtNum(list.length)+' kagit, '+fmtNum(veri.length)+' satir: '
+    +fmtNum(say.ok)+' faturalanabilir, '+fmtNum(say.kismi)+' kismen, '+fmtNum(say.yok)+' faturalanamaz, '+fmtNum(say.incele)+' inceleme tekrari)');
+  toast(stilli?'Teslimat teyidi Excel indirildi':'Teslimat teyidi Excel indirildi (stil bileseni yuklenemedi - renksiz)');
 }
 function renderNihaiListe(){
   const yuklendi=_FAT_YUKLENDI, list=nhfListeFiltreli(), tumu=nhfKayitlar(), firmalar=fatFirmalar();
