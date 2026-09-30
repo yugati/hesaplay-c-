@@ -1955,6 +1955,8 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .floww-node.sonuk{opacity:.18}
 .floww-node.sonuk:hover{opacity:.7}
 .fw-port.sonuk,.floww-edges path.sonuk{opacity:.14}
+/* bag zinciri (flowYolCiz): imlecin altindaki dugumun kokten gelen baglari - kenarlarin ustunde, dugumlerin altinda */
+.floww-edges.fw-yol path{fill:none;stroke:var(--blue);stroke-linecap:round;stroke-linejoin:round;opacity:.9}
 .floww-canvas.odakli .floww-node:not(.sonuk){z-index:2}
 /* yuzen etiketler: ekran olceginde, tuvalin ustunde; tiklayinca o dala dalinir */
 .fw-etk-kat{position:absolute;inset:0;pointer-events:none;z-index:4;overflow:hidden}
@@ -18669,8 +18671,16 @@ function flowLayout(binas){
          hem asiri genis bir bant olusmaz; boylece 200+ ozel no tek bakista birlikte gorulebilir. */
       na=Math.max(1,Math.min(OZCOLMAX,Math.ceil(Math.sqrt(adet*(csv+vg)/(csu+og))))); nb=Math.ceil(adet/na);
     }
+    /* BAG TIPI (flowTarakYol): ozel kod blogu "kapsa" (govde blogu boydan boya kapsar); lokasyon
+       izgarasinda HER hucreye ayri bag - satirda birden cok hucre varsa "tarak" (satirin giris
+       kenarinda hat + her hucreye inis), tek kolonda "liste" (govdeden yan kenara kol). Tarakta hat
+       satir araliginda durur: aralik en az TG; TB/BT'de govde blogun solunda - capraz eksende de yer acilir. */
+    const satirda=dikey?nb:na, satirN=Math.ceil(adet/satirda);
+    bl.tip=bl.ozel?'kapsa':satirda>1?'tarak':'liste';
+    const TG=Math.max(dikey?og:vg,30*o), rg=bl.tip==='tarak'?TG:(dikey?og:vg);   // rg: satirdan satira bosluk
+    bl.bg=TG/2; bl.T=14*o;
     // blok, ebeveyn kutusu kolonundan tasiyorsa (genis sartname) kutunun bittigi yerden baslar
-    araAc(vg);
+    araAc(bl.tip==='tarak'||(dikey&&!bl.ozel)?Math.max(vg,TG):vg);
     const u0=Math.max(colStart[bl.d],bl.ust.u+su(bl.ust)+HG*o), v0=vCur;   // ust.u: koy() cocuklardan once yazar
     /* SATIR SATIR dizilir: doldurma ekranda once YATAY (LR'de ana eksen, TB'de capraz eksen). Dali
        ACIK hucre (bl.acik) varsa alt agaci o satirin hemen ALTINDAKI SERITTE kurulur, sonraki satirlar
@@ -18681,7 +18691,6 @@ function flowLayout(binas){
          TB/BT: serit ana eksende (satirin altinda); alt agac hucresinin altina ortalanir, ayni
                 satirdakiler capraz eksende yan yana sirayla dizilir. */
     const acik=bl.acik&&bl.acik.size?bl.acik:null, girinti=26*o, iB0=yerlesen.length;
-    const satirda=dikey?nb:na, satirN=Math.ceil(adet/satirda);
     let uS=u0, vS=v0;
     // acik hucrenin alt agaci: hucre ilk kolondaymis gibi kurulur (idari ve fiziksel cocuklar ayni
     // kolondan baslasin), sonra hedef yerine kaydirilir
@@ -18699,7 +18708,7 @@ function flowLayout(binas){
         if(dikey){ n.u=uS; n.v=v0+j*(csv+vg); } else { n.u=u0+j*(csu+og); n.v=vS; }
         n.blokIc=true; yerlesen.push(n); nodes.push(n); });
       const ac=acik?ks.filter(k=>acik.has(k)):[];
-      if(!ac.length){ if(dikey) uS+=csu+og; else vS+=csv+vg; continue; }
+      if(!ac.length){ if(dikey) uS+=csu+rg; else vS+=csv+rg; continue; }
       if(!dikey){
         let vB=vS+csv+vg;
         ac.sort((a,b)=>b-a).forEach(k=>{
@@ -18708,7 +18717,7 @@ function flowLayout(binas){
           A.yeni.forEach(m=>{ m.u+=du; });
           vB=vCur-vAra+vg;
         });
-        vS=vB;
+        vS=vB-vg+rg;   // seritten sonraki satirin hatti seride degmesin
       } else {
         const uB=uS+csu+HG*o; let vC=v0, uSon=uS+csu;
         ac.sort((a,b)=>a-b).forEach(k=>{
@@ -18720,7 +18729,7 @@ function flowLayout(binas){
           uSon=Math.max(uSon,...A.yeni.map(m=>m.u+su(m)));
           vC=hv+gen+vg;
         });
-        uS=uSon+HG*o;
+        uS=uSon+Math.max(HG*o,rg);
       }
     }
     // blogun kapsami: hucreler + seritler (sonraki kardes bunun arkasindan baslar)
@@ -18786,7 +18795,8 @@ function flowLayout(binas){
   /* 5) KENARLAR: her lokasyon dugumu ebeveynine (yoksa binasina) baglanir; paylasimli dugumden
      ebeveynlerinin HER BIRINE ayri kenar cikar. Kenarlar koordinat degil DUGUM tutar: dugum
      suruklenince uc noktalar cizimde yeniden hesaplanir (flowEdgePath), cizgi dugumu takip eder.
-     Izgaradaki hucrenin birincil bagi tek blok kenarindan gelir (hucre basina kenar cizilmez).
+     Izgaradaki hucrelerin birincil bagi blok kenarindan gelir: kenar tek nesnedir ama HER hucreye
+     gorunur bag cizer (tarak: flowTarakYol) - ebeveyn blogun ortasina degil hucrelere baglanir.
      kol: izgara hucresinden serit icindeki alt agacina giden kenar (LR/RL) - hucre govdesinden inen
      dirsek cizgi (flowKolPath); TB/BT'de alt agac zaten hucrenin altinda, normal egri yeter. */
   const byId={}; nodes.forEach(n=>{ byId[n.k]=n; });
@@ -18803,7 +18813,8 @@ function flowLayout(binas){
     // idari dal kenarlari: lokasyon -> bolum, bolum -> sartname (ebeveyn anahtari pk)
     if(n.type==='bolum'||n.type==='srt'){ const p=byId[n.pk]; if(p) edges.push({a:p,b:n,idari:1,rol:n.rol,olc:1,kol:kolMu(p)}); }
   });
-  bloklar.forEach(bl=>edges.push({a:bl.ust,grp:bl.cells,idari:bl.ozel?1:0,rol:bl.rol,olc:bl.cells[0].olc||1,kol:kolMu(bl.ust)}));
+  bloklar.forEach(bl=>edges.push({a:bl.ust,grp:bl.cells,idari:bl.ozel?1:0,rol:bl.rol,olc:bl.cells[0].olc||1,kol:kolMu(bl.ust),
+    tarak:{tip:bl.tip,bg:bl.bg,T:bl.T}}));
   // 6) GORUNUM SINIFLARI: rol, sekil, rol rengi, sabit boyutta sigmayan satirlarin gizlenmesi,
   // alt nesil (nesil) ve mikro agac koku (nkok)
   nodes.forEach(n=>{
@@ -19150,22 +19161,151 @@ function flowEdgePath(e){
 function flowKolPath(a,b){
   const ao=a.olc||1, gx=13*ao, rl=flowSablon().yon==='RL';
   if(b.y<a.y+a.h-2) return null;
-  const x0=rl?a.x+a.w-gx:a.x+gx, y0=a.y+a.h, yc=b.y+b.h/2, x2=rl?b.x+b.w:b.x;
+  const x0=rl?a.x+a.w-gx:a.x+gx, y0=a.y+a.h-3*ao, yc=b.y+b.h/2, x2=rl?b.x+b.w:b.x;   // -3: kapsul kenarinin kavsine degsin
   if(rl?x2>x0-4:x2<x0+4) return null;
   const r=Math.max(0,Math.min(9*ao,Math.abs(x2-x0)/2,(yc-y0)/2)), sx=rl?-1:1;
   return `M${x0} ${y0} V${yc-r} Q${x0} ${yc} ${x0+sx*r} ${yc} H${x2}`;
+}
+/* IZGARA BAGI (TARAK): ebeveynden izgaranin HER hucresine gorunur bag. Onceden tek egri blogun
+   kapsadigi dikdortgenin ortasina gidiyordu: tek kolonda iki hucrenin arasina, dali acik odada
+   seritteki bolum / sartnameye denk geliyordu - bag nereye gidiyor belli olmuyordu.
+     tarak (satirda birden cok hucre): ebeveyn -> GOVDE (blogun yaninda dikey hat) -> her satirin
+            giris kenarinda HAT -> her hucreye kisa INIS (LR/RL: hucrenin ebeveyne yakin ucundan -
+            hucreden seride inen dirsek cizgisiyle ayni hizada; TB/BT'de de sol ucundan - ortadan
+            inseydi ust satirdaki hucrenin portuyla hizalanip zincir gibi okunurdu).
+            Her kol ana hattan AKIS yonunde yuvarlak kavisle ayrilir (dik T degil): satir hatti tablo
+            cizgisi gibi degil, hucrelere dagilan bag olarak okunur.
+     liste  (tek kolon): govdeden her hucrenin yan kenarina kol (dosya agaci gibi)
+     kapsa  (ozel kod blogu): govde blogu boydan boya kapsar, her satirin ilk kartina kol - kart
+            basina bag yuzlerce kodda okunmaz bir yumak olurdu
+   e.kol: ebeveyn de bir izgara hucresi (seritteki alt izgara) - govde ebeveynin dirsek hattidir.
+   Yol KANONIK yonde (LR ya da TB) kurulur, RL / BT icin aynalanir. Satirlar hucrelerin ANLIK
+   yerinden bulunur: suruklenen / gecis halindeki hucreyi de izler. cells: cizilecek hucreler (odak
+   disindakiler ayri, soluk cizilir); govde yeri butun bloktan hesaplanir - iki cizim ust uste oturur.
+   Ebeveyn blogun gerisinde degilse (elle tasinmis) null doner - duz egri kullanilir. */
+function flowTarakYol(e,cells){
+  const yon=flowSablon().yon, dik=yon==='TB'||yon==='BT', sx=yon==='RL'?-1:1, sy=yon==='BT'?-1:1;
+  const t=e.tarak, o=e.olc||1, ao=e.a.olc||1, R0=8*o, ek=3*o;   // ek: cizgi kutunun arkasina biraz girer (kavisli kenara degsin)
+  const K=n=>({x:sx<0?-(n.x+n.w):n.x, y:sy<0?-(n.y+n.h):n.y, w:n.w, h:n.h});
+  const a=K(e.a), cs=cells.map(K);
+  if(!cs.length) return '';
+  const x0=Math.min(...e.grp.map(n=>K(n).x));
+  let d='';
+  const f=v=>Math.round(v*10)/10, P=(x,y)=>f(sx*x)+' '+f(sy*y);
+  // dik acili kirik cizgi: koseler yuvarlak (komsu parcalarin yarisini asmaz), tekrar eden / dogrusal noktalar atilir
+  const kirik=pts=>{
+    const p=[];
+    pts.forEach(q=>{ const s=p[p.length-1]; if(!s||Math.abs(s[0]-q[0])>.05||Math.abs(s[1]-q[1])>.05) p.push(q); });
+    for(let i=1;i<p.length-1;){ const A=p[i-1],B=p[i],C=p[i+1];
+      if((Math.abs(A[0]-B[0])<.05&&Math.abs(B[0]-C[0])<.05)||(Math.abs(A[1]-B[1])<.05&&Math.abs(B[1]-C[1])<.05)) p.splice(i,1); else i++; }
+    if(p.length<2) return;
+    d+='M'+P(p[0][0],p[0][1]);
+    for(let i=1;i<p.length;i++){
+      const B=p[i];
+      if(i===p.length-1){ d+='L'+P(B[0],B[1]); break; }
+      const A=p[i-1], C=p[i+1], l1=Math.hypot(B[0]-A[0],B[1]-A[1]), l2=Math.hypot(C[0]-B[0],C[1]-B[1]);
+      const r=Math.min(R0,l1/2,l2/2), u=[(B[0]-A[0])/l1,(B[1]-A[1])/l1], v=[(C[0]-B[0])/l2,(C[1]-B[1])/l2];
+      d+='L'+P(B[0]-u[0]*r,B[1]-u[1]*r)+'Q'+P(B[0],B[1])+' '+P(B[0]+v[0]*r,B[1]+v[1]*r);
+    }
+  };
+  /* HAT BESLEME: ana cizgi (bas: ebeveynden gelen noktalar, sonuncusu hattin ustunde) hatta degdigi
+     yerden iki yana AKAR. Hat dikey (dikHat: x=cc) ya da yatay (y=cc); hedef {v: hat boyunca yeri,
+     son: hattan sonraki noktalar}. Her yanin en uzaktaki hedefi hattin ucudur (yuvarlak kose);
+     aradakiler akis yonunde yuvarlak KAVISLE ayrilir - kol, ayrilma noktasindan 2R once hattin
+     ustunde baslar (tek path icinde ust uste binen parca koyulasmaz). Besleme hizasindaki hedefe
+     cizgi duz devam eder; ana cizgi bir yana doner, obur yan ondan catallanir. */
+  const hatBesle=(dikHat,cc,bas,hed)=>{
+    const J=bas[bas.length-1], fv=dikHat?J[1]:J[0], pt=v=>dikHat?[cc,v]:[v,cc], cik=h=>[pt(h.v)].concat(h.son);
+    const orta=hed.filter(h=>Math.abs(h.v-fv)<=.5), art=hed.filter(h=>h.v>fv+.5).sort((p,q)=>p.v-q.v), eks=hed.filter(h=>h.v<fv-.5).sort((p,q)=>q.v-p.v);
+    const catal=pts=>{ const O=bas[bas.length-2];
+      if(!O) return kirik([J].concat(pts));   // besleme hattin kendi ucu (dirsek hatti): catal yok
+      const dx=J[0]-O[0], dy=J[1]-O[1], l=Math.hypot(dx,dy)||1, L=Math.min(2*R0,l);
+      kirik([[J[0]-dx/l*L,J[1]-dy/l*L],J].concat(pts)); };
+    let ana=true;
+    orta.forEach((h,i)=>{ if(!i){ kirik(bas.concat(cik(h))); ana=false; } else kirik(cik(h)); });
+    [art,eks].forEach(yan=>{
+      if(!yan.length) return;
+      const uc=yan[yan.length-1];
+      if(ana){ kirik(bas.concat(cik(uc))); ana=false; } else catal(cik(uc));
+      yan.slice(0,-1).forEach(h=>{ const L=Math.min(2*R0,Math.abs(h.v-fv)); kirik([pt(h.v+(h.v>fv?-L:L))].concat(cik(h))); });
+    });
+  };
+  // yatay hattan (y) asagi inen kol, soldan akista kavisle ayrilir (hattin basi xb'yi asmaz)
+  const inis=(q,y,xb)=>{ const L=Math.min(2*R0,q[0]-xb); kirik([[q[0]-L,y],[q[0],y],q]); };
+  // satirlar: ayni hizadaki hucreler, her satir kendi icinde ebeveynden uzaga dogru sirali
+  const satirlar=()=>{ const m=new Map();
+    cs.forEach(c=>{ const k=Math.round(c.y); let s=m.get(k); if(!s) m.set(k,s=[]); s.push(c); });
+    return [...m.values()].map(s=>s.sort((p,q)=>p.x-q.x)).sort((p,q)=>p[0].y-q[0].y); };
+  if(!dik){
+    // LR: govde blogun solunda dikey hat (kol: ebeveyn hucrenin dirsek hatti); satirlar govdeden ayrilir
+    const kol=!!e.kol, xt=kol?a.x+13*ao:x0-t.T;
+    if(kol?x0<xt+6*o:a.x+a.w>xt-4*o) return null;
+    const y0=kol?a.y+a.h-3*ao:a.y+a.h/2, hed=[], inisler=[];
+    if(t.tip==='tarak') satirlar().forEach(s=>{
+      const y=Math.min(...s.map(c=>c.y))-t.bg, q=s.map(c=>[c.x+13*o,c.y+ek]), son=q[q.length-1];
+      hed.push({v:y,son:[[son[0],y],son]});
+      q.slice(0,-1).forEach(p=>inisler.push([p,y]));
+    });
+    else (t.tip==='liste'?cs.map(c=>[c]):satirlar()).forEach(s=>{ const c=s[0], y=c.y+c.h/2; hed.push({v:y,son:[[c.x+ek,y]]}); });
+    if(kol&&hed.some(h=>h.v<y0-.5)) return null;
+    hatBesle(true,xt,kol?[[xt,y0]]:[[a.x+a.w,y0],[xt,y0]],hed);
+    inisler.forEach(([p,y])=>inis(p,y,xt));
+    return d;
+  }
+  // TB: ebeveyn ustte; satir hatlari satirlarin ustunde, birden cok satirda govde blogun solunda
+  const S=satirlar(), ax=a.x+a.w/2, ay=a.y+a.h, xt=x0-t.T;
+  if(ay>S[0][0].y-4*o) return null;
+  if(t.tip==='liste'){
+    // tek kolon: ebeveynden inip govdeye doner (govde ebeveynin altindaysa dogrudan iner); hucreler yandan ayrilir
+    const ls=S.map(s=>s[0]), yJ=(ay+ls[0].y)/2, dog=xt>=a.x+10*ao&&xt<=a.x+a.w-10*ao;
+    hatBesle(true,xt,dog?[[xt,ay]]:[[ax,ay],[ax,yJ],[xt,yJ]],ls.map(c=>({v:c.y+c.h/2,son:[[c.x+ek,c.y+c.h/2]]})));
+    return d;
+  }
+  if(t.tip==='kapsa'){
+    // ozel kod blogu: ilk satirin ustunde ayrac - ebeveyn iner, iki yana akip ilk ve son karta doner
+    const s=S[0], yb=s[0].y-Math.min(t.bg,(s[0].y-ay)/2);
+    hatBesle(false,yb,[[ax,ay],[ax,yb]],[...new Set([s[0],s[s.length-1]])].map(c=>({v:c.x+c.w/2,son:[[c.x+c.w/2,c.y+ek]]})));
+    return d;
+  }
+  // tarak: ebeveyn ilk satirin hattina iner, hat iki yana akar; govde (birden cok satirda) hattin sol
+  // ucundan son satira iner, aradaki satirlar govdeden ayrilir
+  // inis hucrenin sol ucundan (ortasindan degil): ust satirdaki hucrenin alt-orta portuyla ayni hizaya gelip
+  // "hucreden hucreye" zincir gibi okunmasin
+  const hat=S.map(s=>({y:Math.min(...s.map(c=>c.y))-t.bg,q:s.map(c=>[c.x+13*o,c.y+ek])}));
+  const h0=hat[0], hS=hat[hat.length-1], son=h=>h.q[h.q.length-1];
+  const hed=h0.q.map(p=>({v:p[0],son:[p]}));
+  if(hat.length>1) hed.push({v:xt,son:[[xt,hS.y],[son(hS)[0],hS.y],son(hS)]});
+  hatBesle(false,h0.y,[[ax,ay],[ax,h0.y]],hed);
+  hat.slice(1).forEach((h,i)=>{
+    if(i<hat.length-2){ const L=Math.min(2*R0,h.y-h0.y); kirik([[xt,h.y-L],[xt,h.y],[son(h)[0],h.y],son(h)]); }
+    h.q.slice(0,-1).forEach(p=>inis(p,h.y,xt));
+  });
+  return d;
 }
 function flowEdgesHtml(edges){
   const R=flowSablon().rol, O=FLOWW._L&&FLOWW._L.odak;
   return edges.map(e=>{
     // ODAK disindaki dala giden cizgi soluk (cocuk ucu odakta degilse)
-    const son=O&&!O.has((e.b||e.grp[0]).k);
+    let son=O&&!O.has((e.b||e.grp[0]).k);
     // cizgi kalinligi ve (secildiyse) rengi cocugun rolunden: govde kalin, yaprak ince olabilir.
     // Paylasimli dugumun baglantilari (ayni oda birden fazla fragmentte) her zaman kesikli yesil.
     // alt nesle giden cizgi neslin Boy oraninda incelir (Mikro Agac yarim kalinlikta)
     const T=R[e.rol]||null, o=e.olc||1, cz=(T?T.cizgi:1.5)*o;
     const col=e.shared?'var(--green)':e.idari?'color-mix(in srgb,var(--amber) 55%,transparent)'
       :(T&&T.renk?`color-mix(in srgb,${T.renk} 60%,transparent)`:'var(--line)');
+    /* IZGARA: her hucreye bag (flowTarakYol). Odakta olan hucrelerin bagi parlak, digerleri soluk;
+       ortak govde iki cizimde de ayni yerde - odaktaki hucrenin yolu govde boyunca parlak gorunur.
+       Tek path icindeki ust uste binen parcalar saydam renkte koyulasmaz. */
+    if(e.tarak){
+      const yol=(d,s)=>d?`<path d="${d}" fill="none" stroke="${col}" stroke-width="${cz}" stroke-linejoin="round"${s?' class="sonuk"':''}/>`:'';
+      if(e.tarak.tip==='kapsa'){ const d=flowTarakYol(e,e.grp); if(d!=null) return yol(d,O&&!e.grp.some(c=>O.has(c.k))); }
+      else {
+        const on=O?e.grp.filter(c=>O.has(c.k)):e.grp, off=O?e.grp.filter(c=>!O.has(c.k)):[];
+        const d1=off.length?flowTarakYol(e,off):'', d2=on.length?flowTarakYol(e,on):'';
+        if(d1!=null&&d2!=null) return yol(d1,true)+yol(d2,false);
+        son=O&&!on.length;
+      }
+    }
     const d=flowEdgePath(e);
     // paylasimli bag tiklanarak koparilabilir (onay sorulur; son bag koparilamaz)
     const kop=e.shared&&e.a.type==='lok'&&!FLOWW.ed&&can('define',{bina:e.b.lok.bina})
@@ -19198,6 +19338,7 @@ function flowTasi(e,kokler,tek){
       const x=els[m.k]; if(x){ x.style.left=m.x+'px'; x.style.top=m.y+'px'; }
       const p=ports[m.k]; if(p){ const q=flowPortXY(m); p.style.left=(q.x-6)+'px'; p.style.top=(q.y-6)+'px'; } });
     if(svg) svg.innerHTML=flowEdgesHtml(L.edges);
+    if(_FLOWYOL) flowYolCiz();
     if(grpKat) grpKat.innerHTML=flowGrpHtml(L);
     flowEtiketCiz(); // yuzen etiketler dugumle birlikte gelir
   };
@@ -19600,6 +19741,7 @@ function flowTuvalHtml(){
   const o=ed?flowEdTuvalOrt(L):{bant:'',ust:''};
   return {binas,html:`${o.bant}<div id="flowGrps">${ed?'':flowGrpHtml(L)}</div>
     <svg class="floww-edges" width="${W}" height="${H}">${flowEdgesHtml(edges)}</svg>
+    <svg class="floww-edges fw-yol" id="flowYol" width="1" height="1"></svg>
     ${nodeHtml}${portHtml}${o.ust}
     <svg class="floww-edges" id="flowTmp" width="1" height="1"></svg>`};
 }
@@ -19949,6 +20091,7 @@ function flowDerinlikKur(){
   const side=document.querySelector('.floww-side'); if(P&&side&&side.dataset.a===P.a) side.scrollTop=P.top;
   c.classList.toggle('odakli',!!L.odak);
   flowHaritaHazirla(); flowApply();
+  if(_FLOWYOL) flowYolCiz();   // imlecin altindaki dugumun bag zinciri yeni cizimde de kalir
   if(O) flowGecis(O,dX,dY);
   const nb=FLOWW._nabiz; FLOWW._nabiz=null;
   if(nb) nb.forEach(k=>{ const el=c.querySelector(`#flowInner .floww-node[data-k="${CSS.escape(k)}"]`); if(el){ el.classList.add('fw-nabiz'); setTimeout(()=>el.classList.remove('fw-nabiz'),1300); } });
@@ -19996,6 +20139,7 @@ function flowGecis(O,dX,dY){
       const el=els.get(n.k); if(el){ el.style.left=n.x+'px'; el.style.top=n.y+'px'; }
       const p=ports.get(n.k); if(p){ const q=flowPortXY(n); p.style.left=(q.x-6)+'px'; p.style.top=(q.y-6)+'px'; } });
     if(svg) svg.innerHTML=flowEdgesHtml(L.edges);
+    if(_FLOWYOL) flowYolCiz();
     if(grpKat) grpKat.innerHTML=flowGrpHtml(L);
     oyn.forEach(a=>{ a.n.x=a.tx; a.n.y=a.ty; });
   };
@@ -20843,7 +20987,7 @@ function flowOzelTasi(e,n){
     oynadi=true; _FLOWIDARI=null; X=flowIdariIdx(kaynak.bina);
     c.querySelectorAll('#flowInner .floww-node[data-k]').forEach(el=>els.set(el.dataset.k,el));
     hay=document.createElement('div'); hay.className='fw-hayalet'; c.appendChild(hay);
-    c.classList.add('oz-tasi');
+    c.classList.add('oz-tasi'); flowVurguTemizle();   // kartin iliski / bag zinciri vurgusu hedef isaretleriyle karismasin
     kartlar.forEach(m=>{ const el=els.get(m.k); if(el){ el.classList.add('tasinan'); isaret.push(el); } });
     // olasi hedefler hafifce isaretlenir: kodun tanimli oldugu katlarin odalari + katlar
     const katlar=new Set(); ids.forEach(id=>{ const y=X.yer.get(id); if(y) y.k.forEach(k=>katlar.add(k)); });
@@ -20901,10 +21045,31 @@ function flowOzelTasi(e,n){
 }
 /* ILISKI VURGUSU: ozel kod kartinin ustune gelince kodun kullanildigi ODALAR ve ayni kodun tuvaldeki
    diger kartlari (kat havuzu / oda) parlar; oda dugumunun ustune gelince o odadaki kodlarin kat
-   havuzundaki kartlari parlar. Yalniz sinif degisir, yeniden cizim yok. */
-let _FLOWVURGU=null;
-function flowVurguTemizle(){ if(_FLOWVURGU){ _FLOWVURGU.forEach(el=>el.classList.remove('fw-iliski')); _FLOWVURGU=null; } }
+   havuzundaki kartlari parlar. Yalniz sinif degisir, yeniden cizim yok.
+   BAG ZINCIRI: her dugumde, kokten o dugume giden baglar (atalarinin baglari dahil) ayri katmanda
+   (#flowYol) parlak cizilir - yogun izgarada hangi hucrenin nereye bagli oldugu tek bakista gorunur. */
+let _FLOWVURGU=null, _FLOWYOL=null;
+function flowVurguTemizle(){ if(_FLOWVURGU){ _FLOWVURGU.forEach(el=>el.classList.remove('fw-iliski')); _FLOWVURGU=null; } if(_FLOWYOL) flowYolCiz(null); }
 function flowVurguUygula(els){ flowVurguTemizle(); _FLOWVURGU=els.filter(Boolean); _FLOWVURGU.forEach(el=>el.classList.add('fw-iliski')); }
+// k verilmezse ayni dugumun zinciri anlik yerlerle yeniden cizilir (surukleme / gecis karesi)
+function flowYolCiz(k){
+  if(k!==undefined) _FLOWYOL=k;
+  const s=document.getElementById('flowYol'), L=FLOWW._L; if(!s) return;
+  const n=_FLOWYOL&&L?L.byK[_FLOWYOL]:null;
+  if(!n){ s.innerHTML=''; return; }
+  // dugum -> ona gelen (birincil) kenar; izgara hucresi blok kenarindan gelir
+  if(!L._gelen){ const g=L._gelen=new Map();
+    L.edges.forEach(e=>{ if(e.grp) e.grp.forEach(c=>g.set(c.k,e)); else if(e.b&&e.a===e.b.par) g.set(e.b.k,e); }); }
+  const R=flowSablon().rol; let h='';
+  for(let m=n;m&&m.par;m=m.par){
+    const e=L._gelen.get(m.k); if(!e) continue;
+    let d=e.grp?flowTarakYol(e,e.tarak.tip==='kapsa'?e.grp:[m]):null;
+    if(d==null) d=flowEdgePath(e);
+    const T=R[e.rol]||null, o=e.olc||1;
+    if(d) h+=`<path d="${d}" stroke-width="${((T?T.cizgi:1.5)+1.3)*o}"/>`;
+  }
+  s.innerHTML=h;
+}
 function flowUzerinde(e){
   const nd=e.target.closest&&e.target.closest('.floww-node'), c=document.getElementById('flowCanvas'), L=FLOWW._L;
   if(!nd||!c||!L||c.classList.contains('oz-tasi')||c.classList.contains('panning')){ if(!nd) flowVurguTemizle(); return; }
@@ -20917,10 +21082,10 @@ function flowUzerinde(e){
     if(y) y.o.forEach(id=>els.push(sec(id)));
     c.querySelectorAll(`#flowInner .floww-node.ozel[data-sp="${CSS.escape(n.sp.id)}"]`).forEach(el=>{ if(el!==nd) els.push(el); });
   } else if(n.type==='lok'&&n.lok.level==='oda'){
-    const X=flowIdariIdx(n.lok.bina), kat=X.katOf(n.k); if(!kat){ flowVurguTemizle(); return; }
-    c.querySelectorAll(`#flowInner .floww-node.ozel[data-lok="${CSS.escape(kat)}"]`).forEach(el=>{ const y=X.yer.get(el.dataset.sp); if(y&&y.o.has(n.k)) els.push(el); });
-  } else { flowVurguTemizle(); return; }
-  flowVurguUygula(els); if(_FLOWVURGU) _FLOWVURGU.kaynak=nd;
+    const X=flowIdariIdx(n.lok.bina), kat=X.katOf(n.k);
+    if(kat) c.querySelectorAll(`#flowInner .floww-node.ozel[data-lok="${CSS.escape(kat)}"]`).forEach(el=>{ const y=X.yer.get(el.dataset.sp); if(y&&y.o.has(n.k)) els.push(el); });
+  }
+  flowVurguUygula(els); _FLOWVURGU.kaynak=nd; flowYolCiz(n.k);
 }
 // secili ozel kod kartlari icin toplu islem (cubukta): ayni yerdeki kartlar
 async function flowMselOzel(islem){
