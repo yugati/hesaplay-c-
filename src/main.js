@@ -513,6 +513,7 @@ window.SB_STRICT = {
   insertMaterials:   guardedStrict('kutuphane', 'create', sbInsertProjeMaterials),
   deleteMaterials:   guardedStrict('kutuphane', 'delete', sbDeleteProjeMaterialsToplu),
   insertSpecs:       guardedStrict('proje', 'create', sbInsertProjeSpecs),
+  upsertSpecs:       guardedStrict('proje', 'update', sbUpsertProjeSpecs),   // Toplu Kurulum: mevcut kalemin yeri (sp.yerIds)
   deleteSpecs:       guardedStrict('proje', 'delete', sbDeleteProjeSpecsToplu),
 }
 
