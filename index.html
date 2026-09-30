@@ -2153,6 +2153,12 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .oyr-yer.on{color:var(--ink);font-weight:700}
 .oyr-yer.bos{color:var(--dim);font-style:italic;font-family:inherit}
 .oyr-yer i{font-style:normal;color:var(--dim)}
+.oyr-kodlar{display:flex;flex-wrap:wrap;gap:3px 12px;align-items:baseline}
+.oyr-kod{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--ink)}
+.oyr-kod i{font-style:normal;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--amber);margin-right:5px}
+.oyr-kod.kir i{color:var(--green)}
+.oyr-kod.poz i{color:var(--mute)}
+.oyr-ad{display:block;font-size:11px;color:var(--dim);margin-top:1px}
 /* SARTNAME KODU HIZLI KOPYALAMA: tuvaldeki dugumde ve sag panelde ayni copy-btn altyapisi
    kullanilir (copyBtn/copyFromBtn). Tuvaldeki kutu kucultulur - 46px yuksekligindeki
    dugumde 22px'lik varsayilan boyut satiri sisiriyordu. */
@@ -17989,6 +17995,10 @@ const FLOW_OZEL_MAX=500; // tek dalda cizilecek en fazla ozel no dugumu (gerisi 
 /* Bina basina tek seferde kurulan indeks: her cizimin basinda (renderBinaFlow / telefon) ve
    her yazmadan sonra sifirlanir (_FLOWIDARI=null) - bayat veri tutulmaz. */
 let _FLOWIDARI=null;
+/* OZEL KOD KATMANINA giren kalem: kimligi olan kalem - Poz No, Ozel No (ozelNo / ozelNolar) ya da Ozel Kod
+   Kirilimi kodu. Kodsuz kalem (or. sarf ankraj, dubel) bu katmana baglanmaz: Ozel Kod Yerlestir'de listelenmez,
+   ozel no dalinda cizilmez, "yeri girilmemis" uyarisina sayilmaz. Sartname bagi (flowIdariListe) tum kalemlerden okunur. */
+function flowOzelli(sp){ return !!String(sp.poz||'').trim()||katAtaKodlar(sp).length>0; }
 function flowIdariIdx(bina){
   if(!_FLOWIDARI) _FLOWIDARI={};
   if(_FLOWIDARI[bina]) return _FLOWIDARI[bina];
@@ -18018,7 +18028,8 @@ function flowIdariIdx(bina){
   const odaBag=new Map(srts.map(sr=>{ const set=new Set((sr.odalar||[]).filter(id=>byId.has(id)));
     kalem.get(sr.id).forEach(s=>(s.lokTargets||[]).forEach(t=>{ if(t&&byId.has(t.lokId)) set.add(t.lokId); }));
     return [sr.id,set]; }));
-  return _FLOWIDARI[bina]={byId,katOf,srts,kalem,yer,odaBag,liste:new Map(),grup:new Map()};
+  const ozel=new Map(srts.map(sr=>[sr.id,kalem.get(sr.id).filter(flowOzelli)]));
+  return _FLOWIDARI[bina]={byId,katOf,srts,kalem,ozel,yer,odaBag,liste:new Map(),grup:new Map()};
 }
 // dugumun GENEL baglarinin geldigi kat: kat dugumu kendisi, oda dugumu kendi kati, digerleri yok
 function flowIdariKat(X,l){ return !l?null:l.level==='kat'?l.id:(l.level==='oda'?X.katOf(l.id):null); }
@@ -18046,7 +18057,8 @@ function flowIdariListe(bina,lokId){
   X.liste.set(lokId,out); return out;
 }
 /* dugumdeki sartname gruplari: [{sr, tip, all, here, genel}]
-     all   = sartnamenin TUM kalemleri (kapsam)
+     all   = sartnamenin OZEL KODLU kalemleri (flowOzelli: Poz / Ozel No / Kirilim)
+     kodsuz= sartnamenin bu katmana girmeyen (kimliksiz) kalem sayisi
      here  = bu dugumde gorunen kalemler (ozel kod dugumleri bunlar icin cizilir)
      genel = here icinden katin GENEL kalemlerinin id'leri (yalniz oda dugumunde dolu) */
 function flowLokSrt(bina,lokId){
@@ -18054,14 +18066,14 @@ function flowLokSrt(bina,lokId){
   const l=X.byId.get(lokId), kat=!!l&&l.level==='kat', katId=flowIdariKat(X,l);
   const sirala=(a,b)=>String(katAtaKodlar(a)[0]||a.name||'').localeCompare(String(katAtaKodlar(b)[0]||b.name||''),'tr',{numeric:true});
   const out=flowIdariListe(bina,lokId).map(({sr,tip})=>{
-    const all=X.kalem.get(sr.id), here=[], genel=new Set();
+    const all=X.ozel.get(sr.id), kodsuz=X.kalem.get(sr.id).length-all.length, here=[], genel=new Set();
     all.forEach(s=>{ const y=X.yer.get(s.id); if(!y) return;
       if(kat){ if(y.k.has(lokId)) here.push(s); return; }
       if(y.o.has(lokId)) here.push(s);
       else if(katId&&y.k.has(katId)){ here.push(s); genel.add(s.id); }
     });
     here.sort(sirala);
-    return {sr,tip,all,here,genel};
+    return {sr,tip,all,here,genel,kodsuz};
   });
   X.grup.set(lokId,out); return out;
 }
@@ -19464,7 +19476,7 @@ function flowNodeHtml(n){
       const sr=n.sr, cc=catColor(sr.section), key=flowSrtKey(n.lokId,sr.id), l=getLok(n.lokId);
       const open=!!FLOWW.expS[key], sel=FLOWW.sel==='s:'+key, hn=n.here.length, kat=!!l&&l.level==='kat';
       const yerAd=kat?'bu katta':(l&&l.level==='oda'?'bu odada':'burada');
-      const ipucu=`${n.all} kalem, ${hn} tanesi ${yerAd}${n.genelN?' ('+n.genelN+' kat geneli)':''}`
+      const ipucu=`${n.all} ozel kodlu kalem, ${hn} tanesi ${yerAd}${n.genelN?' ('+n.genelN+' kat geneli)':''}`
         +(kat?'':' · bag: '+(n.tip==='genel'?'kat geneli (katin tum odalari)':'dogrudan bu '+(l&&l.level==='oda'?'odaya':'dugume')))
         +(hn?' · ozel no dalini ac/kapat':' · '+yerAd+' ozel kod yok - panelden "Ozel Kod Yerlestir"'+(kat?' ya da Kat Ata':''));
       return `<div class="floww-node srt ${sel?'sel':''} ${open?'open':''}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:${cc}" onclick="event.stopPropagation();flowToggleOzel('${esc(n.lokId)}','${esc(sr.id)}')" title="${esc(sr.code)}${sr.name&&sr.name!==sr.code?' — '+esc(sr.name):''} · ${esc(ipucu)}">
@@ -19787,11 +19799,12 @@ function fwmSrtHtml(k){
       <div class="fwm-yol">${esc(b)} / ${esc(lokPath(l.id))}${sr.name&&sr.name!==sr.code?' · '+esc(sr.name):''}</div>
       ${kat||!g?'':`<div class="fwm-meta" style="margin:0 0 10px">${flowYerCip(g.tip,l)}<span>${esc(flowSrtBolum(sr))}</span></div>`}
       <div class="fwm-sayilar">
-        <div><b>${all.length}</b><span>kapsamda</span></div>
+        <div><b>${all.length}</b><span>ozel kodlu</span></div>
         <div><b style="color:${here.length?'var(--green)':'var(--dim)'}">${here.length}</b><span>${yerAd}</span></div>
         <div><b>${tt>0?'%'+pct.toFixed(0):'—'}</b><span>montaj</span></div>
       </div>
       ${yersiz?`<div class="fwm-not uyari">${yersiz} kalemin yeri girilmemis - "Ozel Kod Yerlestir" ile kata (genel) ya da odaya yerlestirin${kat?' (Kat Ata da olur)':''}.</div>`:''}
+      ${g&&g.kodsuz?`<div class="fwm-not">${g.kodsuz} kalemin Poz No / Ozel No'su yok - ozel kod katmanina baglanmaz.</div>`:''}
       <div class="fwm-hizli">
         ${yerlestir?`<button class="btn btn-ghost" data-l="${esc(l.id)}" data-s="${esc(sr.id)}" onclick="openOzelYerModal(this.dataset.l,this.dataset.s)">Ozel Kod Yerlestir</button>`:''}
         <button class="btn btn-ghost" data-b="${esc(b)}" onclick="openKatPanel(this.dataset.b)">Kat Paneli</button>
@@ -19966,7 +19979,7 @@ function flowSrtPanel(l,sr){
         ?'Kat geneli: sartname <b>'+esc((getLok(katId)||{}).name||'')+'</b> katina bagli, katin tum odalarinda gecerli (Kapsadigi Katlar).'
         :'Dogrudan bu '+(oda?'odaya':'dugume')+' bagli'+(acikBag?' (Sartnameye Oda Ekle).':' (metraj ya da ozel kod yeri uzerinden).')}</p>`:''}
     <div class="fw-sec">${yerAd}</div>
-    <div class="fw-stat"><span>Kapsamdaki kalem</span><b>${all.length}</b></div>
+    <div class="fw-stat" title="Poz No, Ozel No ya da Ozel Kod Kirilimi olan kalemler"><span>Ozel kodlu kalem</span><b>${all.length}</b></div>
     <div class="fw-stat" title="${kat?'Kata GENEL yerlesmis kalemler (ozel kod yeri, metraj ya da Kat Ata)':'Odaya yerlesmis kalemler + katin genel kalemleri'}"><span>${kat?'Bu kata yerlesmis':(oda?'Bu odada':'Burada')}</span><b style="color:${here.length?'var(--green)':'var(--dim)'}">${here.length}</b></div>
     ${!kat&&genelN?`<div class="fw-stat" title="Katin tum odalarinda gecerli (kat geneli) kalemler"><span>· kat geneli</span><b>${genelN}</b></div>`:''}
     <div class="fw-stat" title="Bu kalemlerin uzerindeki toplam ozel no sayisi"><span>Ozel no</span><b>${ozelN}</b></div>
@@ -19974,6 +19987,7 @@ function flowSrtPanel(l,sr){
     ${yersiz?`<p class="fw-path" style="margin:9px 0 0;color:var(--amber)">${yersiz} kalemin yeri hic girilmemis - "Ozel Kod Yerlestir" ile kata (genel) ya da odaya yerlestirin${kat?' (Kat Ata da olur)':''}, sonra bu dalda gorunurler.</p>`:''}
     ${odalarda>0?`<p class="fw-path" style="margin:6px 0 0">${odalarda} kalem bu katin odalarina yerlesmis - odalarinin altinda gorunur.</p>`:''}
     ${baska>0?`<p class="fw-path" style="margin:6px 0 0">${baska} kalem bu sartnamenin baska ${kat?'katlarinda':'yerlerinde'}.</p>`:''}
+    ${g&&g.kodsuz?`<p class="fw-path" style="margin:6px 0 0">${g.kodsuz} kalemin Poz No / Ozel No'su yok - ozel kod katmanina baglanmaz.</p>`:''}
     <div class="fw-sec">Islemler</div>
     <div class="fw-actions">
       ${here.length&&!fwmMobil()?`<button class="btn btn-ghost" onclick="flowToggleOzel('${esc(l.id)}','${esc(sr.id)}')">${open?'Ozel No Dalini Kapat':'Ozel No Dalini Ac ('+here.length+')'}</button>`:''}
@@ -20099,15 +20113,17 @@ function openOzelYerModal(lokId,srId){
   if(!kat&&l.level!=='oda'){ toast('Ozel kod kata ya da odaya yerlestirilir','err'); return; }
   _FLOWIDARI=null;
   _OYR={lokId,srId,q:'',sec:new Set(),filtre:'hepsi',gorunen:[]};
+  const X0=flowIdariIdx(l.bina), kodsuz=(X0.kalem.get(sr.id)||[]).length-(X0.ozel.get(sr.id)||[]).length;
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:720px"><div class="modal-head"><h3>Ozel Kod Yerlestir</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <p class="t-meta" style="margin-bottom:8px;line-height:1.5"><b>${esc(sr.code)}</b> · ${esc(flowSrtBolum(sr))} → ${esc(l.bina)} / <b>${esc(lokPath(l.id))}</b></p>
     <p class="t-meta" style="margin-bottom:10px;line-height:1.5">${kat
       ?'Secilen kalemler <b>kat geneline</b> yerlesir: katta ve katin tum odalarinda gorunur. Tek bir odaya yerlestirmek icin odanin sartname panelini kullanin.'
       :'Secilen kalemleri <b>yalniz bu odaya</b> ya da <b>katin geneline</b>'+(katN?' ("'+esc(katN.name)+'" katinin tum odalari)':'')+' yerlestirin.'}
       Yalniz gorunum yeridir - metraj, stok, siparis ve montaj degismez.</p>
+    <p class="t-meta" style="margin-bottom:10px;line-height:1.5">Listede yalniz <b>Poz No</b>, <b>Ozel No</b> ya da <b>Ozel Kod Kirilimi</b> olan kalemler vardir${kodsuz?' - '+kodsuz+' kodsuz kalem bu katmana baglanmaz':''}.</p>
     <div class="oyr-ust">
       <div class="def-sec-chips" id="oyrFiltre" style="flex:0 0 auto"></div>
-      <div class="frow" style="flex:1;min-width:160px;margin:0"><input id="oyr_q" placeholder="Ozel no, ad, poz ara..." oninput="_OYR.q=this.value;oyrRender()"></div>
+      <div class="frow" style="flex:1;min-width:160px;margin:0"><input id="oyr_q" placeholder="Ozel no, kirilim kodu, poz ara..." oninput="_OYR.q=this.value;oyrRender()"></div>
     </div>
     <label class="fsb-satir oyr-tumu"><input type="checkbox" id="oyrTumu" onchange="oyrTumu(this.checked)"><span class="fsb-ic"><b>Gorunenlerin tumu</b> <span class="fw-srt-name" id="oyrSay"></span></span></label>
     <div id="oyrList" class="fsb-liste"></div>
@@ -20135,7 +20151,7 @@ function oyrRender(){
   const l=getLok(_OYR.lokId), sr=(DB.proje.sartnames||[]).find(x=>x.id===_OYR.srId); if(!l||!sr) return;
   const X=flowIdariIdx(l.bina), kat=l.level==='kat', katId=flowIdariKat(X,l);
   const burada=s=>{ const y=X.yer.get(s.id); return !!y&&(kat?y.k.has(l.id):(y.o.has(l.id)||(!!katId&&y.k.has(katId)))); };
-  const all=(X.kalem.get(sr.id)||[]).slice().sort((a,b)=>String(flowOzelEtiket(a)).localeCompare(String(flowOzelEtiket(b)),'tr',{numeric:true}));
+  const all=(X.ozel.get(sr.id)||[]).slice().sort((a,b)=>String(flowOzelEtiket(a)).localeCompare(String(flowOzelEtiket(b)),'tr',{numeric:true}));
   const say={hepsi:all.length,yersiz:all.filter(s=>!X.yer.has(s.id)).length,burada:all.filter(burada).length};
   const fw=document.getElementById('oyrFiltre');
   if(fw) fw.innerHTML=[['hepsi','Hepsi'],['yersiz','Yeri yok'],['burada',kat?'Bu katta':'Bu odada']].map(([k,ad])=>
@@ -20149,10 +20165,20 @@ function oyrRender(){
     const yerHtml=yerler.length?yerler.map(y=>`<span class="oyr-yer ${y.id===l.id||y.id===katId?'on':''}">${flowYerCip(y.tip,getLok(y.id))} ${esc(y.ad)}${OYR_KAYNAK[y.kay]?' <i>('+OYR_KAYNAK[y.kay]+')</i>':''}</span>`).join('')
       :'<span class="oyr-yer bos">yeri girilmemis</span>';
     return `<label class="fsb-satir"><input type="checkbox" ${_OYR.sec.has(s.id)?'checked':''} onchange="oyrSec('${esc(s.id)}',this.checked)">
-      <span class="fsb-ic"><span class="fw-srt-code">${esc(flowOzelEtiket(s))}</span>${s.name?`<span class="fw-srt-name"> · ${esc(s.name)}</span>`:''}
+      <span class="fsb-ic">${oyrKimlik(s)}
       <span class="oyr-yerler">${yerHtml}</span></span></label>`; }).join('')
-    :`<div class="fw-path" style="padding:14px 4px">${all.length?'Filtreyle eslesen kalem yok':'Bu sartnamede kalem yok'}</div>`;
+    :`<div class="fw-path" style="padding:14px 4px">${all.length?'Filtreyle eslesen kalem yok':'Bu sartnamede Poz No, Ozel No ya da Ozel Kod Kirilimi olan kalem yok'}</div>`;
   oyrSayac();
+}
+// satirda kalemin YALNIZ kimlik alanlari: Ozel No, Ozel Kod Kirilimi kodlari, Poz No; urun adi soluk alt satir
+// (ayni Poz'lu kalemleri birbirinden ayirmak icin)
+function oyrKimlik(s){
+  const kim=katAtaKimlikKodlari(s), pay=ozelPaylari(s), poz=String(s.poz||'').trim(), p=[];
+  const kisa=(a,n)=>a.slice(0,n).map(esc).join(', ')+(a.length>n?' +'+(a.length-n):'');
+  if(kim.length) p.push(`<span class="oyr-kod"><i>Ozel No</i>${kisa(kim,3)}</span>`);
+  if(pay.length) p.push(`<span class="oyr-kod kir" title="${esc(ozelPayOzet(pay))}"><i>Kirilim ${pay.length}</i>${kisa(pay.map(x=>String(x.kod||'')),4)}</span>`);
+  if(poz) p.push(`<span class="oyr-kod poz"><i>Poz</i>${esc(poz)}</span>`);
+  return `<span class="oyr-kodlar">${p.join('')}</span>${s.name?`<span class="oyr-ad">${esc(s.name)}</span>`:''}`;
 }
 async function oyrUygula(islem){
   if(!_OYR) return;
@@ -20216,7 +20242,7 @@ function exportKirilimExcel(bina){
     const k=y.kay[l.id]||'';
     return [l.level==='kat'?'KAT GENELI':(l.level==='oda'?'ODAYA':'DUGUME'),KAY[k]||k]; };
   const kalemSatir=(z,sr,bag,s,yer)=>[z.kat,z.aks,z.fragment,z.oda,z.odaAd,flowSrtBolum(sr),sr.code,sr.name&&sr.name!==sr.code?sr.name:'',bag,
-    s?(s.ozelNo||''):'',s?(s.poz||''):'',s?(s.name||''):'',s?(s.code||''):'',s?(Number(s.target)||0):'',s?String(s.unit||'').split('/')[0].trim():'',yer[0]||'',yer[1]||''];
+    s?katAtaKodlar(s).join(', '):'',s?(s.poz||''):'',s?(s.name||''):'',s?(s.code||''):'',s?(Number(s.target)||0):'',s?String(s.unit||'').split('/')[0].trim():'',yer[0]||'',yer[1]||''];
   lokFlat(bina).forEach(({lok:l})=>{
     const z=zincir(l), kat=l.level==='kat';
     // kat dugumunde yalniz GENEL sartnameler; odada yalniz dogrudan bagli olanlar (GENEL'ler kat satirinda)
@@ -20231,7 +20257,7 @@ function exportKirilimExcel(bina){
     if(!yazildi&&(kat||l.level==='oda')) rows.push([z.kat,z.aks,z.fragment,z.oda,z.odaAd,'','','','','','','','','','','','']);
   });
   // yeri hic olmayan kalemler
-  X.srts.forEach(sr=>X.kalem.get(sr.id).forEach(s=>{ if(!X.yer.has(s.id)) rows.push(kalemSatir({kat:'',aks:'',fragment:'',oda:'',odaAd:''},sr,'',s,['YERI YOK',''])); }));
+  X.srts.forEach(sr=>X.ozel.get(sr.id).forEach(s=>{ if(!X.yer.has(s.id)) rows.push(kalemSatir({kat:'',aks:'',fragment:'',oda:'',odaAd:''},sr,'',s,['YERI YOK',''])); }));
   const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[10,12,12,16,22,18,32,28,14,18,12,40,16,9,8,13,26].map(w=>({wch:w}));
   ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:Math.max(rows.length-1,0),c:rows[0].length-1}})};
