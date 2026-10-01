@@ -1326,6 +1326,14 @@ tbody tr:hover{background:var(--hover)}
 .kgt-lines tr.kgt-ek td{border-top:1px dashed var(--line)}
 .kgt-lines tr.kgt-ek td.kgt-urun{padding-left:22px}
 .kgt-ek-bas{font-size:12px;color:var(--mute)}
+.kgt-tut{margin-top:4px;font-size:10.5px;white-space:nowrap;min-height:0}
+.kgt-tut:empty{display:none}
+.kgt-tut button{font:inherit;font-weight:700;cursor:pointer;border-radius:6px;padding:2px 7px;
+  border:1px solid color-mix(in srgb,var(--green) 55%,var(--line));background:color-mix(in srgb,var(--green) 12%,transparent);color:var(--green)}
+.kgt-tut button:hover{background:color-mix(in srgb,var(--green) 22%,transparent)}
+.kgt-tut button.az{border-color:color-mix(in srgb,var(--amber) 55%,var(--line));background:color-mix(in srgb,var(--amber) 10%,transparent);color:var(--amber)}
+.kgt-tut .tam{color:var(--green);font-weight:700}
+.kgt-tut .yok{color:var(--amber)}
 .kgt-sart-not{font-size:10.5px;color:var(--mute);margin-top:4px;white-space:nowrap}
 .kgt-sart-not b{color:var(--ink)}
 .kgt-alimsiz-not{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:4px;font-size:10.5px;color:var(--red)}
@@ -43516,6 +43524,7 @@ function kgtSetYazan(i,el){
     const oi=document.getElementById('kgtON'+i); if(oi){ oi.value=v>0?String(v):''; oi.classList.toggle('dolu',v>0); } }
   kgtSiraGuncelle(st,s.key);
   el.classList.toggle('dolu',v>0);
+  kgtTutGuncelle(s.u.key);
   kgtOzetGuncelle();
 }
 function kgtSetOnay(i,el){
@@ -43530,7 +43539,50 @@ function kgtSetOnay(i,el){
   st.onay[s.key]=v>0?v:'';
   kgtBilgiYaz(st,s); kgtSiraGuncelle(st,s.key);
   el.classList.toggle('dolu',v>0);
+  kgtTutGuncelle(s.u.key);
   kgtOzetGuncelle();
+}
+/* TEK TIKLA ONAY. Kagitta yazan, alim durumunun (kalan = tavan) icinde kaliyorsa
+   onaylanan kutusunun altinda "tutuyor - onayla" dugmesi cikar. Tutmuyorsa dugme
+   kalan kadarini onerir - tavanin ustune hicbir yol cikmaz (kgtSetOnay da kirpar). */
+function kgtTutHtml(st,u,sid,i){
+  if(!u||!u.alimVar) return '';
+  const yz=fatSayi(st.yazan[sid]), on=fatSayi(st.onay[sid]);
+  if(!(yz>0)) return '';
+  const tavan=Math.max(0,u.kgKalan-kgtDigerOnay(st,sid));
+  if(on>0&&Math.abs(on-Math.min(yz,tavan))<=FAT_EPS) return on>=yz-FAT_EPS?'<span class="tam">&#10003; tutuyor</span>':'';
+  if(yz<=tavan+FAT_EPS) return `<button type="button" onclick="kgtTutOnayla(${i},${yz})" title="Kagitta yazan ${fmtNum(yz)}, kalan ${fmtNum(tavan)} - tutuyor. Onaylanana ${fmtNum(yz)} yazar">&#10003; tutuyor · onayla</button>`;
+  if(tavan>FAT_EPS) return `<button type="button" class="az" onclick="kgtTutOnayla(${i},${tavan})" title="Kagitta ${fmtNum(yz)} yaziyor ama kalan yalnizca ${fmtNum(tavan)} - alimdan fazlasi onaylanamaz. Kalan kadarini yazar">kalan kadar · ${fmtNum(tavan)}</button>`;
+  return '<span class="yok">kalan yok</span>';
+}
+// ayni urunun butun satirlari tavani paylasir: hepsinin dugmesi birlikte tazelenir
+function kgtTutGuncelle(urunKey){
+  const st=_KGT; if(!st||!st._satirlar) return;
+  st._satirlar.forEach((s,i)=>{ if(s.u.key!==urunKey) return;
+    const d=document.getElementById('kgtTut'+i); if(d) d.innerHTML=kgtTutHtml(st,s.u,s.key,i); });
+}
+function kgtTutOnayla(i,v){
+  if(!kgtSatir(i)) return;
+  const el=document.getElementById('kgtON'+i); if(!el) return;
+  el.value=String(v); kgtSetOnay(i,el);
+}
+/* Yalnizca TUTAN satirlar: kagitta yazanin tamami kalana sigiyorsa onaylanan =
+   kagitta yazan. Sigmayan satira dokunulmaz - elle bakilsin diye sayisi soylenir. */
+function kgtTutanlariOnayla(){
+  const st=_KGT; if(!st) return;
+  const hav=st._havuz||new Map(); let n=0, tutmayan=0;
+  const kalan=new Map();
+  // once dolu onaylar kalandan dusulur, sonra bos satirlar sirayla denenir
+  st.sira.forEach(k=>{ const key=kgtUrunKey(st,k), u=hav.get(key);
+    if(!kalan.has(key)) kalan.set(key,Math.max(0,u&&u.alimVar?u.kgKalan:0));
+    kalan.set(key,kalan.get(key)-fatSayi(st.onay[k])); });
+  st.sira.forEach(k=>{ const yz=fatSayi(st.yazan[k]); if(!(yz>0)||fatSayi(st.onay[k])>0) return;
+    const key=kgtUrunKey(st,k);
+    if(yz<=kalan.get(key)+FAT_EPS){ st.onay[k]=yz; kalan.set(key,kalan.get(key)-yz); n++; }
+    else tutmayan++; });
+  render();
+  if(!n&&!tutmayan){ toast('Onaylanacak bos satir yok'); return; }
+  toast(fmtNum(n)+' satir onaylandi (kagitta yazan = onaylanan)'+(tutmayan?' - '+fmtNum(tutmayan)+' satirda kalan yetmedigi icin bos birakildi, elle bakin':''),tutmayan?'err':undefined);
 }
 function kgtSetAlan(i,alan,el){
   const st=_KGT, s=kgtSatir(i); if(!s) return;
@@ -44258,7 +44310,8 @@ function renderKagitForm(){
       <td class="satir-tutar"><div class="ktutar haric"><b id="kgtT${i}" title="Kagitta yazan x birim fiyat (KDV haric)">${h.matrah>0?fatPara(h.matrah,''):'-'}</b></div></td>
       <td><input type="number" step="any" min="0" class="num kgt-onay ${fatSayi(on)>0?'dolu':''}" id="kgtON${i}" ${bitti&&!(fatSayi(on)>0)?'disabled':''}
         value="${dolu(on)?esc(on):''}" placeholder="-" oninput="kgtSetOnay(${i},this)"
-        title="Imzali kagitta bu satir icin kabul edilen. Urunun satirlari toplamda urunun kalanini asamaz"></td>
+        title="Imzali kagitta bu satir icin kabul edilen. Urunun satirlari toplamda urunun kalanini asamaz">
+        <div class="kgt-tut" id="kgtTut${i}">${kgtTutHtml(st,u,sid,i)}</div></td>
     </tr>`;
     return `<tr class="${!u.alimVar?'kgt-alimsiz':(bitti&&p<0?'kgt-bitti':'')}">
       <td class="tl-no" id="kgtNo${i}" title="Kagittaki satir sirasi - urunu doldurdugunuz sira">${p>=0?p+1:''}</td>
@@ -44292,7 +44345,8 @@ function renderKagitForm(){
       <td class="satir-tutar"><div class="ktutar haric"><b id="kgtT${i}" title="Kagitta yazan x birim fiyat (KDV haric)">${h.matrah>0?fatPara(h.matrah,''):'-'}</b></div></td>
       <td><input type="number" step="any" min="0" class="num kgt-onay ${fatSayi(on)>0?'dolu':''}" id="kgtON${i}" ${bitti&&!(fatSayi(on)>0)?'disabled':''}
         value="${dolu(on)?esc(on):''}" placeholder="-" oninput="kgtSetOnay(${i},this)"
-        title="${!u.alimVar?'Bu firmadan alim kaydi yok - onaylanamaz':bitti?'Bu urunun kalani yok - onaylanamaz':'Imzali kagitta kabul edilen miktar. En fazla kagitta yazan ve '+fmtNum(tavan)+' (kalan). Kagit onaylaninca tavandan duser'}"></td>
+        title="${!u.alimVar?'Bu firmadan alim kaydi yok - onaylanamaz':bitti?'Bu urunun kalani yok - onaylanamaz':'Imzali kagitta kabul edilen miktar. En fazla kagitta yazan ve '+fmtNum(tavan)+' (kalan). Kagit onaylaninca tavandan duser'}">
+        <div class="kgt-tut" id="kgtTut${i}">${kgtTutHtml(st,u,sid,i)}</div></td>
     </tr>`;
   };
   // urunun ana satiri, ardindan (varsa) ayni urunun baska sartnameli ek satirlari
@@ -44379,6 +44433,7 @@ function renderKagitForm(){
             ${(sat.length||st.fyalniz)?`<button class="${st.fyalniz?'on':''}" onclick="kgtSetFiltre('fyalniz',${st.fyalniz?'false':'true'})"
               aria-pressed="${st.fyalniz?'true':'false'}" title="${st.fyalniz?'Suzgeci kaldir - firmanin butun urunleri geri gelsin'
                 :'Yalnizca bu kagida girilmis satirlari, kagit sirasiyla goster'}">${st.fyalniz?'Tumunu goster':'Girilenleri goster'}</button>`:''}
+            ${yazanli?`<button onclick="kgtTutanlariOnayla()" title="Yalnizca kagitta yazanin TAMAMI kalana sigan bos satirlari onaylar (onaylanan = kagitta yazan). Sigmayanlar bos kalir">Tutanlari onayla</button>`:''}
             ${yazanli?`<button onclick="kgtOnayDoldur()" title="Onaylanan kutularini kagitta yazanla doldurur - kalan yetmeyen satira kalan kadar yazilir">Onaylananlari doldur</button>`:''}
             ${sat.length?`<button onclick="kgtHepsiniTemizle()" title="Girilen tum miktarlari, fiyatlari ve sartname secimlerini siler">Girilenleri temizle</button>`:''}
           </div>
