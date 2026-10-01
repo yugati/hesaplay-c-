@@ -13133,14 +13133,16 @@ function tmutDilGovdeHtml(){
   const d=_TMUT_XDIL;
   const cip=k=>{ const i=d.sira.indexOf(k), on=i>=0;
     return `<button class="btn ${on?'btn-add':'btn-ghost'}" style="padding:8px 14px;gap:8px" onclick="tmutDilSec('${k}')">${on?`<b style="display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,.25);font-size:11px">${i+1}</b>`:''}${TMUT_DIL_AD[k]}</button>`; };
-  const ornek=['Malzeme İsmi','Alınmış Olduğu Miktar','Hangi Siparişlerle Alındığı'];
-  return `<p class="t-meta" style="margin:0 0 10px;line-height:1.5">Basliklarin dilini secin. Birden fazla dil secerseniz tiklama sirasi baslikta dil sirasidir. Yalniz basliklar ve etiketler cevrilir; malzeme adlari ve diger veriler oldugu gibi kalir.</p>
+  // cagiran ekran kendi aciklamasini / ornegini verebilir (On Mutabakat: notlar ve durumlar da cevrilir)
+  const ornek=d.ornek||['Malzeme İsmi','Alınmış Olduğu Miktar','Hangi Siparişlerle Alındığı'];
+  return `<p class="t-meta" style="margin:0 0 10px;line-height:1.5">${d.aciklama||'Basliklarin dilini secin. Birden fazla dil secerseniz tiklama sirasi baslikta dil sirasidir. Yalniz basliklar ve etiketler cevrilir; malzeme adlari ve diger veriler oldugu gibi kalir.'}</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${['tr','ru','en'].map(cip).join('')}</div>
     <div class="frow"><label>Birden fazla dil</label><div style="display:flex;gap:16px;flex-wrap:wrap">
       <label style="display:flex;gap:6px;align-items:center;cursor:pointer;text-transform:none;letter-spacing:0"><input type="radio" name="tmutDilDuzen" ${d.alt?'checked':''} onchange="tmutDilDuzen(true)"> Alt alta</label>
       <label style="display:flex;gap:6px;align-items:center;cursor:pointer;text-transform:none;letter-spacing:0"><input type="radio" name="tmutDilDuzen" ${d.alt?'':'checked'} onchange="tmutDilDuzen(false)"> Yan yana ( / ile)</label></div></div>
     ${d.sira.length?`<div class="t-meta" style="margin:10px 0 6px">Onizleme</div>
-    <div class="tablewrap"><table class="tmut-tbl"><thead><tr>${ornek.map(t=>`<th style="white-space:pre-line;vertical-align:middle">${esc(tmutCevir(t,d))}</th>`).join('')}</tr></thead></table></div>`
+    <div class="tablewrap"><table class="tmut-tbl"><thead><tr>${ornek.map(t=>`<th style="white-space:pre-line;vertical-align:middle">${esc(tmutCevir(t,d))}</th>`).join('')}</tr></thead>${
+      d.ornekSatir?`<tbody><tr>${d.ornekSatir.map(([t,ayr])=>`<td style="white-space:pre-line;vertical-align:middle;font-size:11.5px">${esc(tmutCevir(t,d,ayr).replace(/\{(\w)\}/g,(m,k)=>(d.yer||{})[k]||m))}</td>`).join('')}</tr></tbody>`:''}</table></div>`
     :'<div class="t-meta" style="color:var(--amber)">En az bir dil secin.</div>'}`;
 }
 function tmutDilYenile(){
@@ -45157,7 +45159,7 @@ function onmVeri(cid){
     sip:g.sip.sort((a,b)=>a.t-b.t||a.no.localeCompare(b.no,'tr',{numeric:true})).map(x=>x.no)})).sort(sira);
   const altL=[...alt.values()].map(a=>({...a,ad:a.kag[0].ad,code:a.kag[0].code})).sort((a,b)=>
     String(a.kag[0].no).localeCompare(String(b.kag[0].no),'tr',{numeric:true})||sira(a,b));
-  return {sol:solL, alt:altL, kagit:kagitlar.length, kagitNolar:kagitlar.map(k=>String(k.no||'').trim()||'(no yok)')};
+  return {sol:solL, alt:altL, kagit:kagitlar.length, kagitNolar:kagitlar.map(k=>String(k.no||'').trim()||'—')};
 }
 /* Sayfa: veri onmVeri'den. o = {org, firma (kisa), firmaTam, dil, statik}. statik=true ise kontrol
    renkleri hucreye yazilir (kosullu bicim eklenemediginde).
@@ -45387,8 +45389,12 @@ function onmSor(cid){
     fl=[...m.values()].sort((a,b)=>a.ad.localeCompare(b.ad,'tr'));
     if(!fl.length){ toast('Kontrolde ya da onayli kagidi olan firma yok','err'); return; }
   }
-  _ONM_CID=cid; _TMUT_XDIL=onmDilOku();
   const c=cid?(DB.companies||[]).find(x=>x&&x.id===cid):null;
+  _ONM_CID=cid; _TMUT_XDIL=Object.assign(onmDilOku(),{
+    aciklama:'Tablonun dilini secin. Birden fazla dil secerseniz tiklama sirasi dil sirasidir. Basliklar, bilgi satirlari, aciklama satiri, sayac kutulari, durumlar (ONAYLANDI / TEKRAR / NÖTR), notlar, hucre notlari ve sayfa altligi secilen dillerde yazilir; malzeme adi, kod ve firma unvani gibi veriler oldugu gibi kalir.',
+    ornek:['Malzeme İsmi','Faturalandırılabilme Sonucu','Not / Açıklama'],
+    ornekSatir:[['Kağıt yok'],['TEKRAR',' / '],['{O} tablosunda karşılığı yok - bu üründen {F} alımı kaydı yok.']],
+    yer:{O:gyFirmaAdKisa(orgSirketi())||orgAdiGoster(),F:(c&&(c.kisaAd||c.ad))||'FİRMA'}});
   const firmaHtml=cid?`<div class="frow"><label>Firma</label><div><b>${esc((c&&c.ad)||fatCompany(kgtKayitlar().find(k=>String(k.companyId||'')===cid))||'-')}</b></div></div>`
     :`<div class="t-meta" style="margin:0 0 6px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;font-size:10.5px">Firma</div>
       <div class="nord-sart-liste" style="margin-bottom:14px">${fl.map((f,i)=>`<label class="nord-sart-row${i?'':' on'}">
@@ -45410,7 +45416,7 @@ function onmIndir(){
   const d=_TMUT_XDIL; if(!d||!d.sira.length){ toast('En az bir dil secin','err'); return; }
   let cid=_ONM_CID;
   if(!cid){ const s=document.querySelector('input[name="kgtXFirma"]:checked'); if(!s){ toast('Once firma secin','err'); return; } cid=s.value; }
-  try{ localStorage.setItem('onm_excel_dil',JSON.stringify(d)); }catch(e){}
+  try{ localStorage.setItem('onm_excel_dil',JSON.stringify({sira:d.sira,alt:d.alt})); }catch(e){}
   closeModal(); kgtExcel(cid,{sira:d.sira.slice(),alt:d.alt});
 }
 async function kgtExcel(cid,dil){
