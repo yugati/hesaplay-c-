@@ -29417,6 +29417,7 @@ function sokYapistir(){
   const f=_SOK; if(!f) return;
   const kEl=document.getElementById('sokPaste'), mEl=document.getElementById('sokPasteQty');
   const kMetin=kEl?kEl.value:'', mik=_ozelMiktarBol(mEl?mEl.value:'');
+<<<<<<< Updated upstream
   const bEl=OZEL_BILGI.map(a=>({a,el:document.getElementById('sokPb_'+a.k)})).filter(x=>x.el&&x.el.value.trim());
   const mikHata=()=>{ const i=mik.findIndex(x=>x&&isNaN(nordParseQty(x))); if(i<0) return false; toast(`${i+1}. miktar sayi degil: "${mik[i]}"`,'err'); return true; };
   // bilgi sutunlari n koda okunur - sayisi tutmayan sutun hicbir sey yazdirmaz (hiza kaymasin)
@@ -29428,9 +29429,12 @@ function sokYapistir(){
   // yalniz DOLU hucre yazilir - bos hucre o kodun mevcut bilgisini silmez
   const bilgiYaz=(p,kol,ix)=>kol.forEach(c=>{ const v=c.p[ix]; if(v) p.bilgi={...(p.bilgi||{}),[c.k]:v}; });
   const bilgiMsj=kol=>kol.length?` · bilgi: ${kol.map(c=>OZEL_BILGI.find(a=>a.k===c.k).t).join(', ')}`:'';
+=======
+>>>>>>> Stashed changes
   if(!String(kMetin).trim()){
     if(!mik.length&&!bEl.length){ toast('Kod bulunamadi','err'); return; }
     const kodlu=f.pay.filter(p=>String(p.kod||'').trim());
+<<<<<<< Updated upstream
     if(!kodlu.length){ toast((mik.length?'Miktar':'Bilgi')+' yazilacak kod yok - once kodlari yapistirin','err'); return; }
     if(mik.length&&mik.length!==kodlu.length){ toast(`Listede ${kodlu.length} kod var, ${mik.length} miktar okundu - ayni sirada ve esit sayida olmali`,'err'); return; }
     if(mik.length&&mikHata()) return;
@@ -29438,10 +29442,16 @@ function sokYapistir(){
     kodlu.forEach((p,ix)=>{ if(mik.length&&String(mik[ix]||'').trim()) p.qty=String(nordParseQty(mik[ix])); bilgiYaz(p,kol,ix); });
     sokRender();
     toast(mik.length?`${mik.length} miktar yazildi · toplam ${fmtNum(sokDurum().girilen)}${bilgiMsj(kol)}`:`${kodlu.length} koda bilgi yazildi${bilgiMsj(kol)}`); return;
+=======
+    if(!kodlu.length){ toast('Miktar yazilacak kod yok - once kodlari yapistirin','err'); return; }
+    const uy=_ozelMiktarYaz(kodlu,mik);
+    sokRender(); toast(`${Math.min(mik.length,kodlu.length)} miktar yazildi · toplam ${fmtNum(sokDurum().girilen)}${uy?' · '+uy:''}`,uy?'warn':''); return;
+>>>>>>> Stashed changes
   }
   const items=_ozelKodMiktarBol(kMetin);
   if(!items.length){ toast('Kod bulunamadi','err'); return; }
   if(items.every(it=>!isNaN(nordParseQty(it.kod)))){ toast('Kod kutusuna yalnizca sayi yapistirilmis - miktarlari yandaki kutuya yapistirin','err'); return; }
+<<<<<<< Updated upstream
   if(mik.length){
     if(mik.length!==items.length){ toast(`${items.length} kod, ${mik.length} miktar okundu - miktarlar kodlarla ayni sirada ve esit sayida olmali`,'err'); return; }
     if(mikHata()) return;
@@ -29450,6 +29460,11 @@ function sokYapistir(){
   const kol=bilgiOku(items.length); if(!kol) return;
   f.pay=f.pay.filter(p=>String(p.kod||'').trim()||nordParseQty(p.qty)>0||ozelBilgiTemiz(p.bilgi));   // bos baslangic satiri yutulur
   items.forEach((it,ix)=>{
+=======
+  const uyari=_ozelMiktarEsle(kMetin,items,mik);
+  f.pay=f.pay.filter(p=>String(p.kod||'').trim()||nordParseQty(p.qty)>0);   // bos baslangic satiri yutulur
+  items.forEach(it=>{
+>>>>>>> Stashed changes
     const n=nordParseQty(it.qty), adet=(!isNaN(n)&&n>=0)?n:1;
     let v=f.pay.find(p=>ktopKey(p.kod)===ktopKey(it.kod));
     if(v){ const o=nordParseQty(v.qty); v.qty=String(Math.round(((o>0?o:0)+adet)*1e6)/1e6); }
@@ -29460,7 +29475,11 @@ function sokYapistir(){
   sokRender();
   const tk=new Set(items.filter(it=>sokTekrar(it.kod)).map(it=>ktopKey(it.kod))).size;
   if(tk){ toast(`${items.length} kod okundu - ${tk} tanesi bu urunun baska bir kaleminde var (kirmizi), cikarmadan uygulanamaz`,'err'); return; }
+<<<<<<< Updated upstream
   toast(`${items.length} kod okundu · toplam ${fmtNum(sokDurum().girilen)}${bilgiMsj(kol)}`);
+=======
+  toast(`${items.length} kod okundu · toplam ${fmtNum(sokDurum().girilen)}${uyari?' · '+uyari:''}`,uyari?'warn':'');
+>>>>>>> Stashed changes
 }
 // SIPARISLERDEN GETIR: siparis kirilimlarinda bu kaleme yazilmis kodlar (miktariyla) listeye eklenir;
 // listede zaten olan koda dokunulmaz - plan elle girilmis olabilir
@@ -37153,6 +37172,46 @@ function _ozelMiktarBol(metin){
   while(p.length && !p[p.length-1]) p.pop();      // sondaki bos satirlar sayiyi sisirmesin
   return p;
 }
+/* MIKTAR ESLEME: YAPISTIRILAN NE ISE KABUL EDILIR - sayilar tutmasa da islem durmaz, uyari verilir.
+     1) kod ve miktar sayisi esit      -> sirayla
+     2) degil ama miktar kutusu kod kutusuyla AYNI SATIR SAYISINDA -> SATIR SATIR (Excel'den iki
+        sutun ayni satirlardan kopyalanmis; kod sutunundaki bos/birlesik hucre kodda atlanir,
+        miktarda bos satir kalir - satir no ile eslesince hiza kaymaz)
+     3) o da degil                      -> sirayla; miktari kalmayan kod 1 alir, artan miktar kullanilmaz
+   Sayi olmayan miktar 1 sayilir. Donus: kullaniciya gosterilecek uyari ('' = sorun yok). */
+function _ozelMiktarEsle(kMetin,items,mik){
+  if(!mik.length) return '';
+  const satir=String(kMetin||'').replace(/\r/g,'').split('\n');
+  while(satir.length && !satir[satir.length-1].trim()) satir.pop();
+  const satirla=mik.length!==items.length && satir.length===mik.length;
+  let gecersiz=0;
+  items.forEach((it,ix)=>{
+    const m=String((satirla?mik[it.sat]:mik[ix])||'').trim();
+    if(m && isNaN(nordParseQty(m))){ gecersiz++; it.qty=''; } else it.qty=m;   // ayri sutun, satir sonundaki sayinin yerine gecer
+  });
+  const not=[];
+  if(satirla) not.push(`${items.length} kod, ${mik.length} miktar satiri - satir satir eslesti`);
+  else if(mik.length!==items.length){
+    not.push(`${items.length} kod, ${mik.length} miktar - sirayla eslesti`);
+    if(items.length>mik.length) not.push(`son ${items.length-mik.length} koda miktar yok (1 yazildi)`);
+    else not.push(`son ${mik.length-items.length} miktar kullanilmadi`);
+  }
+  if(gecersiz) not.push(`${gecersiz} miktar sayi degil (1 yazildi)`);
+  return not.join(' · ');
+}
+// YALNIZCA MIKTAR: listede duran kodlara sirayla yazar - sayi tutmasa da durmaz; bos ya da
+// sayi olmayan miktar kodun mevcut miktarina dokunmaz. Donus: uyari ('' = sorun yok).
+function _ozelMiktarYaz(kodlu,mik){
+  let gecersiz=0;
+  kodlu.forEach((p,ix)=>{ const m=String(mik[ix]||'').trim(); if(!m) return;
+    const n=nordParseQty(m); if(isNaN(n)) gecersiz++; else p.qty=String(n); });
+  const not=[];
+  if(mik.length!==kodlu.length) not.push(kodlu.length>mik.length
+    ? `listede ${kodlu.length} kod var, son ${kodlu.length-mik.length} koda dokunulmadi`
+    : `listede ${kodlu.length} kod var, son ${mik.length-kodlu.length} miktar kullanilmadi`);
+  if(gecersiz) not.push(`${gecersiz} miktar sayi degil (atlandi)`);
+  return not.join(' · ');
+}
 let _NOK=null;
 /* Bilgi kutusu ac/kapa: modal BASTAN CIZILMEZ (yazilan kodda odak kaybolurdu), yalnizca
    kutu ve dugme guncellenir. Durum _nokBilgi'de kalir - sonraki cizimde ayni sekilde acilir. */
@@ -37333,19 +37392,14 @@ function nordOzelYapistir(){
   const kEl=document.getElementById('nokPaste'), mEl=document.getElementById('nokPasteQty');
   const kMetin=kEl?kEl.value:'', mMetin=mEl?mEl.value:'';
   const mik=_ozelMiktarBol(mMetin);
-  const mikHata=()=>{ const i=mik.findIndex(x=>x&&isNaN(nordParseQty(x)));
-    if(i<0) return false; toast(`${i+1}. miktar sayi degil: "${mik[i]}"`,'err'); return true; };
   // YALNIZCA MIKTAR: kodlar listede duruyor, miktarlari sirayla yazilir
   if(!String(kMetin).trim()){
     if(!mik.length){ toast('Kod bulunamadi','err'); return; }
     const kodlu=(f.pay||[]).filter(p=>String(p.kod||'').trim());
     if(!kodlu.length){ toast('Miktar yazilacak kod yok - once kodlari yapistirin','err'); return; }
-    if(mik.length!==kodlu.length){
-      toast(`Listede ${kodlu.length} kod var, ${mik.length} miktar okundu - ayni sirada ve esit sayida olmali`,'err'); return; }
-    if(mikHata()) return;
-    kodlu.forEach((p,ix)=>{ if(String(mik[ix]||'').trim()) p.qty=String(nordParseQty(mik[ix])); });
+    const uy=_ozelMiktarYaz(kodlu,mik);
     nordOzelRender();
-    toast(`${mik.length} miktar yazildi · toplam ${fmtNum(nordOzelDurum().girilen)}`);
+    toast(`${Math.min(mik.length,kodlu.length)} miktar yazildi · toplam ${fmtNum(nordOzelDurum().girilen)}${uy?' · '+uy:''}`,uy?'warn':'');
     return;
   }
   const items=_ozelKodMiktarBol(kMetin);
@@ -37353,12 +37407,7 @@ function nordOzelYapistir(){
   // miktar sutunu yanlislikla kod kutusuna yapistirilmis olabilir - sayilari kod diye almayalim
   if(items.every(it=>!isNaN(nordParseQty(it.kod)))){
     toast('Kod kutusuna yalnizca sayi yapistirilmis - miktarlari yandaki kutuya yapistirin','err'); return; }
-  if(mik.length){
-    if(mik.length!==items.length){
-      toast(`${items.length} kod, ${mik.length} miktar okundu - miktarlar kodlarla ayni sirada ve esit sayida olmali`,'err'); return; }
-    if(mikHata()) return;
-    items.forEach((it,ix)=>{ it.qty=mik[ix]; });   // ayri sutun, satir sonundaki sayinin yerine gecer
-  }
+  const uyari=_ozelMiktarEsle(kMetin,items,mik);
   let mikVar=false;
   items.forEach(it=>{
     const n=nordParseQty(it.qty), adet=(!isNaN(n)&&n>=0)?n:1;
@@ -37370,7 +37419,7 @@ function nordOzelYapistir(){
   nordOzelRender();
   const tk=new Set(items.filter(it=>nokTekrar(it.kod)).map(it=>ktopKey(it.kod))).size;
   if(tk){ toast(`${items.length} kod okundu - ${tk} tanesi bu urunde daha once kullanilmis (kirmizi), cikarmadan uygulanamaz`,'err'); return; }
-  toast(`${items.length} kod okundu${mikVar?` · toplam ${fmtNum(nordOzelDurum().girilen)}`:''}`);
+  toast(`${items.length} kod okundu${mikVar?` · toplam ${fmtNum(nordOzelDurum().girilen)}`:''}${uyari?' · '+uyari:''}`,uyari?'warn':'');
 }
 // KALANI YAZ: satir miktarindan geriye kalani ilk bos miktarli koda yazar
 function nordOzelKalan(){
