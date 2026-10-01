@@ -45107,6 +45107,16 @@ Object.assign(TMUT_DIL,{   // On Mutabakat - {O} organizasyon, {F} firma, digerl
   'Bölüm: {O} teslim alınan tablosunda karşılığı bulunamayan kayıtlar':{ru:'Раздел: записи, отсутствующие в таблице «Принято {O}»',en:'Section: records with no match in the «Received by {O}» table'},
   'Dil seçimi – listeden Türkçe / Русский / English seçin':{ru:'Выбор языка – выберите в списке Türkçe / Русский / English',en:'Language selection – choose Türkçe / Русский / English from the list'},
   'Seçili dilin bayrağı (Excel 365 ve internet bağlantısı gerekir)':{ru:'Флаг выбранного языка (нужны Excel 365 и интернет)',en:'Flag of the selected language (requires Excel 365 and an internet connection)'},
+  // konsolidasyon: konsolide kagitlar tek blok, her bagimsiz kagit ayri blok ({N} = kagit no'lari)
+  '{F} KAĞITLARI – KONSOLİDE: {N}':{ru:'ДОКУМЕНТЫ {F} – КОНСОЛИДИРОВАНО: {N}',en:'{F} DOCUMENTS – CONSOLIDATED: {N}'},
+  '{F} KAĞIDI {N} – BAĞIMSIZ':{ru:'ДОКУМЕНТ {F} {N} – ОТДЕЛЬНО',en:'{F} DOCUMENT {N} – INDEPENDENT'},
+  'KONSOLİDE + KAĞIT {N} KONTROLÜ':{ru:'ПРОВЕРКА: КОНСОЛИДИРОВАНО + ДОКУМЕНТ {N}',en:'CHECK: CONSOLIDATED + DOCUMENT {N}'},
+  'Konsolide Kağıtlar':{ru:'Консолидированные документы',en:'Consolidated Documents'},
+  'Kağıt {N}':{ru:'Документ {N}',en:'Document {N}'},
+  'Toplam (Konsolide + Kağıt {N})':{ru:'Итого (консолидировано + документ {N})',en:'Total (Consolidated + Document {N})'},
+  'Fark {O} − (Konsolide + Kağıt {N})':{ru:'Разница {O} − (консолидировано + документ {N})',en:'Difference {O} − (Consolidated + Document {N})'},
+  'Konsolide + Kağıt {N}: {X} fazla ({O} net {D}, kağıtlar {H}).':{ru:'Консолидировано + документ {N}: больше на {X} ({O} нетто {D}, документы {H}).',en:'Consolidated + Document {N}: exceeds by {X} ({O} net {D}, documents {H}).'},
+  'Son durum – konsolide kağıtlar + bağımsız kağıt (o kağıtta olmayan üründe yalnız konsolide), {O} net ile karşılaştırılır':{ru:'Итоговое состояние – консолидированные документы + отдельный документ (если материала в нём нет – только консолидированные) сравниваются с нетто {O}',en:'Final state – consolidated documents + independent document (consolidated only where that document lacks the material) compared with {O} net'},
   'Sayfa':{ru:'Стр.',en:'Page'},
 });
 // kosullu bicim dolgulari [dolgu, yazi, kalin] - bicim eklenemezse sabit renk olarak da kullanilir
@@ -45121,7 +45131,12 @@ function kgtNoSira(a,b){
   return (!a.no)-(!b.no)||String(a.no||'').localeCompare(String(b.no||''),'tr',{numeric:true})
     ||(a.tarih||0)-(b.tarih||0)||(a.olusturmaTs||0)-(b.olusturmaTs||0);
 }
-function onmVeri(cid){
+/* KONSOLIDASYON (1 Eki 2026): pencerede firmanin kagitlari tek tek KONSOLIDE / BAGIMSIZ / disarida
+   isaretlenir. Konsolide kagitlar tek blokta toplanir (blok 0); her bagimsiz kagit kendi blogunu alir.
+   Satirlar ayni urun satiri - bloklar yan yana, karsilikli. Bagimsiz blogun kontrolu kullanici karariyla:
+   "BYKARA net  karsisinda  konsolide kagitlar + o bagimsiz kagit". Secim verilmezse butun kagitlar konsolide
+   (eski cikti birebir). secim = {kons:[kagitId], bag:[kagitId]}. */
+function onmVeri(cid,secim){
   const t2=new Date(tutISO(Date.now())).getTime()+86399999;   // bugun dahil (tmutAralik ile ayni gun sonu)
   const sol=new Map(), coz=new Map();
   // cozumleme ayirt edici alanlar basina bir kez; sartname adi fatUrunHavuzu'ndaki kuralla (kagit
@@ -45133,11 +45148,17 @@ function onmVeri(cid){
     const s=String(l.grup||(sp&&specGroupKeyGuvenli(sp))||'');
     const c={mt,key:fatAnahtar(l,mt),sart:s.startsWith('Karma (')?'':s}; coz.set(ck,c); return c;
   };
+  const uygun=onmKagitlari(cid);
+  const kons=secim&&Array.isArray(secim.kons)?uygun.filter(k=>secim.kons.includes(k.id)):uygun;
+  const bag=secim&&Array.isArray(secim.bag)?uygun.filter(k=>secim.bag.includes(k.id)&&!kons.includes(k)):[];
+  const bloklar=[{tip:'kons',kagitlar:kons},...bag.map(k=>({tip:'bag',kagitlar:[k]}))];
+  const B=bloklar.length, blokOf=new Map();
+  bloklar.forEach((b,i)=>b.kagitlar.forEach(k=>blokOf.set(k.id,i)));
   const ekle=(l,o,alan,q,t)=>{
     const c=cozUrun(l), mt=c.mt;
     let g=sol.get(c.key);
     if(!g){ g={key:c.key,code:(mt&&mt.code)||l.code||'',ad:(mt&&mt.name)||l.ad||l.name||'',
-      unit:(mt&&mt.unit)||l.unit||'',alinan:0,iade:0,sartlar:new Set(),sip:[],kag:[]}; sol.set(c.key,g); }
+      unit:(mt&&mt.unit)||l.unit||'',alinan:0,iade:0,sartlar:new Set(),sip:[],blok:bloklar.map(()=>[])}; sol.set(c.key,g); }
     g[alan]+=q; if(!g.unit&&l.unit) g.unit=l.unit;
     if(alan!=='alinan') return;   // "hangi sartname icin / hangi siparisle alindi" yalniz alimdan
     if(c.sart) g.sartlar.add(c.sart);
@@ -45151,39 +45172,69 @@ function onmVeri(cid){
       iadeSatirlari(ia).forEach(r=>{ const q=Number(r.qty)||0; if(q) ekle(r,o,'iade',q,ti); }); });
   });
   const alt=new Map();
-  const kagitlar=kgtKayitlar().filter(k=>String(k.companyId||'')===cid&&['kontrol','onayli'].includes(kgtDurumu(k))).sort(kgtNoSira);
-  kagitlar.forEach(k=>kgtSatirlari(k).forEach((r,i)=>{
-    const pk=String(r.key||''), g=sol.get(pk);
-    const p={no:String(k.no||'').trim(),sira:i+1,q:fatSayi(r.yazan),ad:r.ad||'',code:r.code||'',unit:r.unit||'',
-      sart:String(r.sartname||'').trim(),pay:fatSatirPaylari(r)};
-    if(g&&g.alinan>0){ g.kag.push(p); return; }
-    let a=alt.get(pk); if(!a){ a={key:pk,kag:[]}; alt.set(pk,a); }
-    a.kag.push(p);
-  }));
+  uygun.forEach(k=>{ if(!blokOf.has(k.id)) return; const b=blokOf.get(k.id);
+    kgtSatirlari(k).forEach((r,i)=>{
+      const pk=String(r.key||''), g=sol.get(pk);
+      const p={no:String(k.no||'').trim(),sira:i+1,q:fatSayi(r.yazan),ad:r.ad||'',code:r.code||'',unit:r.unit||'',
+        sart:String(r.sartname||'').trim(),pay:fatSatirPaylari(r)};
+      if(g&&g.alinan>0){ g.blok[b].push(p); return; }
+      let a=alt.get(pk); if(!a){ a={key:pk,blok:bloklar.map(()=>[])}; alt.set(pk,a); }
+      a.blok[b].push(p);
+    }); });
   const sira=(a,b)=>String(a.ad||'').localeCompare(String(b.ad||''),'tr',{sensitivity:'base'})
     ||String(a.code||'').localeCompare(String(b.code||''),'tr',{numeric:true});
   const solL=[...sol.values()].map(g=>({...g,net:g.alinan-g.iade,
     sart:[...g.sartlar].sort((a,b)=>a.localeCompare(b,'tr',{numeric:true})).join('\n'),
     sip:g.sip.sort((a,b)=>a.t-b.t||a.no.localeCompare(b.no,'tr',{numeric:true})).map(x=>x.no)})).sort(sira);
-  const altL=[...alt.values()].map(a=>({...a,ad:a.kag[0].ad,code:a.kag[0].code})).sort((a,b)=>
-    String(a.kag[0].no).localeCompare(String(b.kag[0].no),'tr',{numeric:true})||sira(a,b));
-  return {sol:solL, alt:altL, kagit:kagitlar.length, kagitNolar:kagitlar.map(k=>String(k.no||'').trim()||'—')};
+  const ilkP=a=>a.blok.find(x=>x.length)[0];
+  const altL=[...alt.values()].map(a=>({...a,ad:ilkP(a).ad,code:ilkP(a).code})).sort((a,b)=>
+    String(ilkP(a).no).localeCompare(String(ilkP(b).no),'tr',{numeric:true})||sira(a,b));
+  const no=k=>String(k.no||'').trim()||'—';
+  return {sol:solL, alt:altL, kagit:kons.length+bag.length,
+    bloklar:bloklar.map(b=>({tip:b.tip,nolar:b.kagitlar.map(no)})), konsTumu:kons.length===uygun.length&&!bag.length};
+}
+// firmanin On Mutabakat'a girebilen kagitlari: kontrolde + onayli (taslak ve reddedilen degil), Sartname No sirasinda
+function onmKagitlari(cid){
+  return kgtKayitlar().filter(k=>String(k.companyId||'')===cid&&['kontrol','onayli'].includes(kgtDurumu(k))).sort(kgtNoSira);
+}
+/* SUTUN HARITASI: sol A-F | ara | her blok: 8 kagit + ara + kontrol (bloklar arasi ara) | not.
+   Konsolide blogun kontrolu 4 sutun: BYKARA | kagitlar | sonuc | fark. Bagimsiz blogunki 6 sutun (kullanici
+   istegi: toplamlar yan yana gorunsun): BYKARA | konsolide toplam | o kagit | ikisinin toplami | sonuc | fark.
+   Tek blokta ornekteki A-U'nun aynisi (H-O kagit, Q-T kontrol, U not). Her sutunun bir ROLU var; stil ve
+   formul harfi rolden okunur. */
+function onmKolonlar(B){
+  const K=[], gen=[];
+  const ekle=(rol,w,b)=>{ K.push({rol,b}); gen.push(w); return K.length-1; };
+  const sol={}; ['ad','kod','birim','qty','sart','sip'].forEach((r,i)=>{ sol[r]=ekle(r,ONM_SUTUN[i]); });
+  ekle('ara',ONM_SUTUN[6]);
+  const bl=[];
+  for(let b=0;b<B;b++){
+    const x={};
+    ['pqty','punit','pad','pkod','pyer','psart','pno','psip'].forEach((r,i)=>{ x[r]=ekle(r,ONM_SUTUN[7+i],b); });
+    ekle('ara',ONM_SUTUN[15]);
+    (b?[['kQ',ONM_SUTUN[16]],['kK',18],['kB',18],['kR',ONM_SUTUN[17]],['kS',ONM_SUTUN[18]],['kT',ONM_SUTUN[19]]]
+      :[['kQ',ONM_SUTUN[16]],['kR',ONM_SUTUN[17]],['kS',ONM_SUTUN[18]],['kT',ONM_SUTUN[19]]]).forEach(([r,w])=>{ x[r]=ekle(r,w,b); });
+    if(b<B-1) ekle('ara',ONM_SUTUN[6]);
+    bl.push(x);
+  }
+  const not=ekle('not',ONM_SUTUN[20]);
+  return {K,gen,sol,bl,not};
 }
 /* Sayfa: veri onmVeri'den. o = {org, firma (kisa), firmaTam, dil, statik, sayfaAdi}. statik=true ise kontrol
    renkleri hucreye yazilir (kosullu bicim eklenemediginde).
-   GORUNUM kullanicinin ornegiyle ayni (1 Eki: "eski gorunum daha iyiydi" - profesyonel denemesi geri alindi):
-   A-F sol, G ara, H-O kagit, P ara, Q-T kontrol, U not; basliklar 1-3. satir. Tek ek: sag ustte dil kutusu.
-   Donus: {ws, son (son satir, 1 tabanli), anaSon (suzgecin son satiri), say, durum, dws (Dil sayfasi), dilListe}. */
+   GORUNUM kullanicinin ornegiyle ayni (1 Eki: "eski gorunum daha iyiydi" - profesyonel denemesi geri alindi).
+   Donus: {ws, son, anaSon, say (blok basina), durum, dws (Dil sayfasi), dilListe, kontrolKol, dilHucre}. */
 function onmSayfa(X,v,o){
   const {org,firma,dil,statik,sayfaAdi}=o;
+  const B=v.bloklar.length, KOL=onmKolonlar(B), NOT=KOL.not, L=c=>X.utils.encode_col(c);
   const ws={}, A=(r,c)=>X.utils.encode_cell({r,c});
   const q6=x=>Math.round(x*1e6)/1e6, y2=x=>Math.round(x*100)/100;
   const nf=x=>fmtNum(q6(x)), ust=s=>String(s||'').toLocaleUpperCase('tr');
   const yer=(s,deg)=>s.replace(/\{(\w)\}/g,(m,k)=>deg[k]!=null?deg[k]:m);
   /* DOSYA ICINDE DIL SECIMI. Cevrilen her metin gizli "Dil" sayfasina bir satir olarak yazilir (B'den
-     itibaren sutun basina bir dil secenegi); hucre o satirin A sutununu okur (=Dil!$A$k). A sutunu, U1'deki
-     acilir listede secilen secenegi INDEX ile getirir. Secenekler: indirirken secilen dil(ler) + uc tek dil
-     (uc dilin butun bilesimleri satir yuksekliklerini gereksiz buyuturdu). Satir yuksekligi en uzun secenege gore.
+     itibaren sutun basina bir dil secenegi); hucre o satirin A sutununu okur (=Dil!$A$k). A sutunu, sag
+     ustteki acilir listede secilen secenegi INDEX ile getirir. Secenekler: indirirken secilen dil(ler) + uc
+     tek dil. Satir yuksekligi en uzun secenege gore.
      metin(): {v: indirilen dildeki metin (hucrenin hazir degeri), f: formul, hepsi: secenek basina metin}.
      T: baslik/etiket (alt alta ya da yan yana); TB: buyuk harfli org/firma; TS: tek satir (" / "). */
   const deg0={O:org,F:firma}, degU={O:ust(org),F:ust(firma)};
@@ -45193,8 +45244,10 @@ function onmSayfa(X,v,o){
   const metin=fn=>{ const hepsi=SEC.map(fn); dilTab.push(hepsi); return {v:hepsi[0],f:`Dil!$A$${dilTab.length+1}`,hepsi}; };
   const tP=(sd,k,ek,ay)=>yer(tmutCevir(k,sd,ay),{...deg0,...(ek||{})});
   const T=(k,ek)=>metin(sd=>tP(sd,k,ek));
-  const TB=k=>metin(sd=>yer(tmutCevir(k,sd),degU));
+  const TB=(k,ek)=>metin(sd=>yer(tmutCevir(k,sd),{...degU,...(ek||{})}));
   const TS=(k,ek)=>metin(sd=>tP(sd,k,ek,' / '));
+  // birden cok parcali not: once dil basina parcalar alt alta, sonra diller (alt alta ya da " / ")
+  const TN=parcalar=>metin(sd=>sd.sira.map(k=>parcalar.map(p=>yer(tmutDilTek(p[0],k),{...deg0,...(p[1]||{})})).join('\n')).join(sd.alt?'\n':' / '));
   const durum={onay:TS('ONAYLANDI'),tekrar:TS('TEKRAR'),notr:TS('NÖTR')};
   // --- stil (ornekteki) ---
   const ince=rgb=>({style:'thin',color:{rgb}}), kG=ince('FF9BA3AF'), kS=ince('FF000000');
@@ -45202,52 +45255,65 @@ function onmSayfa(X,v,o){
   const th=(fill,ek)=>({font:{bold:true,sz:11,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:fill}},border:kenarG,
     alignment:{horizontal:'center',vertical:'center',wrapText:true},...(ek||{})});
   const MAVI='FF2563EB', YESIL='FF0F766E', GRI='FF475569', SARI='FFFFF2CC';
-  const hiz={2:'center',3:'right',7:'right',8:'center',10:'center',13:'center',14:'center',16:'center',17:'center',18:'center',19:'center',20:'left'};
-  const td=(c,sari,ek)=>({border:kenar,alignment:{vertical:'center',wrapText:c!==2&&c!==3,...(hiz[c]?{horizontal:hiz[c]}:{})},
-    ...(c===18?{font:{bold:true}}:{}),...(sari?{fill:{fgColor:{rgb:SARI}}}:{}),...(ek||{})});
+  const HIZ={birim:'center',qty:'right',pqty:'right',punit:'center',pkod:'center',pno:'center',psip:'center',
+    kQ:'center',kK:'center',kB:'center',kR:'center',kS:'center',kT:'center',not:'left'};
+  const rol=c=>KOL.K[c].rol;
+  const td=(c,sari,ek)=>{ const ro=rol(c);
+    return {border:kenar,alignment:{vertical:'center',wrapText:ro!=='birim'&&ro!=='qty',...(HIZ[ro]?{horizontal:HIZ[ro]}:{})},
+      ...(ro==='kS'?{font:{bold:true}}:{}),...(sari?{fill:{fgColor:{rgb:SARI}}}:{}),...(ek||{})}; };
   const renk=k=>{ const x=ONM_RENK[k]; return {fill:{fgColor:{rgb:x[0]}},...(x[1]?{font:{bold:x[2],color:{rgb:x[1]}}}:{})}; };
   const sayiZ=(x,isaret)=>{ const t=Number.isInteger(x)?'#,##0':'#,##0.##'; return isaret?('+'+t+';-'+t+';0'):t; };
   const koy=(r,c,deger,s,ek)=>{ let h;
     if(deger==null||deger==='') h={t:'s',v:''}; else if(typeof deger==='number') h={t:'n',v:deger};
     else if(typeof deger==='object') h={t:'s',v:deger.v,f:deger.f}; else h={t:'s',v:String(deger)};
     if(ek) Object.assign(h,ek); if(s) h.s=s; ws[A(r,c)]=h; return h; };
-  const SON_C=20, satirlar=[];
+  const satirlar=[], merges=[];
   const satirSayisi=(t,w)=>t&&typeof t==='object'?Math.max(...t.hepsi.map(x=>satirSayisi(x,w)))
     :String(t||'').split('\n').reduce((n,p)=>n+Math.max(1,Math.ceil(p.length/w)),0);
-  const sig=c=>Math.max(2,Math.floor(ONM_SUTUN[c]*1.1));
+  const sig=c=>Math.max(2,Math.floor(KOL.gen[c]*1.1));
   const yuk=(hucre,min)=>Math.max(min,Math.min(16,Math.max(1,...hucre.map(([c,t])=>satirSayisi(t,sig(c)))))*15);
-  /* --- 1: baslik + dil kutusu: S1 etiket, T1 secili dilin BAYRAGI, U1 acilir liste (onmSonIsle ekler) ---
+  /* --- 1: baslik + dil kutusu: etiket, secili dilin BAYRAGI, acilir liste (son uc sutun; onmSonIsle ekler) ---
      BAYRAK: Windows'ta bayrak emojisi yazi tipi yok (Excel "TR" harfleri gosterir), bu yuzden resim:
      Excel 365'in IMAGE() islevi secilen secenegin bayrak adresini (Dil sayfasinda) ceker. IMAGE'i bilmeyen
      surumde ya da cevrimdisi IFERROR dil kodunu yazar. Bilesik secenekte ilk dilin bayragi. */
   const BAYRAK={tr:'https://flagcdn.com/w80/tr.png',ru:'https://flagcdn.com/w80/ru.png',en:'https://flagcdn.com/w80/gb.png'};
   const bayrakUrl=metin(sd=>BAYRAK[sd.sira[0]]), bayrakKod=metin(sd=>sd.sira.map(k=>k==='en'?'EN':k.toUpperCase()).join(' + '));
   const bas18={font:{bold:true,sz:18,color:{rgb:'FFFFFFFF'}}};
-  for(let c=0;c<=SON_C-3;c++) koy(0,c,c?'':TS('ÖN MUTABAKAT'),th(MAVI,bas18));
-  koy(0,SON_C-2,'Dil / Язык / Language ▸',th(MAVI,{font:{bold:true,sz:9,color:{rgb:'FFFDE68A'}},alignment:{horizontal:'right',vertical:'center',wrapText:true}}));
-  koy(0,SON_C-1,bayrakKod.v,{font:{bold:true,sz:12,color:{rgb:'FF1E3A8A'}},fill:{fgColor:{rgb:'FFFFFFFF'}},border:kenarG,
+  for(let c=0;c<=NOT-3;c++) koy(0,c,c?'':TS('ÖN MUTABAKAT'),th(MAVI,bas18));
+  merges.push({s:{r:0,c:0},e:{r:0,c:NOT-3}});
+  koy(0,NOT-2,'Dil / Язык / Language ▸',th(MAVI,{font:{bold:true,sz:9,color:{rgb:'FFFDE68A'}},alignment:{horizontal:'right',vertical:'center',wrapText:true}}));
+  koy(0,NOT-1,bayrakKod.v,{font:{bold:true,sz:12,color:{rgb:'FF1E3A8A'}},fill:{fgColor:{rgb:'FFFFFFFF'}},border:kenarG,
     alignment:{horizontal:'center',vertical:'center'}},{f:`IFERROR(_xlfn.IMAGE(${bayrakUrl.f},${bayrakKod.f},0),${bayrakKod.f})`});
-  koy(0,SON_C,SEC[0].ad,{font:{bold:true,sz:12,color:{rgb:'FF1E3A8A'}},fill:{fgColor:{rgb:'FFFFFFFF'}},border:kenarG,
+  koy(0,NOT,SEC[0].ad,{font:{bold:true,sz:12,color:{rgb:'FF1E3A8A'}},fill:{fgColor:{rgb:'FFFFFFFF'}},border:kenarG,
     alignment:{horizontal:'center',vertical:'center'}});
   satirlar[0]={hpt:34};
-  // --- 2-3: blok ve sutun basliklari ---
-  // basliklar kademeli: ana baslik 18, blok basliklari 14, sutun basliklari 11 pt
-  const b2=[[0,5,TB('{O} TESLİM ALINAN'),MAVI],[7,13,TB('{F} KAĞITLARI'),MAVI],[16,19,TB('{F} KAĞITLARI KONTROLÜ'),YESIL],[20,20,T('Not / Açıklama'),GRI]];
+  // --- 2-3: blok ve sutun basliklari (kademeli: ana baslik 18, blok basliklari 14, sutun basliklari 11 pt) ---
   const bas14={font:{bold:true,sz:14,color:{rgb:'FFFFFFFF'}}};
-  b2.forEach(([a,b,t,f])=>{ for(let c=a;c<=b;c++) koy(1,c,c===a?t:'',th(f,bas14)); });
-  koy(1,14,'',th(MAVI,{border:{}}));
-  const b3=[T('Malzeme İsmi'),T('Malzeme Kodu'),T('Birimi'),T('Alınmış Olduğu Miktar'),T('Hangi Şartname İçin Alındığı'),
-    T('Hangi Siparişlerle Alındığı'),null,T('Kağıtta Yazan Miktar'),T('Birimi'),T('Malzeme İsmi'),T('Malzeme Kodu'),T('Yerleşim Kodları'),
-    T('Çekildiği Şartname'),T('Kağıt Sıra No'),T('Hangi Siparişlerle Alındığı'),null,T('{O} Ambarı (Teslim Alınan)'),T('{F} Kağıtları'),
-    T('Faturalandırılabilme Sonucu'),T('Fark {O} − {F} Kağıtları')];
-  b3.forEach((t,c)=>{ if(t!=null) koy(2,c,t,th(c>=17?YESIL:MAVI,c===14?{border:{}}:null)); });
-  koy(2,20,'',th(GRI));
+  const b2=[[KOL.sol.ad,KOL.sol.sip,TB('{O} TESLİM ALINAN'),MAVI]];
+  KOL.bl.forEach((x,b)=>{ const N=v.bloklar[b].nolar.join(', ');
+    b2.push([x.pqty,x.pno,b?TB('{F} KAĞIDI {N} – BAĞIMSIZ',{N}):(v.konsTumu?TB('{F} KAĞITLARI'):TB('{F} KAĞITLARI – KONSOLİDE: {N}',{N})),MAVI]);
+    b2.push([x.kQ,x.kT,b?TB('KONSOLİDE + KAĞIT {N} KONTROLÜ',{N}):TB('{F} KAĞITLARI KONTROLÜ'),YESIL]); });
+  b2.forEach(([a,b,t,f])=>{ for(let c=a;c<=b;c++) koy(1,c,c===a?t:'',th(f,bas14)); merges.push({s:{r:1,c:a},e:{r:1,c:b}}); });
+  koy(1,NOT,T('Not / Açıklama'),th(GRI,bas14)); koy(2,NOT,'',th(GRI)); merges.push({s:{r:1,c:NOT},e:{r:2,c:NOT}});
+  const b3=[];
+  const bs=(c,t,f,ek)=>{ b3.push([c,t]); koy(2,c,t,th(f,ek)); };
+  [['ad','Malzeme İsmi'],['kod','Malzeme Kodu'],['birim','Birimi'],['qty','Alınmış Olduğu Miktar'],['sart','Hangi Şartname İçin Alındığı'],
+    ['sip','Hangi Siparişlerle Alındığı']].forEach(([ro,k])=>bs(KOL.sol[ro],T(k),MAVI));
+  KOL.bl.forEach((x,b)=>{ const N=v.bloklar[b].nolar.join(', ');
+    [['pqty','Kağıtta Yazan Miktar'],['punit','Birimi'],['pad','Malzeme İsmi'],['pkod','Malzeme Kodu'],['pyer','Yerleşim Kodları'],
+      ['psart','Çekildiği Şartname'],['pno','Kağıt Sıra No']].forEach(([ro,k])=>bs(x[ro],T(k),MAVI));
+    koy(1,x.psip,'',th(MAVI,{border:{}})); bs(x.psip,T('Hangi Siparişlerle Alındığı'),MAVI,{border:{}});
+    bs(x.kQ,T('{O} Ambarı (Teslim Alınan)'),MAVI);
+    if(b){ bs(x.kK,T('Konsolide Kağıtlar'),YESIL); bs(x.kB,T('Kağıt {N}',{N}),YESIL); }
+    bs(x.kR,b?T('Toplam (Konsolide + Kağıt {N})',{N}):T('{F} Kağıtları'),YESIL);
+    bs(x.kS,T('Faturalandırılabilme Sonucu'),YESIL);
+    bs(x.kT,b?T('Fark {O} − (Konsolide + Kağıt {N})',{N}):T('Fark {O} − {F} Kağıtları'),YESIL); });
   // blok basliklari birlesik ve 14 pt: satira sigan karakter birlesik genislik x 11/14
-  const genis=(a,b)=>ONM_SUTUN.slice(a,b+1).reduce((t,w)=>t+w,0)*1.1*11/14;
-  satirlar[1]={hpt:Math.max(24,Math.max(...b2.slice(0,3).map(([a,b,t])=>satirSayisi(t,Math.floor(genis(a,b)))))*19+6)};
-  satirlar[2]={hpt:yuk(b3.map((t,c)=>[c,t]).filter(x=>x[1]),60)};
+  const genis=(a,b)=>KOL.gen.slice(a,b+1).reduce((t,w)=>t+w,0)*1.1*11/14;
+  satirlar[1]={hpt:Math.max(24,Math.max(...b2.map(([a,b,t])=>satirSayisi(t,Math.floor(genis(a,b)))))*19+6)};
+  satirlar[2]={hpt:yuk(b3,60)};
   // --- veri ---
-  const say={onay:0,tekrar:0,notr:0,bos:0,alt:0};
+  const say=v.bloklar.map(()=>({onay:0,tekrar:0,notr:0,bos:0,kagitTekrar:0})); let altSay=0;
   const tekil=a=>[...new Set(a.map(x=>String(x||'').trim()).filter(Boolean))];
   const sag=kag=>{
     const pay=new Map(); kag.forEach(p=>p.pay.forEach(x=>{ const k=String(x.kod||'').trim(); if(k) pay.set(k,(pay.get(k)||0)+fatSayi(x.qty)); }));
@@ -45260,34 +45326,51 @@ function onmSayfa(X,v,o){
       L:[...pay].map(([k,q])=>k+' ('+nf(q)+')').join(' · '), M:tekil(kag.map(p=>p.sart)).join('\n'),
       N:tekil(kag.map(p=>p.no)).sort((a,b)=>a.localeCompare(b,'tr',{numeric:true})).join(', '), yorum };
   };
-  // kontrol blogu: ornekteki formuller; durum sozcugu Dil sayfasindan (secili dilde)
-  const kontrol=(r,D,H,ana)=>{ const n=r+1;
-    const Q=D===''?'':D, Rv=H===''?'':H;
+  const D_=L(KOL.sol.qty), H0=L(KOL.bl[0].pqty);
+  /* kontrol blogu: ornekteki formuller; durum sozcugu Dil sayfasindan (secili dilde).
+     Blok 0: kagit tarafi = konsolide miktar. Bagimsiz blok = SON DURUM (kullanici: "ozet tablosu gibi
+     sonlanmis hali"): kagit tarafi = konsolide + o kagit; o kagit bu urunde yoksa yalniz konsolide, ikisi de
+     yoksa bos. Boylece konsolidede onaylanan satir burada da onayli gorunur. */
+  const kontrol=(r,D,s0,sb,b,ana)=>{ const n=r+1, x=KOL.bl[b];
+    const Q=D===''?'':D;
+    const Rv=b===0?(s0.H===''?'':s0.H):((s0.H===''&&sb.H==='')?'':q6((s0.H===''?0:s0.H)+(sb.H===''?0:sb.H)));
     const sk=Rv===''?'':(Rv===0?'notr':(Q===''?'tekrar':(y2(Q-Rv)>=0?'onay':'tekrar')));
     const S=sk?durum[sk]:'', Tv=(Q===''||Rv==='')?'':y2(Q-Rv);
-    koy(r,16,Q,td(16),{f:`IF(D${n}="","",D${n})`,...(Q!==''?{z:sayiZ(Q)}:{})});
-    koy(r,17,Rv,td(17,false,statik&&Rv===''?renk('rBos'):null),{f:`IF(H${n}="","",H${n})`,...(Rv!==''?{z:sayiZ(Rv)}:{})});
-    koy(r,18,S,td(18,false,statik&&sk?renk(sk):null),
-      {f:`IF(R${n}="","",IF(N(R${n})=0,${durum.notr.f},IF(Q${n}="",${durum.tekrar.f},IF(ROUND(Q${n}-R${n},2)>=0,${durum.onay.f},${durum.tekrar.f}))))`});
-    koy(r,19,Tv,td(19,false,statik&&Tv!==''?renk(Tv===0?'tSifir':'tFark'):null),{f:`IF(OR(Q${n}="",R${n}=""),"",ROUND(Q${n}-R${n},2))`,...(Tv!==''?{z:sayiZ(Tv,true)}:{})});
-    if(ana){ if(sk) say[sk]++; else say.bos++; }
-    return sk;
+    const q=L(x.kQ), rr=L(x.kR), Xp=L(x.pqty);
+    koy(r,x.kQ,Q,td(x.kQ),{f:`IF(${D_}${n}="","",${D_}${n})`,...(Q!==''?{z:sayiZ(Q)}:{})});
+    if(b){   // konsolide toplam | o kagit | toplam = ikisi (biri yoksa digeri; ikisi de yoksa bos)
+      const Kv=s0.H===''?'':s0.H, Bv=sb.H===''?'':sb.H, kk=L(x.kK), kb=L(x.kB);
+      koy(r,x.kK,Kv,td(x.kK),{f:`IF(${H0}${n}="","",${H0}${n})`,...(Kv!==''?{z:sayiZ(Kv)}:{})});
+      koy(r,x.kB,Bv,td(x.kB),{f:`IF(${Xp}${n}="","",${Xp}${n})`,...(Bv!==''?{z:sayiZ(Bv)}:{})});
+      koy(r,x.kR,Rv,td(x.kR,false,statik&&Rv===''?renk('rBos'):null),{f:`IF(AND(${kk}${n}="",${kb}${n}=""),"",N(${kk}${n})+N(${kb}${n}))`,...(Rv!==''?{z:sayiZ(Rv)}:{})});
+    } else koy(r,x.kR,Rv,td(x.kR,false,statik&&Rv===''?renk('rBos'):null),{f:`IF(${H0}${n}="","",${H0}${n})`,...(Rv!==''?{z:sayiZ(Rv)}:{})});
+    koy(r,x.kS,S,td(x.kS,false,statik&&sk?renk(sk):null),
+      {f:`IF(${rr}${n}="","",IF(N(${rr}${n})=0,${durum.notr.f},IF(${q}${n}="",${durum.tekrar.f},IF(ROUND(${q}${n}-${rr}${n},2)>=0,${durum.onay.f},${durum.tekrar.f}))))`});
+    koy(r,x.kT,Tv,td(x.kT,false,statik&&Tv!==''?renk(Tv===0?'tSifir':'tFark'):null),
+      {f:`IF(OR(${q}${n}="",${rr}${n}=""),"",ROUND(${q}${n}-${rr}${n},2))`,...(Tv!==''?{z:sayiZ(Tv,true)}:{})});
+    if(ana){ if(sk) say[b][sk]++; else say[b].bos++; if(b&&sk==='tekrar'&&sb.H!=='') say[b].kagitTekrar++; }
+    return {sk,Rv};
   };
-  const sagYaz=(r,s)=>{ const sari=!!s.f;
-    koy(r,7,s.H,td(7,sari),{...(s.f?{f:s.f}:{}),...(s.H!==''?{z:sayiZ(s.H)}:{}),
+  const sagYaz=(r,s,b)=>{ const x=KOL.bl[b], sari=!!s.f;
+    koy(r,x.pqty,s.H,td(x.pqty,sari),{...(s.f?{f:s.f}:{}),...(s.H!==''?{z:sayiZ(s.H)}:{}),
       ...(s.yorum?{c:Object.assign([{a:'Ön Mutabakat',t:s.yorum}],{hidden:true})}:{})});
-    [[8,s.I],[9,s.J],[10,s.K],[11,s.L],[12,s.M],[13,s.N],[14,'']].forEach(([c,x])=>koy(r,c,x,td(c,sari),c>=13?{z:'@'}:null));
+    [[x.punit,s.I],[x.pad,s.J],[x.pkod,s.K],[x.pyer,s.L],[x.psart,s.M],[x.pno,s.N],[x.psip,'']].forEach(([c,y])=>
+      koy(r,c,y,td(c,sari),(c===x.pno||c===x.psip)?{z:'@'}:null));
   };
+  const blokYuk=(s,b,sk)=>{ const x=KOL.bl[b]; return [[x.pad,s.J],[x.pyer,s.L],[x.psart,s.M],[x.kS,sk?durum[sk]:'']]; };
   let r=ONM_BAS;
   v.sol.forEach(g=>{
-    const D=q6(g.net), s=sag(g.kag), Fs=g.sip.join('\n');
-    koy(r,0,g.ad,td(0)); koy(r,1,g.code,td(1)); koy(r,2,g.unit,td(2)); koy(r,3,D,td(3),{z:sayiZ(D)});
-    koy(r,4,g.sart,td(4)); koy(r,5,Fs,td(5));
-    sagYaz(r,s);
-    const sk=kontrol(r,D,s.H,true);
-    const not=sk==='tekrar'?T('Kağıtta {X} fazla: {O} net {D}, {F} kağıtlarında {H}.',{X:nf(s.H-D),D:nf(D),H:nf(s.H)}):'';
-    koy(r,20,not,td(20));
-    satirlar[r]={hpt:yuk([[0,g.ad],[4,g.sart],[5,Fs],[9,s.J],[11,s.L],[12,s.M],[18,sk?durum[sk]:''],[20,not]],30)};
+    const D=q6(g.net), Fs=g.sip.join('\n'), ss=g.blok.map(sag);
+    koy(r,KOL.sol.ad,g.ad,td(KOL.sol.ad)); koy(r,KOL.sol.kod,g.code,td(KOL.sol.kod)); koy(r,KOL.sol.birim,g.unit,td(KOL.sol.birim));
+    koy(r,KOL.sol.qty,D,td(KOL.sol.qty),{z:sayiZ(D)}); koy(r,KOL.sol.sart,g.sart,td(KOL.sol.sart)); koy(r,KOL.sol.sip,Fs,td(KOL.sol.sip));
+    const notP=[], yk=[[KOL.sol.ad,g.ad],[KOL.sol.sart,g.sart],[KOL.sol.sip,Fs]];
+    ss.forEach((s,b)=>{ sagYaz(r,s,b); const k=kontrol(r,D,ss[0],s,b,true); yk.push(...blokYuk(s,b,k.sk));
+      if(k.sk!=='tekrar'||(b&&s.H==='')) return;
+      notP.push(b===0?['Kağıtta {X} fazla: {O} net {D}, {F} kağıtlarında {H}.',{X:nf(k.Rv-D),D:nf(D),H:nf(k.Rv)}]
+        :['Konsolide + Kağıt {N}: {X} fazla ({O} net {D}, kağıtlar {H}).',{N:v.bloklar[b].nolar.join(', '),X:nf(k.Rv-D),D:nf(D),H:nf(k.Rv)}]); });
+    const not=notP.length?TN(notP):'';
+    koy(r,NOT,not,td(NOT)); yk.push([NOT,not]);
+    satirlar[r]={hpt:yuk(yk,30)};
     r++;
   });
   const anaSon=r;   // 1 tabanli: son ana tablo satiri
@@ -45295,84 +45378,90 @@ function onmSayfa(X,v,o){
   if(v.alt.length){
     r++;   // ornekteki gibi bir bos satir
     const bas=TB('{O} TESLİM ALINAN TABLOSUNDA KARŞILIĞI BULUNAMAYAN KAYITLAR');
-    for(let c=0;c<=SON_C;c++) koy(r,c,c?'':bas,{font:{bold:true,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FFB91C1C'}},alignment:{horizontal:'center',vertical:'center',wrapText:true}});
+    for(let c=0;c<=NOT;c++) koy(r,c,c?'':bas,{font:{bold:true,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FFB91C1C'}},alignment:{horizontal:'center',vertical:'center',wrapText:true}});
     satirlar[r]={hpt:Math.max(20,Math.max(...bas.hepsi.map(x=>x.split('\n').length))*15+4)}; altBas=r; r++;
     v.alt.forEach(a=>{
-      const s=sag(a.kag);
-      sagYaz(r,s); const sk=kontrol(r,'',s.H,false);
-      const not=T(s.H===0?'Miktar 0; {O} tablosunda karşılığı yok - bu üründen {F} alımı kaydı yok.':'{O} tablosunda karşılığı yok - bu üründen {F} alımı kaydı yok.');
-      koy(r,20,not,td(20));
-      satirlar[r]={hpt:yuk([[9,s.J],[11,s.L],[12,s.M],[18,sk?durum[sk]:''],[20,not]],60)};
-      say.alt++; r++;
+      const ss=a.blok.map(sag), yk=[];
+      ss.forEach((s,b)=>{ sagYaz(r,s,b); const k=kontrol(r,'',ss[0],s,b,false); yk.push(...blokYuk(s,b,k.sk)); });
+      const sifir=ss.every(s=>s.H===''||s.H===0);
+      const not=T(sifir?'Miktar 0; {O} tablosunda karşılığı yok - bu üründen {F} alımı kaydı yok.':'{O} tablosunda karşılığı yok - bu üründen {F} alımı kaydı yok.');
+      koy(r,NOT,not,td(NOT)); yk.push([NOT,not]);
+      satirlar[r]={hpt:yuk(yk,60)};
+      altSay++; r++;
     });
   }
   const son=Math.max(ONM_BAS+1,r);   // kosullu bicim araligi tablo ile biter - asagidaki kutu renkleri sabit
-  /* RENK ACIKLAMASI (kullanicinin kendi tablosundaki kutu): tablonun sag altinda Q-U, iki bos satirdan sonra.
-     Renk (Q) | Konum (R) | Anlami (S:U birlesik). Metinler Dil sayfasindan - dosyada dil degisince kutu da degisir. */
+  /* RENK ACIKLAMASI (kullanicinin kendi tablosundaki kutu): tablonun sag altinda, son kontrol blogu + not
+     sutunlarinda, iki bos satirdan sonra. Renk | Konum | Anlami (birlesik). Metinler Dil sayfasindan. */
   const kutuM=[]; let kutuSon=son;
-  { let k=son+2;   // 0 tabanli: son = son tablo satiri (1 tabanli) -> iki bos satir
+  { let k=son+2;
+    const c0=NOT-4, c1=NOT-3, c2=NOT-2;
     const kG2=ince('FF9BA3AF'), kutuK={top:kG2,bottom:kG2,left:kG2,right:kG2};
     const bas=(fill,sz)=>({font:{bold:true,sz,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:fill}},border:kutuK,alignment:{horizontal:'center',vertical:'center',wrapText:true}});
-    const anlamGen=Math.floor((ONM_SUTUN[18]+ONM_SUTUN[19]+ONM_SUTUN[20])*1.1);
-    for(let c=16;c<=20;c++) koy(k,c,c===16?TS('RENK AÇIKLAMASI'):'',bas('FF1E3A8A',12));
-    kutuM.push({s:{r:k,c:16},e:{r:k,c:20}}); satirlar[k]={hpt:22}; k++;
-    [[16,T('Renk')],[17,T('Konum')],[18,T('Anlamı')],[19,''],[20,'']].forEach(([c,t])=>koy(k,c,t,bas(GRI,10)));
-    kutuM.push({s:{r:k,c:18},e:{r:k,c:20}}); satirlar[k]={hpt:Math.max(18,satirSayisi(T('Renk'),20)*14+4)}; k++;
+    const anlamGen=Math.floor((KOL.gen[c2]+KOL.gen[NOT-1]+KOL.gen[NOT])*1.1);
+    for(let c=c0;c<=NOT;c++) koy(k,c,c===c0?TS('RENK AÇIKLAMASI'):'',bas('FF1E3A8A',12));
+    kutuM.push({s:{r:k,c:c0},e:{r:k,c:NOT}}); satirlar[k]={hpt:22}; k++;
+    [[c0,T('Renk')],[c1,T('Konum')],[c2,T('Anlamı')],[NOT-1,''],[NOT,'']].forEach(([c,t])=>koy(k,c,t,bas(GRI,10)));
+    kutuM.push({s:{r:k,c:c2},e:{r:k,c:NOT}}); satirlar[k]={hpt:Math.max(18,satirSayisi(T('Renk'),20)*14+4)}; k++;
     const sat=(ornek,stil,konum,anlam)=>{
-      koy(k,16,ornek,{border:kutuK,alignment:{horizontal:'center',vertical:'center',wrapText:true},font:{bold:true,sz:9,...((stil&&stil.font)||{})},...(stil&&stil.fill?{fill:stil.fill}:{})});
-      koy(k,17,konum,{border:kutuK,alignment:{horizontal:'center',vertical:'center'},font:{sz:10}});
-      for(let c=18;c<=20;c++) koy(k,c,c===18?anlam:'',{border:kutuK,alignment:{horizontal:'left',vertical:'center',wrapText:true,indent:1},font:{sz:10}});
-      kutuM.push({s:{r:k,c:18},e:{r:k,c:20}});
-      satirlar[k]={hpt:Math.max(22,Math.max(satirSayisi(anlam,anlamGen),satirSayisi(ornek,20))*14+6)}; k++; };
+      koy(k,c0,ornek,{border:kutuK,alignment:{horizontal:'center',vertical:'center',wrapText:true},font:{bold:true,sz:9,...((stil&&stil.font)||{})},...(stil&&stil.fill?{fill:stil.fill}:{})});
+      koy(k,c1,konum,{border:kutuK,alignment:{horizontal:'center',vertical:'center',wrapText:true},font:{sz:10}});
+      for(let c=c2;c<=NOT;c++) koy(k,c,c===c2?anlam:'',{border:kutuK,alignment:{horizontal:'left',vertical:'center',wrapText:true,indent:1},font:{sz:10}});
+      kutuM.push({s:{r:k,c:c2},e:{r:k,c:NOT}});
+      satirlar[k]={hpt:Math.max(22,Math.max(satirSayisi(anlam,anlamGen),satirSayisi(ornek,20),satirSayisi(konum,Math.floor(KOL.gen[c1]*1.1)))*14+6)}; k++; };
     const dolgu=rgb=>({fill:{fgColor:{rgb}}});
-    sat('',dolgu(MAVI),'A1:O3',T('Bölüm ve sütun başlıkları ({O} Teslim Alınan / {F} Kağıtları)'));
-    sat('',dolgu(YESIL),'Q2:T3',T('{F} kağıtları kontrolü – karşılaştırma ve sonuç sütun başlıkları'));
-    sat('',dolgu(GRI),'U2:U3',T('Not / Açıklama sütun başlığı'));
-    sat('',dolgu(SARI),'H:O',T('{F} miktarı birden çok kağıttan toplandı – ayrıntı hücre notunda'));
-    sat(durum.onay,renk('onay'),'S',T('{O} teslim alınan ≥ {F} kağıtlarındaki miktar – faturalandırılabilir'));
-    sat(durum.tekrar,renk('tekrar'),'S',T('{F} kağıt miktarı {O} miktarını aşıyor ya da {O} kaydı yok – tekrar kontrol edilmeli'));
-    sat(durum.notr,renk('notr'),'S',T('{F} kağıdındaki miktar 0 – değerlendirilmedi'));
-    sat('0',renk('tSifir'),'T',T('Fark yok – {O} ve {F} miktarları eşit'));
-    sat('≠ 0',renk('tFark'),'T',T('Fark var – miktarlar farklı (+ {O} fazla, − kağıtlar fazla)'));
-    sat('',renk('rBos'),'R',T('Bu malzeme için {F} kağıt kaydı yok'));
-    if(altBas>=0) sat('',dolgu('FFB91C1C'),`A${altBas+1}:U${altBas+1}`,T('Bölüm: {O} teslim alınan tablosunda karşılığı bulunamayan kayıtlar'));
-    sat('▼',{font:{color:{rgb:'FF1E3A8A'}}},'U1',T('Dil seçimi – listeden Türkçe / Русский / English seçin'));
-    sat('⚑',{font:{sz:12,color:{rgb:'FF1E3A8A'}}},'T1',T('Seçili dilin bayrağı (Excel 365 ve internet bağlantısı gerekir)'));
+    const her=fn=>KOL.bl.map(fn).join(', ');
+    sat('',dolgu(MAVI),[`A1:${L(KOL.bl[0].psip)}3`,...KOL.bl.slice(1).map(x=>`${L(x.pqty)}2:${L(x.psip)}3`)].join(', '),T('Bölüm ve sütun başlıkları ({O} Teslim Alınan / {F} Kağıtları)'));
+    sat('',dolgu(YESIL),her(x=>`${L(x.kQ)}2:${L(x.kT)}3`),T('{F} kağıtları kontrolü – karşılaştırma ve sonuç sütun başlıkları'));
+    if(B>1) sat('Σ',{font:{sz:12,color:{rgb:YESIL}}},KOL.bl.slice(1).map(x=>`${L(x.kK)}:${L(x.kR)}`).join(', '),T('Son durum – konsolide kağıtlar + bağımsız kağıt (o kağıtta olmayan üründe yalnız konsolide), {O} net ile karşılaştırılır'));
+    sat('',dolgu(GRI),`${L(NOT)}2:${L(NOT)}3`,T('Not / Açıklama sütun başlığı'));
+    sat('',dolgu(SARI),her(x=>`${L(x.pqty)}:${L(x.psip)}`),T('{F} miktarı birden çok kağıttan toplandı – ayrıntı hücre notunda'));
+    sat(durum.onay,renk('onay'),her(x=>L(x.kS)),T('{O} teslim alınan ≥ {F} kağıtlarındaki miktar – faturalandırılabilir'));
+    sat(durum.tekrar,renk('tekrar'),her(x=>L(x.kS)),T('{F} kağıt miktarı {O} miktarını aşıyor ya da {O} kaydı yok – tekrar kontrol edilmeli'));
+    sat(durum.notr,renk('notr'),her(x=>L(x.kS)),T('{F} kağıdındaki miktar 0 – değerlendirilmedi'));
+    sat('0',renk('tSifir'),her(x=>L(x.kT)),T('Fark yok – {O} ve {F} miktarları eşit'));
+    sat('≠ 0',renk('tFark'),her(x=>L(x.kT)),T('Fark var – miktarlar farklı (+ {O} fazla, − kağıtlar fazla)'));
+    sat('',renk('rBos'),her(x=>L(x.kR)),T('Bu malzeme için {F} kağıt kaydı yok'));
+    if(altBas>=0) sat('',dolgu('FFB91C1C'),`A${altBas+1}:${L(NOT)}${altBas+1}`,T('Bölüm: {O} teslim alınan tablosunda karşılığı bulunamayan kayıtlar'));
+    sat('▼',{font:{color:{rgb:'FF1E3A8A'}}},`${L(NOT)}1`,T('Dil seçimi – listeden Türkçe / Русский / English seçin'));
+    sat('⚑',{font:{sz:12,color:{rgb:'FF1E3A8A'}}},`${L(NOT-1)}1`,T('Seçili dilin bayrağı (Excel 365 ve internet bağlantısı gerekir)'));
     kutuSon=k; }
-  ws['!ref']=X.utils.encode_range({s:{r:0,c:0},e:{r:Math.max(son,kutuSon)-1,c:SON_C}});
-  ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:SON_C-3}},{s:{r:1,c:0},e:{r:1,c:5}},{s:{r:1,c:7},e:{r:1,c:13}},{s:{r:1,c:16},e:{r:1,c:19}},{s:{r:1,c:20},e:{r:2,c:20}}]
-    .concat(altBas>=0?[{s:{r:altBas,c:0},e:{r:altBas,c:SON_C}}]:[],kutuM);
-  ws['!cols']=ONM_SUTUN.map(width=>({width}));
+  ws['!ref']=X.utils.encode_range({s:{r:0,c:0},e:{r:Math.max(son,kutuSon)-1,c:NOT}});
+  ws['!merges']=merges.concat(altBas>=0?[{s:{r:altBas,c:0},e:{r:altBas,c:NOT}}]:[],kutuM);
+  ws['!cols']=KOL.gen.map(width=>({width}));
   ws['!rows']=satirlar;
-  ws['!autofilter']={ref:'A'+ONM_BAS+':U'+Math.max(ONM_BAS,anaSon)};
+  ws['!autofilter']={ref:'A'+ONM_BAS+':'+L(NOT)+Math.max(ONM_BAS,anaSon)};
   ws['!margins']={left:0.3,right:0.3,top:0.45,bottom:0.5,header:0.2,footer:0.25};
   // gizli Dil sayfasi: A1 secili secenegin sirasi (gecersiz giriste 1), A2.. secili metin, B.. secenekler
+  const dilHucre=L(NOT)+'1';
   const dws={}, kolS=X.utils.encode_col(SEC.length);
-  dws.A1={t:'n',v:1,f:`IFERROR(MATCH('${String(sayfaAdi).replace(/'/g,"''")}'!$U$1,$B$1:$${kolS}$1,0),1)`};
+  dws.A1={t:'n',v:1,f:`IFERROR(MATCH('${String(sayfaAdi).replace(/'/g,"''")}'!$${L(NOT)}$1,$B$1:$${kolS}$1,0),1)`};
   SEC.forEach((x,i)=>{ dws[X.utils.encode_cell({r:0,c:i+1})]={t:'s',v:x.ad}; });
   dilTab.forEach((h,i)=>{ const rr=i+2;
     dws['A'+rr]={t:'s',v:h[0],f:`INDEX($B${rr}:$${kolS}${rr},1,$A$1)`};
     h.forEach((t,j)=>{ dws[X.utils.encode_cell({r:rr-1,c:j+1})]={t:'s',v:String(t)}; }); });
   dws['!ref']=`A1:${kolS}${dilTab.length+1}`;
   dws['!cols']=[{width:40},...SEC.map(()=>({width:60}))];
-  return {ws, son, anaSon, say, durum, dws, dilListe:`Dil!$B$1:$${kolS}$1`};
+  return {ws, son, anaSon, say, altSay, durum, dws, dilListe:`Dil!$B$1:$${kolS}$1`, dilHucre,
+    kontrolKol:KOL.bl.map(x=>({R:L(x.kR),S:L(x.kS),T:L(x.kT)}))};
 }
 /* SheetJS'in yazamadigi parcalar dosya yazildiktan sonra XML'e eklenir (rPlanSonIsle ile ayni yol):
-   kosullu bicimler, dil acilir listesi (U1), dondurulmus basliklar (malzeme adi + 3 satir), A3 yatay sayfaya sigdir,
-   her sayfada tekrar eden basliklar ve sayfa no. Hata firlatirsa cagiran sabit renkli dosyaya doner. */
+   kosullu bicimler (her kontrol blogu icin), dil acilir listesi, dondurulmus basliklar (malzeme adi + 3 satir),
+   A3 yatay sayfaya sigdir, her sayfada tekrar eden basliklar ve sayfa no. Hata firlatirsa cagiran sabit renkli dosyaya doner. */
 function onmSonIsle(X,dizi,s,sayfaAdi,dil){
   const z=X.CFB.read(new Uint8Array(dizi),{type:'array'});
   const kac=t=>String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const dxf=k=>{ const x=ONM_RENK[k];
     return '<dxf>'+(x[1]?'<font>'+(x[2]?'<b/>':'')+'<color rgb="'+x[1]+'"/></font>':'')+'<fill><patternFill patternType="solid"><bgColor rgb="'+x[0]+'"/></patternFill></fill></dxf>'; };
   const sira=['notr','tFark','tSifir','rBos','tekrar','onay'], id=k=>sira.indexOf(k);
-  const kural=(f,k,p)=>'<cfRule type="expression" dxfId="'+id(k)+'" priority="'+p+'"><formula>'+kac(f)+'</formula></cfRule>';
-  const ilk=ONM_BAS+1, son=s.son, d=s.durum;
-  const cf='<conditionalFormatting sqref="R'+ilk+':R'+son+'">'+kural('R'+ilk+'=""','rBos',6)+'</conditionalFormatting>'
-    // durum metni dile gore degisir: kurallar Dil sayfasindaki hucreyi ad uzerinden okur (Excel 2007'de de calisir)
-    +'<conditionalFormatting sqref="S'+ilk+':S'+son+'">'+kural('S'+ilk+'=ONM_ONAY','onay',1)+kural('S'+ilk+'=ONM_TEKRAR','tekrar',2)
-    +kural('S'+ilk+'=ONM_NOTR','notr',3)+'</conditionalFormatting>'
-    +'<conditionalFormatting sqref="T'+ilk+':T'+son+'">'+kural('AND(T'+ilk+'<>"",T'+ilk+'=0)','tSifir',4)+kural('AND(T'+ilk+'<>"",T'+ilk+'<>0)','tFark',5)+'</conditionalFormatting>';
+  let pr=0;
+  const kural=(f,k)=>'<cfRule type="expression" dxfId="'+id(k)+'" priority="'+(++pr)+'"><formula>'+kac(f)+'</formula></cfRule>';
+  const ilk=ONM_BAS+1, son=s.son;
+  // durum metni dile gore degisir: kurallar Dil sayfasindaki hucreyi ad uzerinden okur (Excel 2007'de de calisir)
+  const cf=s.kontrolKol.map(({R,S,T})=>
+    '<conditionalFormatting sqref="'+S+ilk+':'+S+son+'">'+kural(S+ilk+'=ONM_ONAY','onay')+kural(S+ilk+'=ONM_TEKRAR','tekrar')+kural(S+ilk+'=ONM_NOTR','notr')+'</conditionalFormatting>'
+    +'<conditionalFormatting sqref="'+T+ilk+':'+T+son+'">'+kural('AND('+T+ilk+'<>"",'+T+ilk+'=0)','tSifir')+kural('AND('+T+ilk+'<>"",'+T+ilk+'<>0)','tFark')+'</conditionalFormatting>'
+    +'<conditionalFormatting sqref="'+R+ilk+':'+R+son+'">'+kural(R+ilk+'=""','rBos')+'</conditionalFormatting>').join('');
   const sayfaNo=kac(tmutCevir('Sayfa',dil,' / '));
   let stil=false, sayfa=false, kitap=false;
   const yaz=(dosya,x)=>{ dosya.content=new TextEncoder().encode(x); dosya.size=dosya.content.length; };
@@ -45391,12 +45480,13 @@ function onmSonIsle(X,dizi,s,sayfaAdi,dil){
           +'<selection pane="bottomLeft"/><selection pane="bottomRight" activeCell="B'+ilk+'" sqref="B'+ilk+'"/></sheetView>')
         .replace('</mergeCells>','</mergeCells>'+cf)
         .replace(/<pageMargins/,'<dataValidations count="1"><dataValidation type="list" allowBlank="0" showInputMessage="1" showErrorMessage="1"'
-          +' promptTitle="Dil / Язык / Language" prompt="'+kac('Tablo dilini seçin / Выберите язык / Choose the language')+'" sqref="U1"><formula1>ONM_DILLER</formula1></dataValidation></dataValidations><pageMargins')
+          +' promptTitle="Dil / Язык / Language" prompt="'+kac('Tablo dilini seçin / Выберите язык / Choose the language')+'" sqref="'+s.dilHucre+'"><formula1>ONM_DILLER</formula1></dataValidation></dataValidations><pageMargins')
         .replace(/(<pageMargins[^>]*\/>)/,'$1<pageSetup paperSize="8" orientation="landscape" fitToWidth="1" fitToHeight="0"/>'
           +'<headerFooter><oddFooter>&amp;L&amp;8'+kac(sayfaAdi)+'&amp;R&amp;8'+sayfaNo+' &amp;P / &amp;N</oddFooter></headerFooter>');
       yaz(dosya,x); sayfa=true;
     } else if(/xl\/workbook\.xml$/.test(p)){
       let x=new TextDecoder().decode(dosya.content);
+      const d=s.durum;
       const tanim='<definedName name="ONM_DILLER">'+s.dilListe+'</definedName>'
         +'<definedName name="ONM_NOTR">'+d.notr.f+'</definedName><definedName name="ONM_ONAY">'+d.onay.f+'</definedName>'
         +'<definedName name="ONM_TEKRAR">'+d.tekrar.f+'</definedName>'
@@ -45410,15 +45500,40 @@ function onmSonIsle(X,dizi,s,sayfaAdi,dil){
   if(!stil||!sayfa||!kitap) throw new Error('Ön mutabakat son işleme: dosya parçası bulunamadı');
   return X.CFB.write(z,{fileType:'zip',type:'array'});
 }
-/* INDIRME PENCERESI: firma (liste firmasi secili degilse) + baslik dili. Dil secicisi Teslimat
-   Mutabakati'ninki (tmutDilGovdeHtml / tmutDilSec ayni kimliklerle calisir: tmutDilGovde, tmutDilIndir);
-   secim ayri anahtarda hatirlanir, varsayilan ornekteki gibi Turkce + Rusca. */
-let _ONM_CID='';
+/* INDIRME PENCERESI: firma (liste firmasi secili degilse) + KAGIT SECIMI (konsolide / bagimsiz / disarida)
+   + tablo dili. Dil secicisi Teslimat Mutabakati'ninki (tmutDilGovdeHtml / tmutDilSec ayni kimliklerle calisir:
+   tmutDilGovde, tmutDilIndir); dil secimi ayri anahtarda hatirlanir, varsayilan ornekteki gibi Turkce + Rusca.
+   Kagit secimi hatirlanmaz: her acilista butun kagitlar konsolide (eski cikti). */
+let _ONM_CID='', _ONM_SEC={}, _ONM_KLIST=[];
 function onmDilOku(){
   let d=null; try{ d=JSON.parse(localStorage.getItem('onm_excel_dil')||'null'); }catch(e){ d=null; }
   const sira=(d&&Array.isArray(d.sira)?d.sira:[]).filter(k=>TMUT_DIL_AD[k]);
   return {sira:sira.length?[...new Set(sira)]:['tr','ru'],alt:!d||d.alt!==false};
 }
+// kagit listesi: her kagit Disarida / Konsolide / Bagimsiz. Indeksle adreslenir (kimlik onclick'e gomulmez)
+function onmKagitHtml(){
+  const ks=onmKagitlari(_ONM_CID); _ONM_KLIST=ks.map(k=>k.id);
+  if(!ks.length) return '<p class="t-meta" style="margin:0 0 14px">Bu firmanin kontrolde ya da onayli kagidi yok.</p>';
+  const ad={k:'Konsolide',b:'Bagimsiz','-':'Disarida'};
+  const kons=ks.filter(k=>_ONM_SEC[k.id]==='k'), bag=ks.filter(k=>_ONM_SEC[k.id]==='b');
+  const no=k=>String(k.no||'').trim()||'(no yok)';
+  return `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 8px">
+      <button type="button" class="btn btn-ghost" style="padding:5px 10px;font-size:11.5px" onclick="onmKagitHepsi('k')">Hepsi konsolide</button>
+      <button type="button" class="btn btn-ghost" style="padding:5px 10px;font-size:11.5px" onclick="onmKagitHepsi('-')">Hepsini disari al</button>
+      <span class="t-meta" style="margin-left:auto;font-size:11.5px"><b>${fmtNum(kons.length)}</b> konsolide · <b>${fmtNum(bag.length)}</b> bagimsiz</span></div>
+    <div style="max-height:250px;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-bottom:8px">${ks.map((k,i)=>{ const d=_ONM_SEC[k.id]||'k';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;${i?'border-top:1px solid var(--line);':''}">
+        <div style="flex:1;min-width:0"><b style="font-family:var(--mono);font-size:12.5px">${esc(no(k))}</b>
+          <span class="t-meta" style="font-size:11px"> · ${esc(fmtDate(k.tarih))} · ${esc(KGT_DURUM[kgtDurumu(k)].ad)} · ${fmtNum(kgtSatirlari(k).length)} satir</span></div>
+        <div style="display:flex;gap:4px">${['-','k','b'].map(x=>`<button type="button" class="btn ${d===x?(x==='b'?'btn-grid':'btn-add'):'btn-ghost'}"
+          style="padding:4px 9px;font-size:11px" onclick="onmKagitSec(${i},'${x}')">${ad[x]}</button>`).join('')}</div></div>`; }).join('')}</div>
+    <p class="t-meta" style="margin:0 0 14px;font-size:11.5px;line-height:1.5">${kons.length?`Konsolide: <b>${esc(kons.map(no).join(', '))}</b> - tek blokta toplanir.`:'<span style="color:var(--amber)">En az bir kagidi konsolideye alin.</span>'}
+      ${bag.length?` Bagimsiz: <b>${esc(bag.map(no).join(', '))}</b> - her biri ayri blok; kontrolu <b>BYKARA net</b> karsisinda <b>konsolide + o kagit</b>.`:''}</p>`;
+}
+function onmKagitYenile(){ const g=document.getElementById('onmKagitlar'); if(g) g.innerHTML=onmKagitHtml(); }
+function onmKagitSec(i,x){ const id=_ONM_KLIST[i]; if(!id) return; _ONM_SEC[id]=x; onmKagitYenile(); }
+function onmKagitHepsi(x){ _ONM_KLIST.forEach(id=>{ _ONM_SEC[id]=x; }); onmKagitYenile(); }
+function onmFirmaSec(id){ _ONM_CID=String(id||''); _ONM_SEC={}; onmKagitlari(_ONM_CID).forEach(k=>{ _ONM_SEC[k.id]='k'; }); onmKagitYenile(); }
 function onmSor(cid){
   cid=String(cid||'');
   let fl=[];
@@ -45430,23 +45545,27 @@ function onmSor(cid){
     if(!fl.length){ toast('Kontrolde ya da onayli kagidi olan firma yok','err'); return; }
   }
   const c=cid?(DB.companies||[]).find(x=>x&&x.id===cid):null;
-  _ONM_CID=cid; _TMUT_XDIL=Object.assign(onmDilOku(),{
+  _TMUT_XDIL=Object.assign(onmDilOku(),{
     aciklama:'Tablonun dilini secin. Birden fazla dil secerseniz tiklama sirasi dil sirasidir. Basliklar, durumlar (ONAYLANDI / TEKRAR / NÖTR), notlar, hucre notlari ve sayfa altligi secilen dillerde yazilir; malzeme adi, kod ve firma unvani gibi veriler oldugu gibi kalir. Indirilen dosyada da sag ustteki <b>Dil / Язык / Language</b> kutusundan Turkce, Rusca, Ingilizce ya da burada secilen bilesim arasinda gecilebilir (hucre notlari ve sayfa altligi sabit kalir).',
     ornek:['Malzeme İsmi','Faturalandırılabilme Sonucu','Not / Açıklama'],
     ornekSatir:[['ONAYLANDI',' / '],['TEKRAR',' / '],['{O} tablosunda karşılığı yok - bu üründen {F} alımı kaydı yok.']],
     yer:{O:gyFirmaAdKisa(orgSirketi())||orgAdiGoster(),F:(c&&(c.kisaAd||c.ad))||'FİRMA'}});
+  const baslik=t=>`<div class="t-meta" style="margin:0 0 6px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;font-size:10.5px">${t}</div>`;
   const firmaHtml=cid?`<div class="frow"><label>Firma</label><div><b>${esc((c&&c.ad)||fatCompany(kgtKayitlar().find(k=>String(k.companyId||'')===cid))||'-')}</b></div></div>`
-    :`<div class="t-meta" style="margin:0 0 6px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;font-size:10.5px">Firma</div>
+    :`${baslik('Firma')}
       <div class="nord-sart-liste" style="margin-bottom:14px">${fl.map((f,i)=>`<label class="nord-sart-row${i?'':' on'}">
-        <input type="radio" name="kgtXFirma" value="${esc(f.id)}" ${i?'':'checked'} onchange="this.closest('.nord-sart-liste').querySelectorAll('.nord-sart-row').forEach(x=>x.classList.toggle('on',x.contains(this)))">
+        <input type="radio" name="kgtXFirma" value="${esc(f.id)}" ${i?'':'checked'} onchange="this.closest('.nord-sart-liste').querySelectorAll('.nord-sart-row').forEach(x=>x.classList.toggle('on',x.contains(this)));onmFirmaSec(this.value)">
         <span class="nss-text"><b style="font-size:12.5px">${esc(f.ad)}</b></span>
         <span class="nss-n">${fmtNum(f.n)} kagit · ${fmtNum(f.s)} satir</span></label>`).join('')}</div>`;
-  document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:560px">
+  onmFirmaSec(cid||fl[0].id);
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:620px">
     <div class="modal-head"><h3>Ön Mutabakat</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
     <div class="modal-body">
-      <p class="t-meta" style="margin:0 0 12px;line-height:1.5">Excel tek firma icin cikar. Firmadan bugune kadar teslim alinan (net) her urun, firmanin <b>kontrolde ve onayli</b> kagitlarinda yazan miktarla karsilastirilir: <b>ONAYLANDI</b> / <b>TEKRAR</b> / <b>NÖTR</b>. Karsiligi bulunamayan kagit satirlari altta ayri bolumde, notuyla.</p>
+      <p class="t-meta" style="margin:0 0 12px;line-height:1.5">Excel tek firma icin cikar. Firmadan bugune kadar teslim alinan (net) her urun, secilen kagitlarda yazan miktarla karsilastirilir: <b>ONAYLANDI</b> / <b>TEKRAR</b> / <b>NÖTR</b>. Karsiligi bulunamayan kagit satirlari altta ayri bolumde, notuyla.</p>
       ${firmaHtml}
-      <div class="t-meta" style="margin:0 0 6px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;font-size:10.5px">Tablo dili</div>
+      ${baslik('Kagitlar - konsolide / bagimsiz')}
+      <div id="onmKagitlar">${onmKagitHtml()}</div>
+      ${baslik('Tablo dili')}
       <div id="tmutDilGovde">${tmutDilGovdeHtml()}</div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" id="tmutDilIndir" onclick="onmIndir()">${icoXls()} Excel'i Indir</button></div>
@@ -45454,16 +45573,18 @@ function onmSor(cid){
 }
 function onmIndir(){
   const d=_TMUT_XDIL; if(!d||!d.sira.length){ toast('En az bir dil secin','err'); return; }
-  let cid=_ONM_CID;
-  if(!cid){ const s=document.querySelector('input[name="kgtXFirma"]:checked'); if(!s){ toast('Once firma secin','err'); return; } cid=s.value; }
+  const cid=_ONM_CID; if(!cid){ toast('Once firma secin','err'); return; }
+  const ks=onmKagitlari(cid);
+  const secim={kons:ks.filter(k=>_ONM_SEC[k.id]==='k').map(k=>k.id), bag:ks.filter(k=>_ONM_SEC[k.id]==='b').map(k=>k.id)};
+  if(!secim.kons.length){ toast('En az bir kagidi konsolideye alin','err'); return; }
   try{ localStorage.setItem('onm_excel_dil',JSON.stringify({sira:d.sira,alt:d.alt})); }catch(e){}
-  closeModal(); kgtExcel(cid,{sira:d.sira.slice(),alt:d.alt});
+  closeModal(); kgtExcel(cid,{sira:d.sira.slice(),alt:d.alt},secim);
 }
-async function kgtExcel(cid,dil){
+async function kgtExcel(cid,dil,secim){
   cid=String(cid||FATV.kcomp||'');
-  if(!dil||!dil.sira||!dil.sira.length){ onmSor(cid); return; }   // once firma (gerekirse) ve dil sorulur
+  if(!dil||!dil.sira||!dil.sira.length){ onmSor(cid); return; }   // once firma (gerekirse), kagitlar ve dil sorulur
   const c=(DB.companies||[]).find(x=>x&&x.id===cid);
-  const v=onmVeri(cid);
+  const v=onmVeri(cid,secim);
   if(!v.sol.length&&!v.alt.length){ toast('Bu firmadan teslim alinan urun ve kagit satiri yok','err'); return; }
   const firmaTam=(c&&c.ad)||fatCompany(kgtKayitlar().find(k=>String(k.companyId||'')===cid))||'FİRMA';
   const firma=(c&&c.kisaAd)||firmaTam;
@@ -45475,7 +45596,7 @@ async function kgtExcel(cid,dil){
   const sayfaAdi=tmutDilTek('Karşılaştırma',dil.sira[0]);   // uc dilde de gecerli sayfa adi (31 karakter alti, yasak isaret yok)
   const yaz=statik=>{ const s=onmSayfa(X,v,{org,firma,firmaTam,dil,statik,sayfaAdi}), wb=X.utils.book_new();
     X.utils.book_append_sheet(wb,s.ws,sayfaAdi);
-    X.utils.book_append_sheet(wb,s.dws,'Dil');   // ceviri tablosu - gizli, V1'deki dil secimi buradan okur
+    X.utils.book_append_sheet(wb,s.dws,'Dil');   // ceviri tablosu - gizli, sag ustteki dil secimi buradan okur
     wb.Workbook={Sheets:[{},{Hidden:1}]};
     return {s,dizi:X.write(wb,{bookType:'xlsx',type:'array'})}; };
   let {s,dizi}=yaz(false);
@@ -45486,10 +45607,13 @@ async function kgtExcel(cid,dil){
   a.href=URL.createObjectURL(new Blob([dizi],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
   a.download=`On_Mutabakat_${kisa}_${bugun}.xlsx`; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  const y=s.say;
-  logAction('fatura','On mutabakat Excel ciktisi alindi ('+firma+', '+dil.sira.join('+')+', '+fmtNum(v.kagit)+' kagit, '+fmtNum(v.sol.length)+' urun satiri: '
-    +fmtNum(y.onay)+' onaylandi, '+fmtNum(y.tekrar)+' tekrar, '+fmtNum(y.notr)+' notr; '+fmtNum(y.alt)+' karsiligi bulunamayan)');
-  toast(`Ön mutabakat indirildi - ${fmtNum(y.onay)} onaylandı · ${fmtNum(y.tekrar)} tekrar${y.alt?' · '+fmtNum(y.alt)+' karşılığı yok':''}`+(stilli?'':' (stil bileseni yuklenemedi - renksiz)'));
+  const y=s.say[0], bagT=s.say.slice(1).reduce((t,x)=>t+x.kagitTekrar,0), bagN=v.bloklar.length-1;
+  logAction('fatura','On mutabakat Excel ciktisi alindi ('+firma+', '+dil.sira.join('+')+', konsolide: '+v.bloklar[0].nolar.join(',')
+    +(bagN?' | bagimsiz: '+v.bloklar.slice(1).map(b=>b.nolar[0]).join(','):'')+', '+fmtNum(v.sol.length)+' urun satiri: '
+    +fmtNum(y.onay)+' onaylandi, '+fmtNum(y.tekrar)+' tekrar, '+fmtNum(y.notr)+' notr; '+fmtNum(s.altSay)+' karsiligi bulunamayan'
+    +(bagN?'; bagimsiz bloklarda '+fmtNum(bagT)+' tekrar':'')+')');
+  toast(`Ön mutabakat indirildi - ${fmtNum(y.onay)} onaylandı · ${fmtNum(y.tekrar)} tekrar${s.altSay?' · '+fmtNum(s.altSay)+' karşılığı yok':''}`
+    +(bagN?` · ${fmtNum(bagN)} bağımsız kağıt (${fmtNum(bagT)} tekrar)`:'')+(stilli?'':' (stil bileseni yuklenemedi - renksiz)'));
 }
 function renderNihaiListe(){
   const yuklendi=_FAT_YUKLENDI, list=nhfListeFiltreli(), tumu=nhfKayitlar(), firmalar=fatFirmalar();
