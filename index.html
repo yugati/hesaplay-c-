@@ -45091,6 +45091,22 @@ Object.assign(TMUT_DIL,{   // On Mutabakat - {O} organizasyon, {F} firma, digerl
   '{F} kağıtları toplandı:':{ru:'Документы {F} суммированы:',en:'{F} documents summed:'},
   'Kağıt {N}, satır {S}: {Q}':{ru:'Документ {N}, строка {S}: {Q}',en:'Document {N}, line {S}: {Q}'},
   'Karşılaştırma':{ru:'Сравнение',en:'Comparison'},
+  // renk aciklamasi kutusu (tablonun sag alti)
+  'RENK AÇIKLAMASI':{ru:'ЛЕГЕНДА ЦВЕТОВ',en:'COLOR LEGEND'},
+  'Renk':{ru:'Цвет',en:'Color'}, 'Konum':{ru:'Расположение',en:'Location'}, 'Anlamı':{ru:'Значение',en:'Meaning'},
+  'Bölüm ve sütun başlıkları ({O} Teslim Alınan / {F} Kağıtları)':{ru:'Заголовки разделов и столбцов (Принято {O} / Документы {F})',en:'Section and column headers (Received by {O} / {F} Documents)'},
+  '{F} kağıtları kontrolü – karşılaştırma ve sonuç sütun başlıkları':{ru:'Проверка документов {F} – заголовки столбцов сравнения и результата',en:'Check of {F} documents – comparison and result column headers'},
+  'Not / Açıklama sütun başlığı':{ru:'Заголовок столбца «Примечание»',en:'Note / Remarks column header'},
+  '{F} miktarı birden çok kağıttan toplandı – ayrıntı hücre notunda':{ru:'Количество {F} суммировано из нескольких документов – подробности в примечании к ячейке',en:'{F} quantity summed from several documents – details in the cell note'},
+  '{O} teslim alınan ≥ {F} kağıtlarındaki miktar – faturalandırılabilir':{ru:'Принято {O} ≥ количество в документах {F} – можно выставить счёт',en:'Quantity received by {O} ≥ quantity on {F} documents – can be invoiced'},
+  '{F} kağıt miktarı {O} miktarını aşıyor ya da {O} kaydı yok – tekrar kontrol edilmeli':{ru:'Количество в документах {F} превышает {O} или нет записи {O} – требуется повторная проверка',en:'{F} document quantity exceeds {O}, or no {O} record – must be rechecked'},
+  '{F} kağıdındaki miktar 0 – değerlendirilmedi':{ru:'Количество в документе {F} равно 0 – не оценивается',en:'Quantity on {F} document is 0 – not evaluated'},
+  'Fark yok – {O} ve {F} miktarları eşit':{ru:'Разницы нет – количества {O} и {F} равны',en:'No difference – {O} and {F} quantities are equal'},
+  'Fark var – miktarlar farklı (+ {O} fazla, − kağıtlar fazla)':{ru:'Есть разница – количества отличаются (+ больше у {O}, − больше в документах)',en:'Difference – quantities differ (+ {O} higher, − documents higher)'},
+  'Bu malzeme için {F} kağıt kaydı yok':{ru:'Для этого материала нет записи в документах {F}',en:'No {F} document record for this material'},
+  'Bölüm: {O} teslim alınan tablosunda karşılığı bulunamayan kayıtlar':{ru:'Раздел: записи, отсутствующие в таблице «Принято {O}»',en:'Section: records with no match in the «Received by {O}» table'},
+  'Dil seçimi – listeden Türkçe / Русский / English seçin':{ru:'Выбор языка – выберите в списке Türkçe / Русский / English',en:'Language selection – choose Türkçe / Русский / English from the list'},
+  'Seçili dilin bayrağı (Excel 365 ve internet bağlantısı gerekir)':{ru:'Флаг выбранного языка (нужны Excel 365 и интернет)',en:'Flag of the selected language (requires Excel 365 and an internet connection)'},
   'Sayfa':{ru:'Стр.',en:'Page'},
 });
 // kosullu bicim dolgulari [dolgu, yazi, kalin] - bicim eklenemezse sabit renk olarak da kullanilir
@@ -45200,16 +45216,25 @@ function onmSayfa(X,v,o){
     :String(t||'').split('\n').reduce((n,p)=>n+Math.max(1,Math.ceil(p.length/w)),0);
   const sig=c=>Math.max(2,Math.floor(ONM_SUTUN[c]*1.1));
   const yuk=(hucre,min)=>Math.max(min,Math.min(16,Math.max(1,...hucre.map(([c,t])=>satirSayisi(t,sig(c)))))*15);
-  // --- 1: baslik + dil kutusu (T1 etiket, U1 acilir liste - onmSonIsle ekler) ---
-  const bas15={font:{bold:true,sz:15,color:{rgb:'FFFFFFFF'}}};
-  for(let c=0;c<=SON_C-2;c++) koy(0,c,c?'':TS('ÖN MUTABAKAT'),th(MAVI,bas15));
-  koy(0,SON_C-1,'Dil / Язык / Language ▸',th(MAVI,{font:{bold:true,sz:9,color:{rgb:'FFFDE68A'}},alignment:{horizontal:'right',vertical:'center',wrapText:true}}));
-  koy(0,SON_C,SEC[0].ad,{font:{bold:true,sz:11,color:{rgb:'FF1E3A8A'}},fill:{fgColor:{rgb:'FFFFFFFF'}},border:kenarG,
+  /* --- 1: baslik + dil kutusu: S1 etiket, T1 secili dilin BAYRAGI, U1 acilir liste (onmSonIsle ekler) ---
+     BAYRAK: Windows'ta bayrak emojisi yazi tipi yok (Excel "TR" harfleri gosterir), bu yuzden resim:
+     Excel 365'in IMAGE() islevi secilen secenegin bayrak adresini (Dil sayfasinda) ceker. IMAGE'i bilmeyen
+     surumde ya da cevrimdisi IFERROR dil kodunu yazar. Bilesik secenekte ilk dilin bayragi. */
+  const BAYRAK={tr:'https://flagcdn.com/w80/tr.png',ru:'https://flagcdn.com/w80/ru.png',en:'https://flagcdn.com/w80/gb.png'};
+  const bayrakUrl=metin(sd=>BAYRAK[sd.sira[0]]), bayrakKod=metin(sd=>sd.sira.map(k=>k==='en'?'EN':k.toUpperCase()).join(' + '));
+  const bas18={font:{bold:true,sz:18,color:{rgb:'FFFFFFFF'}}};
+  for(let c=0;c<=SON_C-3;c++) koy(0,c,c?'':TS('ÖN MUTABAKAT'),th(MAVI,bas18));
+  koy(0,SON_C-2,'Dil / Язык / Language ▸',th(MAVI,{font:{bold:true,sz:9,color:{rgb:'FFFDE68A'}},alignment:{horizontal:'right',vertical:'center',wrapText:true}}));
+  koy(0,SON_C-1,bayrakKod.v,{font:{bold:true,sz:12,color:{rgb:'FF1E3A8A'}},fill:{fgColor:{rgb:'FFFFFFFF'}},border:kenarG,
+    alignment:{horizontal:'center',vertical:'center'}},{f:`IFERROR(_xlfn.IMAGE(${bayrakUrl.f},${bayrakKod.f},0),${bayrakKod.f})`});
+  koy(0,SON_C,SEC[0].ad,{font:{bold:true,sz:12,color:{rgb:'FF1E3A8A'}},fill:{fgColor:{rgb:'FFFFFFFF'}},border:kenarG,
     alignment:{horizontal:'center',vertical:'center'}});
-  satirlar[0]={hpt:24};
+  satirlar[0]={hpt:34};
   // --- 2-3: blok ve sutun basliklari ---
+  // basliklar kademeli: ana baslik 18, blok basliklari 14, sutun basliklari 11 pt
   const b2=[[0,5,TB('{O} TESLİM ALINAN'),MAVI],[7,13,TB('{F} KAĞITLARI'),MAVI],[16,19,TB('{F} KAĞITLARI KONTROLÜ'),YESIL],[20,20,T('Not / Açıklama'),GRI]];
-  b2.forEach(([a,b,t,f])=>{ for(let c=a;c<=b;c++) koy(1,c,c===a?t:'',th(f)); });
+  const bas14={font:{bold:true,sz:14,color:{rgb:'FFFFFFFF'}}};
+  b2.forEach(([a,b,t,f])=>{ for(let c=a;c<=b;c++) koy(1,c,c===a?t:'',th(f,bas14)); });
   koy(1,14,'',th(MAVI,{border:{}}));
   const b3=[T('Malzeme İsmi'),T('Malzeme Kodu'),T('Birimi'),T('Alınmış Olduğu Miktar'),T('Hangi Şartname İçin Alındığı'),
     T('Hangi Siparişlerle Alındığı'),null,T('Kağıtta Yazan Miktar'),T('Birimi'),T('Malzeme İsmi'),T('Malzeme Kodu'),T('Yerleşim Kodları'),
@@ -45217,7 +45242,9 @@ function onmSayfa(X,v,o){
     T('Faturalandırılabilme Sonucu'),T('Fark {O} − {F} Kağıtları')];
   b3.forEach((t,c)=>{ if(t!=null) koy(2,c,t,th(c>=17?YESIL:MAVI,c===14?{border:{}}:null)); });
   koy(2,20,'',th(GRI));
-  satirlar[1]={hpt:yuk([[0,b2[0][2]],[7,b2[1][2]],[16,b2[2][2]]],15)};
+  // blok basliklari birlesik ve 14 pt: satira sigan karakter birlesik genislik x 11/14
+  const genis=(a,b)=>ONM_SUTUN.slice(a,b+1).reduce((t,w)=>t+w,0)*1.1*11/14;
+  satirlar[1]={hpt:Math.max(24,Math.max(...b2.slice(0,3).map(([a,b,t])=>satirSayisi(t,Math.floor(genis(a,b)))))*19+6)};
   satirlar[2]={hpt:yuk(b3.map((t,c)=>[c,t]).filter(x=>x[1]),60)};
   // --- veri ---
   const say={onay:0,tekrar:0,notr:0,bos:0,alt:0};
@@ -45279,10 +45306,42 @@ function onmSayfa(X,v,o){
       say.alt++; r++;
     });
   }
-  const son=Math.max(ONM_BAS+1,r);
-  ws['!ref']=X.utils.encode_range({s:{r:0,c:0},e:{r:son-1,c:SON_C}});
-  ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:SON_C-2}},{s:{r:1,c:0},e:{r:1,c:5}},{s:{r:1,c:7},e:{r:1,c:13}},{s:{r:1,c:16},e:{r:1,c:19}},{s:{r:1,c:20},e:{r:2,c:20}}]
-    .concat(altBas>=0?[{s:{r:altBas,c:0},e:{r:altBas,c:SON_C}}]:[]);
+  const son=Math.max(ONM_BAS+1,r);   // kosullu bicim araligi tablo ile biter - asagidaki kutu renkleri sabit
+  /* RENK ACIKLAMASI (kullanicinin kendi tablosundaki kutu): tablonun sag altinda Q-U, iki bos satirdan sonra.
+     Renk (Q) | Konum (R) | Anlami (S:U birlesik). Metinler Dil sayfasindan - dosyada dil degisince kutu da degisir. */
+  const kutuM=[]; let kutuSon=son;
+  { let k=son+2;   // 0 tabanli: son = son tablo satiri (1 tabanli) -> iki bos satir
+    const kG2=ince('FF9BA3AF'), kutuK={top:kG2,bottom:kG2,left:kG2,right:kG2};
+    const bas=(fill,sz)=>({font:{bold:true,sz,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:fill}},border:kutuK,alignment:{horizontal:'center',vertical:'center',wrapText:true}});
+    const anlamGen=Math.floor((ONM_SUTUN[18]+ONM_SUTUN[19]+ONM_SUTUN[20])*1.1);
+    for(let c=16;c<=20;c++) koy(k,c,c===16?TS('RENK AÇIKLAMASI'):'',bas('FF1E3A8A',12));
+    kutuM.push({s:{r:k,c:16},e:{r:k,c:20}}); satirlar[k]={hpt:22}; k++;
+    [[16,T('Renk')],[17,T('Konum')],[18,T('Anlamı')],[19,''],[20,'']].forEach(([c,t])=>koy(k,c,t,bas(GRI,10)));
+    kutuM.push({s:{r:k,c:18},e:{r:k,c:20}}); satirlar[k]={hpt:Math.max(18,satirSayisi(T('Renk'),20)*14+4)}; k++;
+    const sat=(ornek,stil,konum,anlam)=>{
+      koy(k,16,ornek,{border:kutuK,alignment:{horizontal:'center',vertical:'center',wrapText:true},font:{bold:true,sz:9,...((stil&&stil.font)||{})},...(stil&&stil.fill?{fill:stil.fill}:{})});
+      koy(k,17,konum,{border:kutuK,alignment:{horizontal:'center',vertical:'center'},font:{sz:10}});
+      for(let c=18;c<=20;c++) koy(k,c,c===18?anlam:'',{border:kutuK,alignment:{horizontal:'left',vertical:'center',wrapText:true,indent:1},font:{sz:10}});
+      kutuM.push({s:{r:k,c:18},e:{r:k,c:20}});
+      satirlar[k]={hpt:Math.max(22,Math.max(satirSayisi(anlam,anlamGen),satirSayisi(ornek,20))*14+6)}; k++; };
+    const dolgu=rgb=>({fill:{fgColor:{rgb}}});
+    sat('',dolgu(MAVI),'A1:O3',T('Bölüm ve sütun başlıkları ({O} Teslim Alınan / {F} Kağıtları)'));
+    sat('',dolgu(YESIL),'Q2:T3',T('{F} kağıtları kontrolü – karşılaştırma ve sonuç sütun başlıkları'));
+    sat('',dolgu(GRI),'U2:U3',T('Not / Açıklama sütun başlığı'));
+    sat('',dolgu(SARI),'H:O',T('{F} miktarı birden çok kağıttan toplandı – ayrıntı hücre notunda'));
+    sat(durum.onay,renk('onay'),'S',T('{O} teslim alınan ≥ {F} kağıtlarındaki miktar – faturalandırılabilir'));
+    sat(durum.tekrar,renk('tekrar'),'S',T('{F} kağıt miktarı {O} miktarını aşıyor ya da {O} kaydı yok – tekrar kontrol edilmeli'));
+    sat(durum.notr,renk('notr'),'S',T('{F} kağıdındaki miktar 0 – değerlendirilmedi'));
+    sat('0',renk('tSifir'),'T',T('Fark yok – {O} ve {F} miktarları eşit'));
+    sat('≠ 0',renk('tFark'),'T',T('Fark var – miktarlar farklı (+ {O} fazla, − kağıtlar fazla)'));
+    sat('',renk('rBos'),'R',T('Bu malzeme için {F} kağıt kaydı yok'));
+    if(altBas>=0) sat('',dolgu('FFB91C1C'),`A${altBas+1}:U${altBas+1}`,T('Bölüm: {O} teslim alınan tablosunda karşılığı bulunamayan kayıtlar'));
+    sat('▼',{font:{color:{rgb:'FF1E3A8A'}}},'U1',T('Dil seçimi – listeden Türkçe / Русский / English seçin'));
+    sat('⚑',{font:{sz:12,color:{rgb:'FF1E3A8A'}}},'T1',T('Seçili dilin bayrağı (Excel 365 ve internet bağlantısı gerekir)'));
+    kutuSon=k; }
+  ws['!ref']=X.utils.encode_range({s:{r:0,c:0},e:{r:Math.max(son,kutuSon)-1,c:SON_C}});
+  ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:SON_C-3}},{s:{r:1,c:0},e:{r:1,c:5}},{s:{r:1,c:7},e:{r:1,c:13}},{s:{r:1,c:16},e:{r:1,c:19}},{s:{r:1,c:20},e:{r:2,c:20}}]
+    .concat(altBas>=0?[{s:{r:altBas,c:0},e:{r:altBas,c:SON_C}}]:[],kutuM);
   ws['!cols']=ONM_SUTUN.map(width=>({width}));
   ws['!rows']=satirlar;
   ws['!autofilter']={ref:'A'+ONM_BAS+':U'+Math.max(ONM_BAS,anaSon)};
@@ -45343,6 +45402,8 @@ function onmSonIsle(X,dizi,s,sayfaAdi,dil){
         +'<definedName name="ONM_TEKRAR">'+d.tekrar.f+'</definedName>'
         +'<definedName name="_xlnm.Print_Titles" localSheetId="0">'+kac("'"+String(sayfaAdi).replace(/'/g,"''")+"'")+'!$'+(ONM_BAS-1)+':$'+ONM_BAS+'</definedName>';
       x=x.indexOf('</definedNames>')>=0?x.replace('</definedNames>',tanim+'</definedNames>'):x.replace('</sheets>','</sheets><definedNames>'+tanim+'</definedNames>');
+      // acilista tam hesap: bayrak resmi (IMAGE) hazir deger tasimadigi icin ancak boyle gelir
+      x=/<calcPr[^>]*\/>/.test(x)?x.replace(/<calcPr[^>]*\/>/,'<calcPr fullCalcOnLoad="1"/>'):x.replace('</definedNames>','</definedNames><calcPr fullCalcOnLoad="1"/>');
       yaz(dosya,x); kitap=true;
     }
   });
