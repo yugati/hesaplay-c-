@@ -3179,6 +3179,15 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .gy-satir input.gy-oda:not(:placeholder-shown){background:color-mix(in srgb,var(--green) 18%,var(--bg));
   border-color:color-mix(in srgb,var(--green) 45%,transparent)}
 .gy-satir input.gy-oda:not(:placeholder-shown):focus{border-color:var(--amber)}
+/* ODA <-> BINALAR: kodun agacta hangi kata bagli oldugu kutunun ICINDE, sagda durur
+   (satir genisligi degismez). AGACTA YOK = binada oda tanimli ama bu kod yok. */
+.gy-oda-k{flex:1;min-width:0;position:relative;display:flex}
+.gy-oda-k:has(.gy-oda-bag:not(:empty)) input.gy-oda{padding-right:92px}
+.gy-oda-bag{position:absolute;right:7px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.3px;padding:2px 6px;border-radius:10px;white-space:nowrap;max-width:84px;overflow:hidden;text-overflow:ellipsis;cursor:default}
+.gy-oda-bag:empty{display:none}
+.gy-oda-bag.var{color:var(--blue);background:color-mix(in srgb,var(--blue) 14%,transparent);border:1px solid color-mix(in srgb,var(--blue) 40%,transparent)}
+.gy-oda-bag.cok{color:var(--violet);background:color-mix(in srgb,var(--violet) 14%,transparent);border:1px solid color-mix(in srgb,var(--violet) 40%,transparent)}
+.gy-oda-bag.yok{color:var(--amber);background:color-mix(in srgb,var(--amber) 14%,transparent);border:1px solid color-mix(in srgb,var(--amber) 45%,transparent)}
 .gy-grup input.gy-kisi{flex:0 0 78px;width:78px;text-align:center;font-family:var(--mono);font-size:12px}
 /* kisi sayisi da dolunca yesil (odasiz basliktaki kutu dahil) - satirin iki
    kutusu birden dolduysa o satir bitmis demektir, goz tek bakista ayirir */
@@ -8577,10 +8586,10 @@ async function giSil(id){
    kayitlari gormemesi gerektigidir - giAll() tur!=='yazi' suzer, yoksa her yazi
    "durumu bitmemis, tarihi gecmis" sayilip GECIKEN sekmesine duserdi.
 
-   BASLIKLAR: simdilik GY_GRUPLAR'da SABIT (istenen buydu). Oda kodlari da serbest
-   metindir; daha once yazilanlar datalist ile onerilir. Ileride bunlar bina
-   lokasyon agacina ve ekip/bolum listesine baglanacak - baglanti noktalari
-   gyOdaOnerileri() ve GY_GRUPLAR'dir.
+   BASLIKLAR: simdilik GY_GRUPLAR'da SABIT (istenen buydu). Oda kodlari BINALAR
+   lokasyon agacina koduyla baglidir (gyOdaIndeks): oneriler agactan gelir, satirda
+   kat etiketi / AGACTA YOK gorunur, Binalar oda-kat panelinde yazilar listelenir.
+   Kod serbest metin olmaya devam eder - agacta olmayan kod engellenmez.
    ══════════════════════════════════════════════════════════════════════════ */
 const GY_FIRMA_VARSAYILAN='BYKARA';
 const GY_TOP_ETIKET='TOP-ИТО';
@@ -8796,18 +8805,107 @@ function gyBinaSecenekleri(){
   return `<option value=""${cur?'':' selected'}>— Genel (bina bagimsiz) —</option>`
     +list.map(b=>`<option value="${esc(b)}"${cur===b?' selected':''}>${esc(b)}</option>`).join('');
 }
-/* ODA KODU ONERILERI - simdilik yalnizca daha once YAZILMIS kodlar (ayni binanin
-   kodlari one alinir). Lokasyon agacina baglanacak yer burasi. */
-function gyOdaOnerileri(bina){
+/* ── ODA ↔ BINALAR BAGI ──────────────────────────────────────────────────────
+   Oda kodu, secili binanin lokasyon agacindaki ODA dugumunun ADIDIR. Kayda lokId
+   YAZILMAZ: kimlik kodun kendisidir (stok kodu gibi) - agacta oda sonradan
+   acilsa/silinse de eski yazilar degismez, eslesme her acilista yeniden kurulur.
+   Esleme yalnizca AYNI BINADA ve norm ile yapilir (buyuk/kucuk harf farki yok). */
+function gyOdaIndeks(bina){
+  const m=new Map(); if(!bina) return m;
+  binaLoklar(bina).forEach(l=>{
+    if(!l||l.level!=='oda') return;
+    const k=norm(String(l.name||'').trim()); if(!k) return;
+    if(!m.has(k)) m.set(k,[]); m.get(k).push(l);
+  });
+  return m;
+}
+// tip: 'bos' (kod yok) | 'agacsiz' (binada oda tanimli degil - uyari verilmez) | 'var' | 'cok' | 'yok'
+function gyOdaDurum(idx,kod){
+  const k=norm(String(kod||'').trim());
+  if(!k) return {tip:'bos'};
+  if(!idx||!idx.size) return {tip:'agacsiz'};
+  const m=idx.get(k)||[];
+  if(m.length===1) return {tip:'var', lok:m[0], kat:lokKatOf(m[0].id)};
+  return m.length ? {tip:'cok', loklar:m} : {tip:'yok'};
+}
+// satirdaki kodun yaninda duran kucuk etiket (kat adi / agacta yok)
+function gyOdaBagIcerik(d){
+  if(d.tip==='var'){
+    const l=d.lok, kat=d.kat;
+    return {cls:'var', txt:kat?'KAT '+kat.name:'BAGLI',
+      title:'Binalar: '+l.bina+' / '+lokPath(l.id)+(lokKullanim(l)?' · '+lokKullanim(l):'')};
+  }
+  if(d.tip==='cok') return {cls:'cok', txt:d.loklar.length+' YERDE',
+    title:'Bu kod binada '+d.loklar.length+' ayri oda dugumunde var:\n'+d.loklar.map(l=>lokPath(l.id)).join('\n')};
+  if(d.tip==='yok') return {cls:'yok', txt:'AGACTA YOK',
+    title:'Bu oda kodu secili binanin lokasyon agacinda (Binalar) bulunamadi. Metne yine yazilir; kod yanlis yazilmis ya da oda agaca henuz eklenmemis olabilir.'};
+  return {cls:'', txt:'', title:''};
+}
+function gyOdaBagHtml(idx,kod,id){
+  const c=gyOdaBagIcerik(gyOdaDurum(idx,kod));
+  return `<span class="gy-oda-bag${c.cls?' '+c.cls:''}" id="${id}" title="${esc(c.title)}">${esc(c.txt)}</span>`;
+}
+/* ODA KODU ONERILERI: once secili binanin AGACINDAKI odalar (kat sirasiyla, etiket
+   "KAT 1 · oda adi"), sonra daha once YAZILMIS ama agacta olmayan kodlar (ayni
+   binanin kodlari one alinir - binasiz yazilar ve agaci kurulmamis binalar icin). */
+function gyOdaSecenekleri(bina){
+  const out=[], gorulen=new Set();
+  if(bina) lokFlat(bina).forEach(f=>{
+    const l=f.lok; if(l.level!=='oda') return;
+    const v=String(l.name||'').trim(), k=norm(v); if(!v||gorulen.has(k)) return;
+    gorulen.add(k);
+    const kat=lokKatOf(l.id);
+    out.push({v, etiket:[kat?'KAT '+kat.name:'', lokKullanim(l)].filter(Boolean).join(' · ')});
+  });
   const puan={};
   gyAll().sort((a,b)=>String(b.tarih||'').localeCompare(String(a.tarih||''))).forEach(y=>{
     const ayniBina=String(y.bina||'')===String(bina||'');
     (y.gruplar||[]).forEach(g=>(g.satirlar||[]).forEach(r=>{
-      const o=String((r&&r.oda)||'').trim(); if(!o) return;
+      const o=String((r&&r.oda)||'').trim(); if(!o||gorulen.has(norm(o))) return;
       if(puan[o]==null) puan[o]=ayniBina?0:1;
     }));
   });
-  return Object.keys(puan).sort((a,b)=>(puan[a]-puan[b])||a.localeCompare(b,'tr')).slice(0,400);
+  Object.keys(puan).sort((a,b)=>(puan[a]-puan[b])||a.localeCompare(b,'tr'))
+    .forEach(o=>out.push({v:o, etiket:puan[o]?'':'onceden yazilan'}));
+  return out.slice(0,1500);
+}
+function gyOdaOnerileri(bina){ return gyOdaSecenekleri(bina).map(o=>o.v); }
+function gyOdaDatalist(id,bina){
+  return `<datalist id="${id}">${gyOdaSecenekleri(bina).map(o=>`<option value="${esc(o.v)}"${o.etiket?` label="${esc(o.etiket)}"`:''}></option>`).join('')}</datalist>`;
+}
+/* BINALAR TARAFI: bir oda / kat dugumune girilmis Gunluk Yazi satirlari.
+   Kat icin altindaki tum odalar sayilir. Yalniz gorebildigi binanin yazilari (gyAll). */
+function gyLokKayitlari(l){
+  if(!l||!l.bina) return [];
+  const ids=l.level==='oda'?new Set([l.id]):lokSubtreeIds(l.id);
+  const adlar=new Set(binaLoklar(l.bina).filter(x=>x.level==='oda'&&ids.has(x.id)).map(x=>norm(String(x.name||'').trim())).filter(Boolean));
+  if(!adlar.size) return [];
+  const out=[];
+  gyAll().forEach(y=>{
+    if(String(y.bina||'')!==String(l.bina)) return;
+    (y.gruplar||[]).forEach(g=>{ if(!g||!g.odali) return;
+      (g.satirlar||[]).forEach(r=>{
+        const o=String((r&&r.oda)||'').trim();
+        if(o&&adlar.has(norm(o))) out.push({y, oda:o, grup:String(g.ad||''), kisi:gySayi(r&&r.kisi)});
+      });
+    });
+  });
+  return out.sort((a,b)=>String(b.y.tarih||'').localeCompare(String(a.y.tarih||''))||String(a.oda).localeCompare(String(b.oda),'tr',{numeric:true}));
+}
+function gyLokPanelHtml(l){
+  if(!l||(l.level!=='oda'&&l.level!=='kat')) return '';
+  const k=gyLokKayitlari(l);
+  const sec=`<div class="fw-sec">Gunluk Yazi</div>`;
+  if(!k.length) return sec+`<p class="fw-path" style="margin-bottom:0">${l.level==='kat'?'Bu katin odalarina':'Bu odaya'} Gunluk Yazi'da kisi girilmemis. Eslesme oda KODUYLA yapilir (dugum adi = yazidaki oda kodu).</p>`;
+  const gunler=new Set(k.map(x=>x.y.tarih)), top=k.reduce((s,x)=>s+x.kisi,0);
+  const son=k.slice(0,8);
+  return sec+`<div class="fw-stat"><span>Calisilan gun</span><b>${gunler.size}</b></div>
+    <div class="fw-stat" title="Gunluk kisi sayilarinin toplami (kisi x gun)"><span>Toplam kisi·gun</span><b>${top}</b></div>
+    <div class="fw-stat"><span>Son kayit</span><b>${esc(gyTarihTR(k[0].y.tarih))}</b></div>
+    <div style="margin-top:8px">${son.map(x=>`<div class="fw-srt clk" onclick="gyAcId('${esc(x.y.id)}')" title="Bu Gunluk Yaziyi ac">
+      <div style="flex:1;min-width:0"><div class="fw-srt-code">${esc(gyTarihTR(x.y.tarih))} · ${esc(x.y.firma||'(firmasiz)')}${l.level==='kat'?' · '+esc(x.oda):''}</div><div class="fw-srt-name">${esc(x.grup)}</div></div>
+      <b style="font-family:var(--mono);font-size:12px;white-space:nowrap">${x.kisi} kisi</b></div>`).join('')}</div>
+    ${k.length>son.length?`<p class="fw-path" style="margin:4px 0 0">+${k.length-son.length} kayit daha</p>`:''}`;
 }
 /* ── FIRMA: kaynak SIRKETLER listesidir ──────────────────────────────────────
    Kayitta HEM sirket id'si (firmaId) HEM de o anki ad (firma) durur:
@@ -9063,6 +9161,7 @@ function gyGruplarHtml(){
   const kilit=gyDuzenlenebilir()?'':' disabled';
   const say=v=>(v===0||v)?esc(v):'';
   const son=_GYB.length-1;
+  const odaIdx=gyOdaIndeks(y.bina);   // oda kodu -> Binalar agacindaki oda dugumu
   // ORTAK basliklar + bu yazinin sayilari (bkz. gyBirlesikGrup)
   const govde=gyBirlesik().map((g,i)=>{
     const sil=`<button class="mini-btn del"${kilit} title="Bu basligi kaldir - TUM firmalarin formundan kalkar" onclick="gyGrupSil(${i})">${icoTrash()}</button>`;
@@ -9076,7 +9175,7 @@ function gyGruplarHtml(){
         <span class="gy-gt" id="gyGT${i}"></span></div>
     </div>`;
     const satirlar=(g.satirlar||[]).map((r,j)=>`<div class="gy-satir">
-      <input class="gy-oda" list="gyOdaListesi" value="${esc((r&&r.oda)||'')}" placeholder="oda kodu - orn. 00UYB14R017" oninput="gySetOda(${i},${j},this.value)"${kilit}>
+      <span class="gy-oda-k"><input class="gy-oda" list="gyOdaListesi" value="${esc((r&&r.oda)||'')}" placeholder="oda kodu - orn. 00UYB14R017" oninput="gySetOda(${i},${j},this.value)"${kilit}>${gyOdaBagHtml(odaIdx,r&&r.oda,'gyOB'+i+'_'+j)}</span>
       <input class="gy-kisi" type="number" min="0" step="1" value="${say(r&&r.kisi)}" placeholder="kisi" oninput="gySetKisi(${i},${j},this.value)"${kilit}>
       <button class="mini-btn del"${kilit} title="Satiri sil" onclick="gySatirSil(${i},${j})">${icoTrash()}</button>
     </div>`).join('');
@@ -9087,13 +9186,20 @@ function gyGruplarHtml(){
     </div>`;
   }).join('');
   return govde
-    +`<datalist id="gyOdaListesi">${gyOdaOnerileri(y.bina).map(o=>`<option value="${esc(o)}"></option>`).join('')}</datalist>`;
+    +gyOdaDatalist('gyOdaListesi',y.bina);
 }
 
 // baslik ORTAK listede yasar: buradaki degisiklik tum firmalarin formuna yansir
 function gySetGrupAd(i,v){ if(!_GYB[i])return; _GYB[i].ad=v; gyTazele(); }
 function gySetGrupKisi(i,v){ if(!_GY||!_GY.gruplar[i])return; _GY.gruplar[i].kisi=v; gyTazele(); }
-function gySetOda(i,j,v){ const r=_GY&&_GY.gruplar[i]&&_GY.gruplar[i].satirlar[j]; if(!r)return; r.oda=v; gyTazele(); }
+function gySetOda(i,j,v){ const r=_GY&&_GY.gruplar[i]&&_GY.gruplar[i].satirlar[j]; if(!r)return; r.oda=v; gyOdaBagTazele(i,j); gyTazele(); }
+// yalniz o satirin Binalar etiketini gunceller - innerHTML yazilsa kutu odagi kaybederdi
+function gyOdaBagTazele(i,j){
+  const el=document.getElementById('gyOB'+i+'_'+j); if(!el||!_GY) return;
+  const r=_GY.gruplar[i]&&_GY.gruplar[i].satirlar[j];
+  const c=gyOdaBagIcerik(gyOdaDurum(gyOdaIndeks(_GY.bina),r&&r.oda));
+  el.className='gy-oda-bag'+(c.cls?' '+c.cls:''); el.textContent=c.txt; el.title=c.title;
+}
 function gySetKisi(i,j,v){ const r=_GY&&_GY.gruplar[i]&&_GY.gruplar[i].satirlar[j]; if(!r)return; r.kisi=v; gyTazele(); }
 function gySatirEkle(i){
   const g=_GY&&_GY.gruplar[i]; if(!g)return;
@@ -10452,7 +10558,7 @@ function ypOdalarHtml(){
   const bos=`<div class="dash-empty">${kat?'Planda kat yok - asagidan kat ekleyin':'Planda oda yok - "+ Oda" ile ekleyin'}</div>`;
   const liste=kat
     ? `<datalist id="ypKatListesi">${binaKatlar(_YP.bina).map(l=>`<option value="${esc(ypKatEtiket(l))}"></option>`).join('')}</datalist>`
-    : `<datalist id="ypOdaListesi">${gyOdaOnerileri(_YP.bina).map(o=>`<option value="${esc(o)}"></option>`).join('')}</datalist>`;
+    : gyOdaDatalist('ypOdaListesi',_YP.bina);
   return (html||bos)+liste;
 }
 /* TOPLU PLAN: Kisa Rapor formunun aynisi - kalem basina bir satir (tam baslik,
@@ -21489,6 +21595,7 @@ function flowLokPanel(l){
     <div class="fw-stat"><span>Alim kaydi</span><b>${u.alim}</b></div>
     <div class="fw-stat"><span>Montaj kaydi</span><b>${u.montaj}</b></div>
     ${bilgiHtml}
+    ${gyLokPanelHtml(l)}
     ${nesilHtml}
     ${srtHtml}
     ${sharedHtml}
