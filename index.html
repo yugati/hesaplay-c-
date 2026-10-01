@@ -4304,6 +4304,8 @@ label.nord-sart-row input{width:auto;margin:0;cursor:pointer;flex:none}
 .nok-kat.ok{background:color-mix(in srgb,var(--green) 14%,transparent);color:var(--green);border:1px solid color-mix(in srgb,var(--green) 38%,transparent)}
 .nok-kat.yok{background:color-mix(in srgb,var(--amber) 12%,transparent);color:var(--amber);border:1px dashed color-mix(in srgb,var(--amber) 42%,transparent)}
 .nok-kat.bos{border:1px dashed var(--line);color:var(--mute)}
+/* kat Kod Defteri'nden degil KOTTAN bulundu (bkz. sokKatCoz) - kaydedince deftere yazilir */
+.nok-kat.kot{background:color-mix(in srgb,var(--blue) 12%,transparent);color:var(--blue);border:1px dashed color-mix(in srgb,var(--blue) 45%,transparent)}
 /* ayni urunde daha once kullanilmis kod: satir ve rozet kirmizi, kirilim uygulanmaz */
 .nok-kat.tekrar{background:color-mix(in srgb,var(--red) 12%,transparent);color:var(--red);border:1px solid color-mix(in srgb,var(--red) 45%,transparent);font-weight:700}
 .nok-row.tekrar{border-color:var(--red);background:color-mix(in srgb,var(--red) 7%,var(--panel))}
@@ -24872,6 +24874,22 @@ function binaKatNodeOf(bina,kat,kot){
   if(adKey){ const n=kats.find(k=>norm(k.name).trim()===adKey); if(n) return n; }
   return null;
 }
+/* KOT -> KAT (Toplu Kurulum ile ayni kural, bkz. kotdanKat): kot bir katin kotuna esitse o kat;
+   degilse ALTINDA KALAN en yakin kotlu kat (kat, kendi kotundan ustteki katin kotuna kadar surer).
+   "+4.200", "4,2" ve 4200 ayni kottur (_bulkKotMm). Kotu girilmemis katlar hesaba girmez; iki kat
+   ayni kottaysa karar verilemez. Doner {lok,tam} | null. */
+function binaKotKat(bina,kot){
+  const mm=_bulkKotMm(kot); if(!isFinite(mm)) return null;
+  const kk=binaKatlar(bina).map(l=>({l,mm:lokKotMm(l)})).filter(x=>isFinite(x.mm)).sort((a,b)=>a.mm-b.mm);
+  const tam=kk.filter(x=>x.mm===mm);
+  if(tam.length) return tam.length===1?{lok:tam[0].l,tam:true}:null;
+  const alt=kk.filter(x=>x.mm<mm); if(!alt.length) return null;
+  const ayni=alt.filter(x=>x.mm===alt[alt.length-1].mm);
+  return ayni.length===1?{lok:ayni[0].l,tam:false}:null;
+}
+function lokKotMm(l){ return (l&&l.kot!=null&&String(l.kot).trim()!=='')?_bulkKotMm(l.kot):NaN; }
+// katin kotu oda listesi yazilisiyla ("+4.200"); '' = kotu girilmemis
+function lokKotTxt(l){ const mm=lokKotMm(l); return isFinite(mm)?_bulkKotTxt(mm):''; }
 // kisa kat etiketi: tum katlar secili -> "Tum katlar"; ardisik dizi -> "1.KAT – 5.KAT"; degilse adlar virgulle
 function sartKatLabel(sr){
   const ids=sartKatIds(sr); if(!ids.length)return '';
@@ -29311,6 +29329,8 @@ function sokBilgiSet(k,alan,v){
   const f=_SOK; if(!f||!f.pay[k]) return;
   f.pay[k].bilgi={...(f.pay[k].bilgi||{}),[alan]:v};
   const kod=document.querySelector('#sokRow'+k+' .nok-kod'); if(kod) kod.title=ozelBilgiOzet(f.pay[k].bilgi);
+  // elle yazilan kot artik otomatik degil (kod degisse de ezilmez); kat rozeti kottan tazelenir
+  if(alan==='kot'){ f.pay[k]._kotOto=false; sokKatGuncelle(k); }
   sokSayac();
 }
 function sokBilgiSay(){ return ((_SOK&&_SOK.pay)||[]).filter(p=>String(p.kod||'').trim()&&ozelBilgiTemiz(p.bilgi)).length; }
@@ -29350,18 +29370,51 @@ function sokAlimRozet(kod,qty){
   const d=ozelPlanDurum(nordParseQty(qty)||0,a.qty);
   return `<span class="nok-alim ${d}" title="Siparis: ${esc(a.siparis.join(', '))} · alinan ${fmtNum(a.qty)}">${d==='fazla'?'fazla ':''}alindi ${fmtNum(a.qty)}</span>`;
 }
-function sokKatSinif(kod){ if(!String(kod||'').trim()) return 'bos'; if(sokTekrar(kod)) return 'tekrar'; return ozelKodLokId(_SOK.bina,kod)?'ok':'yok'; }
-function sokKatEtiket(kod){ if(!String(kod||'').trim()) return '—'; if(sokTekrar(kod)) return 'kullanildi'; const ad=ozelKodKatAdi(_SOK.bina,kod); return ad?ad:'kat ?'; }
-function sokKatIpucu(kod){
-  if(!String(kod||'').trim()) return 'Kod yazilinca kat defterden cozulur';
+/* KAT <-> KOT: kodun KATI once KOD DEFTERI'nden (esas), defterde yoksa kod bilgisindeki KOTTAN
+   bulunur (binaKotKat - kat kotuna esit ya da altinda kalan en yakin kat). Kottan bulunan kat
+   kaydedince Kod Defteri'ne yazilir (sokDeftereYaz) - siparis, rapor ve akis da ayni kati gorur.
+   Ters yon: kat biliniyor ve kot bossa kot KATIN KOTUYLA dolar (p._kotOto - elle yazilan kot
+   ezilmez; kod degisirse otomatik kot yeni kata gore tazelenir). fark = defter kati ile kotun
+   dustugu kat farkli: defter gecerli kalir, rozet uyarir. */
+function sokKatCoz(p){
+  const f=_SOK, kod=String(p&&p.kod||'').trim(); if(!f||!kod) return null;
+  const kot=String(p.bilgi&&p.bilgi.kot||'').trim(), kk=kot?binaKotKat(f.bina,kot):null;
+  const id=ozelKodLokId(f.bina,kod);
+  if(id) return {id,kaynak:'defter',fark:(kk&&kk.lok.id!==id)?kk.lok:null};
+  return kk?{id:kk.lok.id,kaynak:'kot',tam:kk.tam}:null;
+}
+function sokKotDoldur(p){
+  if(!_SOK||!p) return;
+  const kot=String(p.bilgi&&p.bilgi.kot||'').trim(); if(kot&&!p._kotOto) return;
+  const id=String(p.kod||'').trim()?ozelKodLokId(_SOK.bina,p.kod):'';
+  const txt=id?lokKotTxt(getLok(id)):'';
+  if(txt){ if(txt!==kot){ p.bilgi={...(p.bilgi||{}),kot:txt}; } p._kotOto=true; }
+  else if(p._kotOto){ p.bilgi={...(p.bilgi||{}),kot:''}; p._kotOto=false; }
+}
+function sokKatSinif(p){ const kod=p&&p.kod; if(!String(kod||'').trim()) return 'bos'; if(sokTekrar(kod)) return 'tekrar';
+  const c=sokKatCoz(p); return !c||c.fark?'yok':(c.kaynak==='kot'?'kot':'ok'); }
+function sokKatEtiket(p){ const kod=p&&p.kod; if(!String(kod||'').trim()) return '—'; if(sokTekrar(kod)) return 'kullanildi';
+  const c=sokKatCoz(p); return c?(lokPath(c.id)||'kat ?')+(c.fark?' ≠ kot':''):'kat ?'; }
+function sokKatIpucu(p){
+  const kod=p&&p.kod;
+  if(!String(kod||'').trim()) return 'Kod yazilinca kat defterden ya da kottan cozulur';
   const t=sokTekrar(kod); if(t) return `Bu kod bu urunun baska bir kaleminde zaten var: ${t.yer}. Ayni ozel kod ayni urune ikinci kez yazilamaz.`;
-  const ad=ozelKodKatAdi(_SOK.bina,kod);
-  return ad?`Kod defterinde tanimli: ${ad}`:'Bu kod Kod Defteri\'nde yok - kaydedilir, kati "bilinmiyor" gorunur. Kod Defteri sayfasindan kata ekleyebilirsiniz.';
+  const c=sokKatCoz(p), kot=String(p.bilgi&&p.bilgi.kot||'').trim();
+  if(c&&c.kaynak==='defter') return `Kod defterinde tanimli: ${lokPath(c.id)}`+(c.fark?` · DIKKAT: kot ${kot} "${lokPath(c.fark.id)}" katina dusuyor - defterdeki kat gecerli. Yanlissa kotu ya da Kod Defteri'ni duzeltin.`:'');
+  if(c) return `Kottan bulundu: ${kot} → ${lokPath(c.id)} (${c.tam?'katin kotu':'altinda kalan en yakin kat'}). Kaydedince Kod Defteri'ne bu kata yazilir.`;
+  if(kot) return `Kot ${kot} hicbir kata eslenemedi - binadaki kat kotlari girilmemis olabilir (Binalar > lokasyon agaci).`;
+  return 'Bu kod Kod Defteri\'nde yok - KOT girerseniz kat kottan bulunur; yoksa kaydedilir, kati "bilinmiyor" gorunur.';
+}
+function sokKatGuncelle(k){
+  const p=_SOK&&_SOK.pay[k], kt=document.getElementById('sokKat'+k); if(!p||!kt) return;
+  kt.className='nok-kat '+sokKatSinif(p); kt.textContent=sokKatEtiket(p); kt.title=sokKatIpucu(p);
 }
 function sokSayacHtml(d){
   const f=_SOK;
   const renk=d.kalan==null?'var(--mute)':(Math.abs(d.kalan)<=1e-9?'var(--green)':(d.kalan>0?'var(--amber)':'var(--red)'));
-  const pay=(f.pay||[]).filter(p=>String(p.kod||'').trim()).map(p=>({kod:p.kod,qty:nordParseQty(p.qty)||0}));
+  // kottan bulunan kat lokId olarak verilir - henuz deftere yazilmadi ama kat sayacinda gorunsun
+  const pay=(f.pay||[]).filter(p=>String(p.kod||'').trim()).map(p=>{ const c=sokKatCoz(p);
+    return {kod:p.kod,qty:nordParseQty(p.qty)||0,...(c&&c.kaynak==='kot'?{lokId:c.id}:{})}; });
   const kd=pay.length?ozelPayKatDagilim(f.bina,pay):null;
   const alinanKodlu=f.spId?[...f.alim.values()].reduce((s,a)=>s+a.qty,0):0;
   return `<span class="t-meta">Hedef: <b style="color:var(--ink)">${d.hedef==null?'acik / bos':fmtNum(d.hedef)}</b></span>
@@ -29370,7 +29423,7 @@ function sokSayacHtml(d){
     ${d.kalan==null?'':`<span class="t-meta" title="Hedefin koda baglanmamis kismi - kirilim hedefle esit olmak zorunda degil, asamaz">${d.kalan<0?'Fazla girildi':'Koda baglanmamis'}: <b style="color:${renk}">${fmtNum(Math.abs(d.kalan))}</b></span>`}
     ${d.tekrar?`<span class="t-meta" title="Ayni ozel kod ayni urune ikinci kez yazilamaz - kirmizi satirlari cikarin">Tekrar: <b style="color:var(--red)">${d.tekrar} kod</b></span>`:''}
     ${kd&&kd.katlar.length?`<span class="t-meta" title="${esc(kd.katlar.map(k=>k.ad+': '+fmtNum(k.qty)).join(' · '))}">Kat: <b style="color:var(--green)">${kd.katlar.length===1?esc(kd.katlar[0].ad):kd.katlar.length+' kat'}</b></span>`:''}
-    ${kd&&kd.bilinmeyenN?`<span class="t-meta" title="Bu kodlar Kod Defteri'nde tanimli degil">Kati yok: <b style="color:var(--amber)">${kd.bilinmeyenN} kod</b></span>`:''}
+    ${kd&&kd.bilinmeyenN?`<span class="t-meta" title="Bu kodlar Kod Defteri'nde tanimli degil ve kotlari da bir kata eslenemedi">Kati yok: <b style="color:var(--amber)">${kd.bilinmeyenN} kod</b></span>`:''}
     ${f.spId&&alinanKodlu?`<span class="t-meta" title="Bu kaleme siparislerde kod kod alinan toplam">Siparislerde kodlu alim: <b style="color:var(--ink)">${fmtNum(alinanKodlu)}</b></span>`:''}
     ${(()=>{ const bn=sokBilgiSay(); return bn?`<span class="t-meta" title="Kot / cap / yangin / guvenlik sinifi bilgisi girilmis kod sayisi - yalnizca bilgi">Bilgili: <b style="color:var(--ink)">${bn} kod</b></span>`:''; })()}`;
 }
@@ -29389,8 +29442,13 @@ function sokSet(k,alan,v){
     row.classList.toggle('on',!tk&&nordParseQty(f.pay[k].qty)>0&&!!String(f.pay[k].kod||'').trim());
     row.classList.toggle('tekrar',tk); }
   // serbest metin: pencere yeniden CIZILMEZ (odak kaybolurdu) - yalniz rozetler ve sayac tazelenir
-  const kt=document.getElementById('sokKat'+k);
-  if(kt&&alan==='kod'){ kt.className='nok-kat '+sokKatSinif(v); kt.textContent=sokKatEtiket(v); kt.title=sokKatIpucu(v); }
+  if(alan==='kod'){
+    // kod degisti: kati defterde varsa (ve kot bos / otomatikse) kot katin kotuyla dolar
+    const once=String(f.pay[k].bilgi&&f.pay[k].bilgi.kot||''); sokKotDoldur(f.pay[k]);
+    const kotEl=document.getElementById('sokB'+k+'_kot'), simdi=String(f.pay[k].bilgi&&f.pay[k].bilgi.kot||'');
+    if(kotEl&&simdi!==once) kotEl.value=simdi;
+    sokKatGuncelle(k);
+  }
   const al=document.getElementById('sokAlim'+k); if(al) al.outerHTML=sokAlimRozet(f.pay[k].kod,f.pay[k].qty).replace('<span class="nok-alim',`<span id="sokAlim${k}" class="nok-alim`);
   sokSayac();
 }
@@ -29429,7 +29487,7 @@ function sokYapistir(){
       }
       return {k:x.a.k,p}; });
   // yalniz DOLU hucre yazilir - bos hucre o kodun mevcut bilgisini silmez
-  const bilgiYaz=(p,kol,ix)=>kol.forEach(c=>{ const v=c.p[ix]; if(v) p.bilgi={...(p.bilgi||{}),[c.k]:v}; });
+  const bilgiYaz=(p,kol,ix)=>kol.forEach(c=>{ const v=c.p[ix]; if(v){ p.bilgi={...(p.bilgi||{}),[c.k]:v}; if(c.k==='kot') p._kotOto=false; } });
   const bilgiMsj=kol=>kol.length?` · bilgi: ${kol.map(c=>OZEL_BILGI.find(a=>a.k===c.k).t).join(', ')}`:'';
   const uyar=(...u)=>u.concat(bilgiNot).filter(Boolean).join(' · ');
   if(!String(kMetin).trim()){
@@ -29488,6 +29546,7 @@ function sokRender(){
   const f=_SOK; if(!f) return;
   const eski=document.getElementById('sokBg'); if(eski) eski.remove();
   if(!f.pay.length) f.pay.push({kod:'',qty:'1'});
+  f.pay.forEach(sokKotDoldur);   // kati bilinen kodun bos kotu katin kotuyla dolar
   const d=sokDurum();
   const rows=f.pay.map((p,k)=>{
     const tk=!!sokTekrar(p.kod), dolu=!tk&&nordParseQty(p.qty)>0&&!!String(p.kod||'').trim();
@@ -29497,10 +29556,10 @@ function sokRender(){
       <input class="nok-kod" type="text" placeholder="00UYB14EM0001" value="${esc(p.kod||'')}" oninput="sokSet(${k},'kod',this.value)" title="${esc(ozelBilgiOzet(b))}">
       <input class="nok-qty" type="number" step="any" min="0" placeholder="0" value="${esc(p.qty||'')}" oninput="sokSet(${k},'qty',this.value)">
       <span class="nok-unit">${esc(f.unit||'')}</span>
-      <span class="nok-kat ${sokKatSinif(p.kod)}" id="sokKat${k}" title="${esc(sokKatIpucu(p.kod))}">${esc(sokKatEtiket(p.kod))}</span>
+      <span class="nok-kat ${sokKatSinif(p)}" id="sokKat${k}" title="${esc(sokKatIpucu(p))}">${esc(sokKatEtiket(p))}</span>
       ${f.spId?sokAlimRozet(p.kod,p.qty).replace('<span class="nok-alim',`<span id="sokAlim${k}" class="nok-alim`):''}
       <button class="mini-btn del" onclick="sokSil(${k})" title="Bu kodu cikar">${icoTrash()}</button></div>
-      <div class="sok-brow">${OZEL_BILGI.map(a=>`<label class="sok-bf" title="${esc(a.t)} - yalnizca bilgi"><span>${esc(a.ks)}</span><input type="text" value="${esc(b[a.k]||'')}" placeholder="—" oninput="sokBilgiSet(${k},'${a.k}',this.value)"></label>`).join('')}</div>
+      <div class="sok-brow">${OZEL_BILGI.map(a=>`<label class="sok-bf" title="${esc(a.t)} - yalnizca bilgi"><span>${esc(a.ks)}</span><input type="text" id="sokB${k}_${a.k}" value="${esc(b[a.k]||'')}" placeholder="—" oninput="sokBilgiSet(${k},'${a.k}',this.value)"${a.k==='kot'&&p._kotOto?' title="Katin kotu - Kod Defteri\'ndeki kattan otomatik geldi; yazarsaniz sizin degeriniz gecerli olur"':''}></label>`).join('')}</div>
     </div>`; }).join('');
   const siparisKod=f.spId?[...f.alim.values()].filter(a=>!f.pay.some(p=>ktopKey(p.kod)===ktopKey(a.kod))).length:0;
   const html=`<div class="modal-bg" id="sokBg" onclick="if(event.target===this)sokDisTikla()"><div class="modal wide${_sokBilgiAcik?'':' sok-bilgi-kapali'}"><div class="modal-head">
@@ -29549,9 +29608,34 @@ async function sokUygula(){
   if(eksik){ toast(`${eksik} kodun miktari bos ya da 0 - miktar yazin ya da kodu cikarin`,'err'); return; }
   const r=specOzelPayTemizle(giris,f.hedef==null?null:Number(f.hedef)||0,f.tekrar);
   if(!r.ok){ toast(r.msg,'err'); return; }
+  // kottan bulunan katlar pencere kapanmadan toplanir (sokKatCoz _SOK'u okur)
+  const kotKat=f.pay.filter(p=>String(p.kod||'').trim()&&!sokTekrar(p.kod)).map(p=>({kod:String(p.kod).trim(),c:sokKatCoz(p)}))
+    .filter(x=>x.c&&x.c.kaynak==='kot');
   const cb=f.onApply;
   if(f.ctx!=='kayit') sokKapat();
   if(typeof cb==='function') await cb(r.pay);
+  if(kotKat.length) await sokDeftereYaz(kotKat);
+}
+/* KOTTAN BULUNAN KAT -> KOD DEFTERI: kod, kotunun dustugu katin kod listesine eklenir (Kod Defteri
+   sayfasindaki kayitla ayni alan, l.kodlar). Boylece siparis, rapor ve akis da kodun katini bilir.
+   Defterde baska katta zaten yazili kod DOKUNULMAZ (defter esastir - bkz. sokKatCoz). */
+async function sokDeftereYaz(liste){
+  if(!canEdit('proje')){ toast(`${liste.length} kodun kati kottan bulundu ama Kod Defteri'ne yazma yetkiniz yok`,'warn'); return; }
+  const grup=new Map();
+  liste.forEach(x=>{ const l=getLok(x.c.id); if(!l) return;
+    const var_=new Set(lokKodlari(l).map(ktopKey)); if(var_.has(ktopKey(x.kod))) return;
+    if(!grup.has(l.id)) grup.set(l.id,[]); const g=grup.get(l.id);
+    if(!g.some(k=>ktopKey(k)===ktopKey(x.kod))) g.push(x.kod); });
+  if(!grup.size) return;
+  let n=0;
+  try{
+    for(const [id,kodlar] of grup){ const l=getLok(id); if(!l) continue;
+      l.kodlar=[...lokKodlari(l),...kodlar]; n+=kodlar.length;
+      await sbUpdateProjeLokasyon(l.id,{...l}); }
+    logAction('editSpec',`Kod Defteri (kottan): ${n} kod - ${[...grup.keys()].map(id=>lokPath(id)).join(', ')}`);
+    toast(`${n} kod kotundan bulunan kata Kod Defteri'ne yazildi (${[...grup.keys()].map(id=>lokPath(id)).join(', ')})`);
+    if(_SOK&&document.getElementById('sokBg')) sokRender();   // "Kaydet" pencereyi acik birakir - rozetler defterden tazelensin
+  }catch(err){ console.error(err); toast('Kod Defteri yazilamadi: '+(err.message||err),'err'); }
 }
 /* --- form (Sartname Kalemi penceresi): kirilim ozeti + ac --- */
 function specOzRender(){
