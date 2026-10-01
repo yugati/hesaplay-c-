@@ -29417,54 +29417,39 @@ function sokYapistir(){
   const f=_SOK; if(!f) return;
   const kEl=document.getElementById('sokPaste'), mEl=document.getElementById('sokPasteQty');
   const kMetin=kEl?kEl.value:'', mik=_ozelMiktarBol(mEl?mEl.value:'');
-<<<<<<< Updated upstream
   const bEl=OZEL_BILGI.map(a=>({a,el:document.getElementById('sokPb_'+a.k)})).filter(x=>x.el&&x.el.value.trim());
-  const mikHata=()=>{ const i=mik.findIndex(x=>x&&isNaN(nordParseQty(x))); if(i<0) return false; toast(`${i+1}. miktar sayi degil: "${mik[i]}"`,'err'); return true; };
-  // bilgi sutunlari n koda okunur - sayisi tutmayan sutun hicbir sey yazdirmaz (hiza kaymasin)
-  const bilgiOku=n=>{ const out=[];
-    for(const x of bEl){ const p=_ozelBilgiBol(x.el.value,n);
-      if(p.length!==n){ toast(`${x.a.t}: ${n} kod var, ${p.length} satir okundu - kodlarla ayni sirada ve esit sayida olmali (bos hucre bos satir olarak kalmali)`,'err'); return null; }
-      out.push({k:x.a.k,p}); }
-    return out; };
+  /* bilgi sutunlari da miktar gibi YAPISTIRILAN NE ISE KABUL EDILIR (bkz. _ozelMiktarEsle): sayi
+     tutmazsa ve sutun kod kutusuyla ayni satir sayisindaysa satir satir, degilse sirayla yazilir -
+     uyari verilir. items verilmezse (kod kutusu bos) listedeki kodlara sirayla yazilir. */
+  const bilgiNot=[];
+  const bilgiOku=(n,items)=>bEl.map(x=>{ let p=_ozelBilgiBol(x.el.value,n);
+      if(p.length!==n){
+        if(items&&_ozelKodSatir(kMetin)===p.length) p=items.map(it=>p[it.sat]||'');
+        else bilgiNot.push(`${x.a.t}: ${n} kod, ${p.length} satir - sirayla yazildi`);
+      }
+      return {k:x.a.k,p}; });
   // yalniz DOLU hucre yazilir - bos hucre o kodun mevcut bilgisini silmez
   const bilgiYaz=(p,kol,ix)=>kol.forEach(c=>{ const v=c.p[ix]; if(v) p.bilgi={...(p.bilgi||{}),[c.k]:v}; });
   const bilgiMsj=kol=>kol.length?` · bilgi: ${kol.map(c=>OZEL_BILGI.find(a=>a.k===c.k).t).join(', ')}`:'';
-=======
->>>>>>> Stashed changes
+  const uyar=(...u)=>u.concat(bilgiNot).filter(Boolean).join(' · ');
   if(!String(kMetin).trim()){
     if(!mik.length&&!bEl.length){ toast('Kod bulunamadi','err'); return; }
     const kodlu=f.pay.filter(p=>String(p.kod||'').trim());
-<<<<<<< Updated upstream
     if(!kodlu.length){ toast((mik.length?'Miktar':'Bilgi')+' yazilacak kod yok - once kodlari yapistirin','err'); return; }
-    if(mik.length&&mik.length!==kodlu.length){ toast(`Listede ${kodlu.length} kod var, ${mik.length} miktar okundu - ayni sirada ve esit sayida olmali`,'err'); return; }
-    if(mik.length&&mikHata()) return;
-    const kol=bilgiOku(kodlu.length); if(!kol) return;
-    kodlu.forEach((p,ix)=>{ if(mik.length&&String(mik[ix]||'').trim()) p.qty=String(nordParseQty(mik[ix])); bilgiYaz(p,kol,ix); });
+    const uy=mik.length?_ozelMiktarYaz(kodlu,mik):'';
+    const kol=bilgiOku(kodlu.length);
+    kodlu.forEach((p,ix)=>bilgiYaz(p,kol,ix));
     sokRender();
-    toast(mik.length?`${mik.length} miktar yazildi · toplam ${fmtNum(sokDurum().girilen)}${bilgiMsj(kol)}`:`${kodlu.length} koda bilgi yazildi${bilgiMsj(kol)}`); return;
-=======
-    if(!kodlu.length){ toast('Miktar yazilacak kod yok - once kodlari yapistirin','err'); return; }
-    const uy=_ozelMiktarYaz(kodlu,mik);
-    sokRender(); toast(`${Math.min(mik.length,kodlu.length)} miktar yazildi · toplam ${fmtNum(sokDurum().girilen)}${uy?' · '+uy:''}`,uy?'warn':''); return;
->>>>>>> Stashed changes
+    const u=uyar(uy);
+    toast((mik.length?`${Math.min(mik.length,kodlu.length)} miktar yazildi · toplam ${fmtNum(sokDurum().girilen)}${bilgiMsj(kol)}`:`${kodlu.length} koda bilgi yazildi${bilgiMsj(kol)}`)+(u?' · '+u:''),u?'warn':''); return;
   }
   const items=_ozelKodMiktarBol(kMetin);
   if(!items.length){ toast('Kod bulunamadi','err'); return; }
   if(items.every(it=>!isNaN(nordParseQty(it.kod)))){ toast('Kod kutusuna yalnizca sayi yapistirilmis - miktarlari yandaki kutuya yapistirin','err'); return; }
-<<<<<<< Updated upstream
-  if(mik.length){
-    if(mik.length!==items.length){ toast(`${items.length} kod, ${mik.length} miktar okundu - miktarlar kodlarla ayni sirada ve esit sayida olmali`,'err'); return; }
-    if(mikHata()) return;
-    items.forEach((it,ix)=>{ it.qty=mik[ix]; });
-  }
-  const kol=bilgiOku(items.length); if(!kol) return;
+  const uyari=_ozelMiktarEsle(kMetin,items,mik);
+  const kol=bilgiOku(items.length,items);
   f.pay=f.pay.filter(p=>String(p.kod||'').trim()||nordParseQty(p.qty)>0||ozelBilgiTemiz(p.bilgi));   // bos baslangic satiri yutulur
   items.forEach((it,ix)=>{
-=======
-  const uyari=_ozelMiktarEsle(kMetin,items,mik);
-  f.pay=f.pay.filter(p=>String(p.kod||'').trim()||nordParseQty(p.qty)>0);   // bos baslangic satiri yutulur
-  items.forEach(it=>{
->>>>>>> Stashed changes
     const n=nordParseQty(it.qty), adet=(!isNaN(n)&&n>=0)?n:1;
     let v=f.pay.find(p=>ktopKey(p.kod)===ktopKey(it.kod));
     if(v){ const o=nordParseQty(v.qty); v.qty=String(Math.round(((o>0?o:0)+adet)*1e6)/1e6); }
@@ -29475,11 +29460,8 @@ function sokYapistir(){
   sokRender();
   const tk=new Set(items.filter(it=>sokTekrar(it.kod)).map(it=>ktopKey(it.kod))).size;
   if(tk){ toast(`${items.length} kod okundu - ${tk} tanesi bu urunun baska bir kaleminde var (kirmizi), cikarmadan uygulanamaz`,'err'); return; }
-<<<<<<< Updated upstream
-  toast(`${items.length} kod okundu · toplam ${fmtNum(sokDurum().girilen)}${bilgiMsj(kol)}`);
-=======
-  toast(`${items.length} kod okundu · toplam ${fmtNum(sokDurum().girilen)}${uyari?' · '+uyari:''}`,uyari?'warn':'');
->>>>>>> Stashed changes
+  const u=uyar(uyari);
+  toast(`${items.length} kod okundu · toplam ${fmtNum(sokDurum().girilen)}${bilgiMsj(kol)}${u?' · '+u:''}`,u?'warn':'');
 }
 // SIPARISLERDEN GETIR: siparis kirilimlarinda bu kaleme yazilmis kodlar (miktariyla) listeye eklenir;
 // listede zaten olan koda dokunulmaz - plan elle girilmis olabilir
@@ -37179,11 +37161,15 @@ function _ozelMiktarBol(metin){
         miktarda bos satir kalir - satir no ile eslesince hiza kaymaz)
      3) o da degil                      -> sirayla; miktari kalmayan kod 1 alir, artan miktar kullanilmaz
    Sayi olmayan miktar 1 sayilir. Donus: kullaniciya gosterilecek uyari ('' = sorun yok). */
-function _ozelMiktarEsle(kMetin,items,mik){
-  if(!mik.length) return '';
+// kod kutusunun satir sayisi (sondaki bos satirlar haric) - satir satir esleme icin
+function _ozelKodSatir(kMetin){
   const satir=String(kMetin||'').replace(/\r/g,'').split('\n');
   while(satir.length && !satir[satir.length-1].trim()) satir.pop();
-  const satirla=mik.length!==items.length && satir.length===mik.length;
+  return satir.length;
+}
+function _ozelMiktarEsle(kMetin,items,mik){
+  if(!mik.length) return '';
+  const satirla=mik.length!==items.length && _ozelKodSatir(kMetin)===mik.length;
   let gecersiz=0;
   items.forEach((it,ix)=>{
     const m=String((satirla?mik[it.sat]:mik[ix])||'').trim();
