@@ -4306,6 +4306,18 @@ label.nord-sart-row input{width:auto;margin:0;cursor:pointer;flex:none}
 .nok-kat.bos{border:1px dashed var(--line);color:var(--mute)}
 /* kat Kod Defteri'nden degil KOTTAN bulundu (bkz. sokKatCoz) - kaydedince deftere yazilir */
 .nok-kat.kot{background:color-mix(in srgb,var(--blue) 12%,transparent);color:var(--blue);border:1px dashed color-mix(in srgb,var(--blue) 45%,transparent)}
+/* OZEL KOD (KKS) YUKLEME onizlemesi (bkz. renderOkyOnizleme): malzeme -> kalem listesi */
+.modal.oky-modal{max-width:820px}
+.oky-mats{max-height:340px;overflow-y:auto;border:1px solid var(--line);border-radius:9px}
+.oky-mat{padding:8px 10px;border-bottom:1px solid var(--line)}
+.oky-mat:last-child{border-bottom:0}
+.oky-mat-h{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:12px;margin-bottom:5px}
+.oky-mat-h b{font-family:var(--mono);font-size:11.5px;word-break:break-all}
+.oky-etk{font-size:10px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.3px}
+.oky-sel{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--ink);padding:5px 8px;border-radius:7px;font-size:12px;outline:none}
+.oky-sel:focus{border-color:var(--blue)}
+.oky-k{font-size:12px;margin-top:3px}
+.oky-k-ozet{font-size:11px;color:var(--mute);margin-top:4px;line-height:1.45}
 /* ayni urunde daha once kullanilmis kod: satir ve rozet kirmizi, kirilim uygulanmaz */
 .nok-kat.tekrar{background:color-mix(in srgb,var(--red) 12%,transparent);color:var(--red);border:1px solid color-mix(in srgb,var(--red) 45%,transparent);font-weight:700}
 .nok-row.tekrar{border-color:var(--red);background:color-mix(in srgb,var(--red) 7%,var(--panel))}
@@ -7488,11 +7500,15 @@ function projeSubnav(){
   const koddBtn=(PBINA&&binaKatlar(PBINA).length&&canEdit('proje'))
     ? `<button class="subnav-kat" onclick="openKodDefteri()" title="Ozel kodlarin hangi katta oldugunu tanimla - siparis girisindeki Ozel Kod Kirilimi kodun katini buradan cozer">${icoKodDefteri()}Kod Defteri</button>`
     : '';
+  // Ozel Kod Yukle: BINA bazli - KKS listesini (Excel) binanin kalemlerine dagitir (bkz. openOzelKodYukle)
+  const okyBtn=(PBINA&&can('editSpec',{bina:PBINA}))
+    ? `<button class="subnav-kat" onclick="openOzelKodYukle()" title="KKS listesini (Excel) bu binanin sartname kalemlerine dagit - her kod kalemin Ozel Kod Kirilimi'na, kati kottan Kod Defteri'ne">${icoXls()}Ozel Kod Yukle</button>`
+    : '';
   return `<div class="subnav">
     <button class="${TAB==='spec'?'on':''}" onclick="setTab('spec')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Sartname / Ilerleme <span class="badge">${ns}</span></button>
     <button class="${TAB==='orders'?'on':''}" onclick="setTab('orders')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>Siparisler <span class="badge">${no}</span></button>
     <button class="${TAB==='log'?'on':''}" onclick="setTab('log')"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Hareketler / Stok <span class="badge">${ni}</span></button>
-    ${katAtaBtn}${koddBtn}
+    ${katAtaBtn}${koddBtn}${okyBtn}
   </div>`;
 }
 function setTab(t){ TAB=t; SEARCH=""; SPECFILT=""; SPECTAG=""; render(); }
@@ -23527,6 +23543,23 @@ function katAtaSpecs(){ return DB.proje.specs.filter(s=>!s.is_deleted&&s.bina===
 // tasir (bina harfleri + eleman harfleri: d-L-d-L-d). "00UYB18" (yalniz onek) ya da "EM0528"
 // (yalniz son ek) TAM degildir - bunlar bir kodun boslukla kopmus parcalaridir.
 function _ozelTam(s){ return /\d[A-Za-z]+\d+[A-Za-z]+\d/.test(String(s||'')); }
+/* KOPMUS KODU BIRLESTIRME KURALI (_ozelKodBol ve _ozelKodMiktarBol ortak): parts[i]'den baslayan
+   parcalar tek koda birlesiyorsa SON parcanin indeksini doner (birlesme yoksa i). Birlesmeye yalniz
+   RAKAMLA baslayan eksik parca (kodun on eki: "00UYB18", "00UYB") baslar; arkasina en fazla iki parca,
+   yalniz kendisi TAM OLMAYANLAR eklenir ve sonuc TAM koda ulasmalidir - ulasmazsa parca tek basina kalir.
+   Boylece KKS bicimi disindaki proje kodlari ("TA68" - harfle baslar) tek basina kod sayilir: once
+   "TA68" alt satirdaki "00UYB12EM0051" ile "TA6800UYB12EM0051" olurdu, art arda "TA68 TA67 TA16" de tek
+   kod olurdu. Ulasamayan birlesme de eskiden parcalarin hepsini tek "kod"a yapistiriyordu. */
+function _ozelBirlesimSonu(parts,i){
+  if(_ozelTam(parts[i])||!/^\d/.test(parts[i])) return i;
+  let b=parts[i];
+  for(let j=i+1;j<parts.length&&j<=i+2;j++){
+    if(_ozelTam(parts[j])) return i;
+    b+=parts[j];
+    if(_ozelTam(b)) return j;
+  }
+  return i;
+}
 // Bir ozel no ALANINI kodlara ayirir. AYRIM: parcalarin hepsi TAM kod ise (orn.
 // "00UYB20EM0407 00UYB20EM0408") ayri kodlardir -> ayrilir. Parcalar eksik ise (orn.
 // "00UYB18 EM0528") tek kodun boslukla kopmus halidir -> BIRLESTIRILIR ("00UYB18EM0528").
@@ -23534,12 +23567,7 @@ function _ozelKodBol(field){
   const parts=String(field||'').split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean);
   if(parts.length<=1) return parts;
   const out=[];
-  for(let i=0;i<parts.length;i++){
-    if(_ozelTam(parts[i])){ out.push(parts[i]); continue; }
-    let birlesik=parts[i]; // eksik parca: tam olana kadar sonrakilerle birlestir
-    while(i+1<parts.length && !_ozelTam(birlesik)){ birlesik+=parts[++i]; }
-    out.push(birlesik);
-  }
+  for(let i=0;i<parts.length;i++){ const j=_ozelBirlesimSonu(parts,i); out.push(parts.slice(i,j+1).join('')); i=j; }
   return out;
 }
 // GORUNUM icin ozel kodlar: her ozel no ALANI OLDUGU GIBI (boslugu korunarak) tek girdi olur.
@@ -23913,6 +23941,445 @@ async function saveKodDefteri(){
     render(); // PKODD acik: sayfa yeniden cizilir (rozetler + sayaclar guncellenir)
     toast(`Kod defteri kaydedildi - ${toplam} kod`);
   }catch(err){ console.error(err); toast('Kaydetme hatasi: '+(err.message||err),'err'); }
+}
+/* ===== OZEL KOD (KKS) LISTESI - EXCEL'DEN YUKLE ======================================
+   Kablo gecisi (prohodka) gibi kalemlerin KKS listesi - her satir bir yerlesim kodu: kot, kod,
+   aciklik / gecis olcusu, yangin dayanimi, guvenlik sinifi, adet, malzeme - TEK DOSYADAN binanin
+   sartname kalemlerine dagitilir (ornek: "Kablogecis BYKARA-YUEM" dosyasinin "TUM KKS" sayfasi).
+   Basliklar Excel'in dil secimine gore RU ya da TR gelir (dosyadaki IF(DIL=...) formulleri) - ikisi
+   de taninir (OKY_SUTUN); sayfa basliklarindan bulunur, sutun sirasi onemli degil.
+     - MALZEME -> KALEM: malzeme kodu ("SRE-UK(1)ASVS-ZKD-200x100-C4"; yoksa RU/EN gecis adi) binanin
+       kalem adlarinda aranir (× = x; Kiril/Latin benzer harf ve buyuk/kucuk harf farksiz). Birden cok
+       kalem tutarsa sartnamelerin KAT KAPSAMIYLA bolunur (kodun kotunun dustugu kat); bolunemezse ya da
+       hic tutmazsa onizlemede kullanici kalemi secer.
+     - her kod kalemin kirilimina (sp.ozelPay) {kod, adet, bilgi:{kot,ic,dis,saat,sinif}} olarak yazilir;
+       kat KOTTAN bulunur (binaKotKat) ve defterde olmayan kod Kod Defteri'ne o kata yazilir.
+   SORUNLU KOD YERLESTIRILMEZ, RAPORLANIR (proje karari: dogrular yerlesir, sorunlular elle ayiklanir):
+     - dosyada birden fazla satirda gecen kod (ayni ya da farkli malzeme / kot) - normalde olmamali
+     - bu urunun BASKA kaleminde zaten bulunan kod (ayni kod ayni urune ikinci kez yazilamaz)
+     - kalemi bulunamayan / secilmeyen malzemenin, hedefi asacak ya da parca bazinda metraj dagilimi
+       olan kalemin kodlari (o kalem hic yazilmaz)
+   MEVCUT KIRILIM SILINMEZ: yeni kod eklenir; ayni kodda BOS bilgi alani doldurulur; farkli adet / bilgi
+   "fark" olarak gorunur ve yalniz "ustune yaz" secilirse degisir. Dosyada olmayan mevcut kod kalemde
+   kalir (raporda listelenir). Kod Defteri'nde BASKA katta yazili kod tasinmaz (uyari).
+   Guvenlik sinifi "4Н" -> "4" (proje karari). KKS bicimi disindaki proje kodlari ("TA68") normal kod
+   sayilir. Hesaba giren adedi 0 olan satir (Dahil? = Hayir ya da kotu ozette disarida) alinmaz.
+   GERI ALINABILIR: yazmadan ONCE eski kirilimlar + deftere eklenen kodlar saklanir (ozelKodBatches);
+   geri alma yalniz HALA yuklemenin yazdigi degerde duran kalemi eski haline dondurur. */
+let _OKY=null;
+const OKY_SUTUN={
+  kod:  h=>/kks/.test(h)&&!/кол-во|sayi/.test(h),
+  kot:  h=>/^отметк|^kot(\s|,|\(|$)/.test(h),
+  ic:   h=>/про[её]м|aciklik/.test(h),
+  dis:  h=>/габариты проходки|kilif/.test(h),
+  saat: h=>/огнестойк|yangin/.test(h),
+  sinif:h=>/класс безопасн|guvenlik/.test(h),
+  adet: h=>/^количество|^adet/.test(h),
+  ru:   h=>/\(ru\)/.test(h),
+  en:   h=>/\(en\)/.test(h),
+  mat:  h=>/код материала|malzeme kodu/.test(h),
+  dahil:h=>/^учитывать\?|^dahil\?/.test(h),
+  say:  h=>/^учитывается|hesaba giren/.test(h)};
+function _okyBasliklar(row){
+  const col={};
+  (row||[]).forEach((c,i)=>{ const h=norm(c).replace(/\s+/g,' ').trim(); if(!h) return;
+    for(const k in OKY_SUTUN) if(col[k]==null&&OKY_SUTUN[k](h)){ col[k]=i; break; } });
+  return col;
+}
+// KKS sayfasi: adinda "KKS" gecen sayfa once denenir; baslik satiri ilk 20 satirda aranir
+function _okySayfa(wb){
+  const adlar=[...(wb.SheetNames||[])].sort((a,b)=>(/kks/i.test(b)?1:0)-(/kks/i.test(a)?1:0));
+  for(const ad of adlar){ const ws=wb.Sheets[ad]; if(!ws) continue;
+    const rows=XLSX.utils.sheet_to_json(ws,{header:1,blankrows:true,defval:'',raw:false});
+    let r0=0; try{ r0=ws['!ref']?XLSX.utils.decode_range(ws['!ref']).s.r:0; }catch(e){}
+    for(let h=0;h<Math.min(rows.length,20);h++){ const col=_okyBasliklar(rows[h]);
+      if(col.kod!=null&&(col.mat!=null||col.en!=null||col.ru!=null)&&(col.say!=null||col.adet!=null)) return {ad,col,rows,h,r0}; } }
+  return null;
+}
+// satirlar -> kodlar. Excel satir no = r0 + i + 1. Hicbir sey yazmaz.
+function _okyAyristir(o){
+  const {col,rows,h,r0}=o;
+  const H=(r,k)=>col[k]==null?'':String(r[col[k]]==null?'':r[col[k]]).replace(/\s+/g,' ').trim();
+  const out=[], hata=[]; let haric=0, sinifN=0;
+  for(let i=h+1;i<rows.length;i++){
+    const r=rows[i]||[], kod=H(r,'kod').replace(/\s+/g,''); if(!kod) continue;
+    const mat=H(r,'mat')||H(r,'en')||H(r,'ru'), dh=col.dahil!=null?norm(H(r,'dahil')):'';
+    const qRaw=(col.say!=null&&H(r,'say')!=='')?H(r,'say'):H(r,'adet'), q=nordParseQty(qRaw);
+    const kotHam=H(r,'kot'), mm=_bulkKotMm(kotHam), kot=isFinite(mm)?_bulkKotTxt(mm):kotHam;
+    const t={rn:r0+i+1,kod,k:ktopKey(kod),mat,ru:H(r,'ru'),kot,qty:q};
+    if(dh&&!/evet|да|yes|true|^1$/.test(dh)){ haric++; continue; }
+    if(qRaw===''||isNaN(q)){ hata.push({...t,qty:qRaw,m:`adet okunamadi ("${qRaw}")`}); continue; }
+    if(!(q>0)){ haric++; continue; }
+    if(!mat){ hata.push({...t,m:'malzeme kodu / gecis adi bos'}); continue; }
+    let sinif=H(r,'sinif'); const sn=sinif.match(/^(\d+)\s*[НнNn]$/); if(sn){ sinif=sn[1]; sinifN++; }
+    const bilgi=ozelBilgiTemiz({kot,ic:H(r,'ic'),dis:H(r,'dis'),saat:H(r,'saat'),sinif});
+    out.push({...t,...(bilgi?{bilgi}:{})});
+  }
+  return {rows:out,hata,haric,sinifN};
+}
+// malzeme adi/kodu karsilastirma bicimi: buyuk harf, × ve Kiril benzer harfler Latin (Х->X, С->C ...)
+const _OKY_LAT={'А':'A','В':'B','Е':'E','К':'K','М':'M','Н':'H','О':'O','Р':'P','С':'C','Т':'T','У':'Y','Х':'X','×':'X','✕':'X'};
+function _okyMatNorm(s){ return String(s==null?'':s).toUpperCase().replace(/[АВЕКМНОРСТУХ×✕]/g,c=>_OKY_LAT[c]).replace(/\s+/g,' ').trim(); }
+// n, hay icinde TAM PARCA olarak geciyor mu (onu/arkasi harf, rakam ya da tire degil: "D25-C4" "D250-C4"e uymaz)
+function _okyIcerir(hay,n){
+  const sinir=c=>!c||!/[0-9A-ZА-ЯЁ\-]/.test(c);
+  for(let i=hay.indexOf(n);i>=0;i=hay.indexOf(n,i+1)) if(sinir(hay[i-1])&&sinir(hay[i+n.length])) return true;
+  return false;
+}
+// binanin kalemleri, adlari karsilastirma bicimiyle (onizleme her secimde yeniden cizilir - bir kez kurulur)
+function _okyKalemListesi(bina){ return (DB.proje.specs||[]).filter(sp=>!sp.is_deleted&&sp.bina===bina).map(sp=>({sp,h:_okyMatNorm((sp.name||'')+' '+(sp.code||''))})); }
+// malzemenin aday kalemleri (haric tutulmamis olanlar once)
+function _okyAdaylar(liste,needles){
+  const out=liste.filter(x=>needles.some(n=>_okyIcerir(x.h,n))).map(x=>x.sp);
+  const ok=out.filter(sp=>!sp.exclude);
+  return ok.length?ok:out;
+}
+function _okySartKatlar(sp){
+  const g=String(sp.grup||'').trim(); if(!g) return [];
+  const sr=(DB.proje.sartnames||[]).find(x=>x.bina===sp.bina&&String(x.code||'').trim()===g);
+  return sr?sartKatIds(sr):[];
+}
+function _okyKalemAd(sp){ return `${sp.name||sp.code||'(adsiz kalem)'} · ${specGroupKey(sp)}`; }
+// urun -> (kod -> [{id,yer}]): specOzelTekrarIndex'in toplu hali (bir kez kurulur, kalem basina suzulur)
+function _okyUrunIndex(){
+  const uk=ozelKodUrunCozucu(), m=new Map();
+  (DB.proje.specs||[]).forEach(s=>{ if(s.is_deleted) return;
+    const u=specUrunKeyOf(s,uk); let km=m.get(u); if(!km){ km=new Map(); m.set(u,km); }
+    const yer=`${s.bina||'?'} / ${specGroupKey(s)}${s.poz?' · Poz '+s.poz:''}${s.ozelNo?' · '+s.ozelNo:''}`;
+    katAtaKodlar(s).forEach(alan=>_ozelKodBol(alan).forEach(kod=>{ const k=ktopKey(kod); if(!k) return;
+      let a=km.get(k); if(!a){ a=[]; km.set(k,a); } if(!a.some(x=>x.id===s.id)) a.push({id:s.id,yer:'kalem '+yer}); })); });
+  return {uk,m};
+}
+// iki bilgi degeri ayni mi: kot mm olarak, sayilar sayi olarak ("1,5" = "1.5", "2" = "2,0"), gerisi bosluk/harf farksiz
+function _okyAyniDeger(k,a,b){
+  if(k==='kot'){ const x=_bulkKotMm(a), y=_bulkKotMm(b); if(isFinite(x)&&isFinite(y)) return x===y; }
+  const s=v=>String(v==null?'':v).toLowerCase().replace(/\s+/g,'').replace(/,/g,'.');
+  const x=s(a), y=s(b); if(x===y) return true;
+  return /^\d*\.?\d+$/.test(x)&&/^\d*\.?\d+$/.test(y)&&Number(x)===Number(y);
+}
+/* PLAN: dosya + kullanici secimleri -> kalem kalem ne yazilacagi. HICBIR SEY YAZMAZ, her cizimde
+   yeniden kurulur (secim / ustune yaz degisince). */
+function _okyPlanla(){
+  const O=_OKY, bina=O.bina;
+  const P={sorun:[],uyari:[],fark:[],mats:[],kalemler:[],defter:new Map(),defterN:0,yerKod:0,yerAdet:0};
+  const S=(r,tur,m,kalem)=>P.sorun.push({tur,rn:r.rn,kod:r.kod,mat:r.mat||'',kot:r.kot||'',qty:r.qty,kalem:kalem||'',m});
+  const U=(r,tur,m,kalem)=>P.uyari.push({tur,rn:r.rn||'',kod:r.kod||'',mat:r.mat||'',kot:r.kot||'',qty:r.qty==null?'':r.qty,kalem:kalem||'',m});
+  O.hata.forEach(r=>S(r,'Okunamadi',r.m));
+  // 1) dosyada birden fazla satirda gecen kod: HICBIR satiri yerlestirilmez
+  const byK=new Map(); O.rows.forEach(r=>{ if(!byK.has(r.k)) byK.set(r.k,[]); byK.get(r.k).push(r); });
+  const tekil=[];
+  byK.forEach(g=>{ if(g.length===1){ tekil.push(g[0]); return; }
+    const mats=[...new Set(g.map(r=>r.mat))], kotlar=[...new Set(g.map(r=>r.kot||'?'))];
+    const neden=(mats.length>1?'farkli malzemeler: '+mats.join(', '):'ayni malzeme')+' · '+(kotlar.length>1?'farkli kotlar: '+kotlar.join(', '):'ayni kot');
+    g.forEach(r=>S(r,'Dosyada tekrar',`kod dosyada ${g.length} satirda (Excel satir ${g.map(x=>x.rn).join(', ')}) - ${neden}`)); });
+  // 2) malzeme -> kalem
+  const kotKat=new Map(), katOf=kot=>{ if(!kot) return null; if(!kotKat.has(kot)) kotKat.set(kot,binaKotKat(bina,kot)); return kotKat.get(kot); };
+  const matMap=new Map();
+  tekil.forEach(r=>{ const key=_okyMatNorm(r.mat); let m=matMap.get(key); if(!m){ m={key,mat:r.mat,ru:r.ru,rows:[]}; matMap.set(key,m); } m.rows.push(r); });
+  const atama=new Map(), ata=(sp,r,mk)=>{ let a=atama.get(sp.id); if(!a){ a={sp,rows:[],mats:new Set()}; atama.set(sp.id,a); } a.rows.push(r); a.mats.add(mk); };
+  if(!O.kalemler) O.kalemler=_okyKalemListesi(bina);
+  matMap.forEach(m=>{
+    const cands=_okyAdaylar(O.kalemler,[...new Set([_okyMatNorm(m.mat),_okyMatNorm(m.ru)])].filter(Boolean));
+    const sec=O.secim.has(m.key)?O.secim.get(m.key):null;
+    const pm={key:m.key,mat:m.mat,ru:m.ru,n:m.rows.length,adet:m.rows.reduce((s,r)=>s+r.qty,0),cands,durum:'',hedef:[]};
+    P.mats.push(pm);
+    if(sec!=null){
+      const sp=sec?(DB.proje.specs||[]).find(s=>s.id===sec&&!s.is_deleted):null;
+      if(!sp){ pm.durum='atla'; m.rows.forEach(r=>S(r,'Kalem secilmedi','malzeme onizlemede atlandi')); return; }
+      pm.durum='secildi'; pm.hedef=[sp]; m.rows.forEach(r=>ata(sp,r,m.key)); return; }
+    if(cands.length===1){ pm.durum='tek'; pm.hedef=cands; m.rows.forEach(r=>ata(cands[0],r,m.key)); return; }
+    if(cands.length>1){
+      // ayni malzeme birden cok kalemde: sartnamelerin kat kapsamlari AYRIKSA kod kotunun katina gore bolunur
+      const ks=cands.map(sp=>new Set(_okySartKatlar(sp)));
+      const ayrik=ks.every(s=>s.size)&&ks.every((s,i)=>ks.every((t,j)=>j<=i||![...s].some(x=>t.has(x))));
+      if(ayrik){ pm.durum='bol'; pm.hedef=cands;
+        m.rows.forEach(r=>{ const kk=katOf(r.kot), ix=kk?ks.findIndex(s=>s.has(kk.lok.id)):-1;
+          if(ix>=0) ata(cands[ix],r,m.key);
+          else S(r,'Kat kapsami disinda',kk?`kot ${r.kot} "${lokPath(kk.lok.id)}" katina dusuyor - malzemenin ${cands.length} kaleminden hicbirinin sartnamesi bu kati kapsamiyor`
+            :`kot ${r.kot||'(bos)'} bir kata eslenemedi - malzemenin ${cands.length} kalemi arasindan secilemedi`); });
+        return; }
+      pm.durum='cok'; m.rows.forEach(r=>S(r,'Birden fazla kalem',`malzeme ${cands.length} kalemle eslesti - onizlemede kalem secin`)); return; }
+    pm.durum='yok'; m.rows.forEach(r=>S(r,'Kalem bulunamadi','malzeme kodu binanin hicbir kaleminin adinda gecmiyor - onizlemede kalem secin'));
+  });
+  // 3) kalem kalem birlestirme
+  if(!O.urunIdx) O.urunIdx=_okyUrunIndex();
+  const {uk,m:urunIdx}=O.urunIdx, idx=binaKodIndex(bina), defterGor=new Set();
+  atama.forEach(a=>{
+    const sp=a.sp, ad=_okyKalemAd(sp);
+    const K={sp,ad,rows:a.rows,n:a.rows.length,ekle:0,guncelle:0,farkN:0,ayni:0,dosyadaYok:[],sorun:'',yaz:false,pay:null,eskiTop:0,yeniTop:0,hedef:null};
+    P.kalemler.push(K);
+    const red=m=>{ K.sorun=m; a.rows.forEach(r=>S(r,'Kalem yazilamadi',m,ad)); };
+    if(a.mats.size>1) return red(`bu kaleme dosyadaki ${a.mats.size} farkli malzeme eslesti - her malzeme icin ayri kalem secin`);
+    if((sp.lokTargets||[]).length) return red('kalemde parca bazinda metraj dagilimi var - ozel kod kirilimiyla birlikte olmaz');
+    const km=urunIdx.get(specUrunKeyOf(sp,uk)), eski=ozelPaylari(sp), sira=new Map(eski.map((p,i)=>[ktopKey(p.kod),i]));
+    const pay=eski.map(p=>({kod:p.kod,qty:Number(p.qty)||0,...(p.bilgi?{bilgi:{...p.bilgi}}:{})}));
+    const yerlesen=[], farklar=[];
+    a.rows.forEach(r=>{
+      const baska=km&&(km.get(r.k)||[]).find(x=>x.id!==sp.id);
+      if(baska){ S(r,'Urunun baska kaleminde',`kod bu urunun baska kaleminde zaten var (${baska.yer}) - ayni ozel kod ayni urune ikinci kez yazilamaz`,ad); return; }
+      yerlesen.push(r);
+      const i=sira.get(r.k);
+      if(i==null){ pay.push({kod:r.kod,qty:r.qty,...(r.bilgi?{bilgi:{...r.bilgi}}:{})}); K.ekle++; return; }
+      const p=pay[i]; let deg=false, fk=false;
+      if(Math.abs((Number(p.qty)||0)-r.qty)>1e-9){ fk=true; farklar.push({rn:r.rn,kod:r.kod,kalem:ad,alan:'Adet',b:p.qty,a:r.qty}); if(O.over){ p.qty=r.qty; deg=true; } }
+      OZEL_BILGI.forEach(f=>{ const nv=r.bilgi&&r.bilgi[f.k]; if(!nv) return;
+        const ov=String(p.bilgi&&p.bilgi[f.k]!=null?p.bilgi[f.k]:'').trim();
+        if(!ov){ p.bilgi={...(p.bilgi||{}),[f.k]:nv}; deg=true; return; }   // bos alan: doldurulur
+        if(!_okyAyniDeger(f.k,ov,nv)){ fk=true; farklar.push({rn:r.rn,kod:r.kod,kalem:ad,alan:f.t,b:ov,a:nv}); if(O.over){ p.bilgi={...p.bilgi,[f.k]:nv}; deg=true; } } });
+      if(deg) K.guncelle++; else if(fk) K.farkN++; else K.ayni++;
+    });
+    const dk=new Set(a.rows.map(r=>r.k));
+    eski.forEach(p=>{ if(!dk.has(ktopKey(p.kod))) K.dosyadaYok.push(String(p.kod)); });
+    K.eskiTop=ozelPayToplam(eski); K.yeniTop=ozelPayToplam(pay); K.hedef=sp.openQty?null:(Number(sp.target)||0);
+    if(K.hedef!=null&&K.yeniTop>K.hedef+1e-9){
+      K.sorun=`kirilim toplami ${fmtNum(K.yeniTop)} olurdu, kalem hedefi ${fmtNum(K.hedef)} - hedef asilamaz (hedefi ya da dosyayi kontrol edin)`;
+      yerlesen.forEach(r=>S(r,'Hedef asiliyor',K.sorun,ad)); K.ekle=K.guncelle=K.farkN=K.ayni=0; return; }
+    K.pay=pay; K.yaz=K.ekle+K.guncelle>0;
+    farklar.forEach(x=>P.fark.push({...x,uyg:O.over}));
+    K.dosyadaYok.forEach(kod=>U({kod},'Dosyada yok','kod kalemin kiriliminda var, dosyada yok - kalemde birakildi',ad));
+    // Kod Defteri: yerlesen kodun kati KOTTAN
+    yerlesen.forEach(r=>{ P.yerKod++; P.yerAdet+=r.qty;
+      const kot=r.bilgi&&r.bilgi.kot; if(!kot) return;
+      const kk=katOf(kot);
+      if(!kk){ U(r,'Kot kata eslenmedi',`kot ${kot} binanin hicbir katina eslenemedi (kat kotlari girilmemis olabilir) - kod yerlesir, kati bilinmez`,ad); return; }
+      const cur=idx[r.k];
+      if(cur){ if(cur!==kk.lok.id) U(r,'Defterde baska katta',`Kod Defteri'nde "${lokPath(cur)}" katinda, kot ${kot} ise "${lokPath(kk.lok.id)}" katina dusuyor - defter degistirilmedi`,ad); return; }
+      if(defterGor.has(r.k)) return; defterGor.add(r.k);
+      if(!P.defter.has(kk.lok.id)) P.defter.set(kk.lok.id,[]);
+      P.defter.get(kk.lok.id).push(r.kod); P.defterN++; });
+  });
+  const durumSira={yok:0,cok:1,atla:2,secildi:3,bol:4,tek:5};
+  P.mats.sort((a,b)=>(durumSira[a.durum]-durumSira[b.durum])||a.mat.localeCompare(b.mat,'tr',{numeric:true}));
+  P.yazilacak=P.kalemler.filter(k=>k.yaz);
+  return P;
+}
+/* ---- pencere: dosya sec + son yuklemeyi geri al ---- */
+function okyBatches(){ return (DB.meta&&DB.meta.ozelKodBatches)||[]; }
+async function okyBatchSave(list){
+  if(!DB.meta) DB.meta={};
+  DB.meta.ozelKodBatches=list;
+  try{ await sbSetSetting('ozelKodBatches',list); return true; }
+  catch(e){ console.warn('ozelKodBatches kaydedilemedi:',e); return false; }
+}
+function openOzelKodYukle(){
+  const bina=PBINA; if(!bina){ toast('Once bir bina secin','err'); return; }
+  if(!guard('editSpec',{bina})) return;
+  _OKY=null; closeModal();
+  const son=okyBatches().filter(b=>b.bina===bina).slice(-1)[0];
+  const katsiz=!binaKatlar(bina).some(k=>isFinite(lokKotMm(k)));
+  const html=`<div class="modal-bg"><div class="modal wide"><div class="modal-head"><h3>Ozel Kod Yukle (KKS listesi) - ${esc(bina)}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <p class="t-meta" style="line-height:1.55;margin:0 0 10px">Her satiri bir yerlesim kodu olan KKS listesini (orn. kablo gecisi "TUM KKS" sayfasi) bu binanin sartname kalemlerine dagitir:
+      kod, kalemin <b>Ozel Kod Kirilimi</b>na adediyle ve kod bilgileriyle (kot, ic / dis cap, yangin, guvenlik sinifi) yazilir; kat <b>kottan</b> bulunup <b>Kod Defteri</b>'ne yazilir.</p>
+    <ul class="t-meta" style="line-height:1.55;margin:0 0 12px 16px;padding:0">
+      <li>Okunan sutunlar (RU ya da TR baslik): KKS kodu, Kot, Malzeme kodu / gecis adi, Hesaba giren adet, aciklik / gecis olcusu, yangin dayanimi, guvenlik sinifi.</li>
+      <li>Malzeme, kalem adinda aranarak kaleme eslenir; tutmayan ya da birden cok kaleme uyan malzemenin kalemini onizlemede siz secersiniz.</li>
+      <li><b>Sorunlu kodlar yerlestirilmez, rapora yazilir</b>: dosyada birden fazla satirda gecen kod, urunun baska kaleminde zaten olan kod, hedefi asacak kalem.</li>
+      <li>Mevcut kirilim silinmez; farkli degerler yalniz "ustune yaz" secilirse degisir. Hicbir hedef, siparis, stok ya da montaj degismez.</li></ul>
+    ${katsiz?`<p style="color:var(--amber);font-size:12px;margin:0 0 10px">Bu binanin katlarinda kot girilmemis - kodlar kaleme yazilir ama kat kottan bulunamaz (Binalar &gt; lokasyon agaci &gt; kat kotu).</p>`:''}
+    <div class="drop" onclick="document.getElementById('oky_file').click()">${icoXls()}<div style="margin-top:6px">KKS listesini secin (.xlsx)</div></div>
+    <input type="file" id="oky_file" accept=".xlsx,.xls,.xlsm" class="hidden" onchange="okyDosya(event)">
+    ${son?`<p class="t-meta" style="margin:12px 0 0">Son yukleme: ${esc(fmtDT(son.ts))} · ${esc(son.user||'?')} · ${son.specs.length} kalem${son.defter&&son.defter.length?`, ${son.defter.reduce((n,d)=>n+d.eklenen.length,0)} defter kodu`:''}${son.dosya?' · '+esc(son.dosya):''}</p>`:''}
+  </div><div class="modal-foot">
+    ${son?`<button class="btn btn-ghost" style="margin-right:auto" onclick="okyGeriAl('${son.id}')" title="Bu yuklemenin yazdigi kirilimlari eski haline dondurur, deftere ekledigi kodlari cikarir">Son Yuklemeyi Geri Al</button>`:''}
+    <button class="btn btn-ghost" onclick="closeModal()">Iptal</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function okyDosya(e){
+  const f=e.target.files[0]; if(!f) return;
+  const bina=PBINA; if(!bina){ toast('Once bir bina secin','err'); return; }
+  const rd=new FileReader();
+  rd.onload=ev=>{ try{
+    const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+    const s=_okySayfa(wb);
+    if(!s){ toast('KKS sayfasi bulunamadi - "KKS kodu", "Malzeme kodu" ve "Hesaba giren adet" (ya da RU karsiliklari) basliklari aranir','err'); e.target.value=''; return; }
+    const a=_okyAyristir(s);
+    if(!a.rows.length&&!a.hata.length){ toast(`"${s.ad}" sayfasinda okunacak kod yok`,'err'); e.target.value=''; return; }
+    _OKY={bina,dosya:f.name,sayfa:s.ad,col:s.col,...a,secim:new Map(),tum:new Set(),over:false,urunIdx:null,kalemler:null};
+    renderOkyOnizleme();
+  }catch(err){ console.error(err); toast('Excel okunamadi: '+(err.message||err),'err'); } };
+  rd.readAsArrayBuffer(f);
+}
+/* ---- onizleme ---- */
+// i: onizlemedeki malzeme sirasi (O.plan.mats) - anahtar onclick'e yazilmaz (tirnak / Kiril harf tasiyabilir)
+function okySec(i,v){ const O=_OKY, m=O&&O.plan&&O.plan.mats[i]; if(!m) return;
+  if(v==='__tum') O.tum.add(m.key); else O.secim.set(m.key,v); renderOkyOnizleme(); }
+function okySetOver(v){ if(_OKY){ _OKY.over=!!v; renderOkyOnizleme(); } }
+function okyKapat(){ _OKY=null; closeModal(); }
+function renderOkyOnizleme(){
+  const O=_OKY; if(!O) return;
+  const P=O.plan=_okyPlanla();
+  closeModal();
+  const kByS=new Map(P.kalemler.map(k=>[k.sp.id,k]));
+  const bolum=(baslik,n,renk,govde)=>`<div class="matd-sec"${renk?` style="color:${renk}"`:''}>${baslik} <span>${n}</span></div>${govde}`;
+  const liste=(items,renk,max)=>`<div style="max-height:150px;overflow-y:auto;font-size:11.5px${renk?`;color:${renk}`:''}">${items.slice(0,max).map(t=>`<div style="padding:2px 0">${esc(t)}</div>`).join('')}${items.length>max?`<div>+ ${items.length-max} tane daha - tamami raporda</div>`:''}</div>`;
+  const stat=(n,l)=>`<div><b>${n}</b><span>${l}</span></div>`;
+  const kisa=s=>{ s=String(s||''); return s.length>95?s.slice(0,94)+'…':s; };
+  const tumKalem=()=>(DB.proje.specs||[]).filter(sp=>!sp.is_deleted&&sp.bina===O.bina).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''),'tr',{numeric:true}));
+  // kalemin bu yuklemedeki ozeti (malzeme satirinin altinda)
+  const kOzet=sp=>{ const K=kByS.get(sp.id); if(!K) return '';
+    if(K.sorun) return `<div class="oky-k-ozet" style="color:var(--red)">${esc(K.sorun)}</div>`;
+    const p=[K.ekle?`<b style="color:var(--green)">+${K.ekle} yeni</b>`:'',K.guncelle?`${K.guncelle} guncellenir`:'',K.farkN?`<b style="color:var(--amber)">${K.farkN} fark (korunur)</b>`:'',K.ayni?`${K.ayni} ayni`:'',
+      K.dosyadaYok.length?`<span style="color:var(--amber)">${K.dosyadaYok.length} kalemde var, dosyada yok</span>`:''].filter(Boolean);
+    return `<div class="oky-k-ozet">${p.join(' · ')||'degisiklik yok'} · kirilim ${fmtNum(K.eskiTop)} → ${fmtNum(K.yeniTop)} / hedef ${K.hedef==null?'acik':fmtNum(K.hedef)}</div>`; };
+  const tekrarByMat=new Map(); P.sorun.forEach(s=>{ const k=_okyMatNorm(s.mat); tekrarByMat.set(k,(tekrarByMat.get(k)||0)+1); });
+  const matSatir=(m,mi)=>{
+    const etiket={yok:['kalem bulunamadi','var(--red)'],cok:[m.cands.length+' kalem uyuyor - secin','var(--amber)'],atla:['atlandi','var(--mute)'],secildi:['elle secildi','var(--blue)'],bol:['kat kapsamiyla bolundu','var(--blue)'],tek:['eslesti','var(--green)']}[m.durum];
+    let govde;
+    if(m.durum==='bol') govde=m.hedef.map(sp=>`<div class="oky-k"><span title="${esc(sp.name||'')}">${esc(kisa(_okyKalemAd(sp)))}</span> <span class="t-meta">(${_okySartKatlar(sp).map(id=>lokPath(id)).join(', ')})</span>${kOzet(sp)}</div>`).join('');
+    else {
+      const secili=m.durum==='tek'||m.durum==='secildi'?m.hedef[0].id:'';
+      const adaylar=(O.tum.has(m.key)||!m.cands.length)?tumKalem():m.cands;
+      const opts=adaylar.map(sp=>`<option value="${esc(sp.id)}"${sp.id===secili?' selected':''}>${esc(kisa(_okyKalemAd(sp)))}</option>`).join('');
+      govde=`<select class="oky-sel" onchange="okySec(${mi},this.value)"><option value=""${secili?'':' selected'}>— kalem secin / atla —</option>${opts}${!O.tum.has(m.key)&&m.cands.length?'<option value="__tum">Diger kalemler...</option>':''}</select>${secili?kOzet(m.hedef[0]):''}`;
+    }
+    const sorunN=tekrarByMat.get(m.key)||0;
+    return `<div class="oky-mat"><div class="oky-mat-h"><b title="${esc(m.ru||'')}">${esc(m.mat)}</b><span class="oky-etk" style="color:${etiket[1]}">${etiket[0]}</span><span class="t-meta" style="margin-left:auto;white-space:nowrap">${m.n} kod · ${fmtNum(m.adet)} ad.${sorunN?` · <b style="color:var(--red)">${sorunN} yerlesmeyecek</b>`:''}</span></div>${govde}</div>`; };
+  // sorunlar ture gore
+  const sorunTur=new Map(); P.sorun.forEach(s=>sorunTur.set(s.tur,(sorunTur.get(s.tur)||0)+1));
+  const sorunSatir=s=>`${s.rn?'satir '+s.rn+' · ':''}${s.kod} · ${s.mat}${s.kot?' · '+s.kot:''} - ${s.tur}: ${s.m}`;
+  const uyariSatir=s=>`${s.rn?'satir '+s.rn+' · ':''}${s.kod}${s.kalem?' · '+kisa(s.kalem):''} - ${s.tur}: ${s.m}`;
+  const farkSatir=x=>`${x.kod} · ${x.alan}: "${x.b}" → "${x.a}"${x.uyg?'':' (korunuyor)'}`;
+  const tumKod=O.rows.length+O.hata.length, kksDisi=O.rows.filter(r=>!_ozelTam(r.kod)).length;
+  const notlar=[`Okunan sayfa: "${O.sayfa}" · ${tumKod} kod, ${fmtNum(O.rows.reduce((s,r)=>s+r.qty,0))} adet`,
+    O.haric?`${O.haric} satir hesaba girmiyor (Dahil? = Hayir ya da adet 0) - alinmadi`:'',
+    O.sinifN?`${O.sinifN} kodda guvenlik sinifi "4Н" → "4" yazilir`:'',
+    kksDisi?`${kksDisi} kod KKS biciminde degil (orn. ${O.rows.find(r=>!_ozelTam(r.kod)).kod}) - normal kod olarak alinir`:''].filter(Boolean);
+  const yazN=P.yazilacak.length, ekleN=P.yazilacak.reduce((n,k)=>n+k.ekle,0), gunN=P.yazilacak.reduce((n,k)=>n+k.guncelle,0);
+  const farkKorunan=P.fark.filter(x=>!x.uyg).length;
+  const kurulacak=yazN>0||P.defterN>0;
+  const html=`<div class="modal-bg"><div class="modal wide oky-modal"><div class="modal-head"><h3>Ozel Kod Yukle - Onizleme · ${esc(O.bina)}</h3><button class="mini-btn" onclick="okyKapat()">x</button></div><div class="modal-body">
+    <div class="t-meta" style="font-size:11.5px;line-height:1.5">${notlar.map(esc).join('<br>')}</div>
+    <div class="matd-stats alt5">
+      ${stat(P.yerKod,'kod yerlesir')}
+      ${stat(yazN,'kalem yazilir')}
+      ${stat(ekleN+(gunN?' / '+gunN:''),gunN?'yeni / guncel':'yeni kod')}
+      ${stat(P.defterN,'deftere kod')}
+      ${stat(P.sorun.length,'yerlesmeyen')}
+    </div>
+    ${bolum('Malzeme &rarr; Kalem',P.mats.length,'',`<div class="oky-mats">${P.mats.map((m,i)=>matSatir(m,i)).join('')}</div>`)}
+    ${P.sorun.length?bolum('Yerlestirilmeyecek Kodlar (rapora yazilir)',P.sorun.length,'var(--red)',
+      `<div class="t-meta" style="font-size:11.5px;margin:-2px 0 6px">${[...sorunTur.entries()].map(([t,n])=>`${esc(t)}: <b>${n}</b>`).join(' · ')}</div>`+liste(P.sorun.map(sorunSatir),'var(--red)',40)):''}
+    ${P.fark.length?bolum('Mevcut Kirilimla Farklar',P.fark.length,'var(--amber)',liste(P.fark.map(farkSatir),'var(--amber)',30)
+      +`<label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;margin:8px 0 2px;cursor:pointer"><input type="checkbox" ${O.over?'checked':''} onchange="okySetOver(this.checked)" style="margin-top:2px"><span>Dosyadaki degerler mevcut kirilimin <b>ustune yazilsin</b> (${P.fark.length} fark) - eski degerler "Son Yuklemeyi Geri Al" ile geri gelir</span></label>`):''}
+    ${P.uyari.length?bolum('Uyarilar',P.uyari.length,'var(--amber)',liste(P.uyari.map(uyariSatir),'var(--amber)',25)):''}
+    ${P.defterN?`<p class="t-meta" style="font-size:11.5px;margin-top:10px">Kod Defteri: ${[...P.defter.entries()].map(([id,k])=>`${esc(lokPath(id))} +${k.length}`).join(' · ')}</p>`:''}
+    ${kurulacak?'':'<p style="color:var(--amber);font-size:12.5px">Yazilacak bir sey yok - kodlar zaten yerinde, ya da hepsi sorunlu / eslesmemis.</p>'}
+  </div><div class="modal-foot">
+    <button class="btn btn-ghost" style="margin-right:auto" title="Yerlestirilmeyen kodlar, farklar, uyarilar ve malzeme-kalem ozeti" onclick="okyRaporIndir()">${icoXls()} Rapor (.xlsx)</button>
+    <button class="btn btn-ghost" onclick="okyKapat()">Iptal</button>
+    ${kurulacak?`<button class="btn btn-add" id="oky_apply" onclick="applyOky()">Yukle (${yazN} kalem${P.defterN?`, ${P.defterN} defter kodu`:''})</button>`:''}
+  </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  // Esc / dis tiklama onizlemeyi (ve yapilan kalem secimlerini) silmesin - Iptal ya da X ile kapanir
+  const bgs=document.querySelectorAll('.modal-bg'); window._modalGuard={bg:bgs[bgs.length-1],dolu:()=>!!_OKY,kapat:okyKapat};
+}
+function okyRaporIndir(){
+  const O=_OKY; if(!O) return; const P=O.plan||_okyPlanla();
+  const rows=[['TUR','DURUM','SATIR (Excel)','KKS KODU','MALZEME','KOT','ADET','KALEM','ACIKLAMA']];
+  P.sorun.forEach(s=>rows.push(['YERLESTIRILMEDI',s.tur,s.rn,s.kod,s.mat,s.kot,s.qty,s.kalem,s.m]));
+  P.fark.forEach(x=>rows.push(['FARK',x.uyg?'ustune yazilir':'korunur',x.rn,x.kod,'','','',x.kalem,`${x.alan}: kalemde "${x.b}", dosyada "${x.a}"`]));
+  P.uyari.forEach(s=>rows.push(['UYARI',s.tur,s.rn,s.kod,s.mat,s.kot,s.qty,s.kalem,s.m]));
+  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:16},{wch:22},{wch:10},{wch:20},{wch:30},{wch:9},{wch:6},{wch:60},{wch:100}];
+  const ms=[['MALZEME','GECIS ADI (RU)','KOD','ADET','DURUM','KALEM','YENI','GUNCELLENEN','FARK','AYNI','KALEMDE VAR DOSYADA YOK','KIRILIM ONCE','KIRILIM SONRA','HEDEF','KALEM SORUNU']];
+  const durumAd={yok:'kalem bulunamadi',cok:'birden fazla kalem - secilmedi',atla:'atlandi',secildi:'elle secildi',bol:'kat kapsamiyla bolundu',tek:'eslesti'};
+  P.mats.forEach(m=>{ const hs=m.hedef.length?m.hedef:[null];
+    hs.forEach(sp=>{ const K=sp?P.kalemler.find(k=>k.sp.id===sp.id):null;
+      ms.push([m.mat,m.ru,m.n,m.adet,durumAd[m.durum]||m.durum,sp?_okyKalemAd(sp):'',K?K.ekle:'',K?K.guncelle:'',K?K.farkN:'',K?K.ayni:'',K?K.dosyadaYok.join(', '):'',K?K.eskiTop:'',K&&!K.sorun?K.yeniTop:'',K?(K.hedef==null?'acik':K.hedef):'',K?K.sorun:'']); }); });
+  const ws2=XLSX.utils.aoa_to_sheet(ms); ws2['!cols']=[{wch:32},{wch:32},{wch:6},{wch:7},{wch:24},{wch:60},{wch:6},{wch:8},{wch:6},{wch:6},{wch:30},{wch:9},{wch:9},{wch:7},{wch:60}];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Rapor'); XLSX.utils.book_append_sheet(wb,ws2,'Malzeme-Kalem');
+  XLSX.writeFile(wb,'ozel_kod_yukleme_rapor_'+String(O.bina).replace(/[^\w.-]+/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+// kirilimin karsilastirma imzasi: anahtar sirasi (JSONB) ve kod yazilisi farki imzayi bozmaz. Geri alma kaydinda
+// yazilan kirilimin KENDISI degil kisa ozeti (FNV-1a) saklanir - 1000+ kodluk yukleme ayar kaydini sisirmesin
+function _okyPayImza(pay){ return (pay||[]).map(p=>[ktopKey(p.kod),Math.round((Number(p.qty)||0)*1e6),...OZEL_BILGI.map(f=>String(p.bilgi&&p.bilgi[f.k]!=null?p.bilgi[f.k]:'').trim())].join('\u0001')).join('\u0002'); }
+function _okyHash(pay){ const s=_okyPayImza(pay); let h=0x811c9dc5; for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,0x01000193)>>>0; } return h.toString(16)+':'+(pay||[]).length; }
+/* ---- yukle ---- */
+async function applyOky(){
+  const O=_OKY; if(!O) return;
+  if(!guard('editSpec',{bina:O.bina})) return;
+  const S=window.SB_STRICT;
+  if(!S||!S.upsertSpecs){ toast('Kalicilik katmani yuklenemedi - sayfayi yenileyin','err'); return; }
+  O.urunIdx=null; O.kalemler=null; const P=O.plan=_okyPlanla();   // onizlemeden bu yana veri degismis olabilir: plan taze kurulur (rapor da bunu yazar)
+  const yaz=P.yazilacak, defter=[...P.defter.entries()].map(([id,kodlar])=>({l:getLok(id),kodlar})).filter(x=>x.l);
+  if(!yaz.length&&!defter.length){ toast('Yazilacak bir sey yok','err'); return; }
+  if(!confirm(`${yaz.length} kaleme ozel kod kirilimi yazilacak${defter.length?`, Kod Defteri'ne ${P.defterN} kod eklenecek`:''}.\n\n${P.sorun.length} kod yerlestirilmeyecek (rapordadir). Hicbir hedef, siparis, stok ya da montaj degismez.\n\nDevam edilsin mi?`)) return;
+  const btn=document.getElementById('oky_apply'); if(btn){ btn.disabled=true; btn.textContent='Yukleniyor...'; }
+  // GERI ALMA kaydi YAZMADAN ONCE: yazim yarida kesilse de geri alinabilsin
+  const batch={id:uid(),ts:Date.now(),user:(CURRENT_USER&&CURRENT_USER.username)||'?',bina:O.bina,dosya:O.dosya,partial:true,
+    specs:yaz.map(K=>({id:K.sp.id,b:ozelPaylari(K.sp).length?specOzPayKopya(ozelPaylari(K.sp)):null,ai:_okyHash(K.pay)})),
+    defter:defter.map(x=>({id:x.l.id,eklenen:x.kodlar.slice()}))};
+  if(!await okyBatchSave([...okyBatches(),batch].slice(-5))){ toast('Geri alma kaydi saklanamadi - hicbir sey yazilmadi, tekrar deneyin','err'); if(btn){ btn.disabled=false; btn.textContent='Yukle'; } return; }
+  let kalemTamam=false;
+  try{
+    if(yaz.length){
+      const list=yaz.map(K=>({...K.sp,ozelPay:specOzPayKopya(K.pay)}));
+      await S.upsertSpecs(list);
+      list.forEach(c=>{ const cur=DB.proje.specs.find(s=>s.id===c.id); if(cur) cur.ozelPay=c.ozelPay; });
+    }
+    kalemTamam=true;
+    if(defter.length){
+      const list=defter.map(x=>({...x.l,kodlar:[...lokKodlari(x.l),...x.kodlar]}));
+      await S.upsertLokasyonlar(list);
+      list.forEach(c=>{ const cur=getLok(c.id); if(cur) cur.kodlar=c.kodlar; });
+    }
+    batch.partial=false; await okyBatchSave(okyBatches().slice());
+    logAction('editSpec',`Ozel kod yukleme: ${O.bina} - ${yaz.length} kalem, ${P.yerKod} kod${P.defterN?`, deftere ${P.defterN} kod`:''}, ${P.sorun.length} kod yerlesmedi (${O.dosya})`);
+    _FLOWIDARI=null; render();
+    okySonuc(yaz.length);   // _OKY kapanana dek durur: yerlesmeyen kodlarin raporu hala indirilebilir
+  }catch(err){
+    console.error(err);
+    toast((kalemTamam?'Kalemler yazildi ama Kod Defteri YAZILAMADI: ':'YUKLEME YARIM KALDI: ')+(err.message||err)+' - sayfayi yenileyip "Son Yuklemeyi Geri Al" ile temizleyebilir ya da ayni dosyayi tekrar yukleyebilirsiniz','err');
+    if(btn){ btn.disabled=true; btn.textContent='Yarim kaldi - sayfayi yenileyin'; }
+  }
+}
+// yukleme sonucu: ozet + yerlesmeyen kodlarin raporu (elle ayiklama buradan baslar)
+function okySonuc(kalemN){
+  const O=_OKY, P=O&&O.plan; if(!P) return;
+  closeModal();
+  const sorunTur=new Map(); P.sorun.forEach(s=>sorunTur.set(s.tur,(sorunTur.get(s.tur)||0)+1));
+  const stat=(n,l)=>`<div><b>${n}</b><span>${l}</span></div>`;
+  const html=`<div class="modal-bg"><div class="modal wide"><div class="modal-head"><h3>Ozel Kod Yukleme Tamamlandi · ${esc(O.bina)}</h3><button class="mini-btn" onclick="okyKapat()">x</button></div><div class="modal-body">
+    <div class="matd-stats">${stat(kalemN,'kalem yazildi')}${stat(P.yerKod,'kod yerinde')}${stat(P.defterN,'deftere kod')}${stat(P.sorun.length,'yerlesmedi')}</div>
+    ${P.sorun.length?`<p style="font-size:12.5px;line-height:1.55;margin:0 0 6px"><b style="color:var(--red)">${P.sorun.length} kod yerlestirilmedi</b> - ${[...sorunTur.entries()].map(([t,n])=>`${esc(t)}: ${n}`).join(' · ')}.</p>
+      <p class="t-meta" style="line-height:1.55;margin:0">Raporda her kodun Excel satiri, malzemesi, kotu ve nedeni var. Duzeltmeyi dosyada yapip ayni dosyayi tekrar yukleyebilir (yerlesmis kodlar "ayni" sayilir, mukerrer olmaz) ya da kalemin Ozel Kod Kirilimi penceresinden elle ekleyebilirsiniz.</p>`
+      :'<p style="font-size:12.5px;color:var(--green)">Dosyadaki tum kodlar yerlesti.</p>'}
+    ${P.uyari.length||P.fark.length?`<p class="t-meta" style="margin:8px 0 0">${P.uyari.length?P.uyari.length+' uyari':''}${P.uyari.length&&P.fark.length?' · ':''}${P.fark.length?P.fark.length+' fark':''} - raporda.</p>`:''}
+  </div><div class="modal-foot">
+    ${P.sorun.length||P.uyari.length||P.fark.length?`<button class="btn btn-add" style="margin-right:auto" onclick="okyRaporIndir()">${icoXls()} Raporu Indir (.xlsx)</button>`:''}
+    <button class="btn btn-ghost" onclick="okyKapat()">Kapat</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  const bgs=document.querySelectorAll('.modal-bg'); window._modalGuard={bg:bgs[bgs.length-1],dolu:()=>false,kapat:okyKapat};
+}
+/* ---- geri al: yalniz HALA yuklemenin yazdigi kirilimda duran kalem eski haline doner (sonradan elle
+   degistirilmis kalem korunur); defterden yalniz yuklemenin EKLEDIGI kodlar cikarilir ---- */
+async function okyGeriAl(id){
+  const b=okyBatches().find(x=>x.id===id); if(!b){ toast('Geri alinacak yukleme yok','err'); return; }
+  if(!guard('editSpec',{bina:b.bina})) return;
+  const S=window.SB_STRICT; if(!S||!S.upsertSpecs){ toast('Kalicilik katmani yuklenemedi - sayfayi yenileyin','err'); return; }
+  const geri=[], degismis=[];
+  b.specs.forEach(x=>{ const sp=(DB.proje.specs||[]).find(s=>s.id===x.id&&!s.is_deleted); if(!sp) return;
+    if(_okyHash(ozelPaylari(sp))===x.ai) geri.push({sp,b:x.b}); else degismis.push(sp); });
+  const defter=(b.defter||[]).map(x=>{ const l=getLok(x.id); if(!l) return null;
+    const cik=new Set(x.eklenen.map(ktopKey)), kalan=lokKodlari(l).filter(k=>!cik.has(ktopKey(k)));
+    return kalan.length!==lokKodlari(l).length?{l,kalan}:null; }).filter(Boolean);
+  if(!geri.length&&!defter.length){ toast(degismis.length?`Yuklemenin yazdigi ${degismis.length} kalem sonradan degismis - geri alinacak bir sey kalmadi`:'Geri alinacak bir sey kalmadi','err'); return; }
+  if(!confirm(`${fmtDT(b.ts)} tarihli ozel kod yuklemesi geri alinacak:\n\n- ${geri.length} kalemin kirilimi eski haline doner${degismis.length?`\n- ${degismis.length} kalem sonradan degistirildigi icin DOKUNULMAZ`:''}${defter.length?`\n- Kod Defteri'nden ${b.defter.reduce((n,x)=>n+x.eklenen.length,0)} kod cikarilir`:''}\n\nDevam edilsin mi?`)) return;
+  try{
+    if(geri.length){
+      const list=geri.map(x=>{ const c={...x.sp}; if(x.b&&x.b.length) c.ozelPay=specOzPayKopya(x.b); else delete c.ozelPay; return c; });
+      await S.upsertSpecs(list);
+      list.forEach(c=>{ const cur=DB.proje.specs.find(s=>s.id===c.id); if(!cur) return; if(c.ozelPay) cur.ozelPay=c.ozelPay; else delete cur.ozelPay; });
+    }
+    if(defter.length){
+      const list=defter.map(x=>{ const c={...x.l}; if(x.kalan.length) c.kodlar=x.kalan; else delete c.kodlar; return c; });
+      await S.upsertLokasyonlar(list);
+      list.forEach(c=>{ const cur=getLok(c.id); if(!cur) return; if(c.kodlar) cur.kodlar=c.kodlar; else delete cur.kodlar; });
+    }
+    await okyBatchSave(okyBatches().filter(x=>x.id!==b.id));
+    logAction('editSpec',`Ozel kod yuklemesi geri alindi: ${b.bina} - ${geri.length} kalem${degismis.length?`, ${degismis.length} kalem korundu`:''}`);
+    _FLOWIDARI=null; closeModal(); render();
+    toast(`Geri alindi: ${geri.length} kalem${degismis.length?` (${degismis.length} kalem sonradan degistigi icin korundu)`:''}`);
+  }catch(err){ console.error(err); toast('Geri alma yarim kaldi: '+(err.message||err)+' - sayfayi yenileyip tekrar deneyin','err'); }
 }
 function groupByMaterial(items){
   const map={};
@@ -37215,12 +37682,10 @@ function _ozelKodMiktarBol(metin){
     satQty[si]=q;
     s.split(/[\s,;]+/).map(x=>x.trim()).filter(Boolean).forEach(v=>tok.push({v,sat:si}));
   });
-  const out=[];
-  for(let i=0;i<tok.length;i++){
-    if(_ozelTam(tok[i].v)){ out.push({kod:tok[i].v,sat:tok[i].sat,qty:''}); continue; }
-    let b=tok[i].v, sat=tok[i].sat;               // eksik parca: tam olana kadar sonrakilerle birlestir
-    while(i+1<tok.length && !_ozelTam(b)){ i++; b+=tok[i].v; sat=tok[i].sat; }
-    out.push({kod:b,sat,qty:''});
+  const out=[], vals=tok.map(t=>t.v);
+  for(let i=0;i<tok.length;i++){                  // eksik parca birlesmesi: _ozelBirlesimSonu ("TA68" tek basina kalir)
+    const j=_ozelBirlesimSonu(vals,i);
+    out.push({kod:vals.slice(i,j+1).join(''),sat:tok[j].sat,qty:''}); i=j;
   }
   satQty.forEach((q,si)=>{ if(!q) return;         // miktar, o satirda BITEN son koda yazilir
     for(let j=out.length-1;j>=0;j--){ if(out[j].sat===si){ out[j].qty=q; break; } } });
