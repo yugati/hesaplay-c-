@@ -2672,6 +2672,22 @@ body:has(.fwm-sheet-bg){overflow:hidden}
 .cal-tags{display:flex;flex-wrap:wrap;gap:3px}
 .cal-tags .bina-tag{font-size:9px;padding:1px 5px}
 .cal-warn{font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;background:rgba(240,160,32,.16);color:var(--amber)}
+/* Gunluk Yazi mutabakati: takvim rozeti + gun penceresi kutusu (rGyMutabakat) */
+.cal-gyfark{margin-left:4px;padding:0 4px;border-radius:4px;background:rgba(240,160,32,.16);color:var(--amber);font-weight:700}
+.rgy-mut{margin-bottom:12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);font-size:12.5px}
+.rgy-mut.fark{border-color:rgba(240,160,32,.55);background:rgba(240,160,32,.07)}
+.rgy-mut.ok{border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.06)}
+.rgy-mut-h{display:flex;align-items:center;gap:8px}
+.rgy-mut-h svg{flex-shrink:0}
+.rgy-mut.fark .rgy-mut-h svg{color:var(--amber)}
+.rgy-mut.ok .rgy-mut-h svg{color:var(--green)}
+.rgy-mut-l{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:5px}
+.rgy-mut-l li{display:flex;flex-wrap:wrap;gap:2px 10px;padding-top:5px;border-top:1px dashed var(--line)}
+.rgy-mut-l .ad{font:600 11.5px var(--mono);color:var(--ink);overflow-wrap:anywhere}
+.rgy-mut-l .not{color:var(--mute)}
+.rgy-mut.fark>.rgy-mut-l .not{color:var(--amber)}
+.rgy-mut-es{margin-top:8px}
+.rgy-mut-es summary{cursor:pointer;font:600 11px var(--mono);color:var(--mute)}
 .cal-ppl{margin-top:auto;font-size:9.5px;color:var(--mute);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:3px;min-width:0}
 .cal-ppl>span{overflow:hidden;text-overflow:ellipsis}
 .cal-ppl svg{color:var(--violet);flex-shrink:0}
@@ -33010,6 +33026,83 @@ function rGunAdamDokum(items){
   });
   return Object.entries(degerler).filter(([,v])=>v>0).map(([bk,v])=>({etiket:etiketler[bk]||bk, v}));
 }
+/* GUNLUK YAZI MUTABAKATI (2 Eki 2026): gunun rapor adam toplami (rAdamBloklari) o tarihin,
+   ayni binalara ait Gunluk Yazi kisi toplamiyla karsilastirilir; tutmuyorsa farkin NEREDEN
+   geldigi yazilir (01.10: yazi 79, rapor 73 - TOPRAKLAMA 6 kisi raporda yoktu).
+   Eslestirme mevcut baglarla, yeni ayar yok:
+   - isgucu blogu <-> baslik: gorev adi ile baslik adinin ilk parcasi ("AMBAR / СКЛАД" <-> "AMBAR")
+   - bolum blogu <-> baslik: Saha Kaydi Ayarlari'ndaki baslik -> bolum bagi (skBaslikBolum)
+   Iki baslik ayni bloga dusebilir (iki basligin adami tek bolume yazilmis): bunlar tek grup olarak
+   toplamla karsilastirilir. Binasiz yazilar ve vardiya ayrimi yok (yazida vardiya yok).
+   Donus: null (o gun bu binalarda yazi yok) | {gy, rapor, tutuyor, gruplar:[{basliklar,bloklar,gy,rapor}]} */
+function rGyIlkParca(s){ return norm(String(s||'')).split(/\s*[-\/]\s*/)[0].replace(/\s+/g,' ').trim(); }
+function rGyAdEs(a,b){ const x=rGyIlkParca(a), y=rGyIlkParca(b); return !!x&&!!y&&(x===y||x.startsWith(y+' ')||y.startsWith(x+' ')); }
+function rGyMutabakat(tarih,items){
+  const binalar=new Set((items||[]).map(e=>String(e.bina||'')).filter(Boolean));
+  const yazilar=gyGun(tarih).filter(y=>y.bina&&binalar.has(String(y.bina)));
+  if(!yazilar.length) return null;
+  // basliklar: bina + ad bazinda (ayni gun birden cok firma yazisi toplanir)
+  const bas=new Map();
+  yazilar.forEach(y=>(y.gruplar||[]).forEach(g=>{
+    const ad=String((g&&g.ad)||'').trim(), n=gyGrupToplam(g); if(!ad||!n) return;
+    const k=String(y.bina)+'|'+norm(ad);
+    if(!bas.has(k)) bas.set(k,{bina:String(y.bina), ad, n:0}); bas.get(k).n+=n;
+  }));
+  // rapor bloklari (rAdamBloklari ile ayni anahtar) + etiket bilgisi
+  const deger=rAdamBloklari(items), bilgi={};
+  (items||[]).forEach(e=>{
+    const bk=(!e.isgucu&&!_rAdamBolum(e))?('?|'+(e.bina||'')+'|'+(e.ekip||'')+'|'+(e.vardiya||'')):_rAdamBlok(e);
+    if(bilgi[bk]) return;
+    bilgi[bk]={k:bk, bina:String(e.bina||''), isg:!!e.isgucu, gorev:e.isgucu?String(e.malzeme||''):'', bolum:e.isgucu?'':_rAdamBolum(e),
+      etiket:e.isgucu?'İşgücü '+String(e.malzeme||'').split('/')[0].trim():(e.cat||String(e.projeKodu||'').split('.').pop()||'bölümsüz')};
+  });
+  const bloklar=Object.keys(deger).filter(k=>deger[k]>0&&bilgi[k]).map(k=>({...bilgi[k], v:deger[k]}));
+  // baslik -> eslesen bloklar; ortak blogu olan basliklar tek grupta birlesir
+  const gruplar=[];
+  bas.forEach(b=>{
+    const bol=skBaslikBolum(b.ad).bolum, bolN=bol?norm(bol):'';
+    const es=bloklar.filter(x=>x.bina===b.bina&&(x.isg?rGyAdEs(b.ad,x.gorev):(!!bolN&&x.bolum===bolN)));
+    const ks=new Set(es.map(x=>x.k));
+    const ortak=gruplar.filter(g=>[...g.ks].some(k=>ks.has(k)));
+    const g={basliklar:[{...b, bolum:bol}], ks};
+    ortak.forEach(o=>{ g.basliklar.unshift(...o.basliklar); o.ks.forEach(k=>g.ks.add(k)); gruplar.splice(gruplar.indexOf(o),1); });
+    gruplar.push(g);
+  });
+  const kullanilan=new Set(gruplar.flatMap(g=>[...g.ks]));
+  bloklar.filter(x=>!kullanilan.has(x.k)).forEach(x=>gruplar.push({basliklar:[], ks:new Set([x.k])}));
+  const out=gruplar.map(g=>{
+    const bl=bloklar.filter(x=>g.ks.has(x.k));
+    return {basliklar:g.basliklar, bloklar:bl, gy:g.basliklar.reduce((s,b)=>s+b.n,0), rapor:bl.reduce((s,x)=>s+x.v,0)};
+  });
+  const gy=out.reduce((s,g)=>s+g.gy,0), rapor=rGunAdam(items);
+  return {gy, rapor, tutuyor:gy===rapor&&out.every(g=>g.gy===g.rapor), gruplar:out};
+}
+// tutmayan grubun tek satirlik aciklamasi
+function rGyFarkMetin(g){
+  const bas=g.basliklar.map(b=>b.ad).join(' + '), blok=g.bloklar.map(x=>x.etiket).join(' + ');
+  if(!g.bloklar.length){
+    const b=g.basliklar[0], bol=g.basliklar.length===1&&b.bolum;
+    return {ad:bas, not:`Günlük Yazı ${g.gy} kişi - raporda karşılığı yok`+(bol?` (${bol} bölümüne kayıt girilmemiş)`:g.basliklar.length===1?' (aynı adlı işgücü kaydı yok; başlık bir bölüme de bağlı değil)':'')};
+  }
+  if(!g.basliklar.length) return {ad:blok, not:`Raporda ${g.rapor} adam - Günlük Yazı'da karşılık gelen başlık yok`};
+  const f=g.gy-g.rapor;
+  return {ad:bas+' ↔ '+blok, not:`Günlük Yazı ${g.gy} kişi, raporda ${g.rapor} adam (${f>0?f+' eksik':(-f)+' fazla'})`};
+}
+function rGyMutHtml(m){
+  if(!m) return '';
+  const fark=m.gruplar.filter(g=>g.gy!==g.rapor), es=m.gruplar.filter(g=>g.gy===g.rapor);
+  const d=m.gy-m.rapor;
+  const bas=m.tutuyor
+    ?`<b>Günlük Yazı ile tutuyor</b> · ${m.gy} kişi = ${m.rapor} adam`
+    :`<b>Günlük Yazı ${m.gy} kişi · rapor ${m.rapor} adam</b>${d?` · <b>${Math.abs(d)} ${d>0?'eksik':'fazla'}</b>`:' · toplam aynı, dağılım farklı'}`;
+  const satir=g=>{ const t=rGyFarkMetin(g); return `<li><span class="ad">${esc(t.ad)}</span><span class="not">${esc(t.not)}</span></li>`; };
+  const esSatir=g=>`<li><span class="ad">${esc(g.basliklar.map(b=>b.ad).join(' + '))} ↔ ${esc(g.bloklar.map(x=>x.etiket).join(' + '))}</span><span class="not">${g.gy}</span></li>`;
+  return `<div class="rgy-mut ${m.tutuyor?'ok':'fark'}">
+    <div class="rgy-mut-h">${m.tutuyor?icoCheckSm():'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0zM12 9v4M12 17h.01"/></svg>'}<span>${bas}</span></div>
+    ${fark.length?`<ul class="rgy-mut-l">${fark.map(satir).join('')}</ul>`:''}
+    ${es.length?`<details class="rgy-mut-es"><summary>Eşleşenler (${es.length})</summary><ul class="rgy-mut-l">${es.map(esSatir).join('')}</ul></details>`:''}
+  </div>`;
+}
 /* ===== ISGUCU (ADAM/GUN) KAYITLARI =====
    AMBAR, GENEL SAHA ELEKTRIK gibi malzemeye bagli olmayan gunluk isgucu kayitlari.
    Ayni rapor tablosunda tutulur (isgucu:true) ama specId/matId tasimadigi icin proje
@@ -33259,7 +33352,7 @@ function openRaporDayModal(tarih){
   const sub=`${matItems.length} kalem${isgItems.length?` · ${isgItems.length} isgucu`:''}${totAdam?` · <span title="${esc(adamTip)}" style="border-bottom:1px dotted currentColor;cursor:help">${totAdam} adam</span>`:''}${binaSay>1?` · ${binaSay} bina`:''}`;
   const html=`<div class="modal-bg rapday-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal rapday-modal">
     <div class="modal-head"><div><h3>${fmtDate(tarih)}</h3><div class="t-meta" style="margin-top:2px">${sub}</div></div><button class="mini-btn" onclick="closeModal()">x</button></div>
-    <div class="modal-body rapday-body">${body}</div>
+    <div class="modal-body rapday-body">${rGyMutHtml(rGyMutabakat(tarih,items))}${body}</div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Kapat</button><button class="btn btn-ghost" onclick="openIsgModal(null,'${esc(tarih)}')" title="Malzemeye bagli olmayan adam/gun kaydi: ambar, genel saha elektrigi...">+ Isgucu</button><button class="btn btn-add" onclick="openRaporModal(null,'${esc(tarih)}')">${icoPlus()} Bu Gune Ekle</button></div>
   </div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
@@ -33324,11 +33417,15 @@ function renderRaporOzet(list){
         const isgTag=(d.mat===0&&d.isg>0)?`<span class="cal-isg" title="Bu gun is kalemi kaydi yok - yalniz isgucu (adam/gun)">ISGUCU</span>`:'';
         const ppl=creators.length?`<div class="cal-ppl">${icoUserSm()} <span>${esc(kisiAd(creators[0]))}</span>${creators.length>1?` +${creators.length-1}`:''}</div>`:'';
         const oran=Math.max(6,Math.round(d.kalem/ayMax*100));
-        const tip=[fmtDate(iso),`${d.kalem} kalem`,`${totAdam} adam`,`${d.ekipler.size} ekip`,binalar.join(', '),
+        // Gunluk Yazi ile tutmuyorsa adam satirinda rozet (ayrinti gun penceresinde)
+        const mut=rGyMutabakat(iso,d.items);
+        const mutFark=mut&&!mut.tutuyor?mut.gruplar.filter(x=>x.gy!==x.rapor).map(x=>{ const t=rGyFarkMetin(x); return t.ad+': '+t.not; }):[];
+        const gyEt=mutFark.length?`<span class="cal-gyfark" title="${esc('Günlük Yazı '+mut.gy+' kişi, rapor '+mut.rapor+' adam\n'+mutFark.join('\n'))}">GY ${mut.gy}</span>`:'';
+        const tip=[fmtDate(iso),`${d.kalem} kalem`,`${totAdam} adam${mutFark.length?` (Günlük Yazı ${mut.gy})`:''}`,`${d.ekipler.size} ekip`,binalar.join(', '),
           d.sartDisi?`${d.sartDisi} sartname disi`:'',creators.join(', ')].filter(Boolean).join(' · ');
         cells+=`<button class="cal-cell dolu${hafta}${bgn}" style="${st}" onclick="openRaporDayModal('${esc(iso)}')" title="${esc(tip)}">
           <div class="cal-h"><span class="cal-dw"><span class="cal-d">${g}</span>${bgn?bugunEt:''}</span><span class="cal-hr">${gece}<span class="cal-k">${d.kalem}<i> kalem</i></span></span></div>
-          <div class="cal-sub"><b>${totAdam}</b> adam · ${d.ekipler.size} ekip</div>
+          <div class="cal-sub"><b>${totAdam}</b> adam${gyEt} · ${d.ekipler.size} ekip</div>
           <div class="cal-tags">${binaTags}${isgTag}${warn}</div>
           ${ppl}
           <span class="cal-bar" style="width:${oran}%"></span>
