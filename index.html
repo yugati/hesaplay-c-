@@ -32450,13 +32450,42 @@ function slinkKatSecenek(y){
   return kats.filter(k=>ids.has(k.id));
 }
 function slinkSartKalem(y,code){ return (DB.proje.specs||[]).filter(s=>!s.is_deleted&&s.bina===y.bina&&s.cat===y.cat&&specGroupKey(s)===code).length; }
-function slinkKalemSayisi(y){ const set=new Set(y.sartlar); return (DB.proje.specs||[]).filter(s=>!s.is_deleted&&s.bina===y.bina&&s.cat===y.cat&&(!set.size||set.has(specGroupKey(s)))).length; }
+/* LINKTE GORUNECEK KARTLAR - sunucu linkKapsami / ortakBirlestir (lib/sahaLink.js) ile ayni kural.
+   ORTAK URUN: ayni urun (stok kodu, kodsuzda ad + ozel no + birim) bolumun birden fazla
+   sartnamesinde ayri kalemse linkte TEK KART olur; linki acan kat secince kalem o kati kapsayan
+   sartnamenin kalemine baglanir. Kapsam sartKatIds (acik katlar; bos = bina geneli). Kat -> uye:
+   once kati acikca kapsayan, yoksa bina geneli. Birlesmez: binada kat yoksa, grupta ayni
+   sartnameden iki kalem varsa, bir katta birden fazla aday cikiyorsa. Link tek kata sabitse o kati
+   kapsamayan sartnamelerin kalemleri linkte yok.
+   {kalem: kart sayisi, ham: kalem sayisi, ortak: birlesen urun, disari: sabit katta olmayan, ids: specId kumesi} */
+function slinkKapsam(y){
+  const set=new Set(y.sartlar);
+  const kats=binaKatlar(y.bina), katSet=new Set(kats.map(k=>k.id));
+  const kap=c=>{ const sr=slinkSartBul(y.bina,c); const ids=sr?(sr.katIds||[]).filter(id=>katSet.has(id)):[]; return ids.length?ids:null; };
+  const t=s=>norm(s).replace(/\s+/g,' ').trim();
+  let L=(DB.proje.specs||[]).filter(s=>!s.is_deleted&&s.bina===y.bina&&s.cat===y.cat&&(!set.size||set.has(specGroupKey(s)))).map(s=>{
+    const m=s.matId?getMaterial(s.matId):null, sart=specGroupKey(s);
+    return {id:s.id, kod:s.code||'', ad:s.name||'', ozelNo:s.ozelNo||'', birim:(m&&m.unit)||s.unit||'', sart, katIds:kap(sart)};
+  });
+  const ham=L.length;
+  if(y.katId&&katSet.has(y.katId)) L=L.filter(k=>!k.katIds||k.katIds.includes(y.katId));
+  const out={kalem:L.length, ham, ortak:0, disari:ham-L.length, ids:new Set(L.map(k=>k.id))};
+  if(!kats.length) return out;
+  const aday=(g,katId)=>{ const a=g.filter(k=>k.katIds&&k.katIds.includes(katId)); return a.length?a:g.filter(k=>!k.katIds); };
+  const gr=new Map();
+  L.forEach(k=>{ const a=(t(k.kod)?'k:'+t(k.kod):'a:'+t(k.ad))+'|'+t(k.ozelNo)+'|'+t(k.birim); if(!gr.has(a)) gr.set(a,[]); gr.get(a).push(k); });
+  gr.forEach(g=>{
+    if(g.length<2||new Set(g.map(k=>k.sart)).size<g.length||kats.some(kt=>aday(g,kt.id).length>1)) return;
+    out.ortak++; out.kalem-=g.length-1;
+  });
+  return out;
+}
+function slinkKalemSayisi(y){ return slinkKapsam(y).kalem; }
 // linkte kalemlerin ardindan gelecek alternatif urunler (sunucu linkKapsami ile ayni kural:
 // yalniz 'kullanımda' / 'onaylandi' - activeAltsFor). alimli: ALIMI OLANLAR - linkte yalniz
 // bunlara miktar girilir, digerleri kilitli gorunur (alim = specProgress: type!=='out', iade eksi)
 function slinkAltSayisi(y){
-  const set=new Set(y.sartlar);
-  const ids=new Set((DB.proje.specs||[]).filter(s=>!s.is_deleted&&s.bina===y.bina&&s.cat===y.cat&&(!set.size||set.has(specGroupKey(s)))).map(s=>s.id));
+  const ids=slinkKapsam(y).ids;
   const alts=(DB.proje.alternatives||[]).filter(a=>ids.has(a.specId)&&(a.status==='kullanımda'||a.status==='onaylandi'));
   if(!alts.length) return {toplam:0,alimli:0};
   const alim=new Map();
@@ -32583,12 +32612,14 @@ function slinkYeniHtml(){
   const opt=(v,t,sel)=>`<option value="${esc(v)}" ${sel?'selected':''}>${esc(t)}</option>`;
   const sarts=slinkSartListesi(y);
   const kats=slinkKatSecenek(y);
-  const n=y.cat?slinkKalemSayisi(y):0;
+  const kp=y.cat?slinkKapsam(y):null, n=kp?kp.kalem:0;
   const alt=n?slinkAltSayisi(y):{toplam:0,alimli:0}, na=alt.toplam;
+  const ortakNot=!kp?'':(kp.ortak?` <span class="t-meta">Birden fazla şartnamede geçen <b>${kp.ortak}</b> ürün tek kalem olarak görünür; linki açan kişi kat seçince kalem o katın şartnamesine kendiliğinden bağlanır.</span>`:'')
+    +(kp.disari?` <span class="t-meta">Seçilen katı kapsamayan şartnamelerin ${kp.disari} kalemi linkte yok.</span>`:'');
   const altNot=!na?'':alt.alimli===na?' <span class="t-meta">Alternatifler ana kalemlerinin altında çıkar; girilen miktar ana kalemin ilerlemesine sayılır.</span>'
     :` <span class="t-meta">Alternatifler ana kalemlerinin altında çıkar; yalnız <b>alımı olan ${alt.alimli}</b> alternatife miktar girilir, ${na-alt.alimli} tanesi alımı olmadığı için kilitli görünür.</span>`;
   const ozet=!y.cat?'<div class="slink-ozet">Bölüm seçince şartnameler listelenir ve linkte görünecek kalem sayısı burada çıkar.</div>'
-    :n?`<div class="slink-ozet">Linki açan kişi <b>${n}</b> kalem${na?` + <b>${na}</b> alternatif ürün`:''} görecek${y.sartlar.length>1?` (${y.sartlar.length} şartname)`:''}${kats.length&&!y.katId?`, her kalemde katı seçecek (${kats.length} kat)`:''}.${altNot}</div>`
+    :n?`<div class="slink-ozet">Linki açan kişi <b>${n}</b> kalem${na?` + <b>${na}</b> alternatif ürün`:''} görecek${y.sartlar.length>1?` (${y.sartlar.length} şartname)`:''}${kats.length&&!y.katId?`, her kalemde katı seçecek (${kats.length} kat)`:''}.${ortakNot}${altNot}</div>`
     :'<div class="slink-ozet bos">Bu seçimde kalem yok - link boş açılırdı. Bölüm / şartname seçimini kontrol edin.</div>';
   const sartAlani=!y.cat?'<div class="slink-bos" style="padding:6px 0">Önce bölüm seçin.</div>'
     :!sarts.length?'<div class="slink-bos" style="padding:6px 0">Bu binada bu bölüme ait şartname yok - linkte bölümün tüm kalemleri görünür.</div>'

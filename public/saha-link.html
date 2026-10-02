@@ -109,8 +109,14 @@ input::placeholder,textarea::placeholder{color:var(--dim)}
 .k-kod{font:700 12px var(--mono);color:var(--mute);overflow-wrap:anywhere}
 .k-ad{margin-top:1px;font-weight:600;overflow-wrap:anywhere}
 .k-alt{margin-top:3px;font-size:12px;color:var(--dim)}
+/* ortak urun (birden fazla sartnamede ayni urun): kat -> sartname kurali kartta yazar */
+.k-bag{margin-top:3px;font-size:12px;color:var(--mute)}
+.k-bag b{font:700 11px var(--mono);color:var(--grid)}
 .k-satirlar{display:flex;flex-direction:column;gap:8px;margin-top:10px}
-.k-satir{display:flex;align-items:stretch;gap:8px}
+.k-satir{display:flex;flex-wrap:wrap;align-items:stretch;gap:8px}
+/* ortak kartta secilen katin baglanacagi sartname - satirin altinda tek satir */
+.k-satir .k-hsart{flex:1 0 100%;margin-top:-3px;font-size:12px;color:var(--mute)}
+.k-satir .k-hsart b{font:700 11px var(--mono);color:var(--grid)}
 .k-satir .k-kat,.k-satir .k-katm{flex:0 0 40%;min-width:0}
 .k-mik{position:relative;display:flex;align-items:center;flex:1;min-width:0}
 .k-mik input{padding-right:58px;font-family:var(--mono);font-weight:700}
@@ -204,6 +210,7 @@ const IKON = {
 let V = null;   // sunucudan: {link, katSabit, katlar, kalemler, gonderimSayisi}
 let S = null;   // girilenler: {dolduran, adam, not, varsayilanKat, q, yalnizDolu, g:{kalemId:[{katId,kat,miktar}]}}
 let kalemMap = new Map();
+let uyeKart = {};   // ortak kart uyesinin kalem kimligi -> kart kimligi
 let kaydetZamani = null, toastZamani = null;
 
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -233,6 +240,31 @@ function tarihYaz(iso) {
 function birimKisa(b) { const p = String(b || '').split('/'); return p[p.length - 1].trim() || String(b || ''); }
 function katEtiket(ad) { ad = String(ad || '').trim(); return /^-?\d+$/.test(ad) ? ad + '. kat' : ad; }
 function katAdi(id) { const k = V.katlar.find(x => x.id === id); return k ? katEtiket(k.ad) : ''; }
+/* ORTAK URUN: sunucu, bolumun birden fazla sartnamesinde duran ayni urunu tek karta toplar
+   (k.bag = uyeler: her biri bir sartnamenin kalemi + o sartnamenin katlari). Kat secilince kalem
+   o kati kapsayan sartnameye baglanir - sunucu gonderimde ayni kuralla yeniden cozer.
+   k.katIds: kalemin girilebilecegi katlar (sartnamesinin katlari; null = bina geneli, hepsi). */
+function kalemSartlari(k) { return k.bag ? k.bag.map(b => b.sart) : (k.sart ? [k.sart] : []); }
+function kalemKatlar(k) { return Array.isArray(k.katIds) ? V.katlar.filter(x => k.katIds.includes(x.id)) : V.katlar; }
+function katGecerli(k, katId) { return !!katId && kalemKatlar(k).some(x => x.id === katId); }
+// kat -> uye (lib/sahaLink.js katAdaylari ile ayni): once kati ACIKCA kapsayan, yoksa bina geneli
+function katUye(k, katId) {
+  if (!k.bag || !katId) return null;
+  const acik = k.bag.filter(b => Array.isArray(b.katIds) && b.katIds.includes(katId));
+  const l = acik.length ? acik : k.bag.filter(b => !Array.isArray(b.katIds));
+  return l.length === 1 ? l[0] : null;
+}
+// satirin sartnamesi: ortak kartta katla cozulur
+function satirSart(k, katId) { const u = katUye(k, katId); return u ? u.sart : (k.bag ? '' : k.sart); }
+// uyenin kat araligi: ardisik katlar "1–5. kat", degilse adlar virgulle; bina geneli "diğer katlar"
+function katAralik(ids) {
+  if (!Array.isArray(ids)) return 'Diğer katlar';
+  const idx = ids.map(id => V.katlar.findIndex(x => x.id === id)).filter(i => i >= 0).sort((a, b) => a - b);
+  if (!idx.length) return '';
+  const ad = i => String(V.katlar[i].ad || '').trim();
+  if (idx.length > 2 && idx[idx.length - 1] - idx[0] === idx.length - 1) return ad(idx[0]) + '–' + katEtiket(ad(idx[idx.length - 1]));
+  return idx.map(i => katEtiket(ad(i))).join(', ');
+}
 const katSecilir = () => !V.katSabit && V.katlar.length > 0;      // her satirda kat listesi
 const katYazilir = () => !V.katSabit && V.katlar.length === 0;    // binada kat tanimi yok: serbest, istege bagli
 // yonetici linkte ad / adam sayisi girdiyse sayfada SABIT gorunur, sorulmaz
@@ -283,14 +315,16 @@ async function yukle() {
   V = b;
   // kalemlerde gecen sartnameler: once yoneticinin sectigi sira, sonra digerleri
   const sirali = (V.link.sartlar || []).slice();
-  V.kalemler.forEach(k => { if (k.sart && !sirali.includes(k.sart)) sirali.push(k.sart); });
-  V.sartKodlar = sirali.filter(c => V.kalemler.some(k => k.sart === c));
+  V.kalemler.forEach(k => kalemSartlari(k).forEach(c => { if (!sirali.includes(c)) sirali.push(c); }));
+  V.sartKodlar = sirali.filter(c => V.kalemler.some(k => kalemSartlari(k).includes(c)));
   V.sartKisa = sartKisalt(V.sartKodlar);
   V.kalemler.forEach(k => {
     // alternatif, ana kalemin adi/koduyla da bulunur: ana kalemi arayan onun alternatifini de gorur
     const ana = k.ana ? [k.ana.kod, k.ana.ad, 'alternatif'] : [];
-    k._ara = norm([k.kod, k.ad, k.ozelNo, k.poz, V.sartKisa[k.sart] || '', ...ana].join(' ') + ' ' + String(k.kod || '').replace(/[\s._-]/g, ''));
+    k._ara = norm([k.kod, k.ad, k.ozelNo, k.poz, ...kalemSartlari(k).map(c => V.sartKisa[c] || ''), ...ana].join(' ') + ' ' + String(k.kod || '').replace(/[\s._-]/g, ''));
     kalemMap.set(k.id, k);
+    // ortak kartin uyeleri: eski taslaktaki kalem kimligi karta tasinir (baslat)
+    (k.bag || []).forEach(b => { uyeKart[b.id] = k.id; });
   });
   V.altSay = V.kalemler.filter(k => k.ana).length;
   baslat();
@@ -308,10 +342,13 @@ function baslat() {
     q: '', yalnizDolu: false, sartF: '', g: {},
   };
   if (t.g && typeof t.g === 'object') {
-    for (const id in t.g) {
+    for (const id0 in t.g) {
+      // birlesmeden once girilen kalem ortak kartina tasinir
+      const id = kalemMap.has(id0) ? id0 : (uyeKart[id0] || id0);
       // kilitli alternatif (alimi yok / iadeyle sifirlandi) taslaktan da geri gelmez
-      if (!kalemMap.has(id) || kalemMap.get(id).kilitli || !Array.isArray(t.g[id])) continue;
-      S.g[id] = t.g[id].map(r => ({ katId: katIds.has(r.katId) ? r.katId : '', kat: String(r.kat || ''), miktar: String(r.miktar || '') }));
+      if (!kalemMap.has(id) || kalemMap.get(id).kilitli || !Array.isArray(t.g[id0])) continue;
+      const k = kalemMap.get(id);
+      S.g[id] = (S.g[id] || []).concat(t.g[id0].map(r => ({ katId: katIds.has(r.katId) && katGecerli(k, r.katId) ? r.katId : '', kat: String(r.kat || ''), miktar: String(r.miktar || '') })));
     }
   }
   ciz();
@@ -324,7 +361,10 @@ function satirlar(id) {
 function kalemDolu(id) { return (S.g[id] || []).some(r => sayi(r.miktar) > 0); }
 // "84 kalem + 3 alternatif" - alternatifler ana kalem sayisini sisirmesin
 function kalemSayisi() { const ana = V.kalemler.length - V.altSay; return ana + ' kalem' + (V.altSay ? ' + ' + V.altSay + ' alternatif' : ''); }
-function katOpts(sec) { return V.katlar.map(k => `<option value="${esc(k.id)}" ${k.id === sec ? 'selected' : ''}>${esc(katEtiket(k.ad))}</option>`).join(''); }
+// kat listesi: kalem verilirse yalniz onun katlari (sartnamesinin katlari)
+function katOpts(sec, kalem) { return (kalem ? kalemKatlar(kalem) : V.katlar).map(x => `<option value="${esc(x.id)}" ${x.id === sec ? 'selected' : ''}>${esc(katEtiket(x.ad))}</option>`).join(''); }
+// ortak kart satirinin alt notu: secilen kat hangi sartnamenin kalemine yazilacak
+function hsartHtml(k, katId) { const u = katUye(k, katId); return u ? `→ <b>${esc(V.sartKisa[u.sart] || u.sart)}</b> kalemine yazılır` : ''; }
 
 function ciz() {
   const L = V.link, t = tarihYaz(L.tarih);
@@ -341,7 +381,7 @@ function ciz() {
     katSecilir() ? `<label class="alan tam"><span>Çalışılan kat</span><select id="f_vkat"><option value="">- seçin -</option>${katOpts(S.varsayilanKat)}</select><small>Miktar girdiğiniz kaleme otomatik yazılır; kalemin kendi satırında değiştirebilirsiniz.</small></label>` : '',
   ].filter(Boolean);
   const sartSuz = cokSartname()
-    ? `<select id="f_sart" class="sart-suz" aria-label="Şartnameye göre süz"><option value="">Tüm şartnameler</option>${V.sartKodlar.map(c => `<option value="${esc(c)}">${esc(V.sartKisa[c])} (${V.kalemler.filter(k => k.sart === c && !k.ana).length})</option>`).join('')}</select>` : '';
+    ? `<select id="f_sart" class="sart-suz" aria-label="Şartnameye göre süz"><option value="">Tüm şartnameler</option>${V.sartKodlar.map(c => `<option value="${esc(c)}">${esc(V.sartKisa[c])} (${V.kalemler.filter(k => !k.ana && kalemSartlari(k).includes(c)).length})</option>`).join('')}</select>` : '';
   const bitis = new Date(L.bitis).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   const onceki = V.gonderimSayisi ? ` · bu linkten ${V.gonderimSayisi} gönderim yapıldı` : '';
   window.scrollTo(0, 0);
@@ -372,8 +412,12 @@ function ciz() {
 
 function kalemHtml(k) {
   // alternatifte hedef yok (ana kaleme sayilir); poz/ozel no zaten hemen ustteki ana kartta
-  const alt = k.ana ? [] : [k.ozelNo ? 'Özel ' + k.ozelNo : '', k.poz ? 'Poz ' + k.poz : '', k.hedef ? 'Hedef ' + fmt(k.hedef) + (k.birim ? ' ' + k.birim : '') : ''].filter(Boolean);
-  const sartEt = cokSartname() && k.sart && !k.ana ? `<span class="k-sart" title="${esc(k.sart)}">${esc(V.sartKisa[k.sart] || k.sart)}</span>` : '';
+  // ortak kartta hedef her uyenin satirinda (kat araligi -> sartname); ustteki satir yalniz ozel no / poz
+  const alt = k.ana ? [] : [k.ozelNo ? 'Özel ' + k.ozelNo : '', k.poz ? 'Poz ' + k.poz : '', k.hedef && !k.bag ? 'Hedef ' + fmt(k.hedef) + (k.birim ? ' ' + k.birim : '') : ''].filter(Boolean);
+  const sartCip = c => `<span class="k-sart" title="${esc(c)}">${esc(V.sartKisa[c] || c)}</span>`;
+  // alternatif de sartname cipini tasir: ortak kartin altinda hangi sartnamenin kalemine bagli oldugu gorunsun
+  const sartEt = cokSartname() ? kalemSartlari(k).map(sartCip).join('') : '';
+  const bagHtml = k.bag ? k.bag.map(b => `<div class="k-bag">${esc(katAralik(b.katIds))} → <b>${esc(V.sartKisa[b.sart] || b.sart)}</b>${b.hedef ? ' · Hedef ' + esc(fmt(b.hedef) + (k.birim ? ' ' + k.birim : '')) : ''}</div>`).join('') : '';
   const altEt = k.ana ? '<span class="k-altet" title="Ana kalemin yerine montajlandıysa buraya girin">ALTERNATİF</span>' : '';
   const yerine = k.ana ? `<div class="k-yerine">Yerine: <b>${esc(k.ana.ad || k.ana.kod)}</b> · ana kaleme sayılır</div>` : '';
   // alternatife miktar ancak ALIMI varsa girilir (sunucu kilitli'yi hesaplar ve gonderimde de reddeder)
@@ -381,7 +425,7 @@ function kalemHtml(k) {
   const kilitNot = k.alim == null ? 'Alım bilgisi okunamadı - miktar girilemez' : 'Bu alternatifin alımı yok - miktar girilemez';
   return `<article class="kalem${k.ana ? ' k-alter' : ''}${k.kilitli ? ' k-kilit' : ''}${kalemDolu(k.id) ? ' dolu' : ''}" data-id="${esc(k.id)}">
     <div class="k-ust">${k.img ? `<img class="k-foto" src="${esc(k.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}
-      <div class="k-bilgi">${(k.kod || sartEt || altEt) ? `<div class="k-kod">${altEt}${sartEt}${esc(k.kod)}</div>` : ''}<div class="k-ad">${esc(k.ad)}</div>${yerine}${alim}${alt.length ? `<div class="k-alt">${alt.map(esc).join(' · ')}</div>` : ''}</div>
+      <div class="k-bilgi">${(k.kod || sartEt || altEt) ? `<div class="k-kod">${altEt}${sartEt}${esc(k.kod)}</div>` : ''}<div class="k-ad">${esc(k.ad)}</div>${yerine}${alim}${alt.length ? `<div class="k-alt">${alt.map(esc).join(' · ')}</div>` : ''}${bagHtml}</div>
     </div>
     ${k.kilitli ? `<div class="k-kilitnot">${IKON.kilit}<span>${kilitNot}</span></div>` : `<div class="k-satirlar">${satirlarHtml(k)}</div>`}
   </article>`;
@@ -389,12 +433,13 @@ function kalemHtml(k) {
 function satirlarHtml(k) {
   const rs = S.g[k.id] && S.g[k.id].length ? S.g[k.id] : [{ katId: '', kat: '', miktar: '' }];
   return rs.map((r, i) => `<div class="k-satir" data-i="${i}">
-      ${katSecilir() ? `<select class="k-kat" aria-label="Kat"><option value="">Kat seç</option>${katOpts(r.katId)}</select>` : ''}
+      ${katSecilir() ? `<select class="k-kat" aria-label="Kat"><option value="">Kat seç</option>${katOpts(r.katId, k)}</select>` : ''}
       ${katYazilir() ? `<input class="k-katm" maxlength="20" placeholder="Kat" value="${esc(r.kat)}" aria-label="Kat">` : ''}
       <label class="k-mik"><input class="k-miktar" inputmode="decimal" autocomplete="off" placeholder="Miktar" value="${esc(r.miktar)}" aria-label="Miktar">${k.birim ? `<span title="${esc(k.birim)}">${esc(birimKisa(k.birim))}</span>` : ''}</label>
       ${i > 0 ? `<button class="k-sil" type="button" aria-label="Satırı kaldır">${IKON.x}</button>` : ''}
+      ${k.bag && katSecilir() ? `<div class="k-hsart"${r.katId ? '' : ' hidden'}>${hsartHtml(k, r.katId)}</div>` : ''}
     </div>`).join('')
-    + (katSecilir() && V.katlar.length > 1 ? '<button class="k-ekle" type="button">+ Başka kat</button>' : '');
+    + (katSecilir() && kalemKatlar(k).length > 1 ? '<button class="k-ekle" type="button">+ Başka kat</button>' : '');
 }
 
 function bagla() {
@@ -446,13 +491,15 @@ function satirOlay(e) {
   if (el.classList.contains('k-miktar')) {
     r.miktar = el.value;
     // miktar girilen satira "calisilan kat" otomatik yazilir (kat bossa)
-    if (katSecilir() && !r.katId && S.varsayilanKat && sayi(r.miktar) > 0) {
+    if (katSecilir() && !r.katId && katGecerli(kalemMap.get(id), S.varsayilanKat) && sayi(r.miktar) > 0) {
       r.katId = S.varsayilanKat;
       const s = sat.querySelector('.k-kat'); if (s) s.value = r.katId;
     }
   } else if (el.classList.contains('k-kat')) r.katId = el.value;
   else if (el.classList.contains('k-katm')) r.kat = el.value;
   else return;
+  const hs = sat.querySelector('.k-hsart');
+  if (hs) { hs.innerHTML = hsartHtml(kalemMap.get(id), r.katId); hs.hidden = !r.katId; }
   sat.classList.remove('hata');
   art.classList.toggle('dolu', kalemDolu(id));
   ozetGuncelle(); kaydet();
@@ -463,7 +510,7 @@ function suz() {
   let n = 0;
   document.querySelectorAll('#liste .kalem').forEach(art => {
     const k = kalemMap.get(art.dataset.id);
-    const gorunur = (!S.yalnizDolu || kalemDolu(k.id)) && (!S.sartF || k.sart === S.sartF) && kelimeler.every(w => k._ara.includes(w));
+    const gorunur = (!S.yalnizDolu || kalemDolu(k.id)) && (!S.sartF || kalemSartlari(k).includes(S.sartF)) && kelimeler.every(w => k._ara.includes(w));
     art.hidden = !gorunur;
     if (gorunur) n++;
   });
@@ -507,6 +554,7 @@ function topla() {
       const ad = k.kod || k.ad;
       if (!(n > 0)) { eksik.push({ id: k.id, i, m: ad + ': miktar geçersiz' }); return; }
       if (katSecilir() && !r.katId) { eksik.push({ id: k.id, i, m: ad + ': kat seçin' }); return; }
+      if (katSecilir() && !katGecerli(k, r.katId)) { eksik.push({ id: k.id, i, m: ad + ': bu kat kalemin şartnamesinde yok' }); return; }
       out.push({ id: k.id, miktar: n, katId: katSecilir() ? r.katId : '', kat: katYazilir() ? String(r.kat).trim() : '', k });
     });
   }
@@ -534,7 +582,8 @@ function onayAc() {
   const bilgi = [tarihYaz(L.tarih).gun, VARDIYA_AD[L.vardiya] || L.vardiya, L.cat, adam ? adam + ' adam' : ''].filter(Boolean).map(esc).join(' · ');
   const satirHtml = out.map(o => {
     const kat = o.katId ? katAdi(o.katId) : (o.kat ? 'Kat ' + o.kat : (V.katSabit ? katEtiket(V.katSabit.ad) : ''));
-    const sart = cokSartname() && o.k.sart ? `<span class="k-sart">${esc(V.sartKisa[o.k.sart] || o.k.sart)}</span>` : '';
+    const sc = satirSart(o.k, o.katId || (V.katSabit ? V.katSabit.id : ''));
+    const sart = cokSartname() && sc ? `<span class="k-sart">${esc(V.sartKisa[sc] || sc)}</span>` : '';
     const altEt = o.k.ana ? `<span class="k-altet" title="${esc('Yerine: ' + (o.k.ana.ad || o.k.ana.kod))}">ALT</span>` : '';
     return `<li><span class="o-ad">${altEt}${sart}${o.k.kod ? `<span class="mono">${esc(o.k.kod)}</span> ` : ''}${esc(o.k.ad)}${kat ? ` <span class="o-kat">${esc(kat)}</span>` : ''}</span><span class="o-mik">${fmt(o.miktar)} ${esc(o.k.birim || '')}</span></li>`;
   }).join('');
