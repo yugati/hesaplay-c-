@@ -20,7 +20,7 @@ const INDIRME_OMRU = 300 // sn - sekmede acilmasina yeter, link paylasilirsa kis
    istemci 'path' ile kovadaki baska bir dosyayi isteyebilir ya da istedigi turde
    dosya yukleyebilirdi. */
 const KOVALAR = {
-  belgeler: { onek: /^(siparis|hareket|tutanak|gorev|fatura)\// },
+  belgeler: { onek: /^(siparis|hareket|tutanak|gorev|fatura|kks)\// },
   'bina-modelleri': { onek: /^model\// },
 }
 /* kind -> kova + izin verilen uzanti.
@@ -38,6 +38,10 @@ const TURLER = {
      girebilen herkes odeme belgesi de yukleyebilirdi. */
   fatura: { kova: 'belgeler', uzantilar: ['pdf'] },
   gorev: { kova: 'belgeler', uzantilar: ['jpg', 'jpeg', 'png', 'webp'] },
+  /* Ozel Kod Yukle'nin KAYITLI KKS LISTESI (index.html okyListeler): dagitilan Excel'in
+     kendisi saklanir - sartname sonradan guncellenince ayni dosya "Yeniden Dagit" ile
+     tekrar dagitilir. Yalniz Excel uzantilari. */
+  kks: { kova: 'belgeler', uzantilar: ['xlsx', 'xls', 'xlsm'] },
   model: { kova: 'bina-modelleri', uzantilar: ['glb', 'gltf'] },
 }
 

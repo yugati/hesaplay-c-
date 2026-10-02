@@ -472,6 +472,9 @@ const BELGE_YETKI = {
      odeme belgesi yuklemek, siparis girmekten ayri bir yetkidir. create VEYA update
      yeter - ekrandaki dugme de fatCanEdit() ile gosteriliyor. */
   fatura: ['fatura', ['create', 'update']],
+  /* Ozel Kod Yukle'nin kayitli KKS listesi (Excel): kalemlerin kirilimini yazan islemle
+     ayni yetki - sartname kalemini duzenleyebilen kullanici listesini de saklayabilir. */
+  kks: ['proje', ['update', 'create']],
 }
 function _permCheckAny(module, actions) {
   let son = null
