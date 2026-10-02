@@ -270,6 +270,8 @@ const katYazilir = () => !V.katSabit && V.katlar.length === 0;    // binada kat 
 // yonetici linkte ad / adam sayisi girdiyse sayfada SABIT gorunur, sorulmaz
 const sabitAd = () => !!V.link.dolduran;
 const sabitAdam = () => V.link.adam != null;
+// adam sayisi yonetici tarafinda Gunluk Yazi'dan alinacak: sayfada sorulmaz
+const adamSorulmaz = () => sabitAdam() || V.link.adamGy === true;
 const cokSartname = () => V.sartKodlar.length > 1;
 // sartname kodlarinin ortak on ekini atar (en az bir parca kalir):
 // AKU.0179.00UYB.0.EK.TB0002 + ...TB0003 -> TB0002 / TB0003 ; ...CYA.SS.MB0001 + ...CYB.SS.MB0001 -> CYA.SS.MB0001 / CYB.SS.MB0001
@@ -377,7 +379,7 @@ function ciz() {
   if (sabitAdam()) kunye.push(['Adam sayısı', String(L.adam)]);
   const bilgi = [
     sabitAd() ? '' : `<label class="alan"><span>Adınız</span><input id="f_ad" maxlength="60" autocomplete="name" placeholder="opsiyonel" value="${esc(S.dolduran)}"></label>`,
-    sabitAdam() ? '' : `<label class="alan"><span>Adam sayısı</span><input id="f_adam" inputmode="numeric" maxlength="3" placeholder="0" value="${esc(S.adam)}"></label>`,
+    adamSorulmaz() ? '' : `<label class="alan"><span>Adam sayısı</span><input id="f_adam" inputmode="numeric" maxlength="3" placeholder="0" value="${esc(S.adam)}"></label>`,
     katSecilir() ? `<label class="alan tam"><span>Çalışılan kat</span><select id="f_vkat"><option value="">- seçin -</option>${katOpts(S.varsayilanKat)}</select><small>Miktar girdiğiniz kaleme otomatik yazılır; kalemin kendi satırında değiştirebilirsiniz.</small></label>` : '',
   ].filter(Boolean);
   const sartSuz = cokSartname()
@@ -578,7 +580,7 @@ function onayAc() {
   }
   if (!out.length) { toast('En az bir kaleme miktar girin'); return; }
   const L = V.link;
-  const adam = sabitAdam() ? String(L.adam) : S.adam;
+  const adam = sabitAdam() ? String(L.adam) : adamSorulmaz() ? '' : S.adam;
   const bilgi = [tarihYaz(L.tarih).gun, VARDIYA_AD[L.vardiya] || L.vardiya, L.cat, adam ? adam + ' adam' : ''].filter(Boolean).map(esc).join(' · ');
   const satirHtml = out.map(o => {
     const kat = o.katId ? katAdi(o.katId) : (o.kat ? 'Kat ' + o.kat : (V.katSabit ? katEtiket(V.katSabit.ad) : ''));
@@ -607,7 +609,7 @@ async function gonder(out, btn) {
   btn.disabled = true; btn.textContent = 'Gönderiliyor...';
   const govde = {
     // yoneticinin sabitledigi ad/adam gonderilmez - sunucu linktekini kullanir
-    dolduran: sabitAd() ? '' : S.dolduran.trim(), adam: sabitAdam() || S.adam === '' ? '' : Number(S.adam), not: S.not.trim(),
+    dolduran: sabitAd() ? '' : S.dolduran.trim(), adam: adamSorulmaz() || S.adam === '' ? '' : Number(S.adam), not: S.not.trim(),
     satirlar: out.map(o => ({ id: o.id, miktar: o.miktar, katId: o.katId, kat: o.kat })),
   };
   let r, b;

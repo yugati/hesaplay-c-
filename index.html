@@ -3722,6 +3722,16 @@ p.yp-ayar-not{margin:2px 0 8px}
 .slink-gy .slink-sart-arac{margin-top:8px}
 .slink-gy-bos{font-size:12px;color:var(--dim);line-height:1.5}
 .frow input.slink-adam-gy{border-color:var(--green);background:rgba(34,197,94,.07)}
+/* Gunluk Isler Ayarlari > Adam Sayisi: zorunluluk anahtari */
+.gia-zorunlu{display:flex;align-items:center;gap:12px;padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);cursor:pointer}
+.gia-zorunlu.on{border-color:var(--green);background:rgba(34,197,94,.07)}
+.gia-zorunlu input{width:18px;height:18px;flex-shrink:0;accent-color:var(--green)}
+.gia-zorunlu span{display:flex;flex-direction:column;gap:3px;min-width:0}
+.gia-zorunlu i{font-style:normal;font-size:12px;color:var(--mute)}
+.gia-zorunlu.on i{color:var(--green)}
+/* zorunlu modda kilitli adam kutusu (sayi yalniz Gunluk Yazi seciminden) */
+input.adam-gy-kilit{cursor:not-allowed}
+input.adam-gy-kilit:not(.slink-adam-gy){border-style:dashed}
 /* Saha Kaydi formu: bolum basina "Gunluk Yazi'dan al" dugmesi + acilir panel (slink-gy ile ayni) */
 .rgy{margin:-2px 0 11px}
 .rgy-ac{display:flex;align-items:center;gap:8px;width:100%;padding:7px 10px;border:1px dashed var(--line);border-radius:8px;background:transparent;color:var(--mute);font:12px var(--sans);text-align:left;cursor:pointer}
@@ -10973,8 +10983,31 @@ function giaAyar(){
   if(a.sahaUrun&&typeof a.sahaUrun==='object') Object.keys(a.sahaUrun).forEach(k=>{
     const b=a.sahaUrun[k]; if(b&&b.kalem) sahaUrun[k]={kalem:String(b.kalem), ad:String(b.ad||''), birim:String(b.birim||'')};
   });
-  return {baglar, sahaUrun, gun:(isFinite(g)&&g>=GIA_GUN_EN_AZ)?Math.min(g,GIA_GUN_EN_COK):GIA_GUN_VARSAYILAN};
+  return {baglar, sahaUrun, gun:(isFinite(g)&&g>=GIA_GUN_EN_AZ)?Math.min(g,GIA_GUN_EN_COK):GIA_GUN_VARSAYILAN, adamGy:a.adamGy===true};
 }
+/* ADAM SAYISI GUNLUK YAZI'DAN ZORUNLU (2 Eki 2026) - Gunluk Isler Ayarlari > Adam Sayisi.
+   Acikken Saha Kaydi (bolum basina), Isgucu Kaydi ve Saha Linki'nde adam sayisi ELLE
+   YAZILAMAZ: kutu salt okunur, sayi yalniz o gunun Gunluk Yazi basliklarinin seciminden gelir.
+   Gunluk Yazi yoksa / baslik secilmediyse kayit yapilmaz. "Bundan sonra islenen": secim kayda
+   girmedigi icin eski kayit duzenlenirken sayisi DEGISMEDIKCE kontrol yapilmaz.
+   Saha Linki: link olustururken secilen basliklar linke yazilir (onayda forma geri gelir);
+   secilmezse linki acan kisiye adam SORULMAZ, yonetici onayda Gunluk Yazi'dan secer.
+   Excel aktarimi (rimp) kapsam disi. */
+function adamGyZorunlu(){ return giaAyar().adamGy; }
+// y: {tarih,bina,cat,gySec,gyKaynak}; adam: kutudaki deger; ilk: duzenlenen kaydin kayitli degeri
+// (yeni kayitta undefined). Hata metni ya da '' doner.
+function adamGyHata(y,adam,ilk){
+  if(!adamGyZorunlu()) return '';
+  const sec=(y.gySec||[]).length;
+  if(!sec&&ilk!=null&&String(ilk)!==''&&String(adam==null?'':adam)===String(ilk)) return '';
+  if(!y.tarih) return 'Önce tarih seçin';
+  if(!slinkGyKaynak(y)) return fmtDate(y.tarih)+' tarihine Günlük Yazı girilmemiş - adam sayısı Günlük Yazı\'dan alınmak zorunda. Önce Günlük Yazı\'yı girin.';
+  if(!sec) return 'Adam sayısını Günlük Yazı başlıklarından seçin (elle yazılamaz - Günlük İşler Ayarları)';
+  if(!(slinkGyToplam(y)>0)) return 'Seçilen başlıklar bu tarihin Günlük Yazısında yok - başlıkları yeniden seçin';
+  return '';
+}
+const ADAM_GY_BOS='adam sayısı Günlük Yazı\'dan alınmak zorunda - önce bu tarihin Günlük Yazısını girin.';
+const ADAM_GY_IPUCU='Adam sayısı Günlük Yazı\'dan alınmak zorunda (Günlük İşler Ayarları) - aşağıdan başlık seçin';
 // baglanabilir kalemler: Kisa Rapor'un gorunur sabit kalemleri + ozel kalemler
 function giaKalemler(){
   return krKalemler().filter(k=>!k.gizli).map(k=>({id:k.id, ad:k.ad, birim:k.birim, ozel:false}))
@@ -11316,9 +11349,10 @@ function openGiAyar(sekme){
 function giaSekmeSec(s){ _GIA.sekme=s; giaCiz(); }
 function giaCiz(){
   const s=document.getElementById('giaSekme'); if(!s) return;
-  s.innerHTML=[['bag','Baglantilar'],['saha','Saha Kaydi'],['plan','Yarin Plani']].map(([v,ad])=>`<button type="button" class="${_GIA.sekme===v?'on':''}" onclick="giaSekmeSec('${v}')">${ad}</button>`).join('');
+  s.innerHTML=[['bag','Baglantilar'],['saha','Saha Kaydi'],['adam','Adam Sayisi'],['plan','Yarin Plani']].map(([v,ad])=>`<button type="button" class="${_GIA.sekme===v?'on':''}" onclick="giaSekmeSec('${v}')">${ad}</button>`).join('');
   const el=document.getElementById('giaIcerik'); if(!el) return;
   if(_GIA.sekme==='plan'){ el.innerHTML=`<div id="ypAyar" class="yp-ayar acik"></div>`; ypAyarCiz(); return; }
+  if(_GIA.sekme==='adam'){ el.innerHTML=giaAdamHtml(); return; }
   if(_GIA.sekme==='saha'){
     // secim sonrasi yeniden cizimde liste kaydirmasi korunsun
     const eski=document.getElementById('giaSahaListe'), y=eski?eski.scrollTop:0;
@@ -11336,6 +11370,15 @@ function giaCiftler(){
     if(!m.has(k)) m.set(k,{anahtar:krFirmaAnahtar(r), bina:String(r.bina||''), ad:[r.firma||'(firmasiz)',r.bina].filter(Boolean).join(' · ')});
   });
   return [...m.values()].slice(0,3);
+}
+function giaAdamHtml(){
+  const a=giaAyar(), dz=ypDuzenlenebilir();
+  return `<label class="gia-zorunlu${a.adamGy?' on':''}"><input type="checkbox"${a.adamGy?' checked':''}${dz?'':' disabled'} onchange="giaYaz({adamGy:this.checked})">
+      <span><b>Adam sayısı Günlük Yazı'dan zorunlu</b>
+      <i>${a.adamGy?'AÇIK - bundan sonra işlenen kayıtlarda adam sayısı elle yazılamaz':'KAPALI - adam sayısı elle de yazılabilir'}</i></span></label>
+    <p class="yp-ayar-not" style="margin:12px 0 0;line-height:1.6">Açıkken <b>Saha Kaydı</b> (her bölüm), <b>İşgücü Kaydı</b> ve <b>Saha Linki</b>'nde adam sayısı kutusu kilitlenir; sayı yalnızca o tarihin Günlük Yazısından başlık seçilerek gelir. O tarihe Günlük Yazı girilmemişse ya da başlık seçilmemişse kayıt yapılmaz.<br>
+    Saha Linki'nde başlık link oluştururken seçilir; seçilmezse linki açan kişiye adam sorulmaz, onaylarken Günlük Yazı'dan seçersiniz.<br>
+    Daha önce kaydedilmiş raporlar etkilenmez: düzenlerken adam sayısına dokunmazsanız kontrol edilmez. Excel'den saha kaydı aktarımı bu ayardan etkilenmez.${dz?'':' <b>Yalnizca goruntuleme yetkiniz var.</b>'}</p>`;
 }
 function giaBagHtml(){
   const a=giaAyar(), dz=ypDuzenlenebilir(), kilit=dz?'':' disabled';
@@ -32548,6 +32591,7 @@ function slinkGyKaynakSec(i){
 // adam sayisi ELLE yazildi: sayi artik yazidan gelmiyor, cipler "secili" gorunmesin
 function slinkAdamYaz(v){
   const y=SLINK.yeni; if(!y) return;
+  if(adamGyZorunlu()){ slinkGyKutu(); return; }
   y.adam=v;
   if(y.gySec.length){ y.gySec=[]; slinkGyKutu(); slinkGyCiz(); }
 }
@@ -32557,7 +32601,7 @@ function slinkTarihDegis(v){
 }
 /* o: paneli kullanan ekranin baglantisi - Saha Linki (varsayilan) ve Saha Kaydi formu (rGyAlanHtml)
    ayni paneli kendi tiklama islevleriyle cizer. sec(a)/kay(i) onclick metnini dondurur. */
-const SLINK_GY_BAG={sec:a=>`slinkGySec(${a})`, kay:i=>`slinkGyKaynakSec(${i})`, bos:'adam sayısını elle girin ya da boş bırakın (linkte sorulur).', bina:'linkin binası'};
+const SLINK_GY_BAG={sec:a=>`slinkGySec(${a})`, kay:i=>`slinkGyKaynakSec(${i})`, get bos(){ return adamGyZorunlu()?'adam sayısı Günlük Yazı\'dan zorunlu: linkte sorulmaz, onaylarken bu tarihin Günlük Yazısından seçersiniz.':'adam sayısını elle girin ya da boş bırakın (linkte sorulur).'; }, bina:'linkin binası'};
 function slinkGyHtml(y,o){
   o=o||SLINK_GY_BAG;
   const tarihTR=y.tarih?fmtDate(y.tarih):'';
@@ -32635,7 +32679,9 @@ function slinkYeniHtml(){
       <div><label>Bölüm *</label><select onchange="slinkYeniSet('cat',this.value)">${opt('','- bölüm seçin -',!y.cat)}${(DB.proje.sections||[]).map(s=>opt(s,s,y.cat===s)).join('')}</select></div></div>
     <div class="frow"><label>Ekip *</label><select onchange="SLINK.yeni.ekip=this.value">${opt('','- ekip seçin -',!y.ekip)}${(DB.rapor.ekipler||[]).map(e=>opt(e,e,y.ekip===e)).join('')}</select></div>
     <div class="frow two"><div><label>Dolduracak kişi</label><input maxlength="60" value="${esc(y.dolduran)}" placeholder="boş bırakılırsa linkte sorulur" oninput="SLINK.yeni.dolduran=this.value"></div>
-      <div><label>Adam sayısı</label><input id="slinkAdam" type="number" min="0" max="999" step="1" value="${esc(y.adam)}" placeholder="boş bırakılırsa linkte sorulur" oninput="slinkAdamYaz(this.value)"${y.gySec.length&&String(y.adam)!==''?' class="slink-adam-gy" title="Günlük Yazı başlıklarından toplandı - elle yazarsanız seçim bırakılır"':''}></div></div>
+      <div><label>Adam sayısı</label>${adamGyZorunlu()
+        ?`<input id="slinkAdam" type="number" value="${esc(y.adam)}" placeholder="Günlük Yazı'dan - seçilmezse onayda" readonly class="adam-gy-kilit${y.gySec.length&&String(y.adam)!==''?' slink-adam-gy':''}" title="${esc(ADAM_GY_IPUCU+'. Seçmezseniz linkte adam sorulmaz; onaylarken seçersiniz.')}">`
+        :`<input id="slinkAdam" type="number" min="0" max="999" step="1" value="${esc(y.adam)}" placeholder="boş bırakılırsa linkte sorulur" oninput="slinkAdamYaz(this.value)"${y.gySec.length&&String(y.adam)!==''?' class="slink-adam-gy" title="Günlük Yazı başlıklarından toplandı - elle yazarsanız seçim bırakılır"':''}>`}</div></div>
     <div class="frow"><label>Adam sayısını Günlük Yazı'dan al <span class="t-meta" style="text-transform:none;letter-spacing:0">(birden fazla başlık seçilebilir)</span></label><div class="slink-gy" id="slinkGy">${slinkGyHtml(y)}</div></div>
     <div class="frow"><label>Şartnameler <span class="t-meta" style="text-transform:none;letter-spacing:0">(birden fazla seçilebilir)</span></label>${sartAlani}</div>
     <div class="frow two"><div><label>Kat</label><select onchange="SLINK.yeni.katId=this.value">${opt('',kats.length?'- linki açan kişi her kalemde seçsin -':'- binada kat tanımı yok -',!y.katId)}${kats.map(k=>opt(k.id,k.name+(k.kot!=null&&k.kot!==''?' ('+k.kot+')':''),y.katId===k.id)).join('')}</select></div>
@@ -32657,8 +32703,12 @@ async function slinkOlustur(){
   const btn=document.getElementById('slinkOlusturBtn'); if(btn){ btn.disabled=true; btn.textContent='Oluşturuluyor...'; }
   try{
     // gySec/gyKaynak formun Gunluk Yazi seciminin durumu - linke yalniz sonuc sayisi (adam) gider
+    // gySec/gyKaynak formun Gunluk Yazi seciminin durumu. Zorunlu modda (adamGy) linke yazilir:
+    // onayda Saha Kaydi formuna geri gelir; secilmediyse linki acana adam sorulmaz
     const {gySec, gyKaynak, ...gonder}=y;
-    const r=await sbSahaLinkIslem({op:'olustur', ...gonder, dolduran:y.dolduran.trim(), adam:adam===''?'':Number(adam)});
+    const z=adamGyZorunlu();
+    const r=await sbSahaLinkIslem({op:'olustur', ...gonder, dolduran:y.dolduran.trim(), adam:adam===''?'':Number(adam),
+      ...(z?{adamGy:true, gySec:gySec.slice(), gyKaynak:gyKaynak||''}:{})});
     SLINK.linkler=[r.link, ...(SLINK.linkler||[])];
     SLINK.sonuc=r.link; SLINK.gorunum='sonuc'; slinkModalCiz(true);
   }catch(e){
@@ -32736,7 +32786,9 @@ function slinkIncele(id){
   // bazinda en yuksek deger olarak sayildigi icin (rAdamBloklari) cift sayilmaz.
   const gruplar=new Map();
   (g.satirlar||[]).forEach(s=>{ const l=slinkSatirToLine(s,g); const k=l.grup||''; if(!gruplar.has(k)) gruplar.set(k,[]); gruplar.get(k).push(l); });
-  const blok=(sart,lines)=>({cat:g.cat||'', ekip:g.ekip||'', adam:g.adam!=null?String(g.adam):'', sart, lines});
+  // zorunlu modda acilmis linkin Gunluk Yazi basliklari bloga gelir; rBinaChange sayiyi o yazidan yeniden toplar
+  const gySec=Array.isArray(g.gySec)?g.gySec.map(String):[];
+  const blok=(sart,lines)=>({cat:g.cat||'', ekip:g.ekip||'', adam:g.adam!=null?String(g.adam):'', sart, lines, gySec:gySec.slice(), gyKaynak:''});
   _rBlocks=gruplar.size?[...gruplar].map(([sart,lines])=>blok(sart,lines)):[blok(g.sart||'',[_rEmptyLine()])];
   rBinaChange();   // bu binada olmayan sartnameyi temizler + bloklari cizer
 }
@@ -33013,7 +33065,7 @@ function openIsgModal(idOrNull,presetDate){
       <div><label>Ekip${kisit?' <span class="t-meta">(size atanan)</span>':''}</label>${kisit
         ?`<select id="isg_ekip" disabled class="ro-auto" title="Ekibiniz atanmis"><option value="${esc(kisit)}" selected>${esc(kisit)}</option></select>`
         :`<select id="isg_ekip"><option value="">- ekip secin -</option>${(curEkip&&!ekipler.some(x=>x===curEkip))?`<option value="${esc(curEkip)}" selected>${esc(curEkip)} (listede yok)</option>`:''}${ekipler.map(ek=>`<option value="${esc(ek)}" ${curEkip===ek?'selected':''}>${esc(ek)}${ekipBolumOf(ek)?' ('+ekipBolumLabel(ekipBolumOf(ek))+')':''}</option>`).join('')}</select>`}</div></div>
-    <div class="frow two"><div><label>Adam Sayisi *</label><input id="isg_adam" type="number" min="0" step="1" value="${e&&e.adamSayisi!=null?esc(e.adamSayisi):''}" placeholder="orn. 4" oninput="isgAdamYaz()"></div>
+    <div class="frow two"><div><label>Adam Sayisi *</label><input id="isg_adam" type="number" min="0" step="1" value="${e&&e.adamSayisi!=null?esc(e.adamSayisi):''}" placeholder="${adamGyZorunlu()?'Günlük Yazı\'dan':'orn. 4'}" oninput="isgAdamYaz()"${adamGyZorunlu()?` readonly class="adam-gy-kilit" title="${esc(ADAM_GY_IPUCU)}"`:''}></div>
       <div><label>Adam/Gun  <span class="t-meta">(genelde 1)</span></label><input id="isg_gun" type="number" min="0" step="any" value="${e?esc(e.miktar):'1'}"></div></div>
     <div class="rgy" id="isg_gy"></div>
     <div class="frow"><label>Not</label><textarea id="isg_not">${esc(e?(e.notlar||''):'')}</textarea></div>
@@ -33022,7 +33074,7 @@ function openIsgModal(idOrNull,presetDate){
   document.body.insertAdjacentHTML('beforeend',html);
   // Gunluk Yazi paneli alanlar DOM'a girdikten sonra cizilir (tarih/yer oradan okunur);
   // yeni kayitta acik, duzenlemede kapali baslar
-  _ISGY={gySec:[],gyKaynak:'',acik:!e}; isgGyCiz();
+  _ISGY={gySec:[],gyKaynak:'',acik:!e||adamGyZorunlu(), ilk:e&&e.adamSayisi!=null?String(e.adamSayisi):undefined}; isgGyCiz();
   // Kaza ile kapanma: girilen bilgi dis tiklama / Esc ile ucmasin (bkz. setModalGuard).
   // Varsayilani olan alanlar (tarih, vardiya, adam/gun, bina, ekip) olcute KONMAZ -
   // yoksa hic dokunulmamis form da "dolu" sayilip kapanmazdi.
@@ -33061,7 +33113,7 @@ function isgGyDurum(){
 function isgGyCiz(){
   const e=document.getElementById('isg_gy'); if(!e) return;
   e.innerHTML=gyAlanHtml(isgGyDurum(), _ISGY.acik, 'isgGyAc()',
-    {sec:a=>`isgGySec(${a})`, kay:i=>`isgGyKaynakSec(${i})`, bos:'adam sayısını elle girin.', bina:'kaydın yeri'});
+    {sec:a=>`isgGySec(${a})`, kay:i=>`isgGyKaynakSec(${i})`, bos:adamGyZorunlu()?ADAM_GY_BOS:'adam sayısını elle girin.', bina:'kaydın yeri'});
 }
 // adam kutusu: deger verilirse yazilir; secimden geldiyse yesil
 function isgGyKutu(adam){
@@ -33086,7 +33138,7 @@ function isgGyKaynakSec(i){
   isgGyUygula(); isgGyCiz();
 }
 // adam sayisi ELLE yazildi: secim birakilir
-function isgAdamYaz(){ if(_ISGY.gySec.length){ _ISGY.gySec=[]; isgGyKutu(); isgGyCiz(); } }
+function isgAdamYaz(){ if(adamGyZorunlu()){ isgGyKutu(_ISGY.gySec.length?String(slinkGyToplam(isgGyDurum())||''):(_ISGY.ilk||'')); return; } if(_ISGY.gySec.length){ _ISGY.gySec=[]; isgGyKutu(); isgGyCiz(); } }
 // tarih / yer degisti (yer degisince kaynak o yerin yazisina doner); gorev degisince yalniz oneri
 function isgGyTazele(yerDegisti){ if(yerDegisti) _ISGY.gyKaynak=''; isgGyUygula(); isgGyCiz(); }
 async function saveIsgEntry(id,kalsin){
@@ -33098,6 +33150,8 @@ async function saveIsgEntry(id,kalsin){
   if(!guard('define',{bina}))return;
   const kisit=myEkipKisiti();
   const ekip=kisit||gv('isg_ekip');
+  const adamH=adamGyHata(isgGyDurum(),gv('isg_adam'),id?_ISGY.ilk:undefined);
+  if(adamH){ toast(adamH,'err'); if(!_ISGY.acik){ _ISGY.acik=true; isgGyCiz(); } return; }
   const adam=Number(gv('isg_adam')); if(!(adam>0)){ toast('Adam sayisi girin','err'); return; }
   const gun=Number(gv('isg_gun')); if(!(gun>0)){ toast('Adam/gun degeri gecersiz','err'); return; }
   if(!DB.rapor.entries)DB.rapor.entries=[];
@@ -33635,6 +33689,7 @@ function openRaporModal(id,presetDate){
     siblings.forEach(s=>{ const k=s.cat||''; if(!byCat.has(k))byCat.set(k,[]); byCat.get(k).push(s); });
     _rBlocks=[...byCat.values()].map(grp=>({
       cat:grp[0].cat||'', ekip:grp[0].ekip||'', adam:grp[0].adamSayisi!=null?String(grp[0].adamSayisi):'', sart:grp[0].projeKodu||'',
+      _adamIlk:grp[0].adamSayisi!=null?String(grp[0].adamSayisi):'',
       // altId: alternatif urunle yapilan montaj kaydinin kimligi - duzenlemede KORUNUR (form
       // uzerinden degistirilmez; kaybolursa kayit ana urune donusur ve ilerleme yanlis okunur)
       lines:grp.map(s=>({specId:s.specId,altId:s.altId||'',matId:s.matId||null,code:s.code,name:s.malzeme,unit:s.birim,grup:s.projeKodu,miktar:s.miktar,kat:s.kat||'',kot:s.kot||'',lokId:s.lokId||'',_id:s.id}))
@@ -33731,7 +33786,7 @@ function rRenderBlocks(){
       </div>
       <div class="frow three" style="margin-bottom:9px">
         <div><label>Ekip${ekipKisit?' <span class="t-meta">(size atanan)</span>':''}</label><select onchange="rSetBlockEkip(${bi},this.value,this)" ${ekipKisit?'disabled class="ro-auto" title="Ekibiniz atanmis - yalniz kendi ekibiniz adina kayit girebilirsiniz"':''}>${ekipOpts}</select></div>
-        <div><label>Adam Sayisi</label><input id="r_adam_${bi}" type="number" min="0" value="${esc(bk.adam)}" placeholder="0" oninput="rAdamYaz(${bi},this.value)"${(bk.gySec||[]).length&&String(bk.adam)!==''?' class="slink-adam-gy" title="Gunluk Yazi basliklarindan toplandi - elle yazarsaniz secim birakilir"':''}></div>
+        <div><label>Adam Sayisi${adamGyZorunlu()?' *':''}</label>${rAdamKutuHtml(bk,bi)}</div>
         ${parcali
           ?`<div><label>Sartname</label><input class="ro-auto" value="${esc(bk.sart||(sartlar.length>1?sartlar.length+' şartname · satır bazında':''))}" readonly placeholder="kat secilince otomatik" title="${sartlar.length>1?esc('Kalemler farkli sartnamelere dusuyor - her satir kendi sartnamesiyle kaydedilir:\n'+sartlar.join('\n')):'Sartname elle secilmez - kalemde kat/lokasyon secilince otomatik dolar'}"></div>`
           :`<div><label>Sartname</label><select onchange="rSetBlockSart(${bi},this.value)">${sartOpts}</select></div>`}
@@ -33868,9 +33923,18 @@ function rGyKutu(bi){
   if(inp.value!==String(bk.adam==null?'':bk.adam)) inp.value=bk.adam==null?'':bk.adam;
   inp.classList.toggle('slink-adam-gy', (bk.gySec||[]).length>0&&String(bk.adam)!=='');
 }
+// adam kutusu: zorunlu modda salt okunur (sayi yalniz Gunluk Yazi seciminden)
+function rAdamKutuHtml(bk,bi){
+  const gy=(bk.gySec||[]).length&&String(bk.adam)!=='', z=adamGyZorunlu();
+  const sinif=[gy?'slink-adam-gy':'', z?'adam-gy-kilit':''].filter(Boolean).join(' ');
+  const ipucu=z?ADAM_GY_IPUCU:gy?'Gunluk Yazi basliklarindan toplandi - elle yazarsaniz secim birakilir':'';
+  return `<input id="r_adam_${bi}" type="number" min="0" value="${esc(bk.adam)}" placeholder="${z?'Günlük Yazı\'dan':'0'}" oninput="rAdamYaz(${bi},this.value)"${z?' readonly':''}${sinif?` class="${sinif}"`:''}${ipucu?` title="${esc(ipucu)}"`:''}>`;
+}
+// panel: zorunlu modda acik baslar (kullanici kapatabilir)
+function rGyAcikMi(bk){ return bk.gyAcik===undefined?adamGyZorunlu()&&!(bk.gySec||[]).length:!!bk.gyAcik; }
 function rGyAlanHtml(bk,bi){
-  return gyAlanHtml(rGyDurum(bk), !!bk.gyAcik, `rGyAc(${bi})`,
-    {sec:a=>`rGySec(${bi},${a})`, kay:i=>`rGyKaynakSec(${bi},${i})`, bos:'adam sayısını elle girin.', bina:'formun binası'})
+  return gyAlanHtml(rGyDurum(bk), rGyAcikMi(bk), `rGyAc(${bi})`,
+    {sec:a=>`rGySec(${bi},${a})`, kay:i=>`rGyKaynakSec(${bi},${i})`, bos:adamGyZorunlu()?ADAM_GY_BOS:'adam sayısını elle girin.', bina:'formun binası'})
     +skBagHtml(bk,bi);
 }
 /* Aç/kapa düğmesi + panel (Saha Kaydi bolumu ve Isgucu Kaydi ortak). y: {tarih,bina,cat,gySec,gyKaynak},
@@ -33889,7 +33953,7 @@ function gyAlanHtml(y,acik,ac,bag){
     ${acik?`<div class="slink-gy rgy-panel">${slinkGyHtml(y,bag)}</div>`:''}`;
 }
 function rGyCiz(bi){ const e=document.getElementById('rgy_'+bi), bk=_rBlocks[bi]; if(e&&bk) e.innerHTML=rGyAlanHtml(bk,bi); }
-function rGyAc(bi){ const bk=_rBlocks[bi]; if(!bk) return; bk.gyAcik=!bk.gyAcik; rGyCiz(bi); }
+function rGyAc(bi){ const bk=_rBlocks[bi]; if(!bk) return; bk.gyAcik=!rGyAcikMi(bk); rGyCiz(bi); }
 // i = slinkGyBasliklar sirasi; 'hepsi' / 'hic' toplu secim
 function rGySec(bi,i){
   const bk=_rBlocks[bi]; if(!bk) return;
@@ -33911,6 +33975,7 @@ function rGyKaynakSec(bi,i){
 // adam sayisi ELLE yazildi: sayi artik yazidan gelmiyor, secim birakilir
 function rAdamYaz(bi,v){
   const bk=_rBlocks[bi]; if(!bk) return;
+  if(adamGyZorunlu()){ rGyKutu(bi); return; }   // kutu salt okunur - yine de elle deger kabul edilmez
   bk.adam=v;
   if((bk.gySec||[]).length){ bk.gySec=[]; rGyKutu(bi); rGyCiz(bi); }
 }
@@ -34411,6 +34476,9 @@ async function saveRaporEntry(){
     // sartname secildiyse bolumle uyumlu olmali
     const sr=bk.sart?(DB.proje.sartnames||[]).find(x=>x.bina===bina&&x.code===bk.sart):null;
     if(sr && cat && sr.section!==cat){ toast(`Bolum ${bi+1}: secili sartname "${sr.section}" bolumune ait, kalemler "${cat}" - uyusmuyor`,'err'); return; }
+    // adam sayisi Gunluk Yazi'dan zorunluysa (Gunluk Isler Ayarlari)
+    const adamH=adamGyHata(rGyDurum(bk),bk.adam,bk._adamIlk);
+    if(adamH){ toast(`Bolum ${bi+1}: ${adamH}`,'err'); if(!rGyAcikMi(bk)){ bk.gyAcik=true; rGyCiz(bi); } return; }
     validLines.forEach(l=>flat.push({bk,l,cat}));
   }
   if(flat.length===0){ toast('En az bir bolumde is kalemi secip miktar girin','err'); return; }
