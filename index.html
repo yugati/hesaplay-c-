@@ -1796,6 +1796,17 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
   background:color-mix(in srgb,var(--green) 10%,transparent);
   border:1px solid color-mix(in srgb,var(--green) 32%,transparent)}
 .isg-sayac svg{width:13px;height:13px;flex:0 0 auto}
+.isg-ekip-normal{display:flex;flex-direction:column;align-items:flex-start;gap:7px}
+.isg-bol-btn{padding:6px 10px;font-size:11px}
+.isg-bol{margin:0 0 14px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.isg-bol-help{margin:0 0 8px;font-size:11px;line-height:1.5;color:var(--dim)}
+.isg-bol-row{display:grid;grid-template-columns:minmax(0,1fr) 88px 30px;gap:7px;align-items:center;margin-top:7px}
+.isg-bol-row select,.isg-bol-row input{min-width:0;width:100%;padding:8px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font-size:12px}
+.isg-bol-status{margin-top:9px;font-size:11px;color:var(--amber)}
+.isg-bol-status.ok{color:var(--green)}
+.isg-bol-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+.isg-bol-actions .btn{padding:6px 9px;font-size:11px}
+@media(max-width:560px){.isg-bol-row{grid-template-columns:minmax(0,1fr) 70px 28px;gap:5px}.isg-bol-row select,.isg-bol-row input{padding:8px 6px;font-size:11px}}
 /* ISGUCU (ADAM/GUN) bolumu - gun modali */
 .rap-group-isg{border:1px dashed color-mix(in srgb,var(--violet,#a855f7) 45%,transparent)}
 .rap-group-isg .rap-group-h{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--line);font-size:12.5px}
@@ -34447,6 +34458,7 @@ function openIsgModal(idOrNull,presetDate){
   // kayittan sonra yanlis gunun modali acilmasin (openRaporModal ile ayni desen)
   if(!document.querySelector('.rapday-modal')) _rDayOpen=null;
   _isgEklendi=false; _isgGun=''; _isgSayi=0;   // yeni pencere: ardisik giris sayaci sifirdan
+  _ISG_DAGITIM=false; _ISG_ALOKASYON=[];
   const kisit=myEkipKisiti();
   const ekipler=(DB.rapor.ekipler||[]).slice().sort((a,b)=>a.localeCompare(b,'tr'));
   // Ekip secenekleri value TASIMALI: saveIsgEntry degeri dogrudan gv('isg_ekip') ile okur,
@@ -34467,8 +34479,9 @@ function openIsgModal(idOrNull,presetDate){
     <div class="frow two"><div><label>Yer / Bina</label><input id="isg_bina" list="isg_binaList" value="${esc(curBina)}" placeholder="orn. DGR, 00UYB" oninput="isgGyTazele(true)"><datalist id="isg_binaList">${binalar.map(b=>`<option value="${esc(b)}">`).join('')}</datalist></div>
       <div><label>Ekip${kisit?' <span class="t-meta">(size atanan)</span>':''}</label>${kisit
         ?`<select id="isg_ekip" disabled class="ro-auto" title="Ekibiniz atanmis"><option value="${esc(kisit)}" selected>${esc(kisit)}</option></select>`
-        :`<select id="isg_ekip"><option value="">- ekip secin -</option>${(curEkip&&!ekipler.some(x=>x===curEkip))?`<option value="${esc(curEkip)}" selected>${esc(curEkip)} (listede yok)</option>`:''}${ekipler.map(ek=>`<option value="${esc(ek)}" ${curEkip===ek?'selected':''}>${esc(ek)}${ekipBolumOf(ek)?' ('+ekipBolumLabel(ekipBolumOf(ek))+')':''}</option>`).join('')}</select>`}</div></div>
-    <div class="frow two"><div><label>Adam Sayisi *</label><input id="isg_adam" type="number" min="0" step="1" value="${e&&e.adamSayisi!=null?esc(e.adamSayisi):''}" placeholder="${adamGyZorunlu()?'Günlük Yazı\'dan':'orn. 4'}" oninput="isgAdamYaz()"${adamGyZorunlu()?` readonly class="adam-gy-kilit" title="${esc(ADAM_GY_IPUCU)}"`:''}></div>
+        :`<div id="isg_ekipNormal" class="isg-ekip-normal"><select id="isg_ekip"><option value="">- ekip secin -</option>${(curEkip&&!ekipler.some(x=>x===curEkip))?`<option value="${esc(curEkip)}" selected>${esc(curEkip)} (listede yok)</option>`:''}${ekipler.map(ek=>`<option value="${esc(ek)}" ${curEkip===ek?'selected':''}>${esc(ek)}${ekipBolumOf(ek)?' ('+ekipBolumLabel(ek)+')':''}</option>`).join('')}</select>${e?'':`<button type="button" class="btn btn-ghost isg-bol-btn" onclick="isgDagitimAc()">Ekiplere dağıt</button>`}</div>`}</div></div>
+    <div id="isg_dagitim" class="isg-bol" style="display:none"></div>
+    <div class="frow two"><div><label id="isg_adamLabel">Adam Sayisi *</label><input id="isg_adam" type="number" min="0" step="1" value="${e&&e.adamSayisi!=null?esc(e.adamSayisi):''}" placeholder="${adamGyZorunlu()?'Günlük Yazı\'dan':'orn. 4'}" oninput="isgAdamYaz()"${adamGyZorunlu()?` readonly class="adam-gy-kilit" title="${esc(ADAM_GY_IPUCU)}"`:''}></div>
       <div><label>Adam/Gun  <span class="t-meta">(genelde 1)</span></label><input id="isg_gun" type="number" min="0" step="any" value="${e?esc(e.miktar):'1'}"></div></div>
     <div class="rgy" id="isg_gy"></div>
     <div class="frow"><label>Not</label><textarea id="isg_not">${esc(e?(e.notlar||''):'')}</textarea></div>
@@ -34508,6 +34521,7 @@ let _isgSayi=0;
    sayisi elle yazilinca secim birakilir. GOREV adi oneri etiketine gider (AMBAR / СКЛАД ->
    AMBAR basligi). Secim kayda GIRMEZ; "Kaydet ve Yeni" sonraki kalem icin secimi sifirlar. */
 let _ISGY={gySec:[],gyKaynak:'',acik:false};
+let _ISG_DAGITIM=false, _ISG_ALOKASYON=[];
 function isgGyDurum(){
   const v=id=>(document.getElementById(id)||{}).value||'';
   return {tarih:v('isg_tarih'), bina:v('isg_bina').trim(), cat:v('isg_gorev').split('/')[0].trim(),
@@ -34515,10 +34529,66 @@ function isgGyDurum(){
 }
 function isgGyCiz(){
   const e=document.getElementById('isg_gy'); if(!e) return;
+  isgDagitimCiz();
   e.innerHTML=gyAlanHtml(isgGyDurum(), _ISGY.acik, 'isgGyAc()',
     {sec:a=>`isgGySec(${a})`, kay:i=>`isgGyKaynakSec(${i})`, bos:adamGyZorunlu()?ADAM_GY_BOS:'adam sayısını elle girin.', bina:'kaydın yeri'});
 }
 // adam kutusu: deger verilirse yazilir; secimden geldiyse yesil
+function isgDagitimHedef(){
+  const x=document.getElementById('isg_adam'); return x&&x.value!==''?Number(x.value):0;
+}
+function isgDagitimDurumGuncelle(){
+  if(!_ISG_DAGITIM) return;
+  const el=document.getElementById('isg_dagitimDurum'); if(!el) return;
+  const hedef=isgDagitimHedef(), toplam=_ISG_ALOKASYON.reduce((s,x)=>s+(Number(x.adam)||0),0);
+  const ekipler=_ISG_ALOKASYON.map(x=>norm(x.ekip||'')).filter(Boolean);
+  const tam=_ISG_ALOKASYON.length>=2&&_ISG_ALOKASYON.every(x=>x.ekip&&Number.isInteger(Number(x.adam))&&Number(x.adam)>0)
+    &&new Set(ekipler).size===ekipler.length&&hedef>0&&toplam===hedef;
+  el.classList.toggle('ok',tam);
+  el.textContent=`Dağıtılan: ${toplam} / ${hedef||0} kişi${tam?'':' — satır toplamı toplam kişi sayısına eşit olmalı'}`;
+}
+function isgDagitimCiz(){
+  const el=document.getElementById('isg_dagitim'); if(!el) return;
+  const normal=document.getElementById('isg_ekipNormal');
+  const adamLabel=document.getElementById('isg_adamLabel');
+  el.style.display=_ISG_DAGITIM?'':'none';
+  if(normal) normal.style.display=_ISG_DAGITIM?'none':'';
+  if(adamLabel) adamLabel.textContent=_ISG_DAGITIM?'Toplam Adam Sayisi *':'Adam Sayisi *';
+  if(!_ISG_DAGITIM) return;
+  const ekipler=(DB.rapor.ekipler||[]).slice().sort((a,b)=>a.localeCompare(b,'tr'));
+  const secenekler=(secili)=>`<option value="">- ekip seçin -</option>${ekipler.map(ek=>`<option value="${esc(ek)}" ${secili===ek?'selected':''}>${esc(ek)}${ekipBolumOf(ek)?' ('+ekipBolumLabel(ekipBolumOf(ek))+')':''}</option>`).join('')}`;
+  const rows=_ISG_ALOKASYON.map((x,i)=>`<div class="isg-bol-row"><select aria-label="${i+1}. ekip" onchange="isgDagitimSet(${i},'ekip',this.value)">${secenekler(x.ekip)}</select>
+      <input aria-label="${i+1}. ekip kişi sayısı" type="number" min="0" step="1" value="${esc(x.adam==null?'':x.adam)}" placeholder="kişi" oninput="isgDagitimSet(${i},'adam',this.value)">
+      ${_ISG_ALOKASYON.length>2?`<button type="button" class="mini-btn del" title="Ekibi kaldır" onclick="isgDagitimSatirSil(${i})">${icoTrash()}</button>`:'<span></span>'}</div>`).join('');
+  const hedef=isgDagitimHedef();
+  el.innerHTML=`<p class="isg-bol-help">${hedef?`Toplam ${fmtNum(hedef)} kişi ekipler arasında dağıtılacak.`:'Önce Günlük Yazı başlıklarından toplam kişi sayısını seçin.'} Her ekip ayrı rapor satırı olur; dağıtım toplamı kişi sayısına eşit olmalı.</p>
+    ${rows}<div id="isg_dagitimDurum" class="isg-bol-status"></div><div class="isg-bol-actions"><button type="button" class="btn btn-ghost" onclick="isgDagitimSatirEkle()">+ Ekip ekle</button><button type="button" class="btn btn-ghost" onclick="isgDagitimKapat()">Tek ekip seçimine dön</button></div>`;
+  isgDagitimDurumGuncelle();
+}
+function isgDagitimAc(){
+  const adam=(document.getElementById('isg_adam')||{}).value||'';
+  const ekip=(document.getElementById('isg_ekip')||{}).value||'';
+  _ISG_DAGITIM=true; _ISG_ALOKASYON=[{ekip,adam},{ekip:'',adam:''}]; isgDagitimCiz();
+}
+function isgDagitimKapat(){
+  const ekip=_ISG_ALOKASYON.find(x=>x.ekip)?.ekip||'';
+  const sec=document.getElementById('isg_ekip'); if(sec&&ekip) sec.value=ekip;
+  _ISG_DAGITIM=false; _ISG_ALOKASYON=[]; isgDagitimCiz();
+}
+function isgDagitimSet(i,alan,deger){ if(!_ISG_ALOKASYON[i]) return; _ISG_ALOKASYON[i][alan]=deger; isgDagitimDurumGuncelle(); }
+function isgDagitimSatirEkle(){ _ISG_ALOKASYON.push({ekip:'',adam:''}); isgDagitimCiz(); }
+function isgDagitimSatirSil(i){ if(_ISG_ALOKASYON.length<=2) return; _ISG_ALOKASYON.splice(i,1); isgDagitimCiz(); }
+function isgDagitimPaylari(toplam){
+  if(!_ISG_DAGITIM) return {paylar:null};
+  if(_ISG_ALOKASYON.length<2) return {hata:'Dağıtım için en az iki ekip satırı gerekli.'};
+  const paylar=_ISG_ALOKASYON.map(x=>({ekip:String(x.ekip||'').trim(),adam:Number(x.adam)}));
+  if(paylar.some(x=>!x.ekip)) return {hata:'Her dağıtım satırında bir ekip seçin.'};
+  if(paylar.some(x=>!Number.isInteger(x.adam)||x.adam<=0)) return {hata:'Her ekibe sıfırdan büyük tam kişi sayısı girin.'};
+  if(new Set(paylar.map(x=>norm(x.ekip))).size!==paylar.length) return {hata:'Aynı ekibi iki kez seçmeyin; kişi sayılarını tek satırda birleştirin.'};
+  const dagitilan=paylar.reduce((s,x)=>s+x.adam,0);
+  if(dagitilan!==toplam) return {hata:`Ekip dağılımı ${dagitilan} kişi; toplam sayı ${toplam} olmalı.`};
+  return {paylar};
+}
 function isgGyKutu(adam){
   const inp=document.getElementById('isg_adam'); if(!inp) return;
   if(adam!==undefined&&inp.value!==String(adam)) inp.value=adam;
@@ -34541,7 +34611,7 @@ function isgGyKaynakSec(i){
   isgGyUygula(); isgGyCiz();
 }
 // adam sayisi ELLE yazildi: secim birakilir
-function isgAdamYaz(){ if(adamGyZorunlu()){ isgGyKutu(_ISGY.gySec.length?String(slinkGyToplam(isgGyDurum())||''):(_ISGY.ilk||'')); return; } if(_ISGY.gySec.length){ _ISGY.gySec=[]; isgGyKutu(); isgGyCiz(); } }
+function isgAdamYaz(){ if(adamGyZorunlu()){ isgGyKutu(_ISGY.gySec.length?String(slinkGyToplam(isgGyDurum())||''):(_ISGY.ilk||'')); isgDagitimCiz(); return; } if(_ISGY.gySec.length){ _ISGY.gySec=[]; isgGyKutu(); isgGyCiz(); } else isgDagitimCiz(); }
 // tarih / yer degisti (yer degisince kaynak o yerin yazisina doner); gorev degisince yalniz oneri
 function isgGyTazele(yerDegisti){ if(yerDegisti) _ISGY.gyKaynak=''; isgGyUygula(); isgGyCiz(); }
 async function saveIsgEntry(id,kalsin){
@@ -34557,6 +34627,7 @@ async function saveIsgEntry(id,kalsin){
   if(adamH){ toast(adamH,'err'); if(!_ISGY.acik){ _ISGY.acik=true; isgGyCiz(); } return; }
   const adam=Number(gv('isg_adam')); if(!(adam>0)){ toast('Adam sayisi girin','err'); return; }
   const gun=Number(gv('isg_gun')); if(!(gun>0)){ toast('Adam/gun degeri gecersiz','err'); return; }
+  const dagitim=isgDagitimPaylari(adam); if(dagitim.hata){ toast(dagitim.hata,'err'); return; }
   if(!DB.rapor.entries)DB.rapor.entries=[];
   if(id){
     const e=DB.rapor.entries.find(x=>x.id===id); if(!e)return;
@@ -34570,24 +34641,27 @@ async function saveIsgEntry(id,kalsin){
     ekip, adamSayisi:adam, projeKodu:'', cat:'', malzeme:gorev, code:'', specId:null, matId:null,
     miktar:gun, birim:'ADAM/GÜN', kat:'', kot:'', lokId:null, isgucu:true,
     createdBy:(CURRENT_USER&&CURRENT_USER.username)||'', created:Date.now() };
-  await sbInsertRaporEntries([entry]);
-  DB.rapor.entries.push(entry);
-  logAction('define','Isgucu kaydi: '+gorev+' / '+tarih+(ekip?' / '+shortEkip(ekip):''));
+  const paylar=dagitim.paylar||[{ekip,adam}], dagitimId=dagitim.paylar?uid():null;
+  const entries=paylar.map((p,i)=>({...entry,id:i===0?entry.id:uid(),isgucuDagitimId:dagitimId,ekip:p.ekip,adamSayisi:p.adam,created:entry.created+i}));
+  await sbInsertRaporEntries(entries);
+  DB.rapor.entries.push(...entries);
+  logAction('define','Isgucu kaydi: '+gorev+' / '+tarih+(dagitim.paylar?' / '+paylar.map(p=>shortEkip(p.ekip)+': '+p.adam).join(', '):(ekip?' / '+shortEkip(ekip):'')));
   if(kalsin){
     // Pencere ACIK kalir: tekrar eden alanlar (gun, vardiya, bina, ekip) korunur,
     // yalnizca kayda ozel alanlar temizlenir ve odak Gorev'e doner.
-    _isgEklendi=true; _isgGun=tarih; _isgSayi++;
+    _isgEklendi=true; _isgGun=tarih; _isgSayi+=entries.length;
+    if(dagitim.paylar){ const sel=document.getElementById('isg_ekip'); if(sel)sel.value=paylar[0].ekip; _ISG_DAGITIM=false; _ISG_ALOKASYON=[]; isgDagitimCiz(); }
     ['isg_gorev','isg_adam','isg_not'].forEach(x=>{ const el=document.getElementById(x); if(el) el.value=''; });
     const g=document.getElementById('isg_gun'); if(g) g.value='1';
     // sonraki kalemin basliklari farklidir: secim sifirlanir, panel acik/kapali hali korunur
     _ISGY.gySec=[]; isgGyKutu(); isgGyCiz();
     isgSayacCiz();
     const f=document.getElementById('isg_gorev'); if(f) f.focus();
-    toast('Eklendi: '+gorev+' - sirakini girebilirsiniz');
+    toast(dagitim.paylar?`Eklendi: ${paylar.length} ekibe dagitildi (${adam} kisi)`:'Eklendi: '+gorev+' - sirakini girebilirsiniz');
     return;
   }
   _isgEklendi=false; _isgGun='';
-  closeModal(); render(); rDayReopen(_day||tarih); toast('Isgucu kaydi eklendi');
+  closeModal(); render(); rDayReopen(_day||tarih); toast(dagitim.paylar?`Isgucu ${paylar.length} ekibe dagitildi (${adam} kisi)`:'Isgucu kaydi eklendi');
 }
 // Bir bina|proje grubunun satirlarini ".rap-group" blogu olarak uretir (gun modalinde kullanilir).
 function rGroupHtml(g){
