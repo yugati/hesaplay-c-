@@ -5,6 +5,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 import * as XLSX from 'xlsx'
 import { initBinaViewer } from './bina3d.js'
+
 import {
   // Users
   sbLoginUser,
@@ -202,6 +203,13 @@ import {
   sbUpdateCompany,
   sbDeleteCompany,
 } from './supabase.js'
+
+// Public map settings are intentionally injected at build time. Map provider keys
+// used in the browser must be restricted to the production domain at the provider.
+window.SAHA_MAP_CONFIG = {
+  mapTilerKey: import.meta.env.VITE_SAHA_MAPTILER_KEY || '',
+  customStyleUrl: import.meta.env.VITE_SAHA_MAP_CUSTOM_STYLE_URL || '',
+}
 
 // xlsx global
 window.XLSX = XLSX

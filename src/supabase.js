@@ -1235,6 +1235,7 @@ export async function sbLoadAllData(scope) {
     // yuklemede bu kontrol atlanir - o kullanicilar zaten migration'dan sorumlu degil.
     const hasData = !!(
       (r.aletItems || []).length || (r.sahaPanels || []).length || (r.geciciLib || []).length ||
+      (r.sahaSettings && Object.keys(r.sahaSettings).length) ||
       (r.projeItems || []).length || (r.projeSpecs || []).length || (r.projeMaterials || []).length ||
       (r.raporEntries || []).length || (r.projeOrders || []).length
     )
@@ -1251,6 +1252,10 @@ export async function sbLoadAllData(scope) {
     saha: {
       bg: (r.sahaSettings && r.sahaSettings.bg) || null,
       bgName: (r.sahaSettings && r.sahaSettings.bgName) || '',
+      scale: Number(r.sahaSettings && r.sahaSettings.scale) || null,
+      mapView: (r.sahaSettings && r.sahaSettings.mapView) || null,
+      area: (r.sahaSettings && r.sahaSettings.area) || null,
+      mapProvider: (r.sahaSettings && r.sahaSettings.mapProvider) || 'osm',
       panels: r.sahaPanels || [],
       lines: r.sahaLines || [],
       sockets: r.sahaSockets || [],
@@ -1319,6 +1324,10 @@ export async function sbMigrateLocalDB(localDB) {
     push('Saha Plani Arka Plani', sbSetSahaSetting('bg', localDB.saha.bg))
     push('Saha Plani Dosya Adi', sbSetSahaSetting('bgName', localDB.saha.bgName || ''))
   }
+  if (localDB.saha?.scale) push('Saha Olcegi', sbSetSahaSetting('scale', localDB.saha.scale))
+  if (localDB.saha?.mapView) push('Saha Harita Konumu', sbSetSahaSetting('mapView', localDB.saha.mapView))
+  if (localDB.saha?.area) push('Saha Calisma Alani', sbSetSahaSetting('area', localDB.saha.area))
+  if (localDB.saha?.mapProvider) push('Saha Harita Saglayicisi', sbSetSahaSetting('mapProvider', localDB.saha.mapProvider))
   if (localDB.rapor?.entries?.length)
     push('Saha Raporu Kayitlari', sbInsertEntities('rapor_entries', localDB.rapor.entries))
   if (localDB.rapor?.ekipler?.length)
