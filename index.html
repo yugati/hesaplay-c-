@@ -3259,6 +3259,7 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .gy-grup input.gy-kisi:not(:placeholder-shown){background:color-mix(in srgb,var(--green) 18%,var(--bg));
   border-color:color-mix(in srgb,var(--green) 45%,transparent)}
 .gy-grup input.gy-kisi:not(:placeholder-shown):focus{border-color:var(--amber)}
+.gy-grup input.gy-gece-kisi:not(:placeholder-shown){background:color-mix(in srgb,var(--amber) 15%,var(--bg));border-color:color-mix(in srgb,var(--amber) 45%,transparent)}
 .gy-alt{display:flex;align-items:center;gap:8px;margin-top:4px}
 /* yuvarlak hatli kucuk dugmeler: .gi-tab / .gy-kunye ile ayni aile */
 .gy-satir-ekle{background:none;border:1px dashed var(--line);color:var(--mute);border-radius:20px;padding:3px 11px;font-size:10px;font-weight:700;font-family:var(--mono);letter-spacing:.2px;cursor:pointer}
@@ -8894,8 +8895,14 @@ const gySayi=v=>{ const n=Number(String(v==null?'':v).replace(',','.')); return 
 function gyGrupToplam(g){ return g&&g.odali
   ? (g.satirlar||[]).reduce((s,r)=>s+gySayi(r&&r.kisi),0)
   : gySayi(g&&g.kisi); }
+function gyGrupGeceToplam(g){ return g&&g.odali
+  ? (g.satirlar||[]).reduce((s,r)=>s+gySayi(r&&r.geceKisi),0)
+  : gySayi(g&&g.geceKisi); }
+function gyGrupVardiyaToplam(g,vardiya){ return vardiya==='GECE'?gyGrupGeceToplam(g):gyGrupToplam(g); }
 // SATIR TOPLAMI (otomatik)
 function gyToplam(y){ return ((y&&y.gruplar)||[]).reduce((s,g)=>s+gyGrupToplam(g),0); }
+function gyGeceToplam(y){ return ((y&&y.gruplar)||[]).reduce((s,g)=>s+gyGrupGeceToplam(g),0); }
+function gyVardiyaToplam(y,vardiya){ return ((y&&y.gruplar)||[]).reduce((s,g)=>s+gyGrupVardiyaToplam(g,vardiya),0); }
 /* SAHADA YAZILAN toplam (kontrol degeri). Metne GIRMEZ: kural, hesaplanan toplami
    esas almak ve farki ayrica belirtmektir. Ornek bir gunde satirlar 53 ederken
    kagitta TOP-ИТО 50 yaziyordu; metin 53 der, form da "fark 3" uyarisini gosterir
@@ -8911,19 +8918,21 @@ function gyTarihTR(k){ const p=giParcala(k); return p?giZ(p[2])+'.'+giZ(p[1])+'.
 /* Kaydin METNE cevrimi. Tek dogruluk kaynagi budur: onizleme kutusu da,
    "Metni Kopyala" da bunu kullanir - gorulen ile kopyalanan ayrisamaz. */
 // BIR BINANIN govdesi: is kalemi bloklari, aralarinda bos satir
-function gyGovde(y){
+function gyGovde(y,vardiya){
+  const gece=vardiya==='GECE';
+  if(gece&&y&&y.geceVar!==true) return '';
   const blok=[]; let odasizBlok=-1;
   (((y&&y.gruplar))||[]).forEach(g=>{
     const ad=gyBuyuk((g&&g.ad)||''); if(!ad) return;
     if(g.odali){
       // MAHAL KODU OLDUGU GIBI KALIR: buyutulmez, icindeki - . / karakterlerine dokunulmaz
       const sat=((g.satirlar)||[])
-        .filter(r=>r&&String(r.oda||'').trim()&&gySayi(r.kisi))
-        .map(r=>String(r.oda).trim()+' / '+gySayi(r.kisi));
+        .filter(r=>r&&String(r.oda||'').trim()&&gySayi(gece?r.geceKisi:r.kisi))
+        .map(r=>String(r.oda).trim()+' / '+gySayi(gece?r.geceKisi:r.kisi));
       if(!sat.length) return;                 // bos baslik metne HIC yazilmaz
       blok.push([ad,...sat].join('\n')); odasizBlok=-1;
     }else{
-      const n=gySayi(g.kisi); if(!n) return;
+      const n=gySayi(gece?g.geceKisi:g.kisi); if(!n) return;
       const satir=ad+' / '+n;
       /* Ard arda gelen odasiz basliklar VARSAYILAN OLARAK bitisik yazilir
          (referans bicimde GENEL SAHA / AMBAR yan yana). Her zaman degil: baska
@@ -8948,11 +8957,18 @@ function gyFirmaMetni(yazilar){
     const b=gyBuyuk(y.bina||'');
     return b?b+'\n'+govde:govde;
   }).filter(Boolean);
+  const geceBinalar=sirali.map(y=>{
+    const govde=gyGovde(y,'GECE'); if(!govde) return '';
+    const b=gyBuyuk(y.bina||'');
+    return b?b+'\n'+govde:govde;
+  }).filter(Boolean);
   if(!binalar.length) return '';
   const bas=gyBuyuk(sirali[0].firma||GY_FIRMA_VARSAYILAN)+' '+gyTarihTR(sirali[0].tarih);
   // TOPLAM HESAPLANIR: sahada yazilan deger (toplamElle) yalnizca kontrol icindir
   const toplam=sirali.reduce((s,y)=>s+gyToplam(y),0);
-  return bas+'\n'+binalar.join('\n\n')+'\n\n'+GY_TOP_ETIKET+' '+toplam;
+  const geceToplam=sirali.reduce((s,y)=>s+(y.geceVar===true?gyGeceToplam(y):0),0);
+  return bas+'\n'+binalar.join('\n\n')+'\n\n'+GY_TOP_ETIKET+' '+toplam
+    +(geceToplam?'\n\nGECE\n\n'+geceBinalar.join('\n\n')+'\n\nTOPLAM GECE '+geceToplam:'');
 }
 // tek bir yazinin metni (kayit icinde saklanan ozet bu degil - bkz. gyKaydet)
 function gyMetin(y){ return y?gyFirmaMetni([y]):''; }
@@ -9005,15 +9021,18 @@ function gyMetinCoz(metin){
 
   const bilinen=new Set((gyBasliklar()||[]).map(b=>norm(b.ad)));
   const kayitlar=[];
-  let k=null, bl=null;    // k: firma bolumu, bl: o firmanin eldeki BINA bolumu
-  const yeniKayit=(firma,tarih)=>{ k={firma:firma||'',tarih:tarih||'',top:null,binalar:[]}; bl=null; kayitlar.push(k); return k; };
-  const yeniBina=ad=>{ if(!k) yeniKayit('',''); bl={bina:ad||'',gruplar:[]}; k.binalar.push(bl); return bl; };
+  let k=null, bl=null, vardiya='GUNDUZ';    // k: firma bolumu, bl: o firmanin eldeki BINA bolumu
+  const yeniKayit=(firma,tarih)=>{ k={firma:firma||'',tarih:tarih||'',top:null,geceVar:false,binalar:[]}; bl=null; vardiya='GUNDUZ'; kayitlar.push(k); return k; };
+  const yeniBina=ad=>{ if(!k) yeniKayit('','');
+    const eski=k.binalar.find(x=>norm(x.bina||'')===norm(ad||''));
+    if(eski){ bl=eski; return bl; }
+    bl={bina:ad||'',gruplar:[]}; k.binalar.push(bl); return bl; };
   // bir blogu gruplara cevirir; odasiz blokta ilk baslik "once bos satir" demektir
   const grupla=liste=>{
     const ilk=gyBolSayili(liste[0]);
-    if(!ilk) return [{ad:liste[0],odali:true,
+    if(!ilk) return [{ad:liste[0],odali:true,vardiya,
       satirlar:liste.slice(1).map(gyBolSayili).filter(Boolean).map(x=>({oda:x.ad,kisi:x.sayi}))}];
-    return liste.map(gyBolSayili).filter(Boolean).map((x,i)=>({ad:x.ad,odali:false,kisi:x.sayi,ayri:i===0}));
+    return liste.map(gyBolSayili).filter(Boolean).map((x,i)=>({ad:x.ad,odali:false,kisi:x.sayi,vardiya,ayri:i===0}));
   };
   /* BINA SATIRI NASIL ANLASILIR: bir firmanin birden cok binasi olabilir ve bina
      kodu tek basina, kendi satirinda durur (ornek: ... MARKALAMA / 4 [bos] UKU
@@ -9034,6 +9053,8 @@ function gyMetinCoz(metin){
   };
 
   bloklar.forEach(blok=>{
+    if(blok.length===1&&/^GECE$/i.test(blok[0])){ if(k) k.geceVar=true; vardiya='GECE'; bl=null; return; }
+    if(blok.length===1&&/^TOPLAM GECE\s+\d+$/i.test(blok[0])) return;
     // TOP satiri tek basina durur ve FIRMANIN toplamidir (binalarin degil)
     const top=blok.length===1&&new RegExp('^'+GY_TOP_ETIKET.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s+(\\d+)$','i').exec(blok[0]);
     if(top){ if(k) k.top=Number(top[1]); return; }
@@ -9260,11 +9281,12 @@ function gyDuzenKur(y){
     return g||null;
   };
   const say=(b,g)=>({ gid:b.id,
-    satirlar: b.odali ? ((g&&g.satirlar)||[]).map(r=>({oda:String((r&&r.oda)||''),kisi:(r&&r.kisi)!=null?r.kisi:''})) : [],
-    kisi: b.odali ? '' : ((g&&g.kisi)!=null?g.kisi:'') });
+    satirlar: b.odali ? ((g&&g.satirlar)||[]).map(r=>({oda:String((r&&r.oda)||''),kisi:(r&&r.kisi)!=null?r.kisi:'',geceKisi:(r&&r.geceKisi)!=null?r.geceKisi:''})) : [],
+    kisi: b.odali ? '' : ((g&&g.kisi)!=null?g.kisi:''),
+    geceKisi: b.odali ? '' : ((g&&g.geceKisi)!=null?g.geceKisi:'') });
   const gruplar=ortak.map(b=>say(b,esle(b)));
   eski.forEach(g=>{
-    if(harcanan.has(g)||!gyGrupToplam(g)) return;      // yalnizca DOLU olan geri gelir
+    if(harcanan.has(g)||(!gyGrupToplam(g)&&!gyGrupGeceToplam(g))) return;      // yalnizca DOLU olan geri gelir
     const ad=String(g.ad||'').trim(); if(!ad) return;
     const b={id:String(g.gid||uid()),ad,odali:!!g.odali,ayri:!!g.ayri};
     ortak.push(b); gruplar.push(say(b,g));
@@ -9275,11 +9297,12 @@ function gyDuzenKur(y){
 function gyYeni(tarih,bina){
   const f=gyVarsayilanFirma();
   return { id:uid(), tur:'yazi', tarih, bina:bina||'', firmaId:f.firmaId, firma:f.firma,
-    toplamElle:'', gruplar:[] };
+    geceVar:false, toplamElle:'', gruplar:[] };
 }
 // yaziyi duzenlenebilir hale getirir + ORTAK baslik listesini (_GYB) kurar
 function gyNormalize(y){
   gyFirmaCoz(y);
+  y.geceVar=y.geceVar===true;
   if(y.toplamElle==null) y.toplamElle='';
   const kur=gyDuzenKur(y);
   _GYB=kur.ortak; y.gruplar=kur.gruplar;
@@ -9289,7 +9312,7 @@ function gyNormalize(y){
    Metin/toplam hesaplayanlar tek bir grup nesnesi bekledigi icin burada birlestirilir. */
 function gyBirlesikGrup(i){
   const b=_GYB[i]||{}, g=((_GY&&_GY.gruplar)||[])[i]||{};
-  return {gid:b.id, ad:b.ad||'', odali:!!b.odali, ayri:!!b.ayri, satirlar:g.satirlar||[], kisi:g.kisi};
+  return {gid:b.id, ad:b.ad||'', odali:!!b.odali, ayri:!!b.ayri, satirlar:g.satirlar||[], kisi:g.kisi, geceKisi:g.geceKisi};
 }
 function gyBirlesik(){ return (_GYB||[]).map((b,i)=>gyBirlesikGrup(i)); }
 // modaldaki yazinin o anki tam hali (metin, toplam ve kayit bunun uzerinden uretilir)
@@ -9318,6 +9341,7 @@ function openGunlukYazi(tarih,id){
         <div><label>Firma <span class="t-meta">(Sirketler)</span></label><select id="gy_firma" onchange="gyFirmaDegis(this.value)"${kilit}>${gyFirmaSecenekleri()}</select>
           <input id="gy_yenifirma" class="${_GY.firmaId==='__new'?'':'hidden'}" style="margin-top:7px" placeholder="Yeni sirket adi" value="${_GY.firmaId==='__new'?esc(_GY.firma||''):''}" oninput="gyYeniFirmaYaz(this.value)"${kilit}></div>
       </div>
+      <label class="rapor-stock-check" style="margin:10px 0 8px"><input id="gy_gece" type="checkbox" ${_GY.geceVar?'checked':''} onchange="gyGeceDegis(this.checked)"${kilit}> Gece mesaisi oldu <span class="t-meta">(varsa her başlık/oda için gece kişi dağılımını da girin)</span></label>
       <div id="gyGruplar"></div>
       <div class="gy-baslik-ekle">
         <button class="gy-satir-ekle" onclick="gyGrupEkle(true)"${kilit}>+ Baslik (odali)</button>
@@ -9377,6 +9401,7 @@ function gyTazele(){
   /* Fark FIRMA duzeyinde bakilir: TOP-ИТО firmanin toplamidir, tek binanin degil.
      Iki binali bir yazida (ornek: UKS 52 + UKU 23 = 75, kagitta 73) bina basina
      karsilastirmak yaniltirdi. */
+  if(n&&_GY.geceVar) n.textContent+=' · gece '+firmaninki.reduce((s,y)=>s+gyGeceToplam(y),0)+' kisi';
   const saha=gySahaToplam(el), fark=saha==null?0:saha-firmaToplam;
   const u=document.getElementById('gyFarkUyari');
   if(u){
@@ -9387,7 +9412,7 @@ function gyTazele(){
   }
   const o=document.getElementById('gyOnizle');
   if(o) o.textContent = _GYSEKME==='gun' ? gyGunMetni(el.tarih,el) : gyFirmaMetni(firmaninki);
-  (el.gruplar||[]).forEach((g,i)=>{ const k=document.getElementById('gyGT'+i); if(k) k.textContent=gyGrupToplam(g)+' kisi'; });
+  (el.gruplar||[]).forEach((g,i)=>{ const k=document.getElementById('gyGT'+i); if(k) k.textContent=gyGrupToplam(g)+' gunduz'+(_GY.geceVar?' / '+gyGrupGeceToplam(g)+' gece':''); });
 }
 function gySetToplam(v){ if(!_GY) return; _GY.toplamElle=String(v||'').trim(); gyTazele(); }
 // onizleme sekmesi: bu firmanin bolumu mu, gunun tamami mi (kopyalanan da budur)
@@ -9432,7 +9457,7 @@ function gyGruplarHtml(){
     const tasi=`<span class="gy-tasi"><button${i===0?' disabled':kilit} title="Yukari tasi" onclick="gyGrupTasi(${i},-1)">&#9650;</button><button${i===son?' disabled':kilit} title="Asagi tasi" onclick="gyGrupTasi(${i},1)">&#9660;</button></span>`;
     const ad=`<input class="gy-ad" value="${esc(g.ad||'')}" placeholder="${g.odali?'baslik - orn. AYDINLATMA-ОСВЕЩЕНИЯ':'baslik - orn. AMBAR'}" title="Baslik TUM firmalar icin ortaktir" oninput="gySetGrupAd(${i},this.value)"${kilit}>`;
     if(!g.odali) return `<div class="gy-grup">
-      <div class="gy-grup-h">${tasi}${ad}<input class="gy-kisi" type="number" min="0" step="1" value="${say(g.kisi)}" placeholder="kisi" oninput="gySetGrupKisi(${i},this.value)"${kilit}>${sil}</div>
+      <div class="gy-grup-h">${tasi}${ad}<input class="gy-kisi" type="number" min="0" step="1" value="${say(g.kisi)}" placeholder="kisi" oninput="gySetGrupKisi(${i},this.value)"${kilit}>${_GY.geceVar?`<input class="gy-kisi gy-gece-kisi" type="number" min="0" step="1" value="${say(g.geceKisi)}" placeholder="gece" title="Gece kişi sayısı" oninput="gySetGeceGrupKisi(${i},this.value)"${kilit}>`:''}${sil}</div>
       <div class="gy-alt"><span class="gy-ipucu">odasiz - metne tek satir yazilir</span>
         <button class="gy-anahtar${g.ayri?' on':''}"${kilit} title="Ustundeki odasiz baslikla arasina BOS SATIR koyar (KAROT / MARKALAMA gibi). Kapaliyken alt alta yazilir (GENEL SAHA / AMBAR gibi)." onclick="gyAyriDegis(${i})">bos satir</button>
         <span class="gy-gt" id="gyGT${i}"></span></div>
@@ -9440,6 +9465,7 @@ function gyGruplarHtml(){
     const satirlar=(g.satirlar||[]).map((r,j)=>`<div class="gy-satir">
       <span class="gy-oda-k"><input class="gy-oda" list="gyOdaListesi" value="${esc((r&&r.oda)||'')}" placeholder="oda kodu - orn. 00UYB14R017" oninput="gySetOda(${i},${j},this.value)"${kilit}>${gyOdaBagHtml(odaIdx,r&&r.oda,'gyOB'+i+'_'+j)}</span>
       <input class="gy-kisi" type="number" min="0" step="1" value="${say(r&&r.kisi)}" placeholder="kisi" oninput="gySetKisi(${i},${j},this.value)"${kilit}>
+      ${_GY.geceVar?`<input class="gy-kisi gy-gece-kisi" type="number" min="0" step="1" value="${say(r&&r.geceKisi)}" placeholder="gece" title="Gece kişi sayısı" oninput="gySetGeceKisi(${i},${j},this.value)"${kilit}>`:''}
       <button class="mini-btn del"${kilit} title="Satiri sil" onclick="gySatirSil(${i},${j})">${icoTrash()}</button>
     </div>`).join('');
     return `<div class="gy-grup">
@@ -9453,8 +9479,10 @@ function gyGruplarHtml(){
 }
 
 // baslik ORTAK listede yasar: buradaki degisiklik tum firmalarin formuna yansir
+function gyGeceDegis(v){ if(!_GY) return; _GY.geceVar=!!v; gyCiz(); }
 function gySetGrupAd(i,v){ if(!_GYB[i])return; _GYB[i].ad=v; gyTazele(); }
 function gySetGrupKisi(i,v){ if(!_GY||!_GY.gruplar[i])return; _GY.gruplar[i].kisi=v; gyTazele(); }
+function gySetGeceGrupKisi(i,v){ if(!_GY||!_GY.gruplar[i])return; _GY.gruplar[i].geceKisi=v; gyTazele(); }
 function gySetOda(i,j,v){ const r=_GY&&_GY.gruplar[i]&&_GY.gruplar[i].satirlar[j]; if(!r)return; r.oda=v; gyOdaBagTazele(i,j); gyTazele(); }
 // yalniz o satirin Binalar etiketini gunceller - innerHTML yazilsa kutu odagi kaybederdi
 function gyOdaBagTazele(i,j){
@@ -9464,9 +9492,10 @@ function gyOdaBagTazele(i,j){
   el.className='gy-oda-bag'+(c.cls?' '+c.cls:''); el.textContent=c.txt; el.title=c.title;
 }
 function gySetKisi(i,j,v){ const r=_GY&&_GY.gruplar[i]&&_GY.gruplar[i].satirlar[j]; if(!r)return; r.kisi=v; gyTazele(); }
+function gySetGeceKisi(i,j,v){ const r=_GY&&_GY.gruplar[i]&&_GY.gruplar[i].satirlar[j]; if(!r)return; r.geceKisi=v; gyTazele(); }
 function gySatirEkle(i){
   const g=_GY&&_GY.gruplar[i]; if(!g)return;
-  g.satirlar.push({oda:'',kisi:''}); gyCiz();
+  g.satirlar.push({oda:'',kisi:'',geceKisi:''}); gyCiz();
   // yeni satirin oda kutusuna odaklan: art arda kod girisi akmaya devam etsin
   const kutu=document.querySelectorAll('#gyGruplar .gy-grup')[i];
   const odalar=kutu?kutu.querySelectorAll('input.gy-oda'):null;
@@ -9479,7 +9508,7 @@ function gySatirSil(i,j){
 function gyGrupEkle(odali){
   if(!_GY)return;
   _GYB.push({id:uid(),ad:'',odali:!!odali,ayri:false});
-  _GY.gruplar.push({gid:_GYB[_GYB.length-1].id,satirlar:odali?[{oda:'',kisi:''}]:[],kisi:''});
+  _GY.gruplar.push({gid:_GYB[_GYB.length-1].id,satirlar:odali?[{oda:'',kisi:'',geceKisi:''}]:[],kisi:'',geceKisi:''});
   gyCiz();
   const adlar=document.querySelectorAll('#gyGruplar .gy-grup input.gy-ad');
   if(adlar.length) adlar[adlar.length-1].focus();
@@ -9552,13 +9581,14 @@ function gyOkuUygula(){
      sirket olusturma) tek yerde kalir, toplu ve sessiz yazma olmaz. */
   const bolumler=r.binalar.length?r.binalar:[{bina:'',gruplar:[]}];
   const ilk=bolumler[0];
-  _GYKUYRUK=bolumler.slice(1).map(b=>({firma:r.firma,tarih:r.tarih,bina:b.bina,gruplar:b.gruplar,top:null}));
+  _GYKUYRUK=bolumler.slice(1).map(b=>({firma:r.firma,tarih:r.tarih,bina:b.bina,geceVar:r.geceVar,gruplar:b.gruplar,top:null}));
   gyOkuBolum({firma:r.firma,tarih:r.tarih,bina:ilk.bina,gruplar:ilk.gruplar,top:r.top},not);
 }
 /* Cozulen TEK BINA bolumunu eldeki forma isler. Kuyruktan gelen sonraki binalar
    da buradan gecer - tek yol, tek davranis. */
 function gyOkuBolum(r,not){
   not=not||[];
+  _GY.geceVar=!!r.geceVar;
   // TARIH / BINA / FIRMA
   if(r.tarih&&giParcala(r.tarih)) _GY.tarih=r.tarih;
   if(r.bina){
@@ -9580,7 +9610,7 @@ function gyOkuBolum(r,not){
      temizlenir, yoksa metinde gecmeyen basliklarin eski degerleri kalir ve
      ortaya metinle ayni olmayan bir karisim cikardi. */
   const oncekiToplam=gyToplam(gyEldeki());
-  _GY.gruplar.forEach(g=>{ g.satirlar=[]; g.kisi=''; });
+  _GY.gruplar.forEach(g=>{ g.satirlar=[]; g.kisi=''; g.geceKisi=''; });
   if(oncekiToplam) not.push('Formdaki onceki '+oncekiToplam+' kisi metindekiyle degistirildi');
   r.gruplar.forEach((g,gi)=>{
     let i=_GYB.findIndex(b=>b&&norm(b.ad)===norm(g.ad));
@@ -9605,18 +9635,24 @@ function gyOkuBolum(r,not){
     sonIx=i; yerler.push(i);
     const b=_GYB[i], hedef=_GY.gruplar[i];
     if(!hedef) return;
+    const gece=g.vardiya==='GECE', alan=gece?'geceKisi':'kisi';
     if(b.odali===!!g.odali){
-      if(b.odali) hedef.satirlar=(g.satirlar||[]).map(x=>({oda:x.oda,kisi:x.kisi}));
-      else hedef.kisi=g.kisi;
+      if(b.odali){
+        (g.satirlar||[]).forEach(x=>{
+          let sat=hedef.satirlar.find(y=>norm(y.oda||'')===norm(x.oda||''));
+          if(!sat){ sat={oda:x.oda,kisi:'',geceKisi:''}; hedef.satirlar.push(sat); }
+          sat[alan]=x.kisi;
+        });
+      } else hedef[alan]=g.kisi;
     } else if(!b.odali&&g.odali){
       // ortak listede odasiz ama metinde mahalli: sayilar toplanip tek satira yazilir
-      hedef.kisi=(g.satirlar||[]).reduce((s,x)=>s+(Number(x.kisi)||0),0);
+      hedef[alan]=(g.satirlar||[]).reduce((s,x)=>s+(Number(x.kisi)||0),0);
       not.push('"'+b.ad+'" ortak listede odasiz - mahal sayilari toplandi');
     } else { atlanan++; not.push('"'+b.ad+'" ortak listede odali - metindeki tek satir atlandi'); }
   });
   // odali basliklarda en az bir bos satir kalsin (form duzenlenebilir olsun)
   _GYB.forEach((b,i)=>{ const g=_GY.gruplar[i];
-    if(b.odali&&g&&(!g.satirlar||!g.satirlar.length)) g.satirlar=[{oda:'',kisi:''}]; });
+    if(b.odali&&g&&(!g.satirlar||!g.satirlar.length)) g.satirlar=[{oda:'',kisi:'',geceKisi:''}]; });
   // metindeki sira ortak siradan farkliysa sessizce gecistirme - kullanici bilsin
   if(yerler.some((v,i)=>i&&v<yerler[i-1]))
     not.push('Baslik sirasi ortak listeden gelir, metindeki siradan farkli - degistirmek isterseniz ok tuslari tum firmalari etkiler');
@@ -9658,7 +9694,8 @@ async function gyKaydet(){
   if(!giParcala(tarih)){ toast('Gecerli bir tarih secin','err'); return; }
   const bina=String(_GY.bina||'').trim();
   if(bina&&!canSeeBuilding(bina)){ toast('Bu bina icin yetkiniz yok','err'); return; }
-  if(!gyToplam(gyEldeki())){ toast('En az bir satira kisi sayisi girin','err'); return; }
+  if(!gyToplam(gyEldeki())){ toast('En az bir satira gunduz kisi sayisi girin','err'); return; }
+  if(_GY.geceVar&&!gyGeceToplam(gyEldeki())){ toast('Gece mesaisi secildi - en az bir baslik/oda icin gece kisi sayisi girin','err'); return; }
   const eski=(DB.gunlukIsler||[]).find(x=>x&&x.id===_GY.id&&x.tur==='yazi')||null;
   const yetkili=eski?giCanUpdate():giCanCreate();
   if(!yetkili){ toast('Bu islem icin yetkiniz yok','err'); return; }
@@ -9686,12 +9723,12 @@ async function gyKaydet(){
      ekledigi basliklar) ertesi gun aynen acilsin. Metne cikan sey gyMetin'in
      suzgecinden gecer, kayit ham halidir. */
   const gruplar=gyBirlesik().filter(g=>String(g.ad||'').trim()).map(g=>g.odali
-    ? {gid:g.gid, ad:String(g.ad||'').trim(), odali:true,  satirlar:(g.satirlar||[]).map(r=>({oda:String((r&&r.oda)||'').trim(), kisi:gySayi(r&&r.kisi)})).filter(r=>r.oda||r.kisi)}
-    : {gid:g.gid, ad:String(g.ad||'').trim(), odali:false, ayri:!!g.ayri, kisi:gySayi(g.kisi)});
+    ? {gid:g.gid, ad:String(g.ad||'').trim(), odali:true, satirlar:(g.satirlar||[]).map(r=>({oda:String((r&&r.oda)||'').trim(), kisi:gySayi(r&&r.kisi), geceKisi:gySayi(r&&r.geceKisi)})).filter(r=>r.oda||r.kisi||r.geceKisi)}
+    : {gid:g.gid, ad:String(g.ad||'').trim(), odali:false, ayri:!!g.ayri, kisi:gySayi(g.kisi), geceKisi:gySayi(g.geceKisi)});
   const toplamElle=String(_GY.toplamElle==null?'':_GY.toplamElle).trim();
   const simdi=Date.now(), ben=(CURRENT_USER&&CURRENT_USER.username)||'?';
   const kayit={ ...(eski||{}), id:_GY.id, tur:'yazi', tarih, bina, firmaId, firma,
-    gruplar, toplamElle, toplam,
+    gruplar, geceVar:!!_GY.geceVar, toplamElle, toplam,
     // saklanan ozet: BU FIRMANIN o gunku tam bolumu (diger binalari dahil)
     metin:gyFirmaMetni(gyFirmaninGunu({..._GY,tarih,bina,firmaId,firma,gruplar})),
     olusturan:eski?eski.olusturan:ben, olusturmaTs:eski?eski.olusturmaTs:simdi,
@@ -9979,7 +10016,7 @@ function openKisaRapor(tarih,id){
   // yeni raporda bos kutular o gunun saha kaydindan dolar (kayitli rapor acilinca degismez)
   if(!kayit) krSahaUygula(false);
   const dz=krDuzenlenebilir(), kilit=dz?'':' disabled';
-  const html=`<div class="modal-bg" onclick="if(event.target===this)krDisaTikla()"><div class="modal" style="max-width:560px">
+  const html=`<div class="modal-bg" onclick="if(event.target===this)krDisaTikla()"><div class="modal" style="max-width:760px">
     <div class="modal-head"><h3>Kisa Rapor</h3><button class="mini-btn" onclick="krKapat()">x</button></div>
     <div class="modal-body">
       <p class="t-meta" style="margin-bottom:10px">O gun sahada olculen metrajlar. Alttaki metin kopyalanacak halin aynisidir.${dz?' Baslik ve birim kutulari duzenlenebilir, cop kutusuyla kalem kaldirilabilir - degisiklik TUM raporlara yansir.':' <b>Yalnizca goruntuleme yetkiniz var.</b>'}</p>
@@ -33882,7 +33919,7 @@ function slinkAltSayisi(y){
 function slinkGyAnahtar(x){ return gyFirmaAnahtar(x)+'|'+String(x.bina||''); }
 function slinkGyKaynaklar(y){
   const b=String(y.bina||'');
-  return gyGun(y.tarih).filter(x=>gyToplam(x)>0)
+  return gyGun(y.tarih).filter(x=>y.vardiya==='GECE'?(x.geceVar===true&&gyGeceToplam(x)>0):gyToplam(x)>0)
     .sort((a,c)=>(String(a.bina||'')===b?0:1)-(String(c.bina||'')===b?0:1));
 }
 function slinkGyKaynak(y){
@@ -33890,12 +33927,13 @@ function slinkGyKaynak(y){
   return l.find(x=>slinkGyAnahtar(x)===y.gyKaynak)||l.find(x=>String(x.bina||'')===String(y.bina||''))||l[0]||null;
 }
 // yazinin DOLU basliklari; odali baslikta oda dokumu ipucu olarak tasinir
-function slinkGyBasliklar(yz){
-  return ((yz&&yz.gruplar)||[]).filter(g=>g&&String(g.ad||'').trim()&&gyGrupToplam(g)>0).map(g=>({
-    k:norm(String(g.ad).trim()), ad:String(g.ad).trim(), n:gyGrupToplam(g),
-    odalar:g.odali?(g.satirlar||[]).filter(r=>r&&String(r.oda||'').trim()&&gySayi(r.kisi)).map(r=>String(r.oda).trim()+' / '+gySayi(r.kisi)):[] }));
+function slinkGyBasliklar(yz,vardiya){
+  if(vardiya==='GECE'&&(!yz||yz.geceVar!==true)) return [];
+  return ((yz&&yz.gruplar)||[]).filter(g=>g&&String(g.ad||'').trim()&&gyGrupVardiyaToplam(g,vardiya)>0).map(g=>({
+    k:norm(String(g.ad).trim()), ad:String(g.ad).trim(), n:gyGrupVardiyaToplam(g,vardiya),
+    odalar:g.odali?(g.satirlar||[]).filter(r=>r&&String(r.oda||'').trim()&&gySayi(vardiya==='GECE'?r.geceKisi:r.kisi)).map(r=>String(r.oda).trim()+' / '+gySayi(vardiya==='GECE'?r.geceKisi:r.kisi)):[] }));
 }
-function slinkGyToplam(y){ const set=new Set(y.gySec); return slinkGyBasliklar(slinkGyKaynak(y)).filter(b=>set.has(b.k)).reduce((s,b)=>s+b.n,0); }
+function slinkGyToplam(y){ const set=new Set(y.gySec); return slinkGyBasliklar(slinkGyKaynak(y),y.vardiya).filter(b=>set.has(b.k)).reduce((s,b)=>s+b.n,0); }
 // adam kutusu yerinde guncellenir (tum form yeniden cizilmez - odak ve yazilan kaybolmasin)
 function slinkGyKutu(){
   const y=SLINK.yeni, inp=document.getElementById('slinkAdam'); if(!y||!inp) return;
@@ -33912,7 +33950,7 @@ function slinkGyCiz(){ const e=document.getElementById('slinkGy'); if(e&&SLINK.y
 // i = slinkGyBasliklar sirasi; 'hepsi' / 'hic' toplu secim
 function slinkGySec(i){
   const y=SLINK.yeni; if(!y) return;
-  const bs=slinkGyBasliklar(slinkGyKaynak(y));
+  const bs=slinkGyBasliklar(slinkGyKaynak(y),y.vardiya);
   if(i==='hepsi') y.gySec=bs.map(b=>b.k);
   else if(i==='hic') y.gySec=[];
   else { const b=bs[i]; if(!b) return; y.gySec=y.gySec.includes(b.k)?y.gySec.filter(k=>k!==b.k):[...y.gySec,b.k]; }
@@ -33936,6 +33974,10 @@ function slinkTarihDegis(v){
   const y=SLINK.yeni; if(!y) return;
   y.tarih=v; slinkGyUygula(); slinkGyCiz();
 }
+function slinkVardiyaDegis(v){
+  const y=SLINK.yeni; if(!y) return;
+  y.vardiya=v; slinkGyUygula(); slinkGyCiz();
+}
 /* o: paneli kullanan ekranin baglantisi - Saha Linki (varsayilan) ve Saha Kaydi formu (rGyAlanHtml)
    ayni paneli kendi tiklama islevleriyle cizer. sec(a)/kay(i) onclick metnini dondurur. */
 const SLINK_GY_BAG={sec:a=>`slinkGySec(${a})`, kay:i=>`slinkGyKaynakSec(${i})`, get bos(){ return adamGyZorunlu()?'adam sayısı Günlük Yazı\'dan zorunlu: linkte sorulmaz, onaylarken bu tarihin Günlük Yazısından seçersiniz.':'adam sayısını elle girin ya da boş bırakın (linkte sorulur).'; }, bina:'linkin binası'};
@@ -33943,13 +33985,19 @@ function slinkGyHtml(y,o){
   o=o||SLINK_GY_BAG;
   const tarihTR=y.tarih?fmtDate(y.tarih):'';
   const kaynaklar=y.tarih?slinkGyKaynaklar(y):[];
-  if(!kaynaklar.length) return `<div class="slink-gy-bos">${tarihTR?`<b>${esc(tarihTR)}</b> tarihine girilmiş Günlük Yazı yok`:'Önce tarih seçin'} - ${o.bos}${y.gySec.length?' Seçtiğiniz başlıklar bu tarihte bulunamadı.':''}</div>`;
+  if(!kaynaklar.length){
+    const yazilar=y.tarih?gyGun(y.tarih):[];
+    const kaynakYok=y.vardiya==='GECE'&&yazilar.length
+      ? 'Bu tarihte gece kişi dağılımı yok - Günlük Yazı’da gece mesaisini girin.'
+      : `${tarihTR?`<b>${esc(tarihTR)}</b> tarihine girilmiş Günlük Yazı yok`:'Önce tarih seçin'}`;
+    return `<div class="slink-gy-bos">${kaynakYok} - ${o.bos}${y.gySec.length?' Seçtiğiniz başlıklar bu tarihte bulunamadı.':''}</div>`;
+  }
   const yz=slinkGyKaynak(y);
-  const bs=slinkGyBasliklar(yz);
+  const bs=slinkGyBasliklar(yz,y.vardiya);
   const set=new Set(y.gySec);
   const secili=bs.filter(b=>set.has(b.k));
   const top=secili.reduce((s,b)=>s+b.n,0);
-  const etiket=x=>[x.firma||'', x.bina||'Genel'].filter(Boolean).join(' · ')+' · '+gyToplam(x)+' kişi';
+  const etiket=x=>[x.firma||'', x.bina||'Genel'].filter(Boolean).join(' · ')+' · '+gyVardiyaToplam(x,y.vardiya)+' kişi';
   // bolum adini iceren baslik (Tava -> TAVA-KMK) oneri olarak isaretlenir, secilmez
   const bol=norm(String(y.cat||'').trim());
   const oneri=b=>bol.length>=3&&b.k.includes(bol);
@@ -34011,7 +34059,7 @@ function slinkYeniHtml(){
   <div class="modal-body">
     <p class="t-meta" style="margin-bottom:12px;line-height:1.55">Linki açan kişi hesap açmadan bu seçime ait kalemleri görür, miktar girip gönderir. Gönderilenler burada onayınıza düşer; siz kabul edene kadar rapora ve stoğa işlenmez. Link seçtiğiniz <b>geçerlilik süresi</b> boyunca açık kalır; istediğiniz an iptal edebilirsiniz.</p>
     <div class="frow two"><div><label>Tarih *</label><input type="date" value="${esc(y.tarih)}" onchange="slinkTarihDegis(this.value)"></div>
-      <div><label>Vardiya *</label><select onchange="SLINK.yeni.vardiya=this.value">${VARDIYALAR.map(v=>opt(v,v,y.vardiya===v)).join('')}</select></div></div>
+      <div><label>Vardiya *</label><select onchange="slinkVardiyaDegis(this.value)">${VARDIYALAR.map(v=>opt(v,v,y.vardiya===v)).join('')}</select></div></div>
     <div class="frow two"><div><label>Bina *</label><select onchange="slinkYeniSet('bina',this.value)">${binaOptsFor(y.bina).map(b=>opt(b,b,y.bina===b)).join('')}</select></div>
       <div><label>Bölüm *</label><select onchange="slinkYeniSet('cat',this.value)">${opt('','- bölüm seçin -',!y.cat)}${(DB.proje.sections||[]).map(s=>opt(s,s,y.cat===s)).join('')}</select></div></div>
     <div class="frow"><label>Ekip *</label><select onchange="SLINK.yeni.ekip=this.value">${opt('','- ekip seçin -',!y.ekip)}${(DB.rapor.ekipler||[]).map(e=>opt(e,e,y.ekip===e)).join('')}</select></div>
@@ -34362,19 +34410,24 @@ function rGyMutabakat(tarih,items){
   const binalar=new Set((items||[]).map(e=>String(e.bina||'')).filter(Boolean));
   const yazilar=gyGun(tarih).filter(y=>y.bina&&binalar.has(String(y.bina)));
   if(!yazilar.length) return null;
+  const vardiyalar=new Set((items||[]).map(e=>e.vardiya||'GUNDUZ'));
   // basliklar: bina + ad bazinda (ayni gun birden cok firma yazisi toplanir)
   const bas=new Map();
   yazilar.forEach(y=>(y.gruplar||[]).forEach(g=>{
-    const ad=String((g&&g.ad)||'').trim(), n=gyGrupToplam(g); if(!ad||!n) return;
-    const k=String(y.bina)+'|'+norm(ad);
-    if(!bas.has(k)) bas.set(k,{bina:String(y.bina), ad, n:0}); bas.get(k).n+=n;
+    const ad=String((g&&g.ad)||'').trim(); if(!ad) return;
+    vardiyalar.forEach(vardiya=>{
+      if(vardiya==='GECE'&&y.geceVar!==true) return;
+      const n=gyGrupVardiyaToplam(g,vardiya); if(!n) return;
+      const k=String(y.bina)+'|'+vardiya+'|'+norm(ad);
+      if(!bas.has(k)) bas.set(k,{bina:String(y.bina), vardiya, ad, n:0}); bas.get(k).n+=n;
+    });
   }));
   // rapor bloklari (rAdamBloklari ile ayni anahtar) + etiket bilgisi
   const deger=rAdamBloklari(items), bilgi={};
   (items||[]).forEach(e=>{
     const bk=(!e.isgucu&&!_rAdamBolum(e))?('?|'+(e.bina||'')+'|'+(e.ekip||'')+'|'+(e.vardiya||'')):_rAdamBlok(e);
     if(bilgi[bk]) return;
-    bilgi[bk]={k:bk, bina:String(e.bina||''), isg:!!e.isgucu, gorev:e.isgucu?String(e.malzeme||''):'', bolum:e.isgucu?'':_rAdamBolum(e),
+    bilgi[bk]={k:bk, bina:String(e.bina||''), vardiya:e.vardiya||'GUNDUZ', isg:!!e.isgucu, gorev:e.isgucu?String(e.malzeme||''):'', bolum:e.isgucu?'':_rAdamBolum(e),
       etiket:e.isgucu?'İşgücü '+String(e.malzeme||'').split('/')[0].trim():(e.cat||String(e.projeKodu||'').split('.').pop()||'bölümsüz')};
   });
   const bloklar=Object.keys(deger).filter(k=>deger[k]>0&&bilgi[k]).map(k=>({...bilgi[k], v:deger[k]}));
@@ -34382,7 +34435,7 @@ function rGyMutabakat(tarih,items){
   const gruplar=[];
   bas.forEach(b=>{
     const bol=skBaslikBolum(b.ad).bolum, bolN=bol?norm(bol):'';
-    const es=bloklar.filter(x=>x.bina===b.bina&&(x.isg?rGyAdEs(b.ad,x.gorev):(!!bolN&&x.bolum===bolN)));
+    const es=bloklar.filter(x=>x.bina===b.bina&&x.vardiya===b.vardiya&&(x.isg?rGyAdEs(b.ad,x.gorev):(!!bolN&&x.bolum===bolN)));
     const ks=new Set(es.map(x=>x.k));
     const ortak=gruplar.filter(g=>[...g.ks].some(k=>ks.has(k)));
     const g={basliklar:[{...b, bolum:bol}], ks};
@@ -34393,7 +34446,7 @@ function rGyMutabakat(tarih,items){
   bloklar.filter(x=>!kullanilan.has(x.k)).forEach(x=>gruplar.push({basliklar:[], ks:new Set([x.k])}));
   const out=gruplar.map(g=>{
     const bl=bloklar.filter(x=>g.ks.has(x.k));
-    return {basliklar:g.basliklar, bloklar:bl, gy:g.basliklar.reduce((s,b)=>s+b.n,0), rapor:bl.reduce((s,x)=>s+x.v,0)};
+    return {basliklar:g.basliklar, bloklar:bl, vardiya:(g.basliklar[0]||bl[0]||{}).vardiya||'GUNDUZ', gy:g.basliklar.reduce((s,b)=>s+b.n,0), rapor:bl.reduce((s,x)=>s+x.v,0)};
   });
   const gy=out.reduce((s,g)=>s+g.gy,0), rapor=rGunAdam(items);
   return {gy, rapor, tutuyor:gy===rapor&&out.every(g=>g.gy===g.rapor), gruplar:out};
@@ -34401,13 +34454,14 @@ function rGyMutabakat(tarih,items){
 // tutmayan grubun tek satirlik aciklamasi
 function rGyFarkMetin(g){
   const bas=g.basliklar.map(b=>b.ad).join(' + '), blok=g.bloklar.map(x=>x.etiket).join(' + ');
+  const vardiya=(g.basliklar[0]||g.bloklar[0]||{}).vardiya||'GUNDUZ';
   if(!g.bloklar.length){
     const b=g.basliklar[0], bol=g.basliklar.length===1&&b.bolum;
-    return {ad:bas, not:`Günlük Yazı ${g.gy} kişi - raporda karşılığı yok`+(bol?` (${bol} bölümüne kayıt girilmemiş)`:g.basliklar.length===1?' (aynı adlı işgücü kaydı yok; başlık bir bölüme de bağlı değil)':'')};
+    return {ad:vardiya+' · '+bas, not:`Günlük Yazı ${g.gy} kişi - raporda karşılığı yok`+(bol?` (${bol} bölümüne kayıt girilmemiş)`:g.basliklar.length===1?' (aynı adlı işgücü kaydı yok; başlık bir bölüme de bağlı değil)':'')};
   }
-  if(!g.basliklar.length) return {ad:blok, not:`Raporda ${g.rapor} adam - Günlük Yazı'da karşılık gelen başlık yok`};
+  if(!g.basliklar.length) return {ad:vardiya+' · '+blok, not:`Raporda ${g.rapor} adam - Günlük Yazı'da karşılık gelen başlık yok`};
   const f=g.gy-g.rapor;
-  return {ad:bas+' ↔ '+blok, not:`Günlük Yazı ${g.gy} kişi, raporda ${g.rapor} adam (${f>0?f+' eksik':(-f)+' fazla'})`};
+  return {ad:vardiya+' · '+bas+' ↔ '+blok, not:`Günlük Yazı ${g.gy} kişi, raporda ${g.rapor} adam (${f>0?f+' eksik':(-f)+' fazla'})`};
 }
 function rGyMutHtml(m){
   if(!m) return '';
@@ -34472,7 +34526,7 @@ function openIsgModal(idOrNull,presetDate){
     <p class="t-meta" style="margin-bottom:12px">Malzemeye bagli olmayan gunluk isgucu: ambar, genel saha elektrigi... Proje ilerlemesine ve stoklara karismaz.</p>
     <div id="isg_sayac" class="isg-sayac" style="display:none"></div>
     <div class="frow two"><div><label>Tarih *</label><input id="isg_tarih" type="date" value="${esc(e?e.tarih:(presetDate||rISO(Date.now())))}" ${presetDate&&!e?'readonly class="ro-auto"':''} onchange="isgGyTazele()"></div>
-      <div><label>Vardiya</label><select id="isg_vardiya">${VARDIYALAR.map(v=>`<option ${((e&&e.vardiya)||'GUNDUZ')===v?'selected':''}>${v}</option>`).join('')}</select></div></div>
+      <div><label>Vardiya</label><select id="isg_vardiya" onchange="isgGyTazele()">${VARDIYALAR.map(v=>`<option ${((e&&e.vardiya)||'GUNDUZ')===v?'selected':''}>${v}</option>`).join('')}</select></div></div>
     <div class="frow"><label>Gorev *  <span class="t-meta">(listeden secin veya yenisini yazin)</span></label>
       <input id="isg_gorev" list="isg_gorevList" value="${esc(curGorev)}" placeholder="orn. AMBAR / СКЛАД" oninput="isgGyCiz()">
       <datalist id="isg_gorevList">${gorevler.map(g=>`<option value="${esc(g)}">`).join('')}</datalist></div>
@@ -34524,7 +34578,7 @@ let _ISGY={gySec:[],gyKaynak:'',acik:false};
 let _ISG_DAGITIM=false, _ISG_ALOKASYON=[];
 function isgGyDurum(){
   const v=id=>(document.getElementById(id)||{}).value||'';
-  return {tarih:v('isg_tarih'), bina:v('isg_bina').trim(), cat:v('isg_gorev').split('/')[0].trim(),
+    return {tarih:v('isg_tarih'), bina:v('isg_bina').trim(), vardiya:v('isg_vardiya')||'GUNDUZ', cat:v('isg_gorev').split('/')[0].trim(),
     gySec:_ISGY.gySec, gyKaynak:_ISGY.gyKaynak};
 }
 function isgGyCiz(){
@@ -34598,7 +34652,7 @@ function isgGyUygula(){ if(!_ISGY.gySec.length) return; const t=slinkGyToplam(is
 function isgGyAc(){ _ISGY.acik=!_ISGY.acik; isgGyCiz(); }
 // i = slinkGyBasliklar sirasi; 'hepsi' / 'hic' toplu secim
 function isgGySec(i){
-  const bs=slinkGyBasliklar(slinkGyKaynak(isgGyDurum()));
+  const bs=slinkGyBasliklar(slinkGyKaynak(isgGyDurum()),isgGyDurum().vardiya);
   if(i==='hepsi') _ISGY.gySec=bs.map(b=>b.k);
   else if(i==='hic') _ISGY.gySec=[];
   else { const b=bs[i]; if(!b) return; _ISGY.gySec=_ISGY.gySec.includes(b.k)?_ISGY.gySec.filter(k=>k!==b.k):[..._ISGY.gySec,b.k]; }
@@ -35202,7 +35256,7 @@ function renderRaporForm(){
     ${slinkFormBanner(f)}
     <div class="rapor-page-body">
     <div class="frow two"><div><label>Tarih *</label><input type="date" id="r_tarih" value="${e?esc(e.tarih):today}" onchange="rTarihDegis()"></div><div><label>Bina *</label><select id="r_bina" onchange="rBinaChange()">${binas.map(b=>`<option ${e&&e.bina===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div></div>
-    <div class="frow"><label>Vardiya</label><select id="r_vardiya" style="max-width:220px">${VARDIYALAR.map(v=>`<option ${e&&e.vardiya===v?'selected':''}>${v}</option>`).join('')}</select></div>
+    <div class="frow"><label>Vardiya</label><select id="r_vardiya" onchange="rVardiyaDegis()" style="max-width:220px">${VARDIYALAR.map(v=>`<option ${e&&e.vardiya===v?'selected':''}>${v}</option>`).join('')}</select></div>
     <div id="r_blocks"></div>
     <button class="add-line" onclick="rAddBlock()" style="margin-top:2px">+ Bolum Ekle</button>
     <div class="frow" style="margin-top:12px"><label>Notlar</label><input id="r_not" value="${e?esc(e.notlar||''):''}" placeholder="opsiyonel"></div>
@@ -35395,7 +35449,7 @@ function rUpdBlock(bi,k,v){ if(_rBlocks[bi]) _rBlocks[bi][k]=v; }
 function rGyDurum(bk){
   if(!Array.isArray(bk.gySec)) bk.gySec=[];
   return {tarih:(document.getElementById('r_tarih')||{}).value||'', bina:(document.getElementById('r_bina')||{}).value||'',
-    cat:bk.cat||'', gySec:bk.gySec, gyKaynak:bk.gyKaynak||''};
+    vardiya:(document.getElementById('r_vardiya')||{}).value||'GUNDUZ', cat:bk.cat||'', gySec:bk.gySec, gyKaynak:bk.gyKaynak||''};
 }
 // secim varsa bolumun adam sayisi eldeki yazidan yeniden hesaplanir (hicbiri yoksa bosalir)
 function rGyUygula(bk){ if(!bk||!(bk.gySec||[]).length) return; const t=slinkGyToplam(rGyDurum(bk)); bk.adam=t?String(t):''; }
@@ -35422,10 +35476,10 @@ function rGyAlanHtml(bk,bi){
    acik: panel acik mi, ac: dugmenin onclick metni, bag: panelin tiklama baglantisi (slinkGyHtml o). */
 function gyAlanHtml(y,acik,ac,bag){
   const yz=y.tarih?slinkGyKaynak(y):null;
-  const bs=yz?slinkGyBasliklar(yz):[];
+  const bs=yz?slinkGyBasliklar(yz,y.vardiya):[];
   const set=new Set(y.gySec), secili=bs.filter(b=>set.has(b.k));
   const ozet=!y.tarih?'Önce tarih seçin'
-    :!yz?`${esc(fmtDate(y.tarih))} için Günlük Yazı yok`
+    :!yz?(y.vardiya==='GECE'&&gyGun(y.tarih).length?`${esc(fmtDate(y.tarih))} için gece kişi dağılımı girilmemiş`:`${esc(fmtDate(y.tarih))} için Günlük Yazı yok`)
     :secili.length?`Günlük Yazı: <b>${secili.map(b=>esc(b.ad)).join(' + ')}</b> = <b>${secili.reduce((s,b)=>s+b.n,0)} adam</b>`
     :`Adam sayısını Günlük Yazı'dan al <span class="t-meta">· ${esc(fmtDate(y.tarih))} · ${bs.length} başlık</span>`;
   return `<button type="button" class="rgy-ac${secili.length?' on':''}" onclick="${ac}" aria-expanded="${!!acik}">
@@ -35438,7 +35492,7 @@ function rGyAc(bi){ const bk=_rBlocks[bi]; if(!bk) return; bk.gyAcik=!rGyAcikMi(
 // i = slinkGyBasliklar sirasi; 'hepsi' / 'hic' toplu secim
 function rGySec(bi,i){
   const bk=_rBlocks[bi]; if(!bk) return;
-  const bs=slinkGyBasliklar(slinkGyKaynak(rGyDurum(bk)));
+  const bs=slinkGyBasliklar(slinkGyKaynak(rGyDurum(bk)),rGyDurum(bk).vardiya);
   if(i==='hepsi') bk.gySec=bs.map(b=>b.k);
   else if(i==='hic') bk.gySec=[];
   else { const b=bs[i]; if(!b) return; bk.gySec=bk.gySec.includes(b.k)?bk.gySec.filter(k=>k!==b.k):[...bk.gySec,b.k]; }
@@ -35463,6 +35517,7 @@ function rAdamYaz(bi,v){
 // formun tarihi degisti: secimli bolumler o gunun yazisindan yeniden toplanir (bloklar yeniden
 // CIZILMEZ - yalniz adam kutusu ve panel; satirlarda yazilanlar/odak yerinde kalir)
 function rTarihDegis(){ _rBlocks.forEach((bk,bi)=>{ rGyUygula(bk); rGyKutu(bi); rGyCiz(bi); }); }
+function rVardiyaDegis(){ _rBlocks.forEach((bk,bi)=>{ rGyUygula(bk); rGyKutu(bi); rGyCiz(bi); }); }
 /* ══ SAHA KAYDI ↔ GUNLUK YAZI ↔ BINALAR BAGI (1 Eki 2026) ═══════════════════════
    Zincir: Gunluk Yazi BASLIGI -> BOLUM -> basligin odalarinin KATI (Binalar agaci,
    gyOdaIndeks) -> o kati kapsayan, o bolume ait SARTNAME.
