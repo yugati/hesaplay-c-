@@ -6892,6 +6892,27 @@ const BINA_KAT_SAYISI={'00UYB':8};
 // agacta kat yoksa eski sabit tanima dusulur (00UYB gibi)
 function binaKatSayisi(b){ const n=binaLoklar(b).filter(l=>l.level==='kat').length; return n||BINA_KAT_SAYISI[b]||0; }
 function parseKatNo(k){ const m=String(k==null?'':k).match(/-?\d+/); return m?parseInt(m[0],10):null; }
+/* KAT DISI YERLER: "Dis Cephe" ve "Bina Geneli". Isin yapildigi yer katlarda degil cephede ya da binanin
+   her yerindeyse bu ikisinden biri secilir. Kat/oda agacinda DUGUM DEGILDIR: kat sayisini, isi haritasini,
+   sartname kat kapsamini ve kot eslemesini etkilemez; veritabanina satir yazilmaz, migration yok.
+   Tasiyici KAT ETIKETIDIR (sp.kat / entry.kat - "CATI" gibi sayisal olmayan etiketle ayni yol). Parcali
+   binada Saha Kaydi menusu ayrica bina basina SABIT sanal id yazar ('@dis:BINA'), getLok bunu cozer;
+   boylece lokasyon yolu, kalem lokasyon dokumu ve "lokasyon zorunlu" kurali ek kod gerektirmeden calisir.
+   Etiket sayi ICERMEMELI (parseKatNo rakami her yerden okur). */
+const OZEL_YERLER=[{tur:'dis',ad:'Dış Cephe'},{tur:'genel',ad:'Bina Geneli'}];
+function ozelYerTur(kat){ const n=norm(String(kat==null?'':kat).trim()); const y=n?OZEL_YERLER.find(x=>norm(x.ad)===n):null; return y?y.tur:''; }
+function ozelYerAd(tur){ const y=OZEL_YERLER.find(x=>x.tur===tur); return y?y.ad:''; }
+function ozelYerId(bina,tur){ return '@'+tur+':'+bina; }
+function ozelYerCoz(id){ const m=/^@(dis|genel):(.+)$/.exec(String(id==null?'':id)); return m?{tur:m[1],bina:m[2],ad:ozelYerAd(m[1])}:null; }
+// kayit / satir hangi kat disi yerde? sanal lokasyon id'si once, yoksa kat etiketi; '' = kat ya da yer yok
+function ozelYerTurOf(o){ const c=ozelYerCoz(o&&o.lokId); return c?c.tur:ozelYerTur(o&&o.kat); }
+const _OZEL_LOK={};
+function ozelYerLok(id){ const c=ozelYerCoz(id); if(!c) return undefined;
+  return _OZEL_LOK[id]||(_OZEL_LOK[id]={id,bina:c.bina,parentId:null,level:'katdisi',ozel:c.tur,name:c.ad}); }
+// binanin kat disi yerleri (sanal dugumler, OZEL_YERLER sirasiyla) - agacin kokune ekli gosterilen yerler icin
+function binaOzelLoklar(bina){ return bina?OZEL_YERLER.map(y=>ozelYerLok(ozelYerId(bina,y.tur))):[]; }
+// "Kat 3" ama "Dış Cephe": kat etiketini gorunume cevirir (sayisal olmayan etiket oldugu gibi, kat disi yer onek almaz)
+function katGoster(k){ const s=String(k==null?'':k).trim(); if(!s) return ''; return ozelYerTur(s)?ozelYerAd(ozelYerTur(s)):'Kat '+s; }
 // bina + kat bazinda montaj ilerlemesi. Kat hedefi VERIDEN gelir: oda/lokasyon metraji
 // (sp.lokTargets) girilen kalemlerde her dagilim payi bagli oldugu KATA yazilir; dagitilmamis
 // kalan hedef katlara esit bolunur (duz blok varsayimi yalnizca dagitilmayan kisim icindir).
@@ -6903,6 +6924,8 @@ function binaKatIlerleme(bina,katSayisi){
   specs.forEach(sp=>{
     let dagitilan=0;
     (sp.lokTargets||[]).forEach(t=>{
+      // Dış Cephe / Bina Geneli payi katlara girmez ve kalan hedef olarak katlara esit de yayilmaz
+      if(ozelYerCoz(t.lokId)){ dagitilan+=Number(t.target)||0; return; }
       const kat=lokKatOf(t.lokId); const kn=kat?parseKatNo(kat.name):null;
       const f=(kn!=null)?floorByNo[kn]:null;
       if(f){ const q=Number(t.target)||0; f.target+=q; dagitilan+=q; }
@@ -6914,7 +6937,7 @@ function binaKatIlerleme(bina,katSayisi){
       let kn=parseKatNo(e.kat);
       if(kn==null&&e.lokId){ const k=lokKatOf(e.lokId); kn=k?parseKatNo(k.name):null; }
       const f=(kn!=null)?floorByNo[kn]:null;
-      if(!f){ unmatched++; return; }
+      if(!f){ if(!ozelYerTurOf(e)) unmatched++; return; }   // Dış Cephe / Bina Geneli katlara girmez, "eslesmedi" da sayilmaz
       const q=Number(e.miktar)||0; f.installed+=q;
       const kotKey=(e.kot!=null&&e.kot!=='')?String(e.kot):'-';
       f.kotlar[kotKey]=(f.kotlar[kotKey]||0)+q;
@@ -18308,6 +18331,10 @@ function renderLokTree(bina){
     });
   };
   walk(null,0);
+  // Dış Cephe / Bina Geneli: sabit kat disi yerler (agacta dugum degil, duzenlenmez)
+  binaOzelLoklar(bina).forEach(l=>rows.push(`<div style="display:flex;align-items:center;gap:7px;padding:6px 8px;border:1px dashed var(--line);border-radius:8px;margin-bottom:5px" title="Sabit yer - katlarda olmayan isler icin; agaca dugum olarak eklenmez">
+        <span class="cat-tag" style="background:var(--amber)22;color:var(--amber);font-size:9px;flex-shrink:0">${esc(lokSeviyeAd(l).toLocaleUpperCase('tr'))}</span>
+        <b style="flex:1;font-size:13px">${esc(l.name)}</b><span class="t-meta">sabit yer</span></div>`));
   w.innerHTML=(rows.join('')||`<div class="empty" style="padding:20px"><p>Henuz lokasyon tanimlanmadi</p><span style="font-size:12px">Asagidaki butonla ilk ${lokLevelLabel(levels[0])} kaydini ekleyin</span></div>`)
     +`<button class="add-line" onclick="lokAdd('${esc(bina)}',null,'${levels[0]}')">+ ${lokLevelLabel(levels[0])} Ekle</button>`;
 }
@@ -18407,7 +18434,7 @@ function openLokWorkspace(bina){
   render();
 }
 function closeLokWorkspace(){ LOKW.bina=null; render(); }
-function lokwLevelColor(lv){ return lv==='kat'?'var(--blue)':lv==='aks'?'#14b8a6':lv==='fragment'?'var(--violet)'
+function lokwLevelColor(lv){ return lv==='katdisi'?'var(--amber)':lv==='kat'?'var(--blue)':lv==='aks'?'#14b8a6':lv==='fragment'?'var(--violet)'
   :lv==='govde'?'#a855f7':lv==='dal'?'#0ea5e9':lv==='yaprak'?'#10b981':'var(--green)'; } // nesil dugumleri: rol ailesinin tonu
 // dugum basina bagli veri sayilari (kendisi + alt agac): silmeden once riskin gorunur olmasi icin
 function lokwUsageMap(bina){
@@ -18423,7 +18450,11 @@ function lokwUsageMap(bina){
       sub[l.id]={metraj:o.metraj+c.metraj,alim:o.alim+c.alim,montaj:o.montaj+c.montaj};
       tot.metraj+=sub[l.id].metraj; tot.alim+=sub[l.id].alim; tot.montaj+=sub[l.id].montaj; });
     return tot; };
-  return {own,sub,total:walk(null)};
+  const total=walk(null);
+  // Dış Cephe / Bina Geneli: agacta dugum degil (walk gormez) - kendi kayitlari kok toplamina eklenir
+  binaOzelLoklar(bina).forEach(l=>{ const o=own[l.id]||{metraj:0,alim:0,montaj:0}; sub[l.id]={...o};
+    total.metraj+=o.metraj; total.alim+=o.alim; total.montaj+=o.montaj; });
+  return {own,sub,total};
 }
 function lokwUseLabel(u){ const p=[]; if(u.metraj)p.push(u.metraj+' metraj'); if(u.alim)p.push(u.alim+' alim'); if(u.montaj)p.push(u.montaj+' montaj'); return p.join(' · '); }
 function renderLokWorkspace(bina){
@@ -18492,6 +18523,16 @@ function renderLokWorkspace(bina){
   };
   walk(null,0);
   if(LOKW.addUnder==='') rows.push(addRow(LOKW.addLevel||levels[0],0));
+  // KAT DISI YERLER (Dış Cephe / Bina Geneli): agacta dugum degil, sabit - ad / silme / alt ekleme yok, yalniz bagli kayitlar
+  const ozelRows=binaOzelLoklar(bina).filter(l=>!q||norm(l.name).indexOf(q)>=0).map(l=>{
+    const useLbl=lokwUseLabel(use.sub[l.id]||{metraj:0,alim:0,montaj:0});
+    return `<div class="lokw-row" title="Sabit yer: katlarda olmayan isler icin (Saha Kaydi, siparis lokasyonu, metraj dagilimi, Kat Ata). Agaca dugum olarak eklenmez, duzenlenmez.">
+        <button class="lokw-caret off" tabindex="-1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg></button>
+        <span class="lokw-lvl" style="--lc:${lokwLevelColor(l.level)}">${esc(lokSeviyeAd(l).toLocaleUpperCase('tr'))}</span>
+        <b class="lokw-name">${esc(l.name)}</b>
+        ${useLbl?`<span class="lokw-use" title="Bu yere bagli kayitlar">${useLbl}</span>`:''}
+        <span class="lokw-kul">sabit yer</span>
+      </div>`; }).join('');
   const gen=LOKW.genOpen?`<div class="lokw-gen">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px"><b style="font-size:13px">Hizli Kat Uret</b><button class="mini-btn" title="Kapat" onclick="lokwToggleGen()">x</button></div>
       <div class="frow" style="display:grid;grid-template-columns:repeat(4,minmax(110px,1fr));gap:9px;margin-bottom:10px">
@@ -18512,7 +18553,7 @@ function renderLokWorkspace(bina){
     <span style="flex:1"></span>
     <button class="btn btn-add" onclick="lokwStartAdd('','${levels[0]}')">${icoPlus()} ${lokLevelLabel(levels[0])} Ekle</button>
   </div>`;
-  const tree=`<div class="lokw-tree">${rows.join('')||`<div class="empty" style="padding:26px"><p>${q?'Aramayla eslesen lokasyon yok':'Henuz lokasyon tanimlanmadi'}</p><span style="font-size:12px">${q?'Arama kutusunu temizleyin':'"'+lokLevelLabel(levels[0])+' Ekle" ile baslayin'+(levels[0]==='kat'?' veya Hizli Kat Uret kullanin':'')}</span></div>`}
+  const tree=`<div class="lokw-tree">${rows.join('')||`<div class="empty" style="padding:26px"><p>${q?'Aramayla eslesen lokasyon yok':'Henuz lokasyon tanimlanmadi'}</p><span style="font-size:12px">${q?'Arama kutusunu temizleyin':'"'+lokLevelLabel(levels[0])+' Ekle" ile baslayin'+(levels[0]==='kat'?' veya Hizli Kat Uret kullanin':'')}</span></div>`}${ozelRows?`<div class="lokw-hint" style="margin:10px 0 4px">Kat dışı yerler - ağaçta düğüm değil, sabit; Saha Kaydı / sipariş / metraj / Kat Ata bu yerlere kayıt bağlar:</div>${ozelRows}`:''}
     <p class="lokw-hint">Cift tik: yeniden adlandir · Enter: ekle/kaydet · Esc: vazgec. Ekleme kutusu acik kalir, arka arkaya hizli giris yapilabilir. Kopyala butonu dali tum alt lokasyonlariyla cogaltir. Bagli metraj/alim/montaj kaydi olan dallar silinemez. "Bilgi" dugmesi odanin adini / alanini / kategorisini / notunu, "Not" dugmesi kat notunu girer; toplu giris icin Akis gorunumundeki "Toplu Kurulum" (Excel) kullanilir.</p>
   </div>`;
   return `<div class="sel-wrap" style="max-width:1000px">${bc}${head}
@@ -18737,7 +18778,7 @@ function flowOzelli(sp){ return !!String(sp.poz||'').trim()||katAtaKodlar(sp).le
 function flowIdariIdx(bina){
   if(!_FLOWIDARI) _FLOWIDARI={};
   if(_FLOWIDARI[bina]) return _FLOWIDARI[bina];
-  const byId=new Map(binaLoklar(bina).map(l=>[l.id,l])), katC=new Map();
+  const byId=new Map([...binaLoklar(bina),...binaOzelLoklar(bina)].map(l=>[l.id,l])), katC=new Map();
   // dugumun KATI (birincil ebeveyn zinciri - lokKatOf ile ayni), onbellekli
   const katOf=id=>{ if(katC.has(id)) return katC.get(id);
     let n=byId.get(id),g=0,k=null; while(n&&g++<500){ if(n.level==='kat'){ k=n.id; break; } n=n.parentId?byId.get(n.parentId):null; }
@@ -18756,7 +18797,9 @@ function flowIdariIdx(bina){
     (Array.isArray(s.yerIds)?s.yerIds:[]).forEach(id=>ekle(id,'yer'));
     (s.lokTargets||[]).forEach(t=>{ if(t&&t.lokId) ekle(t.lokId,'metraj'); });
     // Kat Ata yalniz baska yer yoksa sayilir; kati hic girilmemis kalemde dugum cozumu denenmez
-    if(!o.size&&!k.size&&(String(s.kat||'').trim()||String(s.kot||'').trim())){ const n=binaKatNodeOf(bina,s.kat,s.kot); if(n) ekle(n.id,'katata'); }
+    if(!o.size&&!k.size&&(String(s.kat||'').trim()||String(s.kot||'').trim())){
+      const oy=ozelYerTur(s.kat);   // Kat Ata 'Dış Cephe' / 'Bina Geneli' -> o kat disi yer
+      if(oy) ekle(ozelYerId(bina,oy),'katata'); else { const n=binaKatNodeOf(bina,s.kat,s.kot); if(n) ekle(n.id,'katata'); } }
     // HIYERARSI (Sartname > Kat > Oda): odada kullanilan kod o odanin KATINDA tanimlidir - kat acikca
     // yazilmamissa (eski kayit, metraj) odanin katindan cikarilir (kaynak "oda")
     o.forEach(id=>{ const kid=katOf(id); if(kid&&!k.has(kid)){ k.add(kid); if(!kay[kid]) kay[kid]='oda'; } });
@@ -19037,7 +19080,7 @@ function flowSablon(){ return FLOWW.ed?FLOWW.ed.t:flowSablonKayitli(); }
 function flowDikey(){ const y=flowSablon().yon; return y==='TB'||y==='BT'; }
 function flowTurOf(n){ return n.type==='lok'?n.lok.level:n.type==='more'?'ozel':n.type; }
 // nesil dugumunun (Mikro-Govde, Nano-Dal ...) rolu kendi seviyesidir; zincir turleri sablondan
-function flowRolOf(S,t){ return t==='bina'?'kok':lokNesilMi(t)?t:(S.tur[t]||'dal'); }
+function flowRolOf(S,t){ return t==='bina'?'kok':lokNesilMi(t)?t:t==='katdisi'?(S.tur.kat||'dal'):(S.tur[t]||'dal'); }
 /* NESIL OLCEGI (Boy): 1. nesil 100; 2. ve 3. nesil sablondan (varsayilan 50, 25); sonraki her
    nesil bir oncekinin "oran"i kadar (varsayilan %50: 12,5 - 6,25 ...). Geometrik dizi oldugu icin
    sinirsiz derinlik sonlu bir alana sigar. %1'in altina inilmez. */
@@ -19086,7 +19129,9 @@ function flowSirala(S,liste,pk,tur,bilgi){
 }
 // telefon gezgini de ayni sirayi kullanir (tuvalle liste ayni dizilsin)
 function flowSiraliBinalar(){ return flowSirala(flowSablon(),projBuildings(),'#kok','bina',b=>({k:'b:'+b,ad:b,t:'bina'})); }
-function flowSiraliLok(b,pid){ return flowSirala(flowSablon(),lokChildren(b,pid),pid||('b:'+b),'lok',l=>({k:l.id,ad:l.name,kot:l.kot,t:l.level})); }
+function flowSiraliLok(b,pid){ return flowSirala(flowSablon(),lokChildren(b,pid),pid||('b:'+b),'lok',l=>({k:l.id,ad:l.name,kot:l.kot,t:l.level})).concat(flowKokOzel(b,pid)); }
+// Dış Cephe / Bina Geneli: binanin kokunde, katlarin ardinda (agacta dugum degil - surukleme / bag / ad / silme yok)
+function flowKokOzel(b,pid){ return !pid&&binaParcali(b)?binaOzelLoklar(b):[]; }
 /* ===== YERLESIM MOTORU ====================================================================
    Iki eksenli klasik agac yerlesimi, yonden BAGIMSIZ yazildi:
      u = ANA eksen (derinlik: kok -> govde -> dal -> yaprak kolonlari)
@@ -19147,7 +19192,7 @@ function flowLayout(binas){
   // Kolon genisligi derinlik + NESIL basina tutulur: ayni derinlikte duran bir oda (1. nesil) ile
   // bir Mikro-Govde (2. nesil) birbirinin olcusunu buyutmez. Kapali mikro agac olcuye girmez.
   const olcKol=(b,parentId,depth,g)=>{
-    lokChildren(b,parentId).filter(l=>(l.parentId||null)===(parentId||null)).forEach(l=>{
+    lokChildren(b,parentId).filter(l=>(l.parentId||null)===(parentId||null)).concat(flowKokOzel(b,parentId)).forEach(l=>{
       if(R[rolT(l.level)].boyut!=='sabit'){
         const m=lokMet(l,g), k=depth+'|'+g;
         colW[k]=Math.min(NWMAX,Math.max(colW[k]||NWMIN,Math.ceil(m.ek+m.nw)+8+sekilEk(l.level)));  // +8: satir hesabinin -4 emniyet payindan genis kalsin
@@ -19176,7 +19221,7 @@ function flowLayout(binas){
   const bolumCip=textW('BOLUM',TXT_MONO)+5*0.5+16;
   binas.forEach(b=>{
     if(!binaParcali(b))return;
-    binaLoklar(b).filter(l=>FLOWW.exp[l.id]).forEach(l=>{
+    binaLoklar(b).concat(flowKokOzel(b,null)).filter(l=>FLOWW.exp[l.id]).forEach(l=>{
       srtOf(b,l.id).forEach(g=>{
         SRW=Math.max(SRW,144+String(g.sr.code||'').length*7.2); // SARTNAME cipi + kod + kopyala + caret
         if(l.level!=='kat') SRW=Math.max(SRW,20+34*6.1);       // oda: "GENEL · 136 kalem · 12 bu odada" alt satiri
@@ -19282,7 +19327,7 @@ function flowLayout(binas){
     // g: bu cocuklarin nesli (1 = ana agac)
     const lokOgeleri=(pid,d,g)=>{
       const pk=pid||('b:'+b);
-      const kids=flowSirala(S,lokChildren(b,pid).filter(l=>(l.parentId||null)===(pid||null)),pk,'lok',l=>({k:l.id,ad:l.name,kot:l.kot,t:l.level}));
+      const kids=flowSirala(S,lokChildren(b,pid).filter(l=>(l.parentId||null)===(pid||null)),pk,'lok',l=>({k:l.id,ad:l.name,kot:l.kot,t:l.level})).concat(flowKokOzel(b,pid));
       return kids.map((l,i)=>{
         const n={type:'lok',k:l.id,pk,lok:l,use:use&&use.sub[l.id],sg:sg(pk,'lok'),si:i,nesil:g};
         boyutla(n,d-1);
@@ -19728,6 +19773,7 @@ function flowKlikYut(){
 function flowBagKontrol(P,C){
   if(!C||C.type!=='lok') return {ok:false,msg:'Yalnizca kat / aks / fragment / oda dugumune baglanabilir'};
   const p=P.lok, c=C.lok;
+  if(p.level==='katdisi'||c.level==='katdisi') return {ok:false,msg:'Dış Cephe / Bina Geneli ağaçta düğüm değildir - bağlanamaz, taşınamaz'};
   if(p.bina!==c.bina) return {ok:false,msg:'Farkli binalarin dugumleri birbirine baglanamaz'};
   if(!can('define',{bina:c.bina})) return {ok:false,msg:'Bu islem icin yetkiniz yok'};
   if(!lokChildLevels(fwmLevels(c.bina),p.level).includes(c.level))
@@ -22318,14 +22364,16 @@ function exportKirilimExcel(bina){
       else if(n.level==='fragment'&&!z.fragment) z.fragment=n.name; else if(n.level==='oda'&&!z.oda){ z.oda=n.name; z.odaAd=lokKullanim(n); }
       n=n.parentId?X.byId.get(n.parentId):null; }
     if(l&&lokNesilMi(l.level)) z.oda=(z.oda?z.oda+' / ':'')+lokPath(l.id).split(' / ').slice(-1)[0];
+    if(l&&l.level==='katdisi') z.kat=l.name;   // Dış Cephe / Bina Geneli: KAT sutununda yerin adi
     return z; };
   const bagAd={genel:'KAT GENELI',oda:'ODAYA',alt:'ODALARDA'};
   const yerAd=(s,l)=>{ const y=X.yer.get(s.id); if(!y) return ['',''];
     const k=y.kay[l.id]||'';
-    return [l.level==='kat'?'KAT HAVUZU':(l.level==='oda'?'ODAYA':'DUGUME'),KAY[k]||k]; };
+    return [l.level==='kat'?'KAT HAVUZU':l.level==='oda'?'ODAYA':l.level==='katdisi'?'KAT DISI':'DUGUME',KAY[k]||k]; };
   const kalemSatir=(z,sr,bag,s,yer)=>[z.kat,z.aks,z.fragment,z.oda,z.odaAd,flowSrtBolum(sr),sr.code,sr.name&&sr.name!==sr.code?sr.name:'',bag,
     s?katAtaKodlar(s).join(', '):'',s?(s.poz||''):'',s?(s.name||''):'',s?(s.code||''):'',s?(Number(s.target)||0):'',s?String(s.unit||'').split('/')[0].trim():'',yer[0]||'',yer[1]||''];
-  lokFlat(bina).forEach(({lok:l})=>{
+  // agac + kat disi yerler (sanal dugumler agacta yok; kalemleri burada yazilmasa 'YERI YOK'a da dusmez, kaybolurdu)
+  [...lokFlat(bina).map(f=>f.lok),...binaOzelLoklar(bina)].forEach(l=>{
     const z=zincir(l), kat=l.level==='kat';
     // kat dugumunde yalniz GENEL sartnameler; odada yalniz dogrudan bagli olanlar (GENEL'ler kat satirinda)
     const gruplar=flowLokSrt(bina,l.id).filter(g=>kat?g.tip==='genel':g.tip==='oda');
@@ -22336,7 +22384,7 @@ function exportKirilimExcel(bina){
       kalem.forEach(s=>{ rows.push(kalemSatir(z,g.sr,bagAd[g.tip],s,yerAd(s,l))); yazildi++; });
     });
     // sartnamesi olmayan kat / oda da gorunsun (aks / fragment zaten odalarinin satirinda yazar)
-    if(!yazildi&&(kat||l.level==='oda')) rows.push([z.kat,z.aks,z.fragment,z.oda,z.odaAd,'','','','','','','','','','','','']);
+    if(!yazildi&&(kat||l.level==='oda'||l.level==='katdisi')) rows.push([z.kat,z.aks,z.fragment,z.oda,z.odaAd,'','','','','','','','','','','','']);
   });
   // yeri hic olmayan kalemler
   X.srts.forEach(sr=>X.ozel.get(sr.id).forEach(s=>{ if(!X.yer.has(s.id)) rows.push(kalemSatir({kat:'',aks:'',fragment:'',oda:'',odaAd:''},sr,'',s,['YERI YOK',''])); }));
@@ -22385,7 +22433,31 @@ function flowBinaPanel(b){
       ${d?`<button class="btn btn-ghost" style="color:var(--red);border-color:color-mix(in srgb,var(--red) 40%,transparent)" onclick="delBina('${esc(b)}')">Binayi Sil</button>`:''}
     </div>`;
 }
+/* KAT DISI YER paneli (Dış Cephe / Bina Geneli): sanal dugum - ad, kot, alt dugum, bag, silme yok.
+   Yalniz bagli kayitlar ve kalemlerinden gelen sartnameler; kayitlarin nereden baglandigi yazar. */
+function flowKatDisiPanel(l){
+  const b=l.bina, u=lokwUsageMap(b).sub[l.id]||{metraj:0,alim:0,montaj:0}, d=can('define');
+  const srtL=flowIdariListe(b,l.id), bm=new Map();
+  srtL.forEach(x=>{ const s=flowSrtBolum(x.sr); if(!bm.has(s)) bm.set(s,[]); bm.get(s).push(x); });
+  const srtHtml=`<div class="fw-sec fw-sec-row"><span>Bagli Sartnameler (${srtL.length})</span>${copyAllBtn(srtL.map(x=>x.sr.code),srtL.length+' sartname kodu')}</div>`+(srtL.length
+    ?[...bm.entries()].map(([sec,xs])=>`<div class="fw-bolum-bas" style="--cc:${catColor(sec)}"><span class="lokw-lvl" style="--lc:${catColor(sec)}">BOLUM</span>${esc(sec)} <i>${xs.length}</i></div>`
+      +xs.map(({sr})=>`<div class="fw-srt clk" onclick="flowSrtSec('${esc(l.id)}','${esc(sr.id)}')" title="Tuvalde bu sartnameyi ac">
+        <div style="flex:1;min-width:0"><div class="fw-srt-code">${esc(sr.code)}</div>${sr.name&&sr.name!==sr.code?`<div class="fw-srt-name">${esc(sr.name)}</div>`:''}</div>
+        ${copyBtn(sr.code,'Sartname kodu')}
+        ${d?`<button class="mini-btn" title="Sartnameyi duzenle" onclick="event.stopPropagation();openSartnameModal('${esc(sr.id)}')">${icoPencilSm()}</button>`:''}
+      </div>`).join('')).join('')
+    :`<p class="fw-path" style="margin-bottom:0">Buraya yerlesmis kalem yok.</p>`);
+  return `<h3><span class="lokw-lvl" style="--lc:${lokwLevelColor(l.level)};vertical-align:2px">${esc(lokSeviyeAd(l).toLocaleUpperCase('tr'))}</span> ${esc(l.name)}</h3>
+    <div class="fw-path">${esc(b)} / ${esc(l.name)}</div>
+    <div class="fw-stat"><span>Metraj dagilimi</span><b>${u.metraj}</b></div>
+    <div class="fw-stat"><span>Alim kaydi</span><b>${u.alim}</b></div>
+    <div class="fw-stat"><span>Montaj kaydi</span><b>${u.montaj}</b></div>
+    ${srtHtml}
+    <p class="fw-path" style="margin-top:12px;margin-bottom:0">${l.ozel==='dis'?'Katlarda degil binanin dis cephesinde yapilan isler':'Binanin her yerinde (tek kata ait olmayan) isler'} icin sabit yer. Agacta dugum degildir: kat sayisina, isi haritasina ve sartname kat kapsamina girmez; adlandirilmaz, silinmez.
+      Kayitlar buraya <b>Saha Kaydi / Saha Linki</b> lokasyonundan, kalem duzenleme <b>metraj dagilimindan</b>, siparis satiri <b>lokasyonundan</b> ve <b>Kat Ata</b>'daki ${esc(l.name)} kutusundan baglanir.</p>`;
+}
 function flowLokPanel(l){
+  if(l.level==='katdisi') return flowKatDisiPanel(l);
   const b=l.bina, lc=lokwLevelColor(l.level);
   const cfg=binaGiris(b); const levels=cfg.levels&&cfg.levels.length?cfg.levels:LOK_DEFAULT_LEVELS;
   const childLevels=lokChildLevels(levels,l.level);
@@ -22717,7 +22789,7 @@ function downloadBulkTemplate(dolu){
         [...y.k].forEach(id=>{ const k=X.byId.get(id); malSatir.push(satir(k?k.name:'','',adetOf(id))); });
         [...y.o].forEach(id=>{ const n=X.byId.get(id), k=X.byId.get(X.katOf(id));
           // ODA NO yalniz oda dugumunu secer: aks / fragment yeri kat satiri olarak cikar
-          malSatir.push(satir(k?k.name:'',n&&n.level==='oda'?n.name:'',adetOf(id))); });
+          malSatir.push(satir(n&&n.level==='katdisi'?n.name:(k?k.name:''),n&&n.level==='oda'?n.name:'',adetOf(id))); });
       });
     });
   }
@@ -22929,6 +23001,7 @@ function _bulkParse(wb,bina,isNew){
         const rn=ks.r0+i+1;
         const nm=_bulkHucre(row,iK);
         if(!nm){ E('Katlar',rn,'KAT bos'); continue; }
+        if(ozelYerTur(nm)){ E('Katlar',rn,'"'+nm+'" bir kat degil - sabit kat disi yer, kat olarak eklenmez (kalemleri Malzemeler sayfasinda KAT sutununa yazin)'); continue; }
         const kotRaw=_bulkHucre(row,iKot); let kot=null;
         if(kotRaw!==''){ kot=_bulkNum(row[iKot]); if(!isFinite(kot)){ E('Katlar',rn,'KOT sayi olmali ("'+kotRaw+'")'); continue; } }
         const r=findKat(nm); if(r&&r.amb){ E('Katlar',rn,'"'+nm+'" binadaki '+r.amb.length+' kata birden uyuyor ('+r.amb.map(x=>'"'+x.node.name+'"').join(', ')+') - tam adini yazin'); continue; }
@@ -23022,6 +23095,7 @@ function _bulkParse(wb,bina,isNew){
       // KAT: once KAT sutunu (yazildiysa esas), sonra KOT (kotu esit / altinda kalan kat). Ikisi de bossa
       // oda kodu binada TEK bir odaya aitse o oda kullanilir (yalniz bilgi guncelleme icin)
       let kat=null, kotAta=null;
+      if(katNm&&ozelYerTur(katNm)){ E('Odalar',rn,'"'+katNm+'" bir kat degil - oda kat disi yere baglanamaz (odanin gercek katini yazin)'); continue; }
       if(katNm){ const r=findKat(katNm);
         if(r&&r.amb){ E('Odalar',rn,'"'+katNm+'" binadaki '+r.amb.length+' kata birden uyuyor - tam adini yazin'); continue; }
         if(!r){ E('Odalar',rn,katYok(katNm)); continue; }
@@ -23129,6 +23203,17 @@ function _bulkParse(wb,bina,isNew){
       // yer: ODA KODU (KAT ile daraltilabilir) ya da yalniz KAT (kata bagli); ikisi de bossa bina geneli
       let oda=null, kat=null;
       if((odaKod||katNm)&&!parcaliOk){ E('Malzemeler',rn,'bu bina "Tum Giris" modelinde - kat/oda yerlestirmesi yapilamaz (KAT ve ODA KODU bos birakin ya da binayi Parcali yapin)'); continue; }
+      // KAT = 'Dış Cephe' / 'Bina Geneli': kat disi sabit yer (agacta dugum degil) - ODA NO ile birlikte olmaz
+      const ozT=ozelYerTur(katNm);
+      if(ozT){
+        if(odaKod){ E('Malzemeler',rn,'"'+katNm+'" bir kat degil - ODA NO ile birlikte yazilamaz (ODA NO bos birakin ya da gercek kati yazin)'); continue; }
+        const res=resolveSr(srKod,bolum,null); if(res.err){ E('Malzemeler',rn,res.err); continue; }
+        const kod=_bulkHucre(row,iKod), birim=_bulkHucre(row,iBirim);
+        const gk=res.sr.id+'|o:'+norm(ozelNo)+'|p:'+norm(poz)+'|'+matKey(kod,ad);
+        if(!groups.has(gk)) groups.set(gk,{sr:res.sr,ozelNo,poz,ad,kod,birim,rows:[]});
+        groups.get(gk).rows.push({odaId:ozelYerId(bina,ozT),isOda:false,ozel:ozT,katId:null,adet:adetHata?0:adet,adetHata,rn,yerAd:ozelYerAd(ozT)});
+        continue;
+      }
       if(katNm){ const r=findKat(katNm);
         if(r&&r.amb){ E('Malzemeler',rn,'"'+katNm+'" binadaki '+r.amb.length+' kata birden uyuyor - tam adini yazin'); continue; }
         if(!r){ E('Malzemeler',rn,katYok(katNm)); continue; }
@@ -23182,7 +23267,7 @@ function _bulkParse(wb,bina,isNew){
       // sartname kapsami: ODA NO'lu satir sartnameyi yalniz o ODAYA baglar (kat kapsamina YAZILMAZ - yazilinca
       // sartname akista katin tum odalarinda GENEL gorunurdu; kat etkilesimi sartKatKapsar ile yine calisir),
       // yalniz KAT'li satir kat GENELINE baglar
-      g.rows.forEach(r=>{ if(!r.odaId)return;
+      g.rows.forEach(r=>{ if(!r.odaId||r.ozel)return;
         if(r.isOda){ ent.odaIds.add(r.odaId); if(r.katId) ent.odaKat.add(r.katId); }
         else ent.katIds.add(r.odaId); });
     });
@@ -23335,6 +23420,7 @@ async function applyBulkSetup(){
       // Kat Paneli'nde "Kat bilgisi girilmemis" altina dusuyor, akista "bu katta" sayilmiyordu.
       const ks=[...new Set(g.rows.map(r=>r.katId).filter(Boolean))];
       if(ks.length===1){ const kn=katNode(ks[0]); if(kn){ const kv=bulkKatDegeri(kn); if(kv.kat) spec.kat=kv.kat; if(kv.kot) spec.kot=kv.kot; } }
+      else if(!ks.length){ const oz=[...new Set(g.rows.map(r=>r.ozel||''))]; if(oz.length===1&&oz[0]) spec.kat=ozelYerAd(oz[0]); }
       newSpecs.push(spec);
     });
     newMats=DB.proje.materials.filter(m=>!beforeIds.has(m.id));
@@ -23958,6 +24044,7 @@ let _KATP=null;
 // kat etiketini karsilastirilabilir anahtara cevirir: "3"/"3. Kat" -> n:3 · "+8.400"/"8400" -> k:+8.400
 function katpKey(lbl){
   const s=String(lbl==null?'':lbl).trim(); if(!s) return '';
+  const oy=ozelYerTur(s); if(oy) return 'x:'+oy;   // Dış Cephe / Bina Geneli: kat degil, kendi satiri
   const m=s.match(/^(-?\d{1,3})(\s*\.?\s*kat)?$/i); if(m) return 'n:'+parseInt(m[1],10);
   return 'k:'+ktopKotFmt(s);
 }
@@ -23965,6 +24052,7 @@ function katpKey(lbl){
 // "Kot CATI" diye degil kendi adiyla gorunur.
 function katpLabel(key,ad){
   if(key==='__none') return 'Kat bilgisi girilmemis';
+  if(key.charAt(0)==='x') return ozelYerAd(key.slice(2));
   if(key.charAt(0)==='n') return key.slice(2)+'. Kat';
   return ad?String(ad):'Kot '+key.slice(2);
 }
@@ -23980,6 +24068,7 @@ function katpNodeKey(kn){
 // siralama: yukaridan asagiya (yuksek kat/kot ustte); kat numarasi kotla karismasin diye n: oncelikli
 function katpSira(key){
   if(key==='__none') return -1e12;
+  if(key.charAt(0)==='x') return -2e11-OZEL_YERLER.findIndex(y=>y.tur===key.slice(2))*1e10;   // katlarin ve CATI'nin altinda, "bilgi girilmemis"in ustunde
   const v=parseFloat(key.slice(2).replace('+','')); const n=isNaN(v)?-1e11:v;
   return key.charAt(0)==='n' ? n*100000 : n;
 }
@@ -24009,6 +24098,8 @@ function katpData(bina){
     const k=K(key); k.ad=kn.name;
     if(kn.kot!=null&&kn.kot!=='') k.kotlar.add(ktopKotFmt(kn.kot));
   });
+  // Dış Cephe / Bina Geneli: parcali binada kalem ve rapor olmasa da satir acilir (kat satirlari gibi); arama sirasinda acilmaz
+  if(!q&&binaParcali(bina)) OZEL_YERLER.forEach(y=>K('x:'+y.tur));
   // lokasyon agacindaki odalar: kat dugumu ayni anahtar kuraliyla eslesen gruba baglanir
   const odalar=binaLoklar(bina).filter(l=>l.level==='oda');
   katNodes.forEach(kn=>{
@@ -24020,7 +24111,9 @@ function katpData(bina){
      agactan sonradan silinmis kat) kayit artik sessizce dusmez - kendi satirini acar,
      boylece gorunur ve duzeltilebilir. Arama sirasinda yeni satir acilmaz. */
   rEntries().filter(e=>e.bina===bina).forEach(e=>{
-    const key=(e.specId&&specKat[e.specId])||katpKey(e.kat);
+    // kayit acikca Dış Cephe / Bina Geneli'ne girildiyse kalemin kati yerine O sayilir (kalemin kati bos olsa da)
+    const oyt=ozelYerTurOf(e);
+    const key=oyt?'x:'+oyt:((e.specId&&specKat[e.specId])||katpKey(e.kat));
     if(!key) return;
     if(!kats[key]){ if(q) return; K(key); }
     const k=kats[key]; if(!k.raps[e.tarih])k.raps[e.tarih]=[]; k.raps[e.tarih].push(e);
@@ -24220,10 +24313,13 @@ function openKatAta(){
   // katlar: yuksek kat ustte (tersten). her katin ilk ozel kodlarini onceden doldur.
   const floors=kats.slice().reverse().map(k=>({id:k.id,name:k.name,no:parseKatNo(k.name),kot:(k.kot!=null&&k.kot!=='')?ktopKotFmt(k.kot):'',text:''}));
   const floorByNo={}, floorByKot={}; floors.forEach(fl=>{ if(fl.no!=null)floorByNo[fl.no]=fl; if(fl.kot)floorByKot[ktopKotFmt(fl.kot)]=fl; });
+  // Dış Cephe / Bina Geneli: katlarin altinda iki ek kutu (sartname kat kapsamindan bagimsiz); kaleme kat etiketi olarak yazilir
+  OZEL_YERLER.forEach(y=>floors.push({id:ozelYerId(PBINA,y.tur),name:y.ad,no:null,kot:'',text:'',ozel:y.tur}));
   // mevcut atamalar textarea'lara onden yazilir (gorsel + duzenlenebilir + geri alinabilir his)
   specs.forEach(sp=>{ if(!sp.kat&&!sp.kot)return;
-    let fl=null; const kn=parseKatNo(sp.kat);
-    if(kn!=null&&floorByNo[kn])fl=floorByNo[kn];
+    let fl=null; const kn=parseKatNo(sp.kat), oy=ozelYerTur(sp.kat);
+    if(oy)fl=floors.find(x=>x.ozel===oy);
+    else if(kn!=null&&floorByNo[kn])fl=floorByNo[kn];
     else if(sp.kot&&floorByKot[ktopKotFmt(sp.kot)])fl=floorByKot[ktopKotFmt(sp.kot)];
     else if(sp.kat&&floorByKot[ktopKotFmt(sp.kat)])fl=floorByKot[ktopKotFmt(sp.kat)];
     if(fl){ const kod=katAtaKimlikKodlari(sp)[0]; if(kod)fl.text+=(fl.text?'\n':'')+kod; } });
@@ -24260,7 +24356,7 @@ function renderKatAtaPage(){
     </div>
     <div class="page-head"><h1>Kat Ata</h1><p class="page-sub">${esc(f.bina)} · ${esc(f.cat)} · ${esc(f.code)} — her katin altina ait oldugu ozel numaralari yapistirin</p></div>
     <div class="kata-intro"><b>Her katin kutusuna o kata ait ozel numaralari</b> yapistirin (virgul, bosluk ya da alt alta fark etmez). Kaydedince yalnizca eslesen kalemlere kat${f.floors.some(x=>x.kot)?' ve kot':''} yazilir - hedef, siparis, montaj hicbir sey degismez. Bu sartnamede <b>${specs.length}</b> kalem var, <b>${atanmis}</b> tanesinin kati atanmis.
-      ${f.kapsamli?`<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="cat-tag" style="background:rgba(59,130,246,.13);color:var(--blue)">Bu sartname yalnizca <b>${f.floors.length}</b> katta gecerli</span><span class="t-meta">(${f.tumKatN} kattan) - kapsam disi katlar gizli</span><button class="btn btn-ghost" style="padding:3px 10px;font-size:11px" onclick="closeKatAta();openSartnameModal(_katAtaSrId())" title="Sartnamenin gecerli oldugu katlari degistir">Kapsami Duzenle</button></div>`:''}
+      ${f.kapsamli?`<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="cat-tag" style="background:rgba(59,130,246,.13);color:var(--blue)">Bu sartname yalnizca <b>${f.floors.filter(x=>!x.ozel).length}</b> katta gecerli</span><span class="t-meta">(${f.tumKatN} kattan) - kapsam disi katlar gizli</span><button class="btn btn-ghost" style="padding:3px 10px;font-size:11px" onclick="closeKatAta();openSartnameModal(_katAtaSrId())" title="Sartnamenin gecerli oldugu katlari degistir">Kapsami Duzenle</button></div>`:''}
     </div>
     <div class="kata-layout">
       <div class="kata-side">
@@ -24268,7 +24364,7 @@ function renderKatAtaPage(){
         ${uniqBos.length?`<div class="t-meta" style="font-size:10.5px;margin:4px 0 8px">Tiklayinca panoya kopyalanir. Bir kata yapistirilinca ustu cizilir.</div><div class="kata-chips">${chips}${uniqBos.length>200?`<span class="t-meta">+${uniqBos.length-200} daha</span>`:''}</div>`:`<p class="matd-empty" style="margin:8px 0 0">Bu sartnamedeki tum kalemlerin kati atanmis.</p>`}
       </div>
       <div class="kata-main">
-        <div class="katp-sec" style="margin-bottom:8px">Katlar <span>${f.floors.length}</span></div>
+        <div class="katp-sec" style="margin-bottom:8px">Katlar <span>${f.floors.filter(x=>!x.ozel).length}</span></div>
         <div class="kata-floors">${floorsHtml}</div>
       </div>
     </div>
@@ -24359,7 +24455,7 @@ async function saveKatAta(){
   // son kat gecerli: kodu -> {kat,kot}. floors sirasi ekrandaki gibi; ayni kod birden fazla katta ise sonuncu kalir
   const atama={}; // specId -> {kat,kot}
   f.floors.forEach(fl=>{
-    const kat = fl.no!=null ? String(fl.no) : (fl.kot||fl.name);
+    const kat = fl.ozel ? ozelYerAd(fl.ozel) : (fl.no!=null ? String(fl.no) : (fl.kot||fl.name));
     const kot = fl.kot||'';
     // recount ile ayni cozum: bolunmus kodlar burada da birlesir (gorunen = kaydedilen)
     katAtaResolve(katAtaRaw(fl.text), idx).forEach(t=>{ if(t.id) atama[t.id]={kat,kot}; });
@@ -26151,7 +26247,7 @@ function lokAltSeviyeAd(p,lv){
   if(!lokNesilMi(lv)) return lokLevelLabel(lv);
   return nesilRolAd(lv,p?lokNesil(p)+(lokNesilSinir(p)?1:0):1);
 }
-function lokLevelLabel(lv){ const x=LOK_LEVELS.find(l=>l[0]===lv); return x?x[1]:(LOK_NESIL_AD[lv]||lv); }
+function lokLevelLabel(lv){ if(lv==='katdisi') return 'Kat dışı'; const x=LOK_LEVELS.find(l=>l[0]===lv); return x?x[1]:(LOK_NESIL_AD[lv]||lv); }
 // bir dugumun altina eklenebilecek seviyeler: zincirdeki bir sonraki seviye; o seviye
 // opsiyonel ise (aks) bir sonraki zorunlu seviye de dogrudan eklenebilir (aks atlanir).
 // Zincirin ucu (oda) ve nesil yapragi bir sonraki neslin govdesini, govde / dal ise dal ya da
@@ -26166,7 +26262,7 @@ function binaGiris(bina){ return (DB.meta.binaGiris||{})[bina]||{model:'tum',lev
 function binaParcali(bina){ return binaGiris(bina).model==='parcali'; }
 async function setBinaGiris(bina,cfg){ DB.meta.binaGiris={...(DB.meta.binaGiris||{}),[bina]:cfg}; await sbSetSetting('binaGiris',DB.meta.binaGiris); }
 function binaLoklar(bina){ return (DB.proje.lokasyonlar||[]).filter(l=>l.bina===bina); }
-function getLok(id){ return (DB.proje.lokasyonlar||[]).find(l=>l.id===id); }
+function getLok(id){ if(typeof id==='string'&&id.charCodeAt(0)===64) return ozelYerLok(id); return (DB.proje.lokasyonlar||[]).find(l=>l.id===id); }
 /* PAYLASIMLI DUGUM (cok ebeveyn): Buyuk bir oda birden fazla fragmentin kesitini birlikte
    tamamlayabilir. Oda numarasi tekil oldugu icin boyle bir durumda IKI ayri oda dugumu degil,
    TEK dugum olur ve ilgili fragmentlerin hepsine baglanir. Ek ebeveynler l.parentIds dizisinde
@@ -26245,11 +26341,14 @@ function lokSameNameInKat(l){
 // edebildigi icin sadece ad gostermek belirsizlik yaratir; yol secenekleri tekillestirir.
 // onEk: secimin ustune konan hazir <optgroup> HTML'i (Saha Kaydi: Gunluk Yazi'nin katlari/odalari);
 // verilirse agacin tamami "Tum lokasyonlar" grubuna alinir.
-function lokSelectOptions(bina,selectedId,emptyLabel,onEk){
+function lokSelectOptions(bina,selectedId,emptyLabel,onEk,katDisi){
   const flat=lokFlat(bina);
   const opts=flat.map(f=>
     `<option value="${f.lok.id}" ${f.lok.id===selectedId?'selected':''}>${esc(f.depth?f.path:f.lok.name)}${f.lok.level==='oda'&&lokKullanim(f.lok)?' · '+esc(lokKullanim(f.lok)):''} (${esc(lokSeviyeAd(f.lok))})</option>`).join('');
-  return `<option value="">${esc(emptyLabel||'- lokasyon secin -')}</option>`+(onEk?onEk+`<optgroup label="Tüm lokasyonlar">${opts}</optgroup>`:opts);
+  // katDisi: Dis Cephe / Bina Geneli (agacta dugum degil, bkz. OZEL_YERLER) bos secenegin hemen altinda
+  const ozel=katDisi?OZEL_YERLER.map(y=>{ const id=ozelYerId(bina,y.tur);
+    return `<option value="${esc(id)}" ${id===selectedId?'selected':''}>${esc(y.ad)} (${esc(lokLevelLabel('katdisi'))})</option>`; }).join(''):'';
+  return `<option value="">${esc(emptyLabel||'- lokasyon secin -')}</option>`+ozel+(onEk?onEk+`<optgroup label="Tüm lokasyonlar">${opts}</optgroup>`:opts);
 }
 /* ===== SARTNAME-KAT KAPSAMI =====
    sr.katIds=[lokId,...]: sartnamenin binanin hangi katlarini kapsadigi (orn. "TAVA 1-5"
@@ -26954,7 +27053,7 @@ function matKunyeParcalari(m,onc){
     return `<div class="matd-row" onclick="${onc}matDetailGoRapor('${esc(e.tarih)}')" title="Gunun rapor detayini ac">
       <span class="t-meta" style="flex-shrink:0">${fmtDate(e.tarih)}</span>
       <span class="bina-tag" style="background:${bc}22;color:${bc};flex-shrink:0">${esc(e.bina)}</span>
-      ${e.kat?`<span class="t-meta" style="flex-shrink:0">Kat ${esc(e.kat)}</span>`:''}
+      ${e.kat?`<span class="t-meta" style="flex-shrink:0">${esc(katGoster(e.kat))}</span>`:''}
       ${e.createdBy?`<span class="t-meta" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${icoUserSm()} ${esc(kisiAd(e.createdBy))}</span>`:''}
       <b style="margin-left:auto;white-space:nowrap;font-family:var(--mono);font-size:12px">${fmtNum(e.miktar)} <span class="t-meta">${esc(e.birim||'')}</span></b>
     </div>`;
@@ -30470,7 +30569,7 @@ function specfLokDraw(){
   const st=window._specfLok; const w=document.getElementById('specfLokRows'); if(!st||!w||!_SPECF)return;
   const bina=_SPECF.head.bina;
   w.innerHTML=st.rows.map((x,j)=>`<div style="display:grid;grid-template-columns:1fr 110px 34px;gap:7px;margin-bottom:6px">
-      <select onchange="window._specfLok.rows[${j}].lokId=this.value">${lokSelectOptions(bina,x.lokId)}</select>
+      <select onchange="window._specfLok.rows[${j}].lokId=this.value">${lokSelectOptions(bina,x.lokId,'',null,true)}</select>
       <input type="number" step="any" min="0" placeholder="Miktar" value="${esc(x.target)}" oninput="window._specfLok.rows[${j}].target=this.value;specfLokSum()">
       <button class="mini-btn del" onclick="window._specfLok.rows.splice(${j},1);specfLokDraw()">${icoTrash()}</button>
     </div>`).join('')+(binaLoklar(bina).length?'':'<p style="font-size:11px;color:var(--amber)">Bu binada henuz lokasyon tanimlanmadi - bina kartindaki "Parcalar" butonuyla ekleyin</p>');
@@ -30762,7 +30861,7 @@ function specLokRender(){
     // kirilimdan once acilmis BOS dagilim satirlari atilir - kalsaydi _specLokSync hedefi bos toplama (0) kilitlerdi
     _specLokRows=_specLokRows.filter(r=>r.lokId||String(r.target||'').trim()); _specLokSync(); specOzRender(); return; }
   const rows=_specLokRows.map((r,i)=>`<div style="display:grid;grid-template-columns:1fr 110px 34px;gap:7px;margin-bottom:6px">
-      <select onchange="_specLokRows[${i}].lokId=this.value;specLokRender()">${lokSelectOptions(bina,r.lokId)}</select>
+      <select onchange="_specLokRows[${i}].lokId=this.value;specLokRender()">${lokSelectOptions(bina,r.lokId,'',null,true)}</select>
       <input type="number" step="any" min="0" placeholder="Miktar" value="${esc(r.target)}" oninput="_specLokRows[${i}].target=this.value;_specLokSync()">
       <button class="mini-btn del" onclick="_specLokRows.splice(${i},1);specLokRender()">${icoTrash()}</button>
     </div>`).join('');
@@ -33774,7 +33873,7 @@ function slinkBaslik(x){ return `${fmtDate(x.tarih)} · ${x.bina} · ${x.vardiya
 // linkin sartnameleri: 'sartlar' (coklu secim) ya da ilk surumdeki tek 'sart'
 function slinkSartlar(x){ return Array.isArray(x.sartlar)?x.sartlar:(x.sart?[x.sart]:[]); }
 function slinkAlt(x){ const s=slinkSartlar(x);
-  return [x.cat, shortEkip(x.ekip), s.length===1?'Şartname '+s[0]:s.length?s.length+' şartname':'', x.katAd?'Kat '+x.katAd:''].filter(Boolean).map(esc).join(' · ')
+  return [x.cat, shortEkip(x.ekip), s.length===1?'Şartname '+s[0]:s.length?s.length+' şartname':'', x.katAd?katGoster(x.katAd):''].filter(Boolean).map(esc).join(' · ')
     +(s.length>1?`<div class="slink-sartkod">${s.map(esc).join('<br>')}</div>`:''); }
 async function slinkYukle(){
   if(SLINK.yukleniyor) return SLINK.yukleniyor;
@@ -33861,10 +33960,12 @@ function slinkSartListesi(y){ return y.cat?(DB.proje.sartnames||[]).filter(s=>s.
 // atanmissa onlarin katlarinin birlesimi, biri bile bina geneliyse ya da secim yoksa tum katlar
 function slinkKatSecenek(y){
   const kats=binaKatlar(y.bina);
+  // Dış Cephe / Bina Geneli: binada kat varsa listenin sonunda (sunucu ozelKatlar ile ayni; kat kapsami uygulanmaz)
+  const ozel=kats.length?OZEL_YERLER.map(o=>getLok(ozelYerId(y.bina,o.tur))):[];
   const srler=y.sartlar.map(c=>slinkSartBul(y.bina,c)).filter(Boolean);
-  if(!srler.length||srler.some(sr=>!sartKatIds(sr).length)) return kats;
+  if(!srler.length||srler.some(sr=>!sartKatIds(sr).length)) return [...kats,...ozel];
   const ids=new Set(srler.flatMap(sartKatIds));
-  return kats.filter(k=>ids.has(k.id));
+  return [...kats.filter(k=>ids.has(k.id)),...ozel];
 }
 function slinkSartKalem(y,code){ return (DB.proje.specs||[]).filter(s=>!s.is_deleted&&s.bina===y.bina&&s.cat===y.cat&&specGroupKey(s)===code).length; }
 /* LINKTE GORUNECEK KARTLAR - sunucu linkKapsami / ortakBirlestir (lib/sahaLink.js) ile ayni kural.
@@ -33887,7 +33988,8 @@ function slinkKapsam(y){
   const ham=L.length;
   if(y.katId&&katSet.has(y.katId)) L=L.filter(k=>!k.katIds||k.katIds.includes(y.katId));
   const out={kalem:L.length, ham, ortak:0, disari:ham-L.length, ids:new Set(L.map(k=>k.id))};
-  if(!kats.length) return out;
+  // kat disi yere sabit linkte ortak urun birlesmez (sunucu: sabitGecerli yalniz gercek kat)
+  if(!kats.length||ozelYerCoz(y.katId)) return out;
   const aday=(g,katId)=>{ const a=g.filter(k=>k.katIds&&k.katIds.includes(katId)); return a.length?a:g.filter(k=>!k.katIds); };
   const gr=new Map();
   L.forEach(k=>{ const a=(t(k.kod)?'k:'+t(k.kod):'a:'+t(k.ad))+'|'+t(k.ozelNo)+'|'+t(k.birim); if(!gr.has(a)) gr.set(a,[]); gr.get(a).push(k); });
@@ -34048,7 +34150,7 @@ function slinkYeniHtml(){
   const altNot=!na?'':alt.alimli===na?' <span class="t-meta">Alternatifler ana kalemlerinin altında çıkar; girilen miktar ana kalemin ilerlemesine sayılır.</span>'
     :` <span class="t-meta">Alternatifler ana kalemlerinin altında çıkar; yalnız <b>alımı olan ${alt.alimli}</b> alternatife miktar girilir, ${na-alt.alimli} tanesi alımı olmadığı için kilitli görünür.</span>`;
   const ozet=!y.cat?'<div class="slink-ozet">Bölüm seçince şartnameler listelenir ve linkte görünecek kalem sayısı burada çıkar.</div>'
-    :n?`<div class="slink-ozet">Linki açan kişi <b>${n}</b> kalem${na?` + <b>${na}</b> alternatif ürün`:''} görecek${y.sartlar.length>1?` (${y.sartlar.length} şartname)`:''}${kats.length&&!y.katId?`, her kalemde katı seçecek (${kats.length} kat)`:''}.${ortakNot}${altNot}</div>`
+    :n?`<div class="slink-ozet">Linki açan kişi <b>${n}</b> kalem${na?` + <b>${na}</b> alternatif ürün`:''} görecek${y.sartlar.length>1?` (${y.sartlar.length} şartname)`:''}${kats.length&&!y.katId?`, her kalemde katı seçecek (${kats.filter(k=>!k.ozel).length} kat${kats.some(k=>k.ozel)?" + Dış Cephe / Bina Geneli":""})`:''}.${ortakNot}${altNot}</div>`
     :'<div class="slink-ozet bos">Bu seçimde kalem yok - link boş açılırdı. Bölüm / şartname seçimini kontrol edin.</div>';
   const sartAlani=!y.cat?'<div class="slink-bos" style="padding:6px 0">Önce bölüm seçin.</div>'
     :!sarts.length?'<div class="slink-bos" style="padding:6px 0">Bu binada bu bölüme ait şartname yok - linkte bölümün tüm kalemleri görünür.</div>'
@@ -34147,7 +34249,8 @@ function slinkSatirToLine(s,g){
     l.unit=s.birim||(la&&la.unit)||(sp.unit||'');
   }
   const lk=s.katId?getLok(s.katId):null;
-  if(lk){ l.lokId=lk.id; const kn=parseKatNo(lk.name); if(kn!=null) l.kat=String(kn); if(lk.kot!=null&&lk.kot!=='') l.kot=String(lk.kot); }
+  if(lk&&lk.ozel){ l.lokId=lk.id; l.kat=lk.name; l.kot=''; }   // Dış Cephe / Bina Geneli (sanal lokasyon)
+  else if(lk){ l.lokId=lk.id; const kn=parseKatNo(lk.name); if(kn!=null) l.kat=String(kn); if(lk.kot!=null&&lk.kot!=='') l.kot=String(lk.kot); }
   else if(s.kat) l.kat=String(s.kat);
   else if(s.katAd){ const kn=parseKatNo(s.katAd); if(kn!=null) l.kat=String(kn); }   // kat dugumu sonradan silinmis
   return l;
@@ -34722,7 +34825,7 @@ function rGroupHtml(g){
   const bcol=buildingColor(g.bina);
   const grpCreators=rCreators(g.items); // gruptaki essiz olusturan kisiler
   let rows='';
-  g.items.forEach(e=>{ const metaBits=[e.kat?`Kat ${esc(e.kat)}`:'', (e.kot!=null&&e.kot!=='')?`Kot ${esc(e.kot)}`:'', e.ekip?esc(shortEkip(e.ekip)):'', e.createdBy?`${icoUserSm()} ${esc(kisiAd(e.createdBy))}`:''].filter(Boolean).join(' · ');
+  g.items.forEach(e=>{ const metaBits=[e.kat?esc(katGoster(e.kat)):'', (e.kot!=null&&e.kot!=='')?`Kot ${esc(e.kot)}`:'', e.ekip?esc(shortEkip(e.ekip)):'', e.createdBy?`${icoUserSm()} ${esc(kisiAd(e.createdBy))}`:''].filter(Boolean).join(' · ');
     // ALT: ana urun yerine alternatifi montajlanmis kayit - miktar ana kalemin montajina sayilir
     const _altSp=e.altId?(DB.proje.specs||[]).find(s=>s.id===e.specId):null;
     const altTag=e.altId?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)55" title="Alternatif urunle montaj${_altSp?' - ilerleme ana kaleme sayilir: '+esc(_altSp.name):''}">ALT</span>`:'';
@@ -34961,7 +35064,7 @@ function openRaporUserModal(name){
     body = note + (dates.length ? dates.map(dt=>{
       const arr=byDate[dt];
       const rows=arr.map(e=>`<div class="usr-row">
-        <div style="flex:1;min-width:0"><div class="ur-name">${esc(e.malzeme)}</div><div class="ur-meta">${[e.bina,e.kat?`Kat ${e.kat}`:'',e.cat||''].filter(Boolean).map(x=>esc(x)).join(' · ')}</div></div>
+        <div style="flex:1;min-width:0"><div class="ur-name">${esc(e.malzeme)}</div><div class="ur-meta">${[e.bina,e.kat?katGoster(e.kat):'',e.cat||''].filter(Boolean).map(x=>esc(x)).join(' · ')}</div></div>
         <div class="ur-qty">${fmtNum(e.miktar)} <span>${esc(e.birim||'')}</span></div>
       </div>`).join('');
       return `<div class="usr-day"><button class="usr-day-head" onclick="openRaporDayModal('${esc(dt)}')" title="Gunun tum kayitlarini ac"><b>${fmtDate(dt)}</b><span class="t-meta">${arr.length} kalem &#8250;</span></button>${rows}</div>`;
@@ -35290,7 +35393,7 @@ function rRenderBlocks(){
   const sections=DB.proje.sections||[];
   const ekipler=(DB.rapor.ekipler||[]);
   // bina degistiyse eski binaya ait lokasyon secimleri gecersizdir
-  _rBlocks.forEach(bk=>bk.lines.forEach(l=>{ if(l.lokId){ const lk=getLok(l.lokId); if(!lk||lk.bina!==bina) l.lokId=''; }
+  _rBlocks.forEach(bk=>bk.lines.forEach(l=>{ if(l.lokId){ const lk=getLok(l.lokId); if(!lk||lk.bina!==bina){ if(ozelYerCoz(l.lokId)){ l.kat=''; l.kot=''; } l.lokId=''; } }
     // BIRIM TEK KAYNAK: kutuphanedeki urunun birimi varsa satirin birimi HER ZAMAN ondan gelir
     // (kutuphanede birim degisirse kayit da dogru birimle kaydedilir)
     const lu=rLineLibUnit(l); if(lu) l.unit=lu; }));
@@ -35736,13 +35839,13 @@ function skSatirUyari(bk,l,bina){
 // satirin lokasyon menusu: secili basliklarin KATLARI ve ODALARI en ustte, sonra tum agac
 function skLokSecenekHtml(b,l,bina){
   const bos=String(l.kat||'').trim()?'- lokasyon (opsiyonel - kat girili) -':'- lokasyon secin (zorunlu) -';
-  if(!b||!b.ayni||(!b.katlar.length&&!b.odalar.length)) return lokSelectOptions(bina,l.lokId,bos);
+  if(!b||!b.ayni||(!b.katlar.length&&!b.odalar.length)) return lokSelectOptions(bina,l.lokId,bos,null,true);
   let icinde=false;
   const sec=id=>{ if(id===l.lokId){ icinde=true; return ' selected'; } return ''; };
   const katOpt=b.katlar.map(x=>`<option value="${x.kat.id}"${sec(x.kat.id)}>KAT ${esc(x.kat.name)} · yazıda ${x.odalar.size} oda</option>`).join('');
   const odaOpt=b.odalar.map(o=>`<option value="${o.lok.id}"${sec(o.lok.id)}>${o.kat?'KAT '+esc(o.kat.name)+' / ':''}${esc(o.lok.name)} · ${esc([...o.basliklar].map(skBaslikKisa).join(', '))} · ${o.kisi} kişi</option>`).join('');
   const ek=(katOpt?`<optgroup label="Günlük Yazı · katlar">${katOpt}</optgroup>`:'')+(odaOpt?`<optgroup label="Günlük Yazı · odalar">${odaOpt}</optgroup>`:'');
-  return lokSelectOptions(bina,icinde?'':l.lokId,bos,ek);
+  return lokSelectOptions(bina,icinde?'':l.lokId,bos,ek,true);
 }
 
 /* ── SAHA KAYDI AYARLARI penceresi (Gunluk Saha Raporu > Ayarlar) ─────────────
@@ -35857,6 +35960,10 @@ function _katEtiket(k){ k=String(k==null?'':k).trim(); if(!k)return ''; return /
    (odayi) zaten sectiyse satir oldugu gibi birakilir - oda kattan daha ozeldir. */
 function _rSpecBinaEnteg(bk,l,bina){
   if(!bk||!l||l.lokId) return;
+  // Kat Ata ile kaleme "Dış Cephe" / "Bina Geneli" yazildiysa: parcali binada lokasyon o kat disi yere baglanir
+  // (agacta kat dugumu yok - kat cozumu, sartname adayi ve uyari uretilmez)
+  const oy=ozelYerTur(l.kat);
+  if(oy){ if(binaParcali(bina)) l.lokId=ozelYerId(bina,oy); return; }
   const node=binaKatNodeOf(bina,l.kat,l.kot);
   if(!node) return;
   if(binaParcali(bina)){
@@ -35931,7 +36038,18 @@ function rUpdLine(bi,li,k,v){
 // Form alanlarinin sirasi (Bolum/Ekip/Adam/Sartname ustte, Kat kalem satirinda) degismez.
 function rSetLok(bi,li,v){
   const bk=_rBlocks[bi]; if(!bk||!bk.lines[li])return;
-  const l=bk.lines[li]; l.lokId=v;
+  const l=bk.lines[li];
+  // Dis Cephe / Bina Geneli'nden baska bir secime gecilirken eski kat etiketi kalmaz (ÇATI gibi numarasiz
+  // katta kat'a dokunulmadigi icin "Dış Cephe" satirda takili kalirdi); kat disi yer secilince kat etiketi
+  // o yerin adidir, kot yoktur
+  if(ozelYerTur(l.kat)&&(!l.lokId||ozelYerCoz(l.lokId))){ l.kat=''; l.kot=''; }
+  l.lokId=v;
+  const oy=ozelYerCoz(v);
+  if(oy){
+    l.kat=oy.ad; l.kot='';
+    if(l.sartOto&&!l.specId){ l.grup=''; delete l.sartOto; }
+    rRenderBlocks(); return;
+  }
   const kat=v?lokKatOf(v):null;
   if(kat){
     const kn=parseKatNo(kat.name);
@@ -40098,7 +40216,7 @@ function nordLinesHtml(){
              ${_ozDag.katlar.length>1?`<span class="t-meta" style="font-size:11px">${esc(_ozDag.katlar.map(k=>k.ad).join(', '))}</span>`:''}
              ${_ozDag.bilinmeyenN?`<span class="t-meta" style="font-size:11px;color:var(--amber)">${_ozDag.bilinmeyenN} kodun kati yok</span>`:''}
            </span>`
-        : `<span class="nord-loc${l.lokId?' has':''}"><select onchange="nordSetLok(${i},this)" onclick="event.stopPropagation()">${lokSelectOptions(NORD.bina,l.lokId||'','- lokasyon (opsiyonel) -')}</select></span>`;
+        : `<span class="nord-loc${l.lokId?' has':''}"><select onchange="nordSetLok(${i},this)" onclick="event.stopPropagation()">${lokSelectOptions(NORD.bina,l.lokId||'','- lokasyon (opsiyonel) -',null,true)}</select></span>`;
     // ATAMA: "bu urun hangi kalemin yerine alindi" secimi. .nord-prod'un DISINDA durur
     // (urun hucresinin altinda, diger rozetlerle ayni hizada).
     const yerineSel=(l.srcSpecId&&!l.specId)?`<span class="nord-yerine${l.yerineSpecId?' has':''}">
