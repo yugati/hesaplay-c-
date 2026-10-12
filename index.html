@@ -3192,6 +3192,17 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .gi-tab.on{background:var(--primary);border-color:var(--primary);color:#fff}
 .gi-tab i{font-style:normal;opacity:.8}
 .gi-daylbl{font-size:10.5px;font-family:var(--mono);color:var(--dim);margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* gun etiketi + PDF (rapor ciktisi) dugmesi ayni satirda; etiket sigmazsa kisalir, dugme kalir */
+.gi-dayrow{display:flex;align-items:center;gap:6px;margin-bottom:5px;min-width:0}
+.gi-dayrow .gi-daylbl{flex:1;min-width:0;margin-bottom:0}
+.gi-pdf{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;background:var(--panel2);border:1px solid var(--line);color:var(--mute);border-radius:6px;padding:1px 7px;font-size:9.5px;font-weight:700;font-family:var(--mono);letter-spacing:.2px;cursor:pointer}
+.gi-pdf:hover{color:var(--ink);border-color:var(--dim)}
+.gi-pdf svg{width:11px;height:11px}
+.gip-hizli{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 14px}
+.gip-ozet{font-size:12px;font-family:var(--mono);color:var(--mute);background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 11px;line-height:1.5}
+.gip-ozet b{color:var(--ink)}
+.gip-ozet.uyari{color:var(--warning);border-color:color-mix(in srgb,var(--warning) 40%,transparent)}
+.gip-cip:has(input:disabled){opacity:.45;cursor:default}
 .gi-list{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding-right:3px;margin-right:-3px}
 .gi-item{display:flex;align-items:flex-start;gap:8px;padding:6px 5px;border-bottom:1px solid var(--line);cursor:pointer;border-radius:6px;transition:background .12s}
 .gi-item:hover{background:var(--hover)}
@@ -3665,6 +3676,9 @@ p.yp-ayar-not{margin:2px 0 8px}
 .frow input,.frow select,.frow textarea{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--ink);padding:10px 12px;border-radius:9px;font-size:14px;outline:none;transition:border .15s,box-shadow .15s}
 .frow input:focus,.frow select:focus,.frow textarea:focus{border-color:var(--amber);box-shadow:var(--ring) rgba(240,160,32,.16)}
 .frow textarea{resize:vertical;min-height:54px}
+/* PDF ciktisi secim cipleri: .frow label'in BUYUK HARF / harf araligi / blok bicimi
+   cip metnine gecmesin (ayni ozgullukte, bu yuzden .frow kurallarindan SONRA) */
+.frow label.gip-cip{display:inline-flex;margin:0;font-size:12px;font-weight:500;text-transform:none;letter-spacing:0}
 /* BILGI BALONU (.bbal) - eskiden her kutunun ALTINDA duran aciklama satiri.
    Fatura formunda on-yediye yakin alan var; hepsinin altindaki iki satirlik
    aciklama ekrani yaziyla dolduruyor, asil doldurulacak kutulari goz onunden
@@ -8461,7 +8475,7 @@ function giListHtml(){
       ${tab('onay','Onay',onayN,'var(--violet)')}
       ${tab('gecikmis','Geciken',gecikenN,'var(--danger)')}
     </div>
-    <div class="gi-daylbl">${esc(etiket)}</div>
+    <div class="gi-dayrow"><div class="gi-daylbl">${esc(etiket)}</div>${_GI.mod==='gun'?`<button class="gi-pdf" title="Rapor ciktisi - secili gunun Gunluk Yazi, Kisa Rapor, Yarin Plani ve gorevleri (gorselleriyle) PDF olarak" onclick="openGiPdf()">${icoIhtPdf()}PDF</button>`:''}</div>
     ${_GI.mod==='gun'?giYaziSeridi(_GI.gun):''}
     ${_GI.mod==='gun'?krRaporSeridi(_GI.gun):''}
     ${_GI.mod==='gun'?ypPlanSeridi(_GI.gun):''}
@@ -8930,6 +8944,7 @@ function openGunlukIsDetay(id){
     </div>
     <div class="modal-foot">
       ${giCanDelete()?`<button class="btn btn-ghost" style="color:var(--red);border-color:var(--red)55;margin-right:auto" onclick="giSil('${t.id}')">Sil</button>`:''}
+      <button class="btn btn-ghost" title="Bu gorevi gorselleriyle PDF olarak al" onclick="giPdfGorev('${t.id}')">PDF</button>
       <button class="btn btn-ghost" onclick="closeModal()">Kapat</button>
       ${giCanUpdate()?`<button class="btn btn-add" onclick="closeModal();openGunlukIsModal('${t.id}')">Duzenle</button>`:''}
     </div>
@@ -11302,6 +11317,481 @@ function ypAcId(id){
   if(!p){ toast('Yarin plani bulunamadi','err'); return; }
   openYarinPlani(p.tarih,p.id);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   GUNLUK ISLER - PDF CIKTISI (12 Eki 2026)
+
+   NE ISE YARAR: Gunluk Isler'e girilen kayitlar - Gunluk Yazi (kisi sayilari),
+   Kisa Rapor (metraj), Yarin Plani ve gorevler (ekran goruntuleri / fotograflari
+   ile) - tek, sade bir A4 belgede. Paneldeki gun etiketinin yanindaki "PDF"
+   dugmesi secili gunu (ya da bir tarih araligini) basar; Gorev Detayi'ndaki
+   "PDF" yalnizca o gorevi.
+
+   URETIM YOLU tutanak / ihtiyac listesi / fark raporuyla AYNI (window.open +
+   window.print): PDF kitapligi eklenmez, tarayicinin "PDF olarak kaydet" hedefi
+   kullanilir. Veri metin ciktilariyla (gyMetin / krMetin / ypMetin) aynidir ama
+   tablo halinde - metin sahada kopyalanip paylasilir, bu belge okunur.
+
+   GORSELLER private 'belgeler' kovasinda: imzali adresler (5 dk omurlu) pencere
+   ACILDIKTAN sonra istenir ve yerine oturur. Pencere tiklamanin icinde acilmak
+   zorunda - bir await'ten sonra acilan pencereyi tarayici engeller. Yazdir
+   dugmesi tum gorseller yuklenene (ya da acilamadigi anlasilana) kadar bekler,
+   yoksa yarim belge basilirdi.
+
+   YETKI: ayri yetki yok - kaydi panelde goren ciktisini da alir (bina yetkisi
+   gyAll / krAll / ypAll / giAll suzgecinden gecer). Veri yazilmaz.
+   ══════════════════════════════════════════════════════════════════════════ */
+const GI_PDF_BOLUMLER=[['yazi','Gunluk Yazi'],['rapor','Kisa Rapor'],['plan','Yarin Plani'],['gorev','Gorevler']];
+const GI_PDF_EN_COK_GUN=31;
+const GI_PDF_ESZAMANLI=4;          // ayni anda istenen gorsel (her biri /api/dosya'ya bir istek)
+const GI_PDF_GORSEL_SURE=25000;    // bu surede ne yuklenen ne hata veren gorsel "acilamadi" sayilir
+// belge Turkce harfli yazilir (uygulama arayuzu ASCII; tutanak/fark raporu ciktilari gibi)
+const GI_PDF_AYLAR=['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'];
+const GI_PDF_GUNLER=['Pazartesi','Salı','Çarşamba','Perşembe','Cuma','Cumartesi','Pazar'];
+const GI_PDF_DURUM={bekliyor:'Bekliyor',devam:'Devam ediyor',bitti:'Bitti'};
+const GI_PDF_DENETIM={onay:'Onaylandı',revizyon:'Revizyon istendi'};
+const GI_PDF_ONCELIK={dusuk:'Düşük',normal:'Normal',yuksek:'Yüksek'};
+const GI_PDF_KIRILIM={oda:'Oda bazlı',kat:'Kat bazlı',toplu:'Toplu plan'};
+
+function giPdfTarih(k){
+  const p=giParcala(k); if(!p) return {kisa:'',uzun:'',gun:''};
+  const dow=(new Date(p[0],p[1]-1,p[2]).getDay()+6)%7;   // Pazartesi=0
+  return {kisa:gyTarihTR(k), uzun:p[2]+' '+GI_PDF_AYLAR[p[1]-1]+' '+p[0], gun:GI_PDF_GUNLER[dow]};
+}
+function giPdfGunSayisi(a,b){ const x=giParcala(a), y=giParcala(b); if(!x||!y) return 0;
+  return Math.round((new Date(y[0],y[1]-1,y[2])-new Date(x[0],x[1]-1,x[2]))/864e5)+1; }
+
+// icerik secimi kullaniciya ozel tercih (tarih/bina her acilista secili gunden baslar)
+function giPdfTercih(){
+  let t={}; try{ t=JSON.parse(localStorage.getItem('gi_pdf_tercih')||'{}')||{}; }catch(e){}
+  const bolum={}; GI_PDF_BOLUMLER.forEach(([k])=>bolum[k]=!(t.bolum&&t.bolum[k]===false));
+  return {bolum, foto:t.foto!==false};
+}
+function giPdfTercihYaz(o){ try{ localStorage.setItem('gi_pdf_tercih',JSON.stringify({bolum:o.bolum,foto:o.foto})); }catch(e){} }
+
+// suzgec listesi: proje binalari + kayitlarda gecen binalar (pasif bina gecmis veride kalir)
+function giPdfBinalar(){
+  const s=new Set(projBuildings().filter(b=>canSeeBuilding(b)));
+  [...gyAll(),...krAll(),...ypAll(),...giAll()].forEach(r=>{ if(r.bina) s.add(r.bina); });
+  return [...s].sort((a,b)=>String(a).localeCompare(String(b),'tr'));
+}
+
+/* Kisa Rapor satirlari: gorunur sabit kalemler (bos "olculmedi" olarak - metindeki
+   kural) + adi yazilmis ozel kalemler. */
+function giPdfKrSatirlar(r){
+  const kal=(r&&r.kalemler)||{}, deger=v=>(v===0||v)?String(v).trim():'';
+  const s=krKalemler().filter(k=>!k.gizli).map(k=>({ad:k.ad,birim:k.birim,deger:deger(kal[k.id])}));
+  ((r&&r.ozel)||[]).forEach(g=>{ const ad=String((g&&g.ad)||'').trim(); if(!ad) return;
+    s.push({ad,birim:String(g.birim||'').trim(),deger:deger(g.deger)}); });
+  return s;
+}
+function giPdfYaziKisi(y){ return gyToplam(y)+(y&&y.geceVar===true?gyGeceToplam(y):0); }
+
+/* SECIM -> GUNLER. opt: {bas,bit,bina,bolum:{yazi,rapor,plan,gorev},foto}.
+   Yarin Plani panelde oldugu gibi BIR ONCEKI gunun altinda durur: X gununun
+   belgesinde X+1'in plani basilir. Hicbir secili bolumu dolu olmayan gun atlanir. */
+function giPdfVeri(opt){
+  const binaUyar=r=>!opt.bina||String(r.bina||'')===opt.bina;
+  const b=opt.bolum||{}, out=[];
+  for(let k=opt.bas, n=0; k&&k<=opt.bit&&n<366; k=giGunKaydir(k,1), n++){
+    const planGunu=giGunKaydir(k,1);
+    const g={gun:k, planGunu,
+      yazilar: b.yazi?gyGun(k).filter(binaUyar).filter(y=>giPdfYaziKisi(y)>0):[],
+      raporlar: b.rapor?krGun(k).filter(binaUyar).filter(r=>giPdfKrSatirlar(r).some(x=>x.deger!=='')):[],
+      planlar: b.plan?ypGun(planGunu).filter(binaUyar).filter(p=>ypPlanliBloklar(p).length):[],
+      gorevler: b.gorev?giAll().filter(t=>t.tarih===k&&binaUyar(t)).sort(giSirala):[]};
+    if(g.yazilar.length||g.raporlar.length||g.planlar.length||g.gorevler.length) out.push(g);
+  }
+  return out;
+}
+
+// ── secim penceresi ─────────────────────────────────────────────────────────
+function openGiPdf(){
+  giInit();
+  const t=giPdfTercih(), gun=_GI.gun;
+  const cip=(id,l,on)=>`<label class="sr-kat-chip gip-cip"><input type="checkbox" id="${id}"${on?' checked':''} onchange="giPdfOzetCiz()"> ${esc(l)}</label>`;
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal" style="max-width:560px">
+    <div class="modal-head"><h3>Rapor Ciktisi (PDF)</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body">
+      <p class="t-meta" style="margin-bottom:12px">Secilen gunlerin kayitlari sade bir A4 belge olarak yeni pencerede acilir; oradaki "Yazdir / PDF olarak kaydet" ile dosyaya alinir.</p>
+      <div class="frow two" style="margin-bottom:8px">
+        <div><label>Baslangic</label><input id="gip_bas" type="date" value="${esc(gun)}" onchange="giPdfOzetCiz()"></div>
+        <div><label>Bitis</label><input id="gip_bit" type="date" value="${esc(gun)}" onchange="giPdfOzetCiz()"></div>
+      </div>
+      <div class="gip-hizli">
+        <button type="button" class="gi-tab" onclick="giPdfAralik(0)">Secili gun</button>
+        <button type="button" class="gi-tab" onclick="giPdfAralik(7)">Son 7 gun</button>
+        <button type="button" class="gi-tab" onclick="giPdfAralik('ay')">Bu ay</button>
+      </div>
+      <div class="frow"><label>Bina</label><select id="gip_bina" onchange="giPdfOzetCiz()"><option value="">Tum binalar</option>${giPdfBinalar().map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('')}</select></div>
+      <div class="frow"><label>Icerik</label><div class="gi-chips">${GI_PDF_BOLUMLER.map(([k,l])=>cip('gip_'+k,l,t.bolum[k])).join('')}</div></div>
+      <div class="frow"><label>Gorseller</label><div class="gi-chips">${cip('gip_foto','Gorev fotograflarini / ekran goruntulerini ekle',t.foto)}</div></div>
+      <div id="gipOzet" class="gip-ozet"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Iptal</button>
+      <button id="gipBtn" class="btn btn-add" onclick="giPdfOlustur()">PDF Olustur</button>
+    </div>
+  </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  giPdfOzetCiz();
+}
+// hizli aralik: secili gunden geriye (0 = yalnizca o gun) ya da secili gunun ayi
+function giPdfAralik(n){
+  const gun=_GI.gun, b=document.getElementById('gip_bas'), s=document.getElementById('gip_bit'); if(!b||!s) return;
+  if(n==='ay'){ const p=giParcala(gun); b.value=gun.slice(0,8)+'01'; s.value=gun.slice(0,8)+giZ(new Date(p[0],p[1],0).getDate()); }
+  else { b.value=giGunKaydir(gun,-(n?n-1:0)); s.value=gun; }
+  giPdfOzetCiz();
+}
+function giPdfSecim(){
+  const v=id=>{ const el=document.getElementById(id); return el?String(el.value||''):''; };
+  const c=id=>{ const el=document.getElementById(id); return !!(el&&el.checked); };
+  let bas=v('gip_bas'), bit=v('gip_bit');
+  if(bas&&bit&&bas>bit){ const x=bas; bas=bit; bit=x; }
+  const bolum={}; GI_PDF_BOLUMLER.forEach(([k])=>bolum[k]=c('gip_'+k));
+  const opt={bas,bit,bina:v('gip_bina'),bolum,foto:c('gip_foto')};
+  if(!giParcala(bas)||!giParcala(bit)) return {...opt,hata:'Baslangic ve bitis tarihi secin'};
+  if(!GI_PDF_BOLUMLER.some(([k])=>bolum[k])) return {...opt,hata:'En az bir icerik secin'};
+  const n=giPdfGunSayisi(bas,bit);
+  if(n>GI_PDF_EN_COK_GUN) return {...opt,hata:'En fazla '+GI_PDF_EN_COK_GUN+' gunluk aralik basilabilir ('+n+' gun secili)'};
+  return opt;
+}
+// pencerenin altindaki ozet: neyin basilacagi PDF acilmadan gorulsun
+function giPdfOzetCiz(){
+  const el=document.getElementById('gipOzet'); if(!el) return;
+  const s=giPdfSecim(), btn=document.getElementById('gipBtn');
+  const f=document.getElementById('gip_foto'); if(f) f.disabled=!s.bolum.gorev;
+  const uyar=m=>{ el.className='gip-ozet uyari'; el.textContent=m; if(btn) btn.disabled=true; };
+  if(s.hata){ uyar(s.hata); return; }
+  const gunler=giPdfVeri(s);
+  if(!gunler.length){ uyar('Secilen gun(ler)de bu iceriklerle kayit yok'); return; }
+  const say=k=>gunler.reduce((n,g)=>n+g[k].length,0);
+  const foto=s.foto?gunler.reduce((n,g)=>n+g.gorevler.reduce((m,t)=>m+giFotolar(t).length,0),0):0;
+  const par=[[gunler.length,'gun'],[say('yazilar'),'gunluk yazi'],[say('raporlar'),'kisa rapor'],[say('planlar'),'yarin plani'],[say('gorevler'),'gorev'],[foto,'gorsel']]
+    .filter(x=>x[0]).map(x=>`<b>${x[0]}</b> ${x[1]}`);
+  el.className='gip-ozet'; el.innerHTML='Basilacak: '+par.join(' · ');
+  if(btn) btn.disabled=false;
+}
+function giPdfOlustur(){
+  const s=giPdfSecim();
+  if(s.hata){ toast(s.hata,'err'); return; }
+  const gunler=giPdfVeri(s);
+  if(!gunler.length){ toast('Secilen gun(ler)de kayit yok','err'); return; }
+  giPdfTercihYaz(s);
+  if(giPdfAc(s,gunler)) closeModal();
+}
+// Gorev Detayi'ndan: yalnizca o gorev, gorselleriyle
+function giPdfGorev(id){
+  const t=giBul(id); if(!t){ toast('Gorev bulunamadi','err'); return; }
+  giPdfAc({tekGorev:t, bas:t.tarih, bit:t.tarih, bina:'', bolum:{gorev:true}, foto:true},
+    [{gun:t.tarih, planGunu:'', yazilar:[], raporlar:[], planlar:[], gorevler:[t]}]);
+}
+
+// ── belge ──────────────────────────────────────────────────────────────────
+function giPdfAc(opt,gunler){
+  const yollar=[];                          // gorsel sirasi: img#gpf<i> <-> yollar[i]
+  const html=giPdfHtml(opt,gunler,yollar);
+  const w=window.open('','_blank');
+  if(!w){ toast('Cikti penceresi engellendi - tarayicinin acilir pencere iznini verin','err'); return false; }
+  w.document.write(html);
+  w.document.close();
+  try{ w.focus(); }catch(e){}
+  giPdfGorselYukle(w,yollar);
+  return true;
+}
+/* Imzali adresler sirayla (GI_PDF_ESZAMANLI'li kuyruk) istenir, her biri geldikce
+   gorsel yerine oturur. Ust seritte sayac; hepsi bitince Yazdir acilir. Acilamayan
+   gorselin kutusunda "acilamadi" yazar - belge yine basilabilir. */
+function giPdfGorselYukle(w,yollar){
+  const top=yollar.length; if(!top) return;
+  let d; try{ d=w.document; }catch(e){ return; }
+  const btn=d.getElementById('gpBtn'), dur=d.getElementById('gpDurum'), ipucu=dur?dur.textContent:'';
+  let biten=0, hata=0, sira=0;
+  const yaz=()=>{ try{ if(w.closed||!dur) return;
+    if(biten<top){ dur.textContent='Görseller yükleniyor… '+biten+' / '+top; return; }
+    if(btn) btn.disabled=false;
+    dur.textContent=(hata?(top-hata)+' görsel hazır, '+hata+' görsel açılamadı. ':'')+ipucu; }catch(e){} };
+  const bitir=(i,ok)=>{ biten++;
+    if(!ok){ hata++; try{ const k=d.getElementById('gpk'+i); if(k) k.classList.add('hata'); }catch(e){} }
+    yaz(); };
+  if(btn) btn.disabled=true;
+  yaz();
+  const isci=async()=>{
+    while(sira<top){
+      const i=sira++;
+      let u=''; try{ u=(!w.closed&&window.sbBelgeUrl)?await window.sbBelgeUrl(yollar[i]):''; }catch(e){ u=''; }
+      let im=null; try{ im=w.closed?null:d.getElementById('gpf'+i); }catch(e){}
+      if(!u||!im){ bitir(i,false); continue; }
+      _giFotoUrl[yollar[i]]=u;
+      await new Promise(res=>{
+        let bitti=false;
+        const son=ok=>{ if(bitti) return; bitti=true; clearTimeout(zs); bitir(i,ok); res(); };
+        const zs=setTimeout(()=>son(false),GI_PDF_GORSEL_SURE);
+        im.onload=()=>son(true); im.onerror=()=>son(false);
+        im.src=u;
+      });
+    }
+  };
+  for(let k=0;k<Math.min(GI_PDF_ESZAMANLI,top);k++) isci();
+}
+
+/* GUNLUK YAZI: firma basina bir tablo. Bir firmanin birden cok binasi varsa bina
+   ara satirla ayrilir (metindeki gibi bina toplami yok, toplam firmanin sonunda).
+   Odali baslikta is kalemi yalnizca ilk satirda yazilir. Gece vardiyasi yazilmissa
+   ayri sutun. */
+function giPdfYaziHtml(yazilar){
+  const firmalar=new Map();
+  yazilar.forEach(y=>{ const k=gyFirmaAnahtar(y); if(!firmalar.has(k)) firmalar.set(k,[]); firmalar.get(k).push(y); });
+  return [...firmalar.values()].map(liste=>{
+    liste=liste.slice().sort((a,b)=>String(a.bina||'').localeCompare(String(b.bina||''),'tr'));
+    const gece=liste.some(y=>y.geceVar===true&&gyGeceToplam(y)>0), cok=liste.length>1, sut=gece?4:3;
+    let gun=0, gc=0;
+    const govde=liste.map(y=>{
+      const gv=gece&&y.geceVar===true, ic=[];
+      (y.gruplar||[]).forEach(g=>{
+        const ad=gyBuyuk((g&&g.ad)||''); if(!ad) return;
+        const sat=(g.odali
+          ? (g.satirlar||[]).filter(r=>r&&String(r.oda||'').trim()).map(r=>({oda:String(r.oda).trim(),k:gySayi(r.kisi),g:gv?gySayi(r.geceKisi):0}))
+          : [{oda:'',k:gySayi(g.kisi),g:gv?gySayi(g.geceKisi):0}]).filter(r=>r.k||r.g);
+        sat.forEach((r,i)=>{ gun+=r.k; gc+=r.g;
+          ic.push(`<tr${i?' class="dv"':''}><td>${i?'':esc(ad)}</td><td class="kod">${r.oda?esc(r.oda):'<span class="bos">—</span>'}</td><td class="sy">${r.k||''}</td>${gece?`<td class="sy">${r.g||''}</td>`:''}</tr>`); });
+      });
+      if(!ic.length) return '';
+      return (cok?`<tr class="ara"><td colspan="${sut}">${esc(gyBuyuk(y.bina)||'GENEL')}</td></tr>`:'')+ic.join('');
+    }).join('');
+    const f=liste[0];
+    return `<div class="blok"><div class="blok-bas"><b>${esc(gyBuyuk(f.firma||GY_FIRMA_VARSAYILAN))}</b>${!cok?`<span>${esc(f.bina?gyBuyuk(f.bina):'Genel')}</span>`:''}<em>${gun+gc} kişi${gc?' (gece '+gc+')':''}</em></div>
+      <table class="tb"><colgroup><col style="width:${gece?'40%':'46%'}"><col><col style="width:14%">${gece?'<col style="width:14%">':''}</colgroup>
+        <thead><tr><th>İş kalemi</th><th>Mahal / oda</th><th class="sy">${gece?'Gündüz':'Kişi'}</th>${gece?'<th class="sy">Gece</th>':''}</tr></thead>
+        <tbody>${govde}</tbody>
+        <tfoot><tr><td colspan="2">Toplam</td><td class="sy">${gun}</td>${gece?`<td class="sy">${gc}</td>`:''}</tr></tfoot></table></div>`;
+  }).join('');
+}
+// KISA RAPOR: rapor basina kalem / birim / miktar; birden cok rapor yan yana
+function giPdfRaporHtml(raporlar){
+  const kartlar=raporlar.map(r=>{
+    const sat=giPdfKrSatirlar(r).map(x=>`<tr><td>${esc(x.ad)}</td><td class="br">${esc(x.birim)}</td><td class="sy">${x.deger!==''?esc(x.deger):'<span class="bos">—</span>'}</td></tr>`).join('');
+    return `<div class="blok"><div class="blok-bas"><b>${esc(gyBuyuk(r.firma||GY_FIRMA_VARSAYILAN))}</b><span>${esc(r.bina?gyBuyuk(r.bina):'Genel')}</span></div>
+      <table class="tb"><colgroup><col><col style="width:22%"><col style="width:18%"></colgroup>
+        <thead><tr><th>Kalem</th><th>Birim</th><th class="sy">Miktar</th></tr></thead><tbody>${sat}</tbody></table></div>`;
+  });
+  return kartlar.length>1?`<div class="iki">${kartlar.join('')}</div>`:kartlar.join('');
+}
+/* YARIN PLANI: oda / kat planinda satir = oda / kat, sutun = planda DOLU gecen
+   kalemler, altta toplam. Toplu planda Kisa Rapor gibi kalem listesi. Bos / 0
+   "planlanmadi" demektir (ypDolu) - hucre bos kalir. */
+function giPdfPlanHtml(planlar){
+  return planlar.map(p=>{
+    const kir=ypKirilim(p), bloklar=ypPlanliBloklar(p);
+    const ozAnahtar=g=>g.gid?'g:'+g.gid:'a:'+norm(g.ad);
+    const ozel=[], gorulen=new Set();
+    bloklar.forEach(o=>(o.ozel||[]).filter(ypOzelDolu).forEach(g=>{ const k=ozAnahtar(g); if(gorulen.has(k)) return;
+      gorulen.add(k); ozel.push({k,ad:String(g.ad).trim(),birim:String(g.birim||'').trim()}); }));
+    const deger=(o,c)=>{
+      if(c.sabit){ const v=o.kalemler&&o.kalemler[c.id]; return ypDolu(v)?String(v).trim():''; }
+      const g=(o.ozel||[]).find(x=>ypOzelDolu(x)&&ozAnahtar(x)===c.k); return g?String(g.deger).trim():''; };
+    const sutun=ypSabitKalemler().map(k=>({sabit:true,id:k.id,ad:k.ad,birim:k.birim})).concat(ozel)
+      .filter(c=>bloklar.some(o=>deger(o,c)!==''));
+    const bas=`<div class="blok-bas"><b>${esc(gyBuyuk(p.firma||GY_FIRMA_VARSAYILAN))}</b><span>${esc(p.bina?gyBuyuk(p.bina):'Genel')}</span><em class="ac">${esc(GI_PDF_KIRILIM[kir]||'')}</em></div>`;
+    if(kir==='toplu'){
+      const o=bloklar[0];
+      return `<div class="blok">${bas}<table class="tb"><colgroup><col><col style="width:22%"><col style="width:18%"></colgroup>
+        <thead><tr><th>Kalem</th><th>Birim</th><th class="sy">Hedef</th></tr></thead>
+        <tbody>${sutun.map(c=>`<tr><td>${esc(c.ad)}</td><td class="br">${esc(c.birim)}</td><td class="sy">${esc(deger(o,c))}</td></tr>`).join('')}</tbody></table></div>`;
+    }
+    const th=sutun.map(c=>`<th class="sy">${esc(ypKisaAd(c.ad))}${c.birim?`<i>${esc(ypKisaAd(c.birim))}</i>`:''}</th>`).join('');
+    const sat=bloklar.map(o=>`<tr><td class="kod">${esc(o.ad.trim())}</td>${sutun.map(c=>`<td class="sy">${esc(deger(o,c))}</td>`).join('')}</tr>`).join('');
+    const top=bloklar.length>1?`<tfoot><tr><td>Toplam</td>${sutun.map(c=>`<td class="sy">${fmtNum(bloklar.reduce((s,o)=>s+ypSayi(deger(o,c)),0))}</td>`).join('')}</tr></tfoot>`:'';
+    return `<div class="blok">${bas}<table class="tb"><thead><tr><th>${kir==='kat'?'Kat':'Oda / mahal'}</th>${th}</tr></thead><tbody>${sat}</tbody>${top}</table></div>`;
+  }).join('');
+}
+/* GOREV: durum + baslik, kunye, aciklama, gorseller. Genis (yatay) gorsel ve tek
+   gorsel tam satir, dik/kare gorseller ikili - ekran alintisindaki yazi okunur
+   kalsin. Gorsel kutusu kayittaki olcuden (w/h) yer ayirir, sonra dolar. */
+function giPdfGorevHtml(t,foto,yollar){
+  const durum=GI_DURUM[t.durum]?t.durum:'bekliyor';
+  const den=(t.denetim&&t.denetim.durum)||'yok';
+  let rozet='';
+  if(t.oncelik==='yuksek'&&durum!=='bitti') rozet+='<span class="rz acil">Acil</span>';
+  if(GI_PDF_DENETIM[den]) rozet+=`<span class="rz ${den}">${GI_PDF_DENETIM[den]}</span>`;
+  const kn=(l,v,gen)=>v?`<div${gen?' class="gen"':''}><span>${l}</span><b>${esc(v)}</b></div>`:'';
+  const denBilgi=GI_PDF_DENETIM[den]?[GI_PDF_DENETIM[den],t.denetim.kisi?kisiAd(t.denetim.kisi):'',t.denetim.ts?fmtDate(t.denetim.ts):''].filter(Boolean).join(' · '):'';
+  const fotolar=foto?giFotolar(t):[];
+  const figur=fotolar.map((f,i)=>{
+    const n=yollar.push(f.path)-1, w=+f.w>0?+f.w:1600, h=+f.h>0?+f.h:900;
+    const gen=fotolar.length===1||w/h>=1.25;
+    return `<figure class="${gen?'gen':'yari'}"><div class="fk" id="gpk${n}"><img id="gpf${n}" width="${w}" height="${h}" alt=""></div>
+      <figcaption>Görsel ${i+1}${fotolar.length>1?' / '+fotolar.length:''}</figcaption></figure>`;
+  }).join('');
+  return `<div class="gorev">
+    <div class="gr-ust">
+      <div class="gr-bas"><span class="dr ${durum}">${GI_PDF_DURUM[durum]}</span><b>${esc(t.baslik||'(başlıksız)')}</b>${rozet}</div>
+      <div class="kn">
+        ${kn('Bina',t.bina||'Genel')}${kn('Kat',((t.katlar)||[]).join(', '))}${kn('Konum',t.konum||'')}
+        ${kn('Sorumlu',t.sorumlu?kisiAd(t.sorumlu):'')}${t.oncelik&&t.oncelik!=='normal'?kn('Öncelik',GI_PDF_ONCELIK[t.oncelik]||''):''}
+        ${kn('Oluşturan',t.olusturan?kisiAd(t.olusturan):'')}${kn('Denetim',denBilgi)}
+        ${kn('Şartname',((t.sartlar)||[]).join(', '),true)}${kn('Denetim notu',(t.denetim&&t.denetim.not)||'',true)}
+      </div>
+      ${String(t.aciklama||'').trim()?`<p class="acik">${esc(String(t.aciklama).trim()).replace(/\n/g,'<br>')}</p>`:''}
+    </div>
+    ${figur?`<div class="fotolar">${figur}</div>`:''}
+  </div>`;
+}
+function giPdfGunHtml(opt,g,yollar,cokGun){
+  if(opt.tekGorev) return `<section class="gun">${g.gorevler.map(t=>giPdfGorevHtml(t,opt.foto,yollar)).join('')}</section>`;
+  const b=opt.bolum, T=giPdfTarih(g.gun), P=giPdfTarih(g.planGunu);
+  const dsay={bekliyor:0,devam:0,bitti:0}; g.gorevler.forEach(t=>dsay[GI_DURUM[t.durum]?t.durum:'bekliyor']++);
+  const foto=opt.foto?g.gorevler.reduce((n,t)=>n+giFotolar(t).length,0):0;
+  const kisi=g.yazilar.reduce((s,y)=>s+giPdfYaziKisi(y),0);
+  const oz=[];
+  if(g.yazilar.length) oz.push(`<b>${kisi}</b> kişi çalıştı`);
+  if(g.raporlar.length) oz.push(`<b>${g.raporlar.length}</b> kısa rapor`);
+  if(g.planlar.length) oz.push(`<b>${g.planlar.length}</b> yarın planı`);
+  if(g.gorevler.length) oz.push(`<b>${g.gorevler.length}</b> görev (`+['bitti','devam','bekliyor'].filter(k=>dsay[k]).map(k=>dsay[k]+' '+GI_PDF_DURUM[k].toLocaleLowerCase('tr')).join(', ')+')');
+  if(foto) oz.push(`<b>${foto}</b> görsel`);
+  const bolum=(k,baslik,etiket,ic,bos,sag)=>!b[k]?''
+    :`<h2>${baslik}${etiket?`<small>${etiket}</small>`:''}${sag?`<em>${sag}</em>`:''}</h2>${ic||`<div class="yok">${bos}</div>`}`;
+  return `<section class="gun">
+    ${cokGun?`<div class="gun-bas"><b>${T.uzun}</b><span>${T.gun}</span></div>`:''}
+    ${oz.length?`<div class="ozet">${oz.join('<i>·</i>')}</div>`:''}
+    ${bolum('yazi','Çalışan kişi sayıları','Günlük Yazı',g.yazilar.length?giPdfYaziHtml(g.yazilar):'','Bu gün için Günlük Yazı girilmemiş.')}
+    ${bolum('rapor','Günlük metraj','Kısa Rapor',g.raporlar.length?giPdfRaporHtml(g.raporlar):'','Bu gün için Kısa Rapor girilmemiş.')}
+    ${bolum('plan','Ertesi gün planı','Yarın Planı',g.planlar.length?giPdfPlanHtml(g.planlar):'','Ertesi gün için plan yapılmamış.',esc(P.kisa+' '+P.gun))}
+    ${bolum('gorev','Görevler','',g.gorevler.length?g.gorevler.map(t=>giPdfGorevHtml(t,opt.foto,yollar)).join(''):'','Bu güne görev açılmamış.',g.gorevler.length?g.gorevler.length+' görev':'')}
+  </section>`;
+}
+function giPdfHtml(opt,gunler,yollar){
+  const tek=opt.tekGorev, cokGun=!tek&&opt.bas!==opt.bit;
+  const A=giPdfTarih(opt.bas), B=giPdfTarih(opt.bit);
+  const baslik=tek?'Görev Raporu':'Günlük Rapor';
+  const kurum=[...new Set([orgAdiGoster(),tasariAdiGoster()].filter(x=>x&&x!=='-'))].join(' · ');
+  const simdi=new Date().toLocaleString('tr-TR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const hazirlayan=CURRENT_USER?kisiAd(CURRENT_USER.username):'';
+  const tarihMetni=cokGun?A.kisa+' – '+B.kisa:A.kisa;
+  // pencere basligi = "PDF olarak kaydet"te onerilen dosya adi
+  const dosya=(tek?'Görev - '+String(tek.baslik||'').trim().slice(0,60)+' - ':'Günlük Rapor ')+tarihMetni.replace(' – ',' - ')+(opt.bina?' - '+opt.bina:'');
+  const kunye=[
+    !tek?['Bina',opt.bina||'Tüm binalar']:null,
+    !tek?['İçerik',GI_PDF_BOLUMLER.filter(([k])=>opt.bolum[k]).map(([k])=>({yazi:'Günlük Yazı',rapor:'Kısa Rapor',plan:'Yarın Planı',gorev:'Görevler'})[k]).join(', ')]:null,
+    hazirlayan?['Hazırlayan',hazirlayan]:null,
+    ['Oluşturma',simdi]].filter(Boolean);
+  const govde=gunler.map(g=>giPdfGunHtml(opt,g,yollar,cokGun)).join('');
+  // @page alt bilgisindeki metin CSS dizesine girer - tirnak / ters bolu ayiklanir
+  const alt=(baslik+' · '+tarihMetni+(opt.bina?' · '+opt.bina:'')).replace(/["\\\n]/g,'');
+  return `<!doctype html><html lang="tr"><head><meta charset="utf-8">
+    <title>${esc(dosya)}</title><style>${giPdfCss(alt)}</style></head><body>
+    <div class="tbar"><button id="gpBtn" onclick="window.print()">Yazdır / PDF olarak kaydet</button>
+      <span id="gpDurum">Yazdırma penceresinde "Hedef: PDF olarak kaydet" seçerek dosya olarak alabilirsiniz.</span></div>
+    <div class="sheet">
+      <header class="ust">
+        <img class="logo" src="${esc(location.origin+'/logo.png')}" alt="" onerror="this.remove()">
+        <div class="ust-orta"><h1>${baslik}</h1>${kurum?`<div class="alt">${esc(kurum)}</div>`:''}</div>
+        <div class="ust-sag${cokGun?' aralik':''}"><b>${esc(tarihMetni)}</b><span>${cokGun?giPdfGunSayisi(opt.bas,opt.bit)+' gün':esc(A.gun)}</span></div>
+      </header>
+      <div class="kunye">${kunye.map(([l,v])=>`<span>${l}: <b>${esc(v)}</b></span>`).join('')}</div>
+      ${govde}
+    </div>
+  </body></html>`;
+}
+function giPdfCss(alt){ return `
+@page{size:A4;margin:13mm 12mm 15mm;
+  @bottom-left{content:"${alt}";font:7pt "Segoe UI",Arial,sans-serif;color:#9ca3af}
+  @bottom-right{content:"Sayfa " counter(page) " / " counter(pages);font:7pt "Segoe UI",Arial,sans-serif;color:#9ca3af}}
+*{box-sizing:border-box}
+/* TEK MUREKKEP (fark raporu / ihtiyac listesi ile ayni karar): hiyerarsi punto,
+   kalinlik ve tonla kurulur, fotokopide de okunur. Renk yalnizca durum rozetlerinde. */
+:root{--ink:#111827;--tx:#374151;--mu:#6b7280;--fn:#9ca3af;--hr:#e5e7eb;--hr2:#d1d5db;--bx:#f6f7f9;--pg:#eceef1;
+  --ok:#15803d;--okbg:#ecfdf3;--dv:#1d4ed8;--dvbg:#eff6ff;--uy:#b45309;--uybg:#fffbeb;--fz:#b91c1c;--fzbg:#fef2f2}
+body{margin:0;background:var(--pg);color:var(--tx);font-size:9pt;line-height:1.45;
+  font-family:"Segoe UI",-apple-system,"Helvetica Neue",Arial,sans-serif;font-variant-numeric:tabular-nums;
+  -webkit-print-color-adjust:exact;print-color-adjust:exact;-webkit-font-smoothing:antialiased}
+.tbar{position:sticky;top:0;z-index:9;display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;
+  padding:10px;background:#1f2937;color:#fff;font-size:12.5px}
+.tbar button{background:#3b82f6;color:#fff;border:none;border-radius:7px;padding:7px 16px;
+  font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.tbar button:disabled{background:#64748b;cursor:wait}
+.tbar span{opacity:.72}
+.sheet{width:210mm;min-height:297mm;margin:14px auto;background:#fff;padding:13mm 12mm 15mm;box-shadow:0 1px 4px rgba(0,0,0,.14)}
+@media screen and (max-width:820px){.sheet{width:auto;min-height:0;margin:0;padding:16px}}
+@media print{.tbar{display:none}body{background:#fff}.sheet{width:auto;min-height:0;margin:0;padding:0;box-shadow:none}}
+.ust{display:flex;align-items:center;gap:12px;padding-bottom:8px;border-bottom:2px solid var(--ink)}
+.ust .logo{height:10mm;width:auto;max-width:40mm;object-fit:contain}
+.ust-orta{flex:1;min-width:0}
+h1{margin:0;font-size:16pt;line-height:1.15;font-weight:700;color:var(--ink);letter-spacing:-.2px}
+.ust-orta .alt{font-size:8.5pt;color:var(--mu);margin-top:2px}
+.ust-sag{text-align:right;white-space:nowrap}
+.ust-sag b{display:block;font-size:13pt;line-height:1.2;color:var(--ink)}
+.ust-sag.aralik b{font-size:11pt}
+.ust-sag span{font-size:8.5pt;color:var(--mu)}
+.kunye{display:flex;flex-wrap:wrap;gap:2px 16px;font-size:7.8pt;color:var(--mu);margin:6px 0 10px}
+.kunye b{color:var(--tx);font-weight:600}
+.gun+.gun{break-before:page}
+.gun-bas{display:flex;align-items:baseline;gap:8px;border-left:3px solid var(--ink);background:var(--bx);padding:5px 10px;margin:0 0 8px}
+.gun-bas b{font-size:11.5pt;color:var(--ink)}
+.gun-bas span{font-size:9pt;color:var(--mu)}
+.ozet{font-size:8.8pt;background:var(--bx);border:1px solid var(--hr);border-radius:4px;padding:6px 10px;margin:0 0 4px}
+.ozet b{color:var(--ink);font-weight:700}
+.ozet i{font-style:normal;color:var(--fn);margin:0 7px}
+h2{display:flex;align-items:baseline;gap:8px;font-size:11pt;line-height:1.3;color:var(--ink);margin:14px 0 6px;
+  padding-bottom:3px;border-bottom:1px solid var(--hr2);break-after:avoid}
+h2 small{font-size:7pt;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.45px}
+h2 em{margin-left:auto;font-style:normal;font-size:8.5pt;font-weight:600;color:var(--tx)}
+.yok{font-size:8.5pt;color:var(--fn);font-style:italic;margin:2px 0 6px}
+.blok{margin:0 0 10px;break-inside:avoid}
+.blok-bas{display:flex;align-items:baseline;gap:8px;margin-bottom:3px}
+.blok-bas b{font-size:9.5pt;color:var(--ink)}
+.blok-bas span{font-size:8.5pt;font-weight:600;color:var(--tx)}
+.blok-bas em{margin-left:auto;font-style:normal;font-size:8.6pt;font-weight:700;color:var(--ink)}
+.blok-bas em.ac{font-weight:600;color:var(--mu)}
+.iki{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0 6mm}
+table.tb{width:100%;border-collapse:collapse;font-size:8.6pt}
+.tb thead{display:table-header-group}
+.tb th{text-align:left;vertical-align:bottom;font-size:7pt;font-weight:700;color:var(--mu);text-transform:uppercase;letter-spacing:.35px;
+  padding:4px 6px;background:var(--bx);border-bottom:1px solid var(--hr2)}
+.tb th i{display:block;font-style:normal;font-weight:500;text-transform:none;letter-spacing:0;color:var(--fn)}
+.tb td{padding:3.5px 6px;border-bottom:1px solid var(--hr);vertical-align:top;color:var(--ink)}
+.tb tr{break-inside:avoid}
+.tb tr:has(+tr.dv) td:first-child{border-bottom-color:transparent}
+.tb .sy{text-align:right;white-space:nowrap}
+.tb .kod{font-family:Consolas,"Cascadia Mono","Courier New",monospace;font-size:8.2pt}
+.tb .br{color:var(--mu);white-space:nowrap}
+.tb .bos{color:var(--fn)}
+.tb tr.ara td{background:var(--bx);font-size:7.8pt;font-weight:700;letter-spacing:.3px;color:var(--ink)}
+.tb tfoot td{font-weight:700;border-top:1.5px solid var(--ink);border-bottom:none}
+.gorev{border:1px solid var(--hr2);border-radius:5px;padding:8px 10px 9px;margin:0 0 9px}
+.gr-ust{break-inside:avoid}
+.gr-bas{display:flex;align-items:center;flex-wrap:wrap;gap:4px 7px;margin-bottom:6px}
+.gr-bas b{font-size:10.2pt;line-height:1.3;color:var(--ink);flex:1 1 60%;min-width:0;overflow-wrap:anywhere}
+.dr,.rz{font-size:6.8pt;font-weight:700;text-transform:uppercase;letter-spacing:.35px;padding:2px 6px;border-radius:3px;white-space:nowrap}
+.dr.bekliyor{background:#f3f4f6;color:#4b5563}
+.dr.devam{background:var(--dvbg);color:var(--dv)}
+.dr.bitti{background:var(--okbg);color:var(--ok)}
+.rz.acil{background:var(--fzbg);color:var(--fz)}
+.rz.onay{background:var(--okbg);color:var(--ok)}
+.rz.revizyon{background:var(--uybg);color:var(--uy)}
+.kn{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 12px;font-size:8.4pt}
+.kn div{min-width:0}
+.kn .gen{grid-column:1/-1}
+.kn span{display:block;font-size:6.6pt;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.4px}
+.kn b{font-weight:500;color:var(--ink);overflow-wrap:anywhere}
+.acik{margin:7px 0 0;padding-top:6px;border-top:1px dashed var(--hr2);font-size:8.8pt;color:var(--ink)}
+.fotolar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4mm;margin-top:8px}
+.fotolar figure{margin:0;break-inside:avoid}
+.fotolar figure.gen{grid-column:1/-1}
+/* GORSEL KENDI BOYUTUNDAN BUYUTULMEZ (width/height:auto + max-*): 277px'lik bir ekran
+   alintisi tam satira yayilinca bulaniklasiyordu. Genis gorsel ortalanir; ikili
+   (yari) kutular hizali kalsin diye sabit yukseklikte, gorsel icinde ortalanir.
+   Yuklenmeden onceki yerlesim onemsiz: Yazdir dugmesi gorseller bitince acilir. */
+.fk{position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.fk img{display:block;width:auto;height:auto;max-width:100%;max-height:118mm;border:1px solid var(--hr);border-radius:3px}
+.yari .fk{height:68mm;border:1px solid var(--hr);border-radius:3px;background:var(--bx)}
+.yari .fk img{max-height:100%;border:none;border-radius:0}
+.fk.hata{height:22mm;border:1px solid var(--hr);border-radius:3px;background:var(--bx)}
+.fk.hata img{display:none}
+.fk.hata::after{content:"Görsel açılamadı";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:8pt;color:var(--fn)}
+figcaption{font-size:6.8pt;color:var(--fn);margin-top:2px}
+.gen figcaption{text-align:center}
+`; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    GUNLUK ISLER AYARLARI + ORTALAMA ONERISI (30 Eyl 2026)
