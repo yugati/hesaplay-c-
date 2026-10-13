@@ -2793,6 +2793,16 @@ tr.row-sel{background:color-mix(in srgb,var(--blue) 9%,transparent)}
 .spec-note-box{background:color-mix(in srgb,var(--blue) 8%,transparent);border:1px solid color-mix(in srgb,var(--blue) 32%,transparent);border-radius:9px;padding:9px 11px;margin-bottom:14px}
 .spec-note-h{display:flex;align-items:center;gap:6px;font-size:9.5px;font-weight:800;letter-spacing:.5px;font-family:var(--mono);color:var(--blue);margin-bottom:4px}
 .spec-note-tx{font-size:12.5px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+/* Revize Degisimi (bkz. specRevize): modal kutusu, detay kutusu, hedef yanindaki rozet */
+.spec-rev-satir{display:grid;grid-template-columns:140px minmax(0,1fr);gap:8px}
+.spec-rev-ozet{font-size:11px;color:var(--mute);font-family:var(--mono);margin-top:5px;min-height:0}
+.spec-rev-ozet:empty{display:none}
+.spec-rev-ozet b{color:var(--text)}
+.spec-rev-ozet.hata{color:var(--red)}
+.spec-rev-box{background:color-mix(in srgb,var(--amber) 9%,transparent);border:1px solid color-mix(in srgb,var(--amber) 38%,transparent);color:var(--text);border-radius:9px;padding:8px 11px;margin-bottom:14px;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.spec-rev-box>b:first-child{font-size:9.5px;letter-spacing:.5px;font-family:var(--mono);color:var(--amber)}
+.spec-rev-rozet{display:inline-block;margin-left:4px;padding:0 6px;border-radius:999px;font-size:10px;font-weight:700;font-family:var(--mono);white-space:nowrap;vertical-align:1px;background:color-mix(in srgb,var(--amber) 16%,transparent);color:var(--amber)}
+.spec-rev-rozet.eksi{background:color-mix(in srgb,var(--red) 14%,transparent);color:var(--red)}
 .spec-detail-pct{font-size:30px;font-weight:800;font-family:var(--mono);margin-bottom:8px}
 .ex-notice{display:flex;align-items:center;gap:7px;background:var(--amber)18;border:1px solid var(--amber)55;color:var(--amber);border-radius:8px;padding:8px 11px;font-size:12px;font-weight:600;margin-bottom:14px}
 .spec-detail-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
@@ -7626,14 +7636,14 @@ function exportBinaSpecExcel(){
     .sort((a,b)=>(Number(a.poz)||0)-(Number(b.poz)||0)||(a.poz||'').localeCompare(b.poz||'','tr')||a.name.localeCompare(b.name,'tr'));
   // "Acik Kalem" sutunu: miktari heniz belli olmayan kalem EVET tasir ve Miktar 0 yazilir.
   // Import bu sutunu okudugu icin dosya kayipsiz geri yuklenir (eskiden 0'li satir siliniyordu).
-  const rows=[["Poz No","Özel No","Malzeme Ismi","Standart No","Urun Kodu","Marka","Birim","Miktar","Acik Kalem","Urun Agirligi (kg)","Not","Resim URL"]];
+  const rows=[["Poz No","Özel No","Malzeme Ismi","Standart No","Urun Kodu","Marka","Birim","Miktar","Acik Kalem","Revize","Revize Gerekcesi","Urun Agirligi (kg)","Not","Resim URL"]];
   specs.forEach(sp=>{ const mt=sp.matId?getMaterial(sp.matId):null;
     const img=(mt&&mt.img&&/^https?:\/\//i.test(mt.img))?mt.img:'';
-    rows.push([sp.poz||'', sp.ozelNo||'', sp.name||'', sp.standart||'', sp.code||'', sp.brand||'', sp.unit||(mt?mt.unit:'')||'', Number(sp.target)||0, sp.openQty?'EVET':'', sp.weight!=null?sp.weight:'', (mt?mt.note:'')||'', img]); });
-  if(specs.length===0) rows.push(['','','','','','','','','','','','']);
+    rows.push([sp.poz||'', sp.ozelNo||'', sp.name||'', sp.standart||'', sp.code||'', sp.brand||'', sp.unit||(mt?mt.unit:'')||'', specSartHedef(sp), sp.openQty?'EVET':'', specRevize(sp)||'', specRevize(sp)?(sp.revizeNot||''):'', sp.weight!=null?sp.weight:'', (mt?mt.note:'')||'', img]); });
+  if(specs.length===0) rows.push(['','','','','','','','','','','','','','']);
   const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[{wch:10},{wch:16},{wch:26},{wch:18},{wch:16},{wch:16},{wch:10},{wch:10},{wch:11},{wch:16},{wch:28},{wch:40}];
-  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:11}})};
+  ws['!cols']=[{wch:10},{wch:16},{wch:26},{wch:18},{wch:16},{wch:16},{wch:10},{wch:10},{wch:11},{wch:9},{wch:24},{wch:16},{wch:28},{wch:40}];
+  ws['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:rows.length-1,c:13}})};
   XLSX.utils.book_append_sheet(wb,ws,"Spesifikasyonlar");
   XLSX.writeFile(wb,`${PBINA}_${PCAT}_${PSPEC}_${new Date().toISOString().slice(0,10)}.xlsx`.replace(/[\\/:*?"<>|]/g,'-'));
   toast("Excel ciktisi indirildi");
@@ -18312,8 +18322,9 @@ function matOzelKitapKur(kap,veri,sec){
   }
 
   // ══════ SARTNAME ILERLEMESI ══════
-  const srTh=['Urun Kodu','Malzeme','Bina','Sartname','Ozel No','Bolum','Hedef','Siparis','Siparis %','Montaj','Montaj %','Durum','Birim'];
-  const srBas=sSr?baslik(sSr,'Sartname Ilerlemesi  ·  '+kap.metin,srTh,[16,40,9,30,16,18,11,11,10,11,10,20,8]):0;
+  // Hedef = GECERLI hedef (sartname + revize, bkz. specRevize); Revize sutunu farki ayrica gosterir
+  const srTh=['Urun Kodu','Malzeme','Bina','Sartname','Ozel No','Bolum','Hedef','Revize','Siparis','Siparis %','Montaj','Montaj %','Durum','Birim'];
+  const srBas=sSr?baslik(sSr,'Sartname Ilerlemesi  ·  '+kap.metin,srTh,[16,40,9,30,16,18,11,9,11,10,11,10,20,8]):0;
   const ilerleme=new Map();                         // matId -> {tt,got,mont}
   const mxVeri=new Map();                           // matId -> Map(sartname -> {hedef,alinan,acik}) : Sartname Matrisi
   let srZ=0, srN=0;
@@ -18338,7 +18349,7 @@ function matOzelKitapKur(kap,veri,sec){
       if(!sSr) return;
       const z=srZ++%2, td=z?B.tdZ:B.td, ts=z?B.tdSZ:B.tdS, kod=z?B.kodZ:B.kod, yuz=z?B.yuzZ:B.yuz;
       const n=sSr.satir([{v:m.code||'',b:kod},{v:ciktiAd(m),b:td},{v:s.bina||'',b:ts},{v:specGroupKey(s),b:kod},
-        {v:s.ozelNo||'',b:kod},{v:s.cat||'',b:td},tgt?mik(tgt,z):{v:'',b:ts},mik(got,z),
+        {v:s.ozelNo||'',b:kod},{v:s.cat||'',b:td},tgt?mik(tgt,z):{v:'',b:ts},specRevize(s)?mik(specRevize(s),z):{v:'',b:ts},mik(got,z),
         {v:tgt?Number(Math.max(0,Math.min(100,got/tgt*100)).toFixed(1)):'',b:yuz},mik(mont,z),
         {v:tgt?Number(Math.min(100,mont/tgt*100).toFixed(1)):'',b:yuz},
         {v:ex?'YUZDEYE DAHIL DEGIL':(s.openQty&&!tgt)?'ACIK KALEM':'',b:ex?B.uyari:td},{v:s.unit||'',b:ts}]);
@@ -19459,7 +19470,7 @@ function flowIdariIdx(bina){
   const anah=(sec,kod)=>sec+'\u0001'+kod, srBy=new Map(), kalem=new Map(srts.map(sr=>[sr.id,[]]));
   srts.forEach(sr=>{ const k=anah(sr.section||'',sr.code); if(!srBy.has(k)) srBy.set(k,[]); srBy.get(k).push(sr); });
   // kalem yeri: o = oda (ve kat disi) dugumler -> ODAYA, k = kat dugumleri -> GENEL; kay: yerin kaynagi
-  const yer=new Map();
+  const yer=new Map(), dIdx=binaKodIndex(bina), bc=new Map();
   DB.proje.specs.forEach(s=>{
     if(s.is_deleted||s.bina!==bina) return;
     const hedef=srBy.get(anah(s.cat||'',specGroupKey(s))); if(hedef) hedef.forEach(sr=>kalem.get(sr.id).push(s));
@@ -19467,6 +19478,9 @@ function flowIdariIdx(bina){
     const ekle=(id,src)=>{ const l=byId.get(id); if(!l) return; (l.level==='kat'?k:o).add(id); if(!kay[id]) kay[id]=src; };
     (Array.isArray(s.yerIds)?s.yerIds:[]).forEach(id=>ekle(id,'yer'));
     (s.lokTargets||[]).forEach(t=>{ if(t&&t.lokId) ekle(t.lokId,'metraj'); });
+    // OZEL KOD KIRILIMI: her kod kendi katinin havuzuna duser (Kod Defteri, yoksa kot - kilcal katmanla
+    // ayni kural, flowKodKatId). Ozel Kod Yukle kodlari boyle kat dalina gelir; turetilir, yerIds'e yazilmaz
+    ozelPaylari(s).forEach(p=>ekle(flowKodKatId(bina,p.kod,(p.bilgi||{}).kot,dIdx,bc),'kod'));
     // Kat Ata yalniz baska yer yoksa sayilir; kati hic girilmemis kalemde dugum cozumu denenmez
     if(!o.size&&!k.size&&(String(s.kat||'').trim()||String(s.kot||'').trim())){
       const oy=ozelYerTur(s.kat,bina);   // Kat Ata 'Dış Cephe / Kuzey' ... -> o oluşum
@@ -19534,7 +19548,7 @@ function flowLokSrt(bina,lokId){
   });
   X.grup.set(lokId,out); return out;
 }
-// kalemin yerleri, okunur: [{id, ad, tip:'oda'|'genel', kay:'yer'|'metraj'|'katata'}]
+// kalemin yerleri, okunur: [{id, ad, tip:'oda'|'genel', kay:'yer'|'metraj'|'kod'|'katata'|'oda'}]
 function flowKalemYerleri(bina,sp){
   const X=flowIdariIdx(bina), y=X.yer.get(sp.id); if(!y) return [];
   return [...y.o].map(id=>({id,ad:lokPath(id),tip:'oda',kay:y.kay[id]}))
@@ -22485,7 +22499,7 @@ function toastGeri(msg,geri,type){
 function flowYerBildir(r,metin){
   if(!r) return;
   if(!r.plan.length){ toast(r.atlanan?r.atlanan+' kod hedef odanin katinda tanimli degil - once kata tanimlayin':'Degisecek bir sey yok',r.atlanan?'err':''); return; }
-  const ek=[r.atlanan?r.atlanan+' kod katta tanimli olmadigi icin atlandi':'',r.kalan?r.kalan+' kod metraj / Kat Ata kaynagiyla katta kaldi':''].filter(Boolean).join(' · ');
+  const ek=[r.atlanan?r.atlanan+' kod katta tanimli olmadigi icin atlandi':'',r.kalan?r.kalan+' kod metraj / ozel kod / Kat Ata kaynagiyla katta kaldi':''].filter(Boolean).join(' · ');
   const plan=r.plan;
   toastGeri(metin+(ek?' · '+ek:''),()=>flowYerGeriAl(plan),ek?'warn':'');
 }
@@ -22705,7 +22719,7 @@ function flowHavuzHtml(l,sr,g,X){
       d=on?(od.length?'dagitik':'bosta'):'tanimsiz';
       if(od.length) ek+=`<small title="${esc(od.map(id=>(getLok(id)||{}).name||'?').join(', '))}">${od.length}</small>`;
       if(baska.length) ek+=`<em title="Diger katlar: ${esc(baska.map(k=>(getLok(k)||{}).name||'?').join(', '))}">+${baska.length}K</em>`;
-      const kay=on?y.kay[l.id]:''; if(kay==='metraj'||kay==='katata') kilit=kay==='metraj'?'metraj':'Kat Ata';
+      const kay=on?y.kay[l.id]:''; if(kay==='metraj'||kay==='katata'||kay==='kod') kilit=kay==='metraj'?'metraj':kay==='kod'?'Ozel kod (Kod Defteri / kot)':'Kat Ata';
     } else {
       on=!!y&&y.o.has(l.id);
       const diger=y?[...y.o].filter(id=>id!==l.id&&X.katOf(id)===katId):[];
@@ -22883,7 +22897,7 @@ function flowHavuzBildir(r){
     bt.onclick=()=>{ const plan=[..._HVY.oturum.values()]; flowHavuzBildirKapat(); flowHavuzGeriAl(plan); };
     t.appendChild(bt); w.appendChild(t);
   }
-  const ek=[r.atlanan?r.atlanan+' kod katta tanimli olmadigi icin atlandi':'',r.kalan?r.kalan+' kod metraj / Kat Ata kaynagiyla katta kaldi':''].filter(Boolean);
+  const ek=[r.atlanan?r.atlanan+' kod katta tanimli olmadigi icin atlandi':'',r.kalan?r.kalan+' kod metraj / ozel kod / Kat Ata kaynagiyla katta kaldi':''].filter(Boolean);
   t.classList.toggle('warn',ek.length>0);
   t.querySelector('span').textContent=Object.keys(_HVY.say).map(k=>_HVY.say[k]+' kod '+HV_ISLEM_AD[k]).join(' · ')+(ek.length?' · '+ek.join(' · '):'');
   clearTimeout(t._t); t._t=setTimeout(flowHavuzBildirKapat,6000);
@@ -22921,7 +22935,7 @@ function flowHavuzToplu(ekle){
    Yazma tek yerden yapilir: flowYerIslem (Geri Al bildirimiyle). Hizli is icin ayni islemler sag
    paneldeki havuz listesinde ve tuvalde kart surukleyerek de yapilir. */
 let _OYR=null;
-const OYR_KAYNAK={yer:'',metraj:'metraj',katata:'Kat Ata',oda:'odadan'};
+const OYR_KAYNAK={yer:'',metraj:'metraj',kod:'ozel kod',katata:'Kat Ata',oda:'odadan'};
 function openOzelYerModal(lokId,srId){
   const l=getLok(lokId), sr=(DB.proje.sartnames||[]).find(x=>x.id===srId); if(!l||!sr) return;
   if(!guard('editSpec',{bina:l.bina})) return;
@@ -23031,7 +23045,7 @@ function exportKirilimExcel(bina){
   if(typeof XLSX==='undefined'){ toast('Excel kutuphanesi yuklenemedi','err'); return; }
   _FLOWIDARI=null;
   const X=flowIdariIdx(bina);
-  const KAY={yer:'elle (havuz / Ozel Kod Yerlestir / Toplu Kurulum)',metraj:'metraj',katata:'Kat Ata',oda:'odalarindan'};
+  const KAY={yer:'elle (havuz / Ozel Kod Yerlestir / Toplu Kurulum)',metraj:'metraj',kod:'ozel kod (Kod Defteri / kot)',katata:'Kat Ata',oda:'odalarindan'};
   const rows=[['KAT','AKS / BOLGE','FRAGMENT','ODA','ODA ADI','BOLUM','SARTNAME KODU','SARTNAME ADI','SARTNAME BAGI','OZEL NO','POZ','URUN ADI','URUN KODU','HEDEF','BIRIM','KALEM YERI','YER KAYNAGI']];
   // dugumun zinciri (birincil ebeveyn): kat / aks / fragment / oda adlari
   const zincir=l=>{ const z={kat:'',aks:'',fragment:'',oda:'',odaAd:''}; let n=l, g=0;
@@ -23499,8 +23513,10 @@ function downloadBulkTemplate(dolu){
         // ADET bilgi amaclidir (mevcut kalemde degismez): metraj girilmis yerde o yerin metraji, yoksa kalem hedefi
         const adetOf=id=>{ const t=(s.lokTargets||[]).find(t=>t.lokId===id); return t?(Number(t.target)||hedef):hedef; };
         const y=X.yer.get(s.id);
-        if(!y){ malSatir.push(satir('','',hedef)); return; }
-        [...y.k].forEach(id=>{ const k=X.byId.get(id); malSatir.push(satir(k?k.name:'','',adetOf(id))); });
+        // ozel kod kaynakli katlar sablona girmez: geri yuklenince yerIds'e yazilir, kodlarin katindan turetilen yer kalicilasirdi
+        const yk=y?[...y.k].filter(id=>y.kay[id]!=='kod'):[];
+        if(!y||!yk.length&&!y.o.size){ malSatir.push(satir('','',hedef)); return; }
+        yk.forEach(id=>{ const k=X.byId.get(id); malSatir.push(satir(k?k.name:'','',adetOf(id))); });
         [...y.o].forEach(id=>{ const n=X.byId.get(id), k=X.byId.get(X.katOf(id));
           // ODA NO yalniz oda dugumunu secer: aks / fragment yeri kat satiri olarak cikar
           malSatir.push(satir(n&&n.level==='katdisi'?n.name:(k?k.name:''),n&&n.level==='oda'?n.name:'',adetOf(id))); });
@@ -24007,7 +24023,8 @@ function _bulkYerPlanla(p,sp,g,W){
   const a=hedef.filter(id=>!odaKatlari.has(id));
   if(a.length<hedef.length) W('Malzemeler',g.rows[0].rn,'"'+flowOzelEtiket(sp)+'" ayni katta hem KAT hem ODA NO ile yazilmis - oda yeri esas alindi (kat geneli yazilmadi)');
   const X=flowIdariIdx(p.bina), y=X.yer.get(sp.id);
-  const simdi=y?[...y.o,...y.k]:[];
+  // ozel kod kaynakli kat turetilmistir (kodlarin katindan): yer sayilmaz, burada yazilmaz da silinmez da
+  const simdi=y?[...y.o,...y.k].filter(id=>y.kay[id]!=='kod'):[];
   if(simdi.length===a.length&&a.every(id=>simdi.includes(id))){ p.skip.spec++; return; }   // zaten orada
   const adOf=id=>{ const r=g.rows.find(x=>x.odaId===id); return r?r.yerAd:id; };
   const kalici=y?simdi.filter(id=>y.kay[id]!=='yer').map(id=>lokPath(id)+' ('+(y.kay[id]==='metraj'?'metraj':'Kat Ata')+')'):[];
@@ -26599,6 +26616,30 @@ function renderOrders(){
 }
 
 /* ---------- SPEC ---------- */
+/* REVIZE DEGISIMI: proje revizyonuyla sartname hedefine gelen fazla (+) / giden eksik (-).
+   target HER ZAMAN GECERLI hedefi tutar (sartname + revize): hedefi okuyan her yer (yuzde, kalan,
+   ozel kod kirilimi siniri, matris, kat paneli) degismeden calisir. Sartnamedeki asil sayi
+   target - revize olarak geri hesaplanir - hedefe YAZAN her yol (kalem kaydet, Excel ice/disa
+   aktarma) bu ikiliyi birlikte tasimak zorundadir, yoksa revize ya kaybolur ya iki kez eklenir.
+   Acik kalemde ve parca bazinda metraj dagilimli kalemde revize yoktur (hedef baska kaynaktan). */
+function specRevize(sp){
+  if(!sp||sp.openQty||(sp.lokTargets||[]).length) return 0;
+  const r=Number(sp.revize); return isFinite(r)?r:0;
+}
+function specSartHedef(sp){ return Math.round(((Number(sp&&sp.target)||0)-specRevize(sp))*1e6)/1e6; }
+// "+1", "-2", "1,5" -> sayi; bos -> 0; gecersiz -> null
+function specRevizeParse(v){
+  const s=String(v==null?'':v).trim().replace(/\s+/g,'').replace(',','.');
+  if(!s||s==='+'||s==='-') return 0;
+  if(!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(s)) return null;
+  return Number(s);
+}
+const specRevizeYaz=r=>(r>0?'+':'')+fmtNum(r);
+// hedefin yanina kucuk rozet: "sartname 2 · +1 rev." (revize yoksa bos)
+function specRevizeRozet(sp){
+  const r=specRevize(sp); if(!r) return '';
+  return ` <span class="spec-rev-rozet${r<0?' eksi':''}" title="Sartname hedefi ${fmtNum(specSartHedef(sp))} · Revize ${specRevizeYaz(r)}${sp.revizeNot?' · '+esc(sp.revizeNot):''}">sartname ${fmtNum(specSartHedef(sp))} · ${specRevizeYaz(r)} rev.</span>`;
+}
 function specProgress(spec){
   const got=DB.proje.items.filter(it=> (it.type!=='out') && ( it.specId===spec.id || (!it.specId && it.cat===spec.cat&&it.name.trim().toLowerCase()===spec.name.trim().toLowerCase()) ) ).reduce((s,i)=>s+(Number(i.qty)||0),0);
   // IADE negatif miktarli hareket uretir (bkz. orderIadeItems): iade alimi asarsa got
@@ -28595,6 +28636,11 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
   // yazan satir acik kaleme cevrilip hedefi sifirlaniyordu. Yalniz ayirt edici alias'lar kalsin.
   const iOpen=pick('acik kalem','acik_kalem','acikkalem','açık kalem','open_qty','openqty','openquantity');
   const iAct=pick('action','islem');
+  // REVIZE sutunu (Sartname Excel'i yazar, bkz. specRevize): Miktar SARTNAME sayisidir, gecerli hedef
+  // = Miktar + Revize. YALNIZ birebir baslikla okunur ("icerir" aramasi "Revize Gerekcesi"ni revize
+  // sanardi). Sutun yoksa kalemin mevcut revizesi korunur; varsa ve bossa revize kaldirilir.
+  const hdrN=(rows[h]||[]).map(x=>norm(String(x||'').trim()));
+  const iRev=hdrN.indexOf(norm('revize')), iRevNot=hdrN.indexOf(norm('revize gerekcesi'));
   if(iTgt<0 || (iCode<0&&iName<0)){ report.errors.push('Spesifikasyon sayfasi: en az "material_code"/"malzeme" ve "target_qty"/"hedef" sutunlari gerekli'); return; }
   const useExt=iExt>=0;
   const validSections=new Set((DB.proje.sections||[]).map(s=>norm(s)));
@@ -28729,6 +28775,20 @@ const openEvet=['evet','e','var','acik','yes','y','true','x','1'].includes(norm(
       if(existing) touched.add(existing.id);
       continue;
     }
+    const revOku=iRev>=0?specRevizeParse(row[iRev]):undefined;
+    if(revOku===null||(!acikSon&&revOku&&tgt+revOku<-1e-9)){
+      report.errors.push(`Spek satir ${r+1}: ${revOku===null?'gecersiz revize ("'+String(row[iRev]??'').trim()+'") - +1 ya da -2 gibi yazin':'revize sonrasi hedef eksiye duser'} - kalem degistirilmeden korundu`);
+      if(existing) touched.add(existing.id);
+      continue;
+    }
+    const revNotOku=iRevNot>=0?String(row[iRevNot]??'').trim():undefined;
+    // kaleme revize yaz (yalniz sutun varsa) ve kullanilacak revizeyi dondur
+    const revUygula=sp=>{
+      if(revOku===undefined) return specRevize(sp);
+      if(revOku){ sp.revize=revOku; if(revNotOku!==undefined){ if(revNotOku) sp.revizeNot=revNotOku; else delete sp.revizeNot; } }
+      else { delete sp.revize; delete sp.revizeNot; }
+      return revOku;
+    };
     const brand=iBrand>=0?String(row[iBrand]??'').trim():'';
     const note=iNote>=0?String(row[iNote]??'').trim():'';
     const standart=iStd>=0?String(row[iStd]??'').trim():'';
@@ -28754,6 +28814,7 @@ const openEvet=['evet','e','var','acik','yes','y','true','x','1'].includes(norm(
         existing.exclude=exclude;
         if(acikSon) report.errors.push(`${existing.code||existing.name}: oda dagilimi olan kalem acik kaleme cevrilmez - dagilim toplami (${fmtNum(existing.target)}) korundu`);
         else if(Number(existing.target)!==tgt) report.errors.push(`${existing.code||existing.name}: Excel hedefi (${tgt}) yok sayildi - kalemin oda dagilimi toplami (${existing.target}) korundu`);
+        if(revOku) report.errors.push(`${existing.code||existing.name}: parca bazinda dagilimli kalemde revize girilmez - Excel'deki revize (${specRevizeYaz(revOku)}) yok sayildi`);
       }
       else if(acikSon){
         // NIYET ACIKSA (Acik Kalem sutunu EVET) mevcut hedef de sifirlanir - kullanici bunu
@@ -28766,8 +28827,8 @@ const openEvet=['evet','e','var','acik','yes','y','true','x','1'].includes(norm(
         } else { existing.openQty=true; existing.exclude=true; existing.target=0; }
       }
       // acik kalem (openQty) korunur: Excel'de hedef girildiyse acik kalem normale doner
-      else if(existing.openQty && tgt>0){ existing.openQty=false; existing.target=tgt; existing.exclude=exclude; }
-      else { existing.target=tgt; existing.exclude=exclude; }
+      else if(existing.openQty && tgt>0){ existing.openQty=false; existing.target=Math.round((tgt+revUygula(existing))*1e6)/1e6; existing.exclude=exclude; }
+      else { existing.target=Math.round((tgt+revUygula(existing))*1e6)/1e6; existing.exclude=exclude; }
       if(useExt&&ext)existing.extId=ext; if(poz)existing.poz=poz; if(ozelNo)existing.ozelNo=ozelNo;
       if(!existing.openQty&&ozelPayToplam(ozelPaylari(existing))>(Number(existing.target)||0)+1e-9)
         report.errors.push(`${existing.code||existing.name}: yeni hedef (${fmtNum(existing.target)}) ozel kod kirilimi toplaminin (${fmtNum(ozelPayToplam(ozelPaylari(existing)))}) altinda - kalem detayindan kirilimi gozden gecirin`);
@@ -28777,7 +28838,8 @@ const openEvet=['evet','e','var','acik','yes','y','true','x','1'].includes(norm(
       const newId=uid();
       // ACIK KALEM degismezi (_specSaveCore ile ayni): openQty ise hedef 0 ve exclude true olur -
       // tum yuzde hesaplari exclude'u atladigi icin miktari bilinmeyen kalem oranlari bozmaz.
-      const nsp={id:newId,extId:(useExt?ext:''),poz,ozelNo,code:code||mat.code,name:name||mat.name,target:acikSon?0:tgt,unit,cat,bina:insertBina,grup,
+      const nsp={id:newId,extId:(useExt?ext:''),poz,ozelNo,code:code||mat.code,name:name||mat.name,target:acikSon?0:Math.round((tgt+(revOku||0))*1e6)/1e6,unit,cat,bina:insertBina,grup,
+        ...(!acikSon&&revOku?{revize:revOku,...(revNotOku?{revizeNot:revNotOku}:{})}:{}),
         standart:mat.standart||'',weight:mat.weight!=null?mat.weight:null,tags:(mat.tags||[]).slice(),img:mat.img||null,matId:mat.id,brand:mat.brand||'',
         openQty:acikSon,exclude:acikSon?true:exclude};
       DB.proje.specs.push(nsp);
@@ -29223,7 +29285,8 @@ async function applySyncPlan(){
     DB.proje.specs.push({id:uid(),extId:x.ext||'',code:x.code||(mt?mt.code:''),name:x.name||(mt?mt.name:''),target:x.acik?0:x.tgt,unit:x.unit||(mt?mt.unit:''),cat:x.sec,bina:x.bina,grup:x.sart,matId:mt?mt.id:null,brand:mt?mt.brand:'',openQty:!!x.acik,exclude:x.acik?true:x.exclude,is_deleted:false}); rep.specCreated++; });
   plan.spec.update.forEach(({existing,data})=>{ const mt=findMat(data.code,data.name);
     // acik kalem (openQty) korunur: Excel hedef getirdiyse normale doner, getirmediyse acik+haric kalir
-    if(existing.openQty && data.tgt>0){ existing.openQty=false; existing.target=data.tgt; existing.exclude=data.exclude; }
+    // REVIZE (bkz. specRevize): bu sablonda revize sutunu yok - kalemin revizesi korunur, gecerli hedef = Excel + revize
+    if(existing.openQty && data.tgt>0){ existing.openQty=false; existing.target=data.tgt+specRevize(existing); existing.exclude=data.exclude; }
     else if(existing.openQty){ existing.exclude=true; }
     else if((existing.lokTargets||[]).length){
       // oda/lokasyon dagilimi girilen kalemde hedefin kaynagi DAGILIMDIR - Excel hedefi
@@ -29238,7 +29301,7 @@ async function applySyncPlan(){
       else if(Number(existing.target)>0) rep.errors.push(`${existing.code||existing.name}: Excel'de miktar bos/0 - mevcut hedef (${fmtNum(existing.target)} ${existing.unit||''}) korundu ("Acik Kalem" sutununa EVET yazarsaniz acik kaleme cevrilir)`);
       else { existing.openQty=true; existing.exclude=true; existing.target=0; }
     }
-    else { existing.target=data.tgt; existing.exclude=data.exclude; }
+    else { existing.target=Math.max(0,data.tgt+specRevize(existing)); existing.exclude=data.exclude; }
     if(data.unit)existing.unit=data.unit; existing.cat=data.sec; existing.bina=data.bina; existing.grup=data.sart; existing.is_deleted=false; if(mt){existing.matId=mt.id;existing.brand=mt.brand;} rep.specUpdated++; });
   plan.spec.delete.forEach(s=>{ s.is_deleted=true; rep.specDeleted++; });
   _syncPlan=null;
@@ -29677,7 +29740,7 @@ function renderSpec(){
       if(SPECVIEW==='list'){
         return `<div class="prog-row spec-clickable${open?' spec-open':ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')">${thumb}
           <div class="prog-row-main"><div class="prog-row-name" title="${esc(sp.name)}">${esc(gorAd(sp))}${altBadge}${specNotBadge(sp)}</div><div class="prog-cat">${catBadges}</div></div>
-          <div class="prog-row-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(sp.unit||'')}</b></span><span>Hedef: <b>${open?'belirsiz':fmtNum(sp.target)+' '+esc(sp.unit||'')}</b></span><span>Kalan: <b style="color:${open?'var(--mute)':done?'var(--green)':'var(--amber)'}">${open?'—':done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(sp.unit||'')}</b></span></div>
+          <div class="prog-row-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(sp.unit||'')}</b></span><span>Hedef: <b>${open?'belirsiz':fmtNum(sp.target)+' '+esc(sp.unit||'')}</b>${open?'':specRevizeRozet(sp)}</span><span>Kalan: <b style="color:${open?'var(--mute)':done?'var(--green)':'var(--amber)'}">${open?'—':done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(sp.unit||'')}</b></span></div>
           <div class="prog-row-bar"><div class="prog-row-bar-top"><span>Alim</span><b style="color:${ex?'var(--mute)':done?'var(--green)':c2}">${open?'—':pct.toFixed(0)+'%'}</b></div><div class="bar"><i style="width:${pct}%;background:${ex?'var(--dim)':done?'var(--green)':c2}"></i></div></div>
           ${Number(sp.target)>0?`<div class="prog-row-bar"><div class="prog-row-bar-top"><span>Montaj</span><b style="color:${montajDone?'var(--green)':'var(--amber)'}">${montajPct.toFixed(0)}%</b></div><div class="bar"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div></div>`
             :open?`<div class="prog-row-bar"><div class="prog-row-bar-top"><span>Montaj</span><b style="color:var(--blue)">${fmtNum(montajGot)} ${esc(sp.unit||'')}</b></div></div>`:'<div class="prog-row-bar"></div>'}
@@ -29687,7 +29750,7 @@ function renderSpec(){
         <div class="prog-cat">${catBadges}</div></div></div>
         <div class="prog-pct" style="color:${ex?'var(--mute)':done?'var(--green)':c2}">${open?'—':pct.toFixed(0)+'%'}</div></div>
         <div class="bar"><i style="width:${pct}%;background:${ex?'var(--dim)':done?'var(--green)':c2}"></i></div>
-        <div class="prog-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(sp.unit||'')}</b></span><span>Hedef: <b>${open?'belirsiz':fmtNum(sp.target)+' '+esc(sp.unit||'')}</b></span></div>
+        <div class="prog-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(sp.unit||'')}</b></span><span>Hedef: <b>${open?'belirsiz':fmtNum(sp.target)+' '+esc(sp.unit||'')}</b>${open?'':specRevizeRozet(sp)}</span></div>
         <div class="prog-nums" style="margin-top:3px"><span>Kalan: <b style="color:${open?'var(--mute)':done?'var(--green)':'var(--amber)'}">${open?'—':done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(sp.unit||'')}</b></span></div>
         ${Number(sp.target)>0?`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:7px;white-space:nowrap"><span style="font-size:11px;color:var(--mute);flex:0 0 auto">Montaj</span><span style="font-size:11px;font-weight:600;color:${montajDone?'var(--green)':'var(--amber)'};overflow:hidden;text-overflow:ellipsis">${fmtNum(montajGot)} ${esc(sp.unit||'')} <span style="font-weight:400;color:var(--mute)">· ${montajPct.toFixed(0)}%</span></span></div><div class="bar" style="height:4px;margin-top:3px"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div>`
           :open?`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:7px;white-space:nowrap"><span style="font-size:11px;color:var(--mute);flex:0 0 auto">Montaj</span><span style="font-size:11px;font-weight:600;color:var(--blue)">${fmtNum(montajGot)} ${esc(sp.unit||'')}</span></div>`:''}
@@ -31075,7 +31138,8 @@ function openSpecModal(idOrNull,prefill){ if(!guard('editSpec',{bina:(prefill&&p
   const grps=[...new Set([...sartList, ...(curGrp?[curGrp]:[])])];
   const html=`<div class="modal-bg" onclick="specModalBgClick(event)"><div class="modal spec-modal"><div class="modal-head"><h3>${sp?'Sartname Kalemi Duzenle':'Sartname Kalemi'}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     ${_specFormModalHtml(_specFormFields({bina:curBina,cat:curCat,grup:curGrp,poz:sp?(sp.poz||''):'',ozelNo:sp?(sp.ozelNo||''):'',note:sp?(sp.note||''):'',
-      target:(sp&&!sp.openQty)?sp.target:'',unit:(curMat&&curMat.unit)||(sp?sp.unit:'')||'',open:!!(sp&&sp.openQty),roUnit:!!(curMat&&curMat.unit)}))}
+      target:(sp&&!sp.openQty)?specSartHedef(sp):'',unit:(curMat&&curMat.unit)||(sp?sp.unit:'')||'',open:!!(sp&&sp.openQty),roUnit:!!(curMat&&curMat.unit),
+      revize:sp?specRevize(sp):0,revizeNot:sp?(sp.revizeNot||''):''}))}
     <p style="font-size:11px;color:var(--dim);font-family:var(--mono)">Malzeme bilgisi (kod, ad, marka, standart, agirlik, etiket, foto) Malzeme Kutuphanesinden gelir. Yeni malzeme icin kutuphaneye ekleyin. Ayni malzeme bu sartnamede farkli Poz No'larla birden fazla kez gecebilir.</p>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-ghost" onclick="specModalToPage()" title="Genis sayfada calis - alanlar sutun halinde, satir satir pes pese giris (girdikleriniz tasinir)">Detay Sayfasi ${icoChevron()}</button><button class="btn btn-add" onclick="saveSpec(${sp?`'${sp.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
@@ -31103,13 +31167,19 @@ function _specFormFields(v){
     {k:'mat',t:'Malzeme',req:1,h:'(kutuphaneden secin - bilgiler otomatik gelir)',html:`<div id="s_matBox">${specMatBoxHtml()}</div>`},
     {k:'poz',t:'Poz No',h:'(sartname satir/tasarim no - ayni poz birden cok kalemde olabilir)',half:1,html:`<input id="s_poz" value="${esc(v.poz||'')}" placeholder="orn. 191">`},
     {k:'ozelno',t:'Özel No',h:'(yerlesim / takip no, orn. 00UYB12EM0044 - ayni pozdaki kalemleri ayiran alan)',half:1,html:`<input id="s_ozelno" value="${esc(v.ozelNo||'')}" placeholder="varsa ozel no">`},
-    {k:'target',t:'Hedef Miktar',req:1,h:'',html:`<input id="s_target" type="number" step="any" value="${v.open?'':esc(v.target)}" placeholder="0" ${v.open?'disabled':''}>`},
+    {k:'target',t:'Hedef Miktar',req:1,h:'',html:`<input id="s_target" type="number" step="any" value="${v.open?'':esc(v.target)}" placeholder="0" ${v.open?'disabled':''} oninput="specRevizeOzet()">`},
     /* OZEL KOD KIRILIMI (plan): kalem birden cok yerlesim koduna gidiyorsa kodlar + miktarlar. Parca
        bazinda metraj dagilimiyla birlikte olmaz - biri girilince digerinin kutusu hic cizilmez. */
     {k:'ozelpay',t:'Ozel Kod Kirilimi',h:'',bare:1,html:`<div id="s_ozWrap"></div>`},
     {k:'lok',t:'Parca Bazinda Metraj Dagilimi',h:'(opsiyonel - girilirse Hedef Miktar toplamdan gelir)',bare:1,html:`<div id="s_lokWrap"></div>`},
-    {k:'open',t:'Acik Kalem',h:'(miktar henuz belli degilse)',bare:1,html:`<div class="frow"><label style="display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none"><input type="checkbox" id="s_open" style="width:auto;margin:0" ${v.open?'checked':''} onchange="const t=document.getElementById('s_target');t.disabled=this.checked;if(this.checked)t.value='';"> Miktar henuz belli degil (acik kalem)</label>
+    {k:'open',t:'Acik Kalem',h:'(miktar henuz belli degilse)',bare:1,html:`<div class="frow"><label style="display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none"><input type="checkbox" id="s_open" style="width:auto;margin:0" ${v.open?'checked':''} onchange="const t=document.getElementById('s_target');t.disabled=this.checked;if(this.checked)t.value='';specRevizeOzet();"> Miktar henuz belli degil (acik kalem)</label>
       <p style="font-size:11px;color:var(--dim);font-family:var(--mono);margin-top:5px">Sartnamede olmayan ama bolumu tamamlamak icin gereken sarf malzemeler icin. Alimlar sinirsiz girilir, kalem ilerleme yuzdesine karismaz; miktar netlesince duzenleyip hedef girin.</p></div>`},
+    /* REVIZE DEGISIMI (bkz. specRevize): Hedef Miktar sartnamedeki sayi olarak kalir, revize ayri
+       yazilir; kaydedilen gecerli hedef = ikisinin toplami. Acik kalemde kapali. */
+    {k:'revize',t:'Revize Degisimi',h:'',bare:1,html:`<div class="frow spec-rev"><label>Revize Degisimi  <span class="t-meta">(proje revizyonu: gelen fazla + , giden eksik - · sartname hedefi degismez)</span></label>
+      <div class="spec-rev-satir"><input id="s_revize" inputmode="decimal" autocomplete="off" placeholder="orn. +1 / -2" value="${esc(v.revize?(v.revize>0?'+':'')+String(v.revize):'')}" ${v.open?'disabled':''} oninput="specRevizeOzet()">
+      <input id="s_revizeNot" autocomplete="off" placeholder="revize notu (orn. Rev.B - projede 3 kod var)" value="${esc(v.revizeNot||'')}" ${v.open?'disabled':''}></div>
+      <p id="s_revOzet" class="spec-rev-ozet"></p></div>`},
     {k:'unit',t:'Birim',h:'(kutuphanedeki malzemeden otomatik gelir)',html:`<input id="s_unit" value="${esc(v.unit||'')}" placeholder="malzeme secince otomatik" ${roUnit?'readonly class="ro-auto" title="Birim kutuphanedeki malzemeden gelir - degistirmek icin kutuphanede duzenleyin"':''}>`},
     /* SARTNAME NOTU: kalemin KENDI aciklamasi - kutuphanedeki malzemeye degil bu satira yazilir.
        Ayni malzeme baska sartnamede/pozda bambaska bir notla gecebilir (montaj detayi, revizyon,
@@ -31148,6 +31218,7 @@ function specModalToPage(){
     mat:(window._specMat&&(window._specMat.code||window._specMat.ad))?{...window._specMat}:null,
     poz:gv('s_poz'), ozelNo:gv('s_ozelno'), target:gv('s_target'), unit:gv('s_unit'), note:gv('s_note'),
     open:!!(document.getElementById('s_open')&&document.getElementById('s_open').checked),
+    revize:gv('s_revize'), revizeNot:gv('s_revizeNot'),
     lokRows:(_specLokRows||[]).map(r=>({lokId:r.lokId,target:r.target})),
     ozelPay:specOzPayKopya(_specOzPay)
   });
@@ -31161,6 +31232,8 @@ function openSpecFormPage(idOrNull,vals){
   const row=_specfEmptyRow();
   row.mat=v.mat||null; row.poz=v.poz||''; row.ozelNo=v.ozelNo||'';
   row.target=v.target==null?'':String(v.target); row.unit=v.unit||''; row.note=v.note||''; row.open=!!v.open;
+  // revize gridde sutun degil: modaldan gelen deger satirda tasinir, kayitta _specSaveCore'a gider
+  if(v.revize!==undefined){ row.revize=v.revize; row.revizeNot=v.revizeNot||''; }
   row.lokRows=(v.lokRows||[]).map(r=>({lokId:r.lokId,target:r.target}));
   row.ozelPay=specOzPayKopya(v.ozelPay!==undefined?v.ozelPay:(sp?ozelPaylari(sp):[]));
   _SPECF={ id:sp?sp.id:null, ctx:{bina:PBINA,cat:PCAT,code:PSPEC},
@@ -31411,7 +31484,8 @@ async function specfSaveAll(){
         sayac:sira+' / '+toplam, yuzde:((sira-1)/toplam)*92, alt:perdeAlt() });
       await wperdeNefes();
       const res=await _specSaveCore({ id:f.id||null, bina:f.head.bina, cat:f.head.cat, grup:f.head.grup,
-        mat:r.mat, poz:r.poz, ozelNo:r.ozelNo, target:String(r.target==null?'':r.target), unit:r.unit, note:r.note, open:r.open, lokRowsRaw:r.lokRows, ozelPay:r.ozelPay||[] });
+        mat:r.mat, poz:r.poz, ozelNo:r.ozelNo, target:String(r.target==null?'':r.target), unit:r.unit, note:r.note, open:r.open, lokRowsRaw:r.lokRows, ozelPay:r.ozelPay||[],
+        revize:r.revize, revizeNot:r.revizeNot });
       if(!res.ok){ r.err=res.msg; errC++; wperdeDurum({yuzde:(sira/toplam)*92,alt:perdeAlt()}); continue; }
       r.err=''; r._saved=res.spec; okC++; savedSpecs.push(res.spec);
       wperdeDurum({yuzde:(sira/toplam)*92,alt:perdeAlt()});
@@ -31609,6 +31683,24 @@ function _specLokSync(){
   const t=document.getElementById('s_target'); if(!t)return;
   if(_specLokRows.length){ t.value=_specLokToplam(); t.readOnly=true; t.style.opacity='.6'; }
   else if(t.readOnly){ t.readOnly=false; t.style.opacity=''; }
+  specRevizeOzet();
+}
+// Revize Degisimi kutusu: acik kalemde / parca dagilimli kalemde kapanir, altinda gecerli hedef yazar
+function specRevizeOzet(){
+  const r=document.getElementById('s_revize'), n=document.getElementById('s_revizeNot'), o=document.getElementById('s_revOzet');
+  if(!r||!o) return;
+  const open=!!(document.getElementById('s_open')&&document.getElementById('s_open').checked);
+  const kapali=open?'Acik kalemde revize girilmez - miktar netlesince hedefi yazin'
+    :(_specLokRows||[]).length?'Parca bazinda metraj dagilimi olan kalemde revize girilmez - degisimi ilgili parcanin miktarina yazin':'';
+  r.disabled=!!kapali; if(n) n.disabled=!!kapali;
+  o.classList.remove('hata');
+  if(kapali){ o.textContent=String(r.value).trim()?kapali+' (girilen revize kaydedilmez)':''; return; }
+  const rv=specRevizeParse(r.value);
+  if(rv===null){ o.classList.add('hata'); o.textContent='Revize sayi olmali - orn. +1 ya da -2'; return; }
+  if(!rv){ o.textContent=''; return; }
+  const t=document.getElementById('s_target'), h=Number(t&&t.value)||0, g=Math.round((h+rv)*1e6)/1e6;
+  if(g<0){ o.classList.add('hata'); o.textContent=`Gecerli hedef eksiye duser (${fmtNum(h)} ${rv>0?'+':'-'} ${fmtNum(Math.abs(rv))} = ${fmtNum(g)})`; return; }
+  o.innerHTML=`Gecerli hedef: sartname <b>${fmtNum(h)}</b> ${rv>0?'+':'-'} revize <b>${fmtNum(Math.abs(rv))}</b> = <b>${fmtNum(g)}</b> · ozel kod kirilimi, yuzde ve kalan bu sayiya gore`;
 }
 /* ===== SARTNAME KALEMI - OZEL KOD KIRILIMI PENCERESI ================================
    Siparis satirindaki "Ozel Kod Kirilimi" penceresinin sartname karsiligi: ayni yapistirma
@@ -31963,9 +32055,9 @@ function specOzRender(){
 function specOzAc(){
   const gv=id=>{ const el=document.getElementById(id); return el?el.value:''; };
   const m=window._specMat||{}, open=!!(document.getElementById('s_open')&&document.getElementById('s_open').checked);
-  const tRaw=String(gv('s_target')).trim();
+  const tRaw=String(gv('s_target')).trim(), rev=_specLokRows.length?0:(specRevizeParse(gv('s_revize'))||0);
   sokAc({ctx:'form',pay:_specOzPay,bina:gv('s_bina'),unit:gv('s_unit')||m.unit||'',
-    hedef:(open||tRaw==='')?null:Number(tRaw)||0,
+    hedef:(open||tRaw==='')?null:(Number(tRaw)||0)+rev,   // sinir GECERLI hedef (sartname + revize)
     baslik:m.ad||m.code||'',alt:[m.code,gv('s_grup'),gv('s_bina')].filter(Boolean).join(' · '),
     urunKey:(m.code||m.ad)?ozelUrunKeyOf(m.matId,m.code,m.ad):'',haricId:window._specEditId||null,spId:window._specEditId||null,
     onApply:pay=>{ _specOzPay=pay;
@@ -31979,7 +32071,7 @@ function specOzKayitAc(id){
   const sp=DB.proje.specs.find(s=>s.id===id); if(!sp) return;
   if(!guard('editSpec',{bina:sp.bina})) return;
   if((sp.lokTargets||[]).length){ toast('Bu kalemde parca bazinda metraj dagilimi var - ozel kod kirilimiyla birlikte olmaz. Once Duzenle\'den dagilimi kaldirin','err'); return; }
-  sokAc({ctx:'kayit',pay:ozelPaylari(sp),bina:sp.bina,unit:sp.unit||'',hedef:sp.openQty?null:(Number(sp.target)||0),
+  sokAc({ctx:'kayit',pay:ozelPaylari(sp),bina:sp.bina,unit:sp.unit||'',hedef:sp.openQty?null:(Number(sp.target)||0),   // target = gecerli hedef (revize dahil)
     baslik:sp.name||sp.code||'',alt:[sp.code,specGroupKey(sp),sp.bina].filter(Boolean).join(' · '),
     urunKey:specUrunKeyOf(sp),haricId:sp.id,spId:sp.id,
     onApply:async pay=>{
@@ -31996,7 +32088,9 @@ function specfOzAc(i){
   const f=_SPECF; if(!f) return; const r=f.rows[i]; if(!r) return;
   if((r.lokRows||[]).length){ toast('Bu satirda parca bazinda metraj dagilimi var - ozel kod kirilimiyla birlikte olmaz','err'); return; }
   const m=r.mat||{}, tRaw=String(r.target==null?'':r.target).trim();
-  sokAc({ctx:'grid',pay:r.ozelPay||[],bina:f.head.bina,unit:r.unit||m.unit||'',hedef:(r.open||tRaw==='')?null:Number(tRaw)||0,
+  const fsp=f.id?DB.proje.specs.find(s=>s.id===f.id):null;
+  const rev=r.revize!==undefined?(specRevizeParse(r.revize)||0):(fsp?specRevize(fsp):0);
+  sokAc({ctx:'grid',pay:r.ozelPay||[],bina:f.head.bina,unit:r.unit||m.unit||'',hedef:(r.open||tRaw==='')?null:(Number(tRaw)||0)+rev,
     baslik:m.ad||m.code||'',alt:[m.code,f.head.grup,f.head.bina].filter(Boolean).join(' · '),
     urunKey:(m.code||m.ad)?ozelUrunKeyOf(m.matId,m.code,m.ad):'',haricId:f.id||null,spId:f.id||null,
     onApply:pay=>{ r.ozelPay=pay; if(!r.open&&tRaw===''&&pay.length) r.target=String(ozelPayToplam(pay));
@@ -32093,6 +32187,7 @@ function editSpecMaterial(){
     bina:gv('s_bina'), cat:gv('s_cat'), grup:gv('s_grup'),
     poz:gv('s_poz'), ozelNo:gv('s_ozelno'), target:gv('s_target'), unit:gv('s_unit'), note:gv('s_note'),
     open:!!(document.getElementById('s_open')&&document.getElementById('s_open').checked),
+    revize:gv('s_revize'), revizeNot:gv('s_revizeNot'),
     lokRows:(_specLokRows||[]).map(r=>({lokId:r.lokId,target:r.target})), matId };
   window._afterMatSave=(mt)=>reopenSpecAfterMat(mt);
   window._matReturn=()=>reopenSpecAfterMat(getMaterial(matId));
@@ -32115,6 +32210,8 @@ function reopenSpecAfterMat(mt){
   const nt=document.getElementById('s_note'); if(nt)nt.value=r.note||'';
   const o=document.getElementById('s_open'); if(o)o.checked=!!r.open;
   const t=document.getElementById('s_target'); if(t){ t.disabled=!!r.open; t.value=r.open?'':(r.target||''); }
+  const rv=document.getElementById('s_revize'); if(rv) rv.value=r.revize||'';
+  const rn=document.getElementById('s_revizeNot'); if(rn) rn.value=r.revizeNot||'';
   const u=document.getElementById('s_unit'); if(u){ if(mt&&mt.unit){u.value=mt.unit;u.setAttribute('readonly','');u.classList.add('ro-auto');} else {u.removeAttribute('readonly');u.classList.remove('ro-auto');u.value=r.unit||'';} }
   _specLokRows=(r.lokRows||[]).filter(x=>{ const l=getLok(x.lokId); return l&&l.bina===r.bina; }).map(x=>({lokId:x.lokId,target:x.target}));
   specLokRender();
@@ -32196,8 +32293,19 @@ async function _specSaveCore(v){
      korunur (siparis atamasi, Excel disi yollar alani bilmez). Toplami hedefi asamaz, ayni urunun baska
      kaleminde bulunan kod yazilamaz, parca bazinda metraj dagilimiyla birlikte olmaz. */
   const prevOz=id?DB.proje.specs.find(s=>s.id===id):null;
+  /* REVIZE DEGISIMI (bkz. specRevize): v.target SARTNAME sayisidir, gecerli hedef = target + revize.
+     v.revize verilmemisse (alani bilmeyen yol) kalemin mevcut revizesi korunur. Acik kalemde
+     revize yok sayilir ve silinir; parca bazinda dagilimli kalemde girilemez. */
+  const eskiRevize=prevOz?specRevize(prevOz):0;
+  const revGiris=v.revize!==undefined?v.revize:eskiRevize;
+  let revize=specRevizeParse(revGiris);
+  if(revize===null){return {ok:false,msg:"Revize Degisimi sayi olmali - orn. +1 (gelen fazla) ya da -2 (giden eksik)"};}
+  const revizeNot=String(v.revizeNot!==undefined?(v.revizeNot||''):((prevOz&&prevOz.revizeNot)||'')).trim();
+  if(openQty) revize=0;
+  if(revize&&lokRows.length){return {ok:false,msg:"Parca bazinda metraj dagilimi olan kalemde revize girilmez - degisimi ilgili parcanin miktarina yazin ya da revizeyi silin"};}
+  if(!openQty&&!lokRows.length&&Number(target)+revize<-1e-9){return {ok:false,msg:`Revize sonrasi hedef eksiye duser (sartname ${fmtNum(Number(target))}, revize ${specRevizeYaz(revize)})`};}
   const ozelGiris=v.ozelPay!==undefined?v.ozelPay:(prevOz?ozelPaylari(prevOz):[]);
-  const hedefSinir=openQty?null:(lokRows.length?lokRows.reduce((s,r)=>s+r.target,0):Number(target));
+  const hedefSinir=openQty?null:(lokRows.length?lokRows.reduce((s,r)=>s+r.target,0):Math.round((Number(target)+revize)*1e6)/1e6);
   const ozel=specOzelPayTemizle(ozelGiris,hedefSinir,ozelGiris.length?specOzelTekrarIndex(id,ozelUrunKeyOf(mat.matId,code,name)):null);
   if(!ozel.ok){return {ok:false,msg:ozel.msg};}
   if(ozel.pay.length&&lokRows.length){return {ok:false,msg:"Parca bazinda metraj dagilimi ile ozel kod kirilimi ayni kalemde birlikte olmaz - kodlarin kati Kod Defteri'nden gelir; birini kaldirin"};}
@@ -32206,12 +32314,13 @@ async function _specSaveCore(v){
   if(!mt) mt=ensureMaterial({code,name,unit:mat.unit,cat,brand:mat.brand,img:mat.img,standart:mat.standart,weight:mat.weight,tags:mat.tags});
   // bolum, malzemenin degil kalemin ozelligi: ayni malzeme (orn. krose) farkli bolumlerde kullanilabilir
   // parcali dagilim girildiyse hedef = dagilim toplami (toplama zinciri: oda->fragment->kat->sartname)
-  const finalTarget=openQty?0:(lokRows.length?lokRows.reduce((s,r)=>s+r.target,0):Number(target));
+  const finalTarget=openQty?0:(lokRows.length?lokRows.reduce((s,r)=>s+r.target,0):Math.round((Number(target)+revize)*1e6)/1e6);
   // v.ref: SIPARIS ATAMASI ile acilan "karsilik kalem"in kaynak izi (refBina/refSart/refSpecId).
   // En sonda yayilir; kalemin kendi alanlarini degil yalnizca ek kunye alanlarini tasir.
   const data={cat,name:mt.name,code:mt.code,brand:mt.brand||'',target:finalTarget,unit:unitInput||mt.unit||mat.unit||'',bina,grup,poz,ozelNo,note,
     standart:mt.standart||'',weight:mt.weight!=null?mt.weight:null,tags:(mt.tags||[]).slice(),img:mt.img||null,matId:mt.id,openQty,lokTargets:lokRows,
     ...(ozel.pay.length?{ozelPay:ozel.pay}:{}),
+    ...(revize?{revize}:{}), ...(revize&&revizeNot?{revizeNot}:{}),
     ...(v.ref&&typeof v.ref==='object'?v.ref:{})};
   // ACIK KALEM degismezi: openQty ise exclude de true olur (tum yuzde hesaplari exclude'u atladigi
   // icin acik kalem hicbir toplami bozamaz). Acik kalemden normale donuste otomatik konan exclude kalkar.
@@ -32221,13 +32330,15 @@ async function _specSaveCore(v){
   let specEntity;
   if(id){
     const sp=prevSp; Object.assign(sp,data); if(!ozel.pay.length) delete sp.ozelPay; specEntity=sp;
+    if(!revize){ delete sp.revize; delete sp.revizeNot; } else if(!revizeNot) delete sp.revizeNot;
     await sbUpdateProjeSpec(id,{...sp});
   } else {
     specEntity={id:uid(),...data};
     await sbInsertProjeSpec(specEntity);
     DB.proje.specs.push(specEntity);
   }
-  logAction('editSpec',(id?'Guncelleme: ':'Ekleme: ')+(code||name)+' / '+bina+' / '+grup);
+  logAction('editSpec',(id?'Guncelleme: ':'Ekleme: ')+(code||name)+' / '+bina+' / '+grup
+    +(revize!==eskiRevize?` · revize ${eskiRevize?specRevizeYaz(eskiRevize):'0'} -> ${revize?specRevizeYaz(revize):'0'}${revize&&revizeNot?' ('+revizeNot+')':''}`:''));
   return {ok:true,spec:specEntity};
 }
 // MODAL kaydetmesi: degerleri DOM'dan toplar, cekirdekten gecirir - davranis eskisiyle birebir
@@ -32243,6 +32354,8 @@ async function saveSpec(id){ if(!guard('editSpec'))return;
     unit:document.getElementById('s_unit').value,
     note:document.getElementById('s_note')?document.getElementById('s_note').value:'',
     open:!!(document.getElementById('s_open')&&document.getElementById('s_open').checked),
+    revize:document.getElementById('s_revize')?document.getElementById('s_revize').value:undefined,
+    revizeNot:document.getElementById('s_revizeNot')?document.getElementById('s_revizeNot').value:undefined,
     lokRowsRaw:_specLokRows, ozelPay:_specOzPay });
   if(!res.ok){ toast(res.msg,"err"); return; }
   closeModal(); render(); toast("Sartname kalemi kaydedildi");
@@ -32359,6 +32472,7 @@ function openSpecDetail(id){
           </div>
           <div class="spec-detail-grup">${icoDoc()} ${esc(specGroupKey(sp))}</div>
           ${sp.note?`<div class="spec-note-box"><div class="spec-note-h">${icoNot()} SARTNAME NOTU</div><div class="spec-note-tx">${esc(sp.note)}</div></div>`:''}
+          ${specRevize(sp)?`<div class="spec-rev-box"><b>REVIZE DEGISIMI</b> · sartname ${fmtNum(specSartHedef(sp))} ${specRevize(sp)>0?'+':'-'} ${fmtNum(Math.abs(specRevize(sp)))} = gecerli hedef <b>${fmtNum(sp.target)} ${esc(sp.unit||'')}</b>${sp.revizeNot?` · ${esc(sp.revizeNot)}`:''}</div>`:''}
           ${open?`<div class="ex-notice" style="border-color:var(--blue)44;color:var(--blue)">Acik kalem - miktar henuz belli degil. Alimlar sinirsiz girilir, kalem ilerleme yuzdesine karismaz; miktar netlesince Duzenle'den hedef girin.</div>`:sp.exclude?`<div class="ex-notice">${icoExclude()} Bu kalem ilerleme yuzdesine dahil edilmiyor (onay bekliyor)</div>`:''}
           ${open?'':`<div class="spec-detail-pct" style="color:${done?'var(--green)':c2}">${pct.toFixed(1)}%<span style="font-size:13px;color:var(--mute);font-weight:400"> tamamlandi</span></div>
           <div class="bar" style="height:10px"><i style="width:${pct}%;background:${done?'var(--green)':c2}"></i></div>`}
