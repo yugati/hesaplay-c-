@@ -13738,7 +13738,9 @@ function renderAllOrders(){
     </div>
     ${tabs}
     <div class="toolbar">${searchBox('Siparis no, bina, urun, sirket ara...')}
-      <button class="btn btn-grid" onclick="exportAllOrdersExcel()">${icoXls()} Excel</button></div>
+      <button class="btn btn-grid" onclick="exportAllOrdersExcel()" title="Eslesen siparislerin TUM satirlari">${icoXls()} Excel</button>
+      <button class="btn btn-grid" onclick="exportOrdersOzelExcel()" title="Yalniz filtreye/aramaya uyan malzeme satirlari + malzeme ozeti (toplam miktar, hangi siparislerde)">${icoXls()} Ozel Indir</button>
+      <button class="btn btn-grid" onclick="openOrdersPdfBirlestir()" title="Filtrelenmis siparislerin fatura PDF'lerini sirayla tek PDF'te birlestirir">${icoDoc()} Faturalar PDF</button></div>
     ${filterbar}
     ${sumline}
     ${cards}`;
@@ -13797,6 +13799,224 @@ function exportAllOrdersExcel(){
   const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:14},{wch:12},{wch:10},{wch:20},{wch:22},{wch:16},{wch:42},{wch:10},{wch:8},{wch:22}];
   XLSX.utils.book_append_sheet(wb,ws,"Siparisler"); XLSX.writeFile(wb,`Siparisler_${ORDBINA||'tum'}_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel indirildi");
+}
+/* OZEL INDIR (Tum Siparisler): normal Excel eslesen siparislerin TUM satirlarini indirir;
+   bu ise yalniz FILTREYE UYAN SATIRLARI (malzemeleri). Siparis duzeyi suzgecler (bina,
+   sirket, tarih, pdf, tur) allOrdersFiltered'da zaten uygulandi; burada satir duzeyi olanlar
+   (bolum, sartname, malzeme, kod, etiket, arama) her satira tek tek uygulanir.
+   Arama siparisi satirdan degil siparis no/bina/sirket/nottan tuttuysa o siparisin
+   satirlari arama yuzunden elenmez (yoksa siparis ekranda olur ama dosyada bos kalirdi). */
+function ordSatirSuzgeci(){
+  const etk=ORDF.tag?ordEtiketCozucu():null;
+  const qS=SEARCH?norm(SEARCH).trim().replace(/\s+/g,''):'';
+  const qM=ORDF.mat?norm(ORDF.mat).trim():'', qK=ORDF.code?norm(ORDF.code).trim():'';
+  const araTut=l=>norm((l.ad||'')+' '+(l.code||'')).replace(/\s+/g,'').indexOf(qS)>=0;
+  return o=>{
+    const lines=o.lines||[];
+    const aramaSatirda=qS&&lines.some(araTut);
+    return lines.filter(l=>{
+      if(ORDF.sart && (l.grup||o.grup||'')!==ORDF.sart) return false;
+      if(ORDF.sec){ const sp=orderLineSpec(l); if(!(sp&&(sp.cat||'')===ORDF.sec)) return false; }
+      if(qM && norm(l.ad||'').indexOf(qM)<0) return false;
+      if(qK && norm(l.code||'').indexOf(qK)<0) return false;
+      if(etk && !ordEtiketUyar(etk,l,ORDF.tag)) return false;
+      if(aramaSatirda && !araTut(l)) return false;
+      return true;
+    });
+  };
+}
+function exportOrdersOzelExcel(){
+  const list=allOrdersFiltered();
+  if(!list.length){toast("Siparis yok","err");return;}
+  const suz=ordSatirSuzgeci(), etk=ordEtiketCozucu();
+  const satirlar=[]; list.forEach(o=>suz(o).forEach(l=>satirlar.push({o,l})));
+  if(!satirlar.length){toast("Filtreye uyan satir yok","err");return;}
+  // 1) Satirlar: her siparis satiri ayri
+  const r1=[["Siparis No","Tarih","Bina","Sirket","Sartname","Spek No","Malzeme","Miktar","Birim","Etiket"]];
+  satirlar.forEach(({o,l})=>r1.push([o.no,fmtDate(o.date),o.bina||'',orderCompany(o),l.grup||o.grup||'',l.code||'',l.ad||'',Number(l.qty)||0,l.unit||'',etk(l).join(', ')]));
+  // 2) Malzeme Ozeti: ayni urun (stok kodu kimlik, kodsuzda ad - matKey) + birim tek satirda toplanir
+  const grp=new Map();
+  satirlar.forEach(({o,l})=>{ const k=matKey(l.code,l.ad)+'|'+_kimlikTemiz(l.unit);
+    let g=grp.get(k); if(!g){ g={code:l.code||'',ad:l.ad||'',unit:l.unit||'',qty:0,nolar:new Set(),etiket:etk(l)}; grp.set(k,g); }
+    g.qty+=Number(l.qty)||0; g.nolar.add(o.no||'(no yok)'); });
+  const r2=[["Spek No","Malzeme","Birim","Toplam Miktar","Siparis Sayisi","Siparisler","Etiket"]];
+  [...grp.values()].sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'tr'))
+    .forEach(g=>r2.push([g.code,g.ad,g.unit,g.qty,g.nolar.size,[...g.nolar].join(', '),g.etiket.join(', ')]));
+  // 3) Filtre: dosyanin hangi suzgecle alindigi (sonradan bakana iz)
+  const r3=[["Filtre","Deger"],...ordFiltreOzeti()];
+  if(r3.length===1) r3.push(['(filtre yok)','tum siparis satirlari']);
+  r3.push([],['Siparis',list.length],['Satir',satirlar.length],['Farkli malzeme',grp.size],['Alinma tarihi',new Date().toLocaleString('tr-TR')]);
+  const wb=XLSX.utils.book_new();
+  const ws1=XLSX.utils.aoa_to_sheet(r1); ws1['!cols']=[{wch:14},{wch:12},{wch:10},{wch:20},{wch:22},{wch:16},{wch:42},{wch:10},{wch:8},{wch:22}];
+  const ws2=XLSX.utils.aoa_to_sheet(r2); ws2['!cols']=[{wch:16},{wch:48},{wch:8},{wch:14},{wch:12},{wch:40},{wch:22}];
+  const ws3=XLSX.utils.aoa_to_sheet(r3); ws3['!cols']=[{wch:20},{wch:40}];
+  XLSX.utils.book_append_sheet(wb,ws1,"Satirlar"); XLSX.utils.book_append_sheet(wb,ws2,"Malzeme Ozeti"); XLSX.utils.book_append_sheet(wb,ws3,"Filtre");
+  XLSX.writeFile(wb,`Siparis_Ozel_${ORDBINA||'tum'}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast(`Ozel indirme: ${satirlar.length} satir, ${grp.size} malzeme`);
+}
+// uygulanan Tum Siparisler suzgecleri [[ad,deger]] - indirilen dosyalarda "hangi filtreyle alindi" izi
+function ordFiltreOzeti(){
+  const fAd={sec:'Bolum',sart:'Sartname',mat:'Malzeme',code:'Urun Kodu',tag:'Urun Etiketi',comp:'Sirket',from:'Tarih (baslangic)',to:'Tarih (bitis)',pdf:'Fatura PDF',tur:'Siparis Turu'};
+  const r=[];
+  if(SEARCH) r.push(['Arama',SEARCH]);
+  if(ORDBINA) r.push(['Bina',ORDBINA]);
+  Object.keys(fAd).forEach(k=>{ if(ORDF[k]) r.push([fAd[k],k==='tag'&&ORDF[k]==='__etiketsiz'?'Etiketsiz':ORDF[k]]); });
+  return r;
+}
+/* ═══ FATURA PDF'LERINI BIRLESTIR (Tum Siparisler) ═════════════════════════════════════
+   Filtrelenmis siparislerin fatura PDF'leri (o.pdf; istenirse iade fisleri o.iadeler[].pdf)
+   ekrandaki sirayla TEK PDF'te birlestirilir. PDF'ler ozel "belgeler" kovasinda: her biri
+   imzali adresle (sbBelgeUrl) tarayiciya indirilir - yani EGRESS harcar; pencere bu yuzden
+   once kac belge / kac MB inecegini gosterir. Birlestirme tamamen tarayicida, pdf-lib ile
+   (pdf.js gibi cdnjs'ten yalniz burada yuklenir - acilis paketine girmez).
+   Icindekiler sayfasi tuvale (canvas) cizilip resim olarak eklenir: pdf-lib'in standart
+   yazi tipleri Kiril/Turkce harf yazamaz, tuval sistem yazi tipini kullanir.
+   PDF'i olmayan / acilamayan siparis atlanir ama icindekilerde "PDF yok" diye satiri kalir. */
+let _OPDF=null;
+const OPDF_SATIR=34;           // icindekiler: sayfa basina satir
+const OPDF_A4=[595.28,841.89]; // pt
+function loadPdfLib(){
+  if(window.PDFLib) return Promise.resolve(window.PDFLib);
+  return new Promise((res,rej)=>{ const s=document.createElement('script');
+    s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+    s.onload=()=>window.PDFLib?res(window.PDFLib):rej(new Error('PDF birlestirme motoru yuklenemedi'));
+    s.onerror=()=>rej(new Error('PDF birlestirme motoru yuklenemedi (internet gerekli)'));
+    document.head.appendChild(s); });
+}
+const opdfVar=p=>!!(p&&!p.yukleniyor&&(p.path||p.data));
+/* Birlestirilecek girdiler, siparis sirasiyla: {o, pdf, etiket, iade, tekrar}. PDF'i olmayan
+   siparis {o, yok:true} olarak kalir (icindekilerde gorunsun). Ayni PDF iki siparise
+   eklenmisse ikinci kez indirilmez/basilmaz, ilkinin sayfasini gosterir (tekrar). */
+function opdfGirdiler(sira,iadeDahil){
+  const list=allOrdersFiltered(); if(sira==='eski') list.reverse();
+  const out=[], gor=new Map();
+  const ekle=(o,pdf,etiket,iade)=>{ const k=pdf.path||pdf.data;
+    if(gor.has(k)){ out.push({o,pdf,etiket,iade,tekrar:gor.get(k)}); return; }
+    const g={o,pdf,etiket,iade}; gor.set(k,g); out.push(g); };
+  list.forEach(o=>{
+    if(opdfVar(o.pdf)) ekle(o,o.pdf,o.no||'(no yok)',false); else out.push({o,etiket:o.no||'(no yok)',yok:true});
+    if(iadeDahil) orderIadeler(o).forEach(ia=>{ if(opdfVar(ia.pdf)) ekle(o,ia.pdf,(o.no||'')+' · İade '+(ia.no||''),true); });
+  });
+  return {list,girdiler:out};
+}
+function openOrdersPdfBirlestir(){
+  if(!allOrdersFiltered().length){ toast('Siparis yok','err'); return; }
+  if(!_OPDF) _OPDF={sira:'ekran',icindekiler:true,iade:false};
+  _OPDF.calisiyor=false;
+  closeModal();
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg" onclick="if(event.target===this&&!_OPDF.calisiyor)closeModal()"><div class="modal" style="max-width:560px">
+    <div class="modal-head"><h3>Fatura PDF'lerini Birlestir</h3><button class="mini-btn" onclick="if(!_OPDF.calisiyor)closeModal()">x</button></div>
+    <div class="modal-body" id="opdfGovde"></div>
+    <div class="modal-foot"><button class="btn btn-ghost" style="margin-right:auto" onclick="if(!_OPDF.calisiyor)closeModal()">Vazgec</button>
+      <button class="btn btn-add" id="opdfBtn" onclick="ordPdfBirlestir()">${icoDoc()} PDF Olustur</button></div>
+  </div></div>`);
+  opdfCiz();
+}
+function opdfSet(k,v){ if(!_OPDF||_OPDF.calisiyor) return; _OPDF[k]=v; opdfCiz(); }
+function opdfCiz(){
+  const el=document.getElementById('opdfGovde'); if(!el||!_OPDF) return;
+  const st=_OPDF, {list,girdiler}=opdfGirdiler(st.sira,st.iade);
+  const inecek=girdiler.filter(g=>g.pdf&&!g.tekrar);
+  const yok=girdiler.filter(g=>g.yok);
+  const iadeSay=list.reduce((s,o)=>s+orderIadeler(o).filter(ia=>opdfVar(ia.pdf)).length,0);
+  const bayt=inecek.reduce((s,g)=>s+(Number(g.pdf.size)||0),0);
+  const boyutBilinmez=inecek.some(g=>!(Number(g.pdf.size)>0));
+  const mb=bayt?` · ${boyutBilinmez?'en az ':''}~${(bayt/1048576).toFixed(1)} MB indirilecek`:'';
+  const secenek=(k,v,ad)=>`<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="opdfSira" ${st.sira===v?'checked':''} onchange="opdfSet('${k}','${v}')">${ad}</label>`;
+  el.innerHTML=`
+    <div class="ord-sumline" style="margin:0 0 12px"><b>${fmtNum(list.length)}</b> siparis · <b>${fmtNum(inecek.length)}</b> PDF birlestirilecek${mb}</div>
+    ${yok.length?`<p class="mdp-bosbilgi" style="margin-bottom:12px">${icoInfoSm()}<span><b>${yok.length}</b> sipariste PDF yok - atlanir${st.icindekiler?', icindekilerde "PDF yok" diye yazar':''}: ${esc(yok.slice(0,8).map(g=>g.etiket).join(', '))}${yok.length>8?` +${yok.length-8}`:''}</span></p>`:''}
+    <div style="display:grid;gap:10px;font-size:13px">
+      <div><div class="t-meta" style="margin-bottom:6px">Sira</div>
+        <div style="display:flex;gap:18px;flex-wrap:wrap">${secenek('sira','ekran','Ekrandaki sira (yeniden eskiye)')}${secenek('sira','eski','Eskiden yeniye')}</div></div>
+      <label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" ${st.icindekiler?'checked':''} onchange="opdfSet('icindekiler',this.checked)">Basa icindekiler sayfasi ekle <span class="t-meta">(siparis no → sayfa)</span></label>
+      ${iadeSay?`<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" ${st.iade?'checked':''} onchange="opdfSet('iade',this.checked)">Iade fislerinin PDF'lerini de ekle <span class="t-meta">(${iadeSay} belge, kendi siparisinin arkasina)</span></label>`:''}
+    </div>
+    <div class="t-meta" id="opdfDurum" style="margin-top:14px;min-height:18px"></div>`;
+  const btn=document.getElementById('opdfBtn'); if(btn) btn.disabled=!inecek.length;
+}
+function opdfDurum(t){ const el=document.getElementById('opdfDurum'); if(el) el.textContent=t; }
+async function opdfBaytlar(pdf){
+  const url=pdf.path?await window.sbBelgeUrl(pdf.path):pdf.data;
+  const r=await fetch(url); if(!r.ok) throw new Error('indirilemedi ('+r.status+')');
+  return r.arrayBuffer();
+}
+function opdfKisalt(g,s,w){ s=String(s||''); if(g.measureText(s).width<=w) return s;
+  while(s.length>1&&g.measureText(s+'…').width>w) s=s.slice(0,-1); return s+'…'; }
+// icindekiler sayfalari: A4 @150dpi tuval -> PNG baytlari
+function opdfIcindekilerPng(satirlar,altBaslik){
+  const W=1240,H=1754,sol=90,sag=1150,ust=250,sh=40, yazi='system-ui,"Segoe UI",Arial,sans-serif';
+  const kol=[{x:sol,w:46,ad:'#'},{x:sol+46,w:290,ad:'Sipariş No'},{x:sol+336,w:140,ad:'Tarih'},{x:sol+476,w:140,ad:'Bina'},{x:sol+616,w:320,ad:'Şirket'}];
+  const sayfaSay=Math.max(1,Math.ceil(satirlar.length/OPDF_SATIR)), simdi=new Date(), out=[];
+  for(let p=0;p<sayfaSay;p++){
+    const c=document.createElement('canvas'); c.width=W; c.height=H; const g=c.getContext('2d');
+    g.fillStyle='#fff'; g.fillRect(0,0,W,H); g.textBaseline='alphabetic';
+    g.fillStyle='#1f2937'; g.font='bold 44px '+yazi; g.fillText('Sipariş Faturaları',sol,130);
+    g.fillStyle='#6b7280'; g.font='22px '+yazi; g.fillText(opdfKisalt(g,altBaslik,sag-sol),sol,172);
+    g.fillStyle='#333'; g.fillRect(sol,ust-34,sag-sol,2);
+    g.font='bold 20px '+yazi; g.fillStyle='#374151';
+    kol.forEach(k=>g.fillText(k.ad,k.x,ust-8)); g.textAlign='right'; g.fillText('Sayfa',sag,ust-8); g.textAlign='left';
+    satirlar.slice(p*OPDF_SATIR,(p+1)*OPDF_SATIR).forEach((r,i)=>{
+      const y=ust+(i+1)*sh-12;
+      if(i%2===0){ g.fillStyle='#f3f4f6'; g.fillRect(sol,y-27,sag-sol,sh); }
+      g.font=(r.iade?'italic ':'')+'20px '+yazi; g.fillStyle=r.sayfa?'#1f2937':'#9ca3af';
+      [r.sira,r.no,r.tarih,r.bina,r.sirket].forEach((v,j)=>g.fillText(opdfKisalt(g,v,kol[j].w-12),kol[j].x,y));
+      g.textAlign='right'; g.font=(r.sayfa?'bold ':'')+'20px '+yazi; g.fillText(r.sayfa?String(r.sayfa):(r.not||''),sag,y); g.textAlign='left';
+    });
+    g.fillStyle='#9ca3af'; g.font='18px '+yazi;
+    g.fillText(`${fmtDate(simdi)} ${String(simdi.getHours()).padStart(2,'0')}:${String(simdi.getMinutes()).padStart(2,'0')} · ${(CURRENT_USER&&CURRENT_USER.username)||''}`,sol,H-70);
+    g.textAlign='right'; g.fillText(`İçindekiler ${p+1} / ${sayfaSay}`,sag,H-70); g.textAlign='left';
+    const bin=atob(c.toDataURL('image/png').split(',')[1]), u=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
+    out.push(u);
+  }
+  return out;
+}
+async function ordPdfBirlestir(){
+  const st=_OPDF; if(!st||st.calisiyor) return;
+  const {girdiler}=opdfGirdiler(st.sira,st.iade);
+  const inecek=girdiler.filter(g=>g.pdf&&!g.tekrar);
+  if(!inecek.length){ toast('Birlestirilecek PDF yok','err'); return; }
+  st.calisiyor=true;
+  const btn=document.getElementById('opdfBtn'); if(btn) btn.disabled=true;
+  document.querySelectorAll('#opdfGovde input').forEach(i=>i.disabled=true);
+  const bitir=()=>{ st.calisiyor=false; if(btn) btn.disabled=false; document.querySelectorAll('#opdfGovde input').forEach(i=>i.disabled=false); };
+  let L;
+  try{ opdfDurum('PDF motoru yukleniyor…'); L=await loadPdfLib(); }
+  catch(e){ toast(e.message,'err'); opdfDurum(e.message); bitir(); return; }
+  // 3'erli paralel indirme: imzali adres + dosya; bozuk/sifreli olan atlanir, nedeni yazilir
+  let sira=0, bitti=0;
+  const isci=async()=>{ while(sira<inecek.length){ const g=inecek[sira++];
+    try{ g.doc=await L.PDFDocument.load(await opdfBaytlar(g.pdf),{ignoreEncryption:true}); }
+    catch(e){ g.hata=(e&&e.message)||'acilamadi'; console.warn('PDF birlestir',g.etiket,e); }
+    opdfDurum(`Belgeler indiriliyor ${++bitti} / ${inecek.length}`); } };
+  await Promise.all([isci(),isci(),isci()]);
+  try{
+    opdfDurum('Birlestiriliyor…');
+    const out=await L.PDFDocument.create();
+    let sayfa=0;
+    for(const g of inecek){ if(!g.doc) continue;
+      try{ const ps=await out.copyPages(g.doc,g.doc.getPageIndices()); g.ilk=sayfa+1; ps.forEach(pg=>out.addPage(pg)); sayfa+=ps.length; }
+      catch(e){ g.hata=(e&&e.message)||'kopyalanamadi'; console.warn('PDF birlestir',g.etiket,e); } }
+    if(!sayfa) throw new Error('Hicbir PDF acilamadi');
+    if(st.icindekiler){
+      const filtre=ordFiltreOzeti().map(([a,v])=>a+': '+v).join(' · ')||'Filtre yok - tüm siparişler';
+      const icP=Math.max(1,Math.ceil(girdiler.length/OPDF_SATIR));
+      const satirlar=girdiler.map((g,i)=>{ const kaynak=g.tekrar||g;
+        return {sira:i+1,no:g.etiket,tarih:fmtDate(g.iade?(orderIadeler(g.o).find(ia=>ia.pdf===g.pdf)||{}).tarih:g.o.date),bina:g.o.bina||'',sirket:orderCompany(g.o),iade:g.iade,
+          sayfa:kaynak.ilk?kaynak.ilk+icP:0, not:g.yok?'PDF yok':(kaynak.hata?'açılamadı':'')}; });
+      const pngs=opdfIcindekilerPng(satirlar,filtre);
+      for(let i=0;i<pngs.length;i++){ const img=await out.embedPng(pngs[i]); const pg=out.insertPage(i,OPDF_A4);
+        pg.drawImage(img,{x:0,y:0,width:OPDF_A4[0],height:OPDF_A4[1]}); }
+    }
+    const blob=new Blob([await out.save()],{type:'application/pdf'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+    a.download=`Siparis_Faturalari_${ORDBINA||'tum'}_${new Date().toISOString().slice(0,10)}.pdf`;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),60000);
+    const hatali=inecek.filter(g=>g.hata);
+    bitir(); closeModal();
+    toast(hatali.length?`PDF indirildi - ${hatali.length} belge acilamadi: ${hatali.slice(0,3).map(g=>g.etiket).join(', ')}${hatali.length>3?'…':''}`:`PDF indirildi: ${inecek.length} belge, ${sayfa} sayfa`,hatali.length?'warn':undefined);
+  }catch(e){ console.error('PDF birlestir',e); toast('PDF olusturulamadi: '+((e&&e.message)||e),'err'); opdfDurum('Hata: '+((e&&e.message)||e)); bitir(); }
 }
 /* ═══ MALZEME TESLIMAT MUTABAKATI (Tum Siparisler 3. sekme) ═══════════════════════════
    Secilen TEDARIKCI firmadan, secilen TARIHE KADAR (istenirse bir donem basindan itibaren)
