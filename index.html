@@ -13890,18 +13890,20 @@ const opdfVar=p=>!!(p&&!p.yukleniyor&&(p.path||p.data));
 function opdfGirdiler(sira,iadeDahil){
   const list=allOrdersFiltered(); if(sira==='eski') list.reverse();
   const out=[], gor=new Map();
-  const ekle=(o,pdf,etiket,iade)=>{ const k=pdf.path||pdf.data;
-    if(gor.has(k)){ out.push({o,pdf,etiket,iade,tekrar:gor.get(k)}); return; }
-    const g={o,pdf,etiket,iade}; gor.set(k,g); out.push(g); };
+  // ia: iade fisi girdisinde fisin kendisi (tarih + iade edilen satirlar detay tablosunda kullanilir)
+  const ekle=(o,pdf,etiket,ia)=>{ const k=pdf.path||pdf.data, iade=!!ia;
+    if(gor.has(k)){ out.push({o,pdf,etiket,iade,ia,tekrar:gor.get(k)}); return; }
+    const g={o,pdf,etiket,iade,ia}; gor.set(k,g); out.push(g); };
   list.forEach(o=>{
-    if(opdfVar(o.pdf)) ekle(o,o.pdf,o.no||'(no yok)',false); else out.push({o,etiket:o.no||'(no yok)',yok:true});
-    if(iadeDahil) orderIadeler(o).forEach(ia=>{ if(opdfVar(ia.pdf)) ekle(o,ia.pdf,(o.no||'')+' · İade '+(ia.no||''),true); });
+    if(opdfVar(o.pdf)) ekle(o,o.pdf,o.no||'(no yok)',null); else out.push({o,etiket:o.no||'(no yok)',yok:true});
+    if(iadeDahil) orderIadeler(o).forEach(ia=>{ if(opdfVar(ia.pdf)) ekle(o,ia.pdf,(o.no||'')+' · İade '+(ia.no||''),ia); });
   });
   return {list,girdiler:out};
 }
 function openOrdersPdfBirlestir(){
   if(!allOrdersFiltered().length){ toast('Siparis yok','err'); return; }
-  if(!_OPDF) _OPDF={sira:'ekran',icindekiler:true,iade:false};
+  if(!_OPDF){ let kayitli={}; try{ kayitli=JSON.parse(localStorage.getItem('opdfAyar')||'{}')||{}; }catch(_){}
+    _OPDF={...OPDF_VARSAYILAN,...kayitli}; }
   _OPDF.calisiyor=false;
   closeModal();
   document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg" onclick="if(event.target===this&&!_OPDF.calisiyor)closeModal()"><div class="modal" style="max-width:560px">
@@ -13912,7 +13914,14 @@ function openOrdersPdfBirlestir(){
   </div></div>`);
   opdfCiz();
 }
-function opdfSet(k,v){ if(!_OPDF||_OPDF.calisiyor) return; _OPDF[k]=v; opdfCiz(); }
+/* Ayarlar kullanici basina tarayicida hatirlanir (pano widget duzeni gibi): detay tablosunu
+   yalniz isteyen acar, acan bir dahaki sefere ayni ayarla bulur. */
+const OPDF_VARSAYILAN={sira:'ekran',icindekiler:true,iade:false,detay:false,detayKapsam:'filtre',detaySart:false,detayEtiket:false};
+function opdfSet(k,v){ if(!_OPDF||_OPDF.calisiyor) return; _OPDF[k]=v;
+  try{ const kayit={}; Object.keys(OPDF_VARSAYILAN).forEach(x=>kayit[x]=_OPDF[x]); localStorage.setItem('opdfAyar',JSON.stringify(kayit)); }catch(_){}
+  opdfCiz(); }
+// detay tablosunda "filtreye uyan" ile "tum" ayrimi yalniz satir duzeyi bir suzgec varken anlamlidir
+function opdfSatirSuzgeciVar(){ return !!(SEARCH||ORDF.sart||ORDF.sec||ORDF.mat||ORDF.code||ORDF.tag); }
 function opdfCiz(){
   const el=document.getElementById('opdfGovde'); if(!el||!_OPDF) return;
   const st=_OPDF, {list,girdiler}=opdfGirdiler(st.sira,st.iade);
@@ -13922,15 +13931,27 @@ function opdfCiz(){
   const bayt=inecek.reduce((s,g)=>s+(Number(g.pdf.size)||0),0);
   const boyutBilinmez=inecek.some(g=>!(Number(g.pdf.size)>0));
   const mb=bayt?` · ${boyutBilinmez?'en az ':''}~${(bayt/1048576).toFixed(1)} MB indirilecek`:'';
-  const secenek=(k,v,ad)=>`<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="opdfSira" ${st.sira===v?'checked':''} onchange="opdfSet('${k}','${v}')">${ad}</label>`;
+  const secenek=(k,v,ad)=>`<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="opdf_${k}" ${st[k]===v?'checked':''} onchange="opdfSet('${k}','${v}')">${ad}</label>`;
+  const kutu=(k,ad,ek)=>`<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" ${st[k]?'checked':''} onchange="opdfSet('${k}',this.checked)">${ad}${ek?` <span class="t-meta">${ek}</span>`:''}</label>`;
+  const detaySatir=st.detay?opdfDetayBloklar(girdiler,st).reduce((s,b)=>s+b.satirlar.length,0):0;
+  const detayPanel=st.detay?`<div style="margin-left:26px;display:grid;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:8px">
+      <div><div class="t-meta" style="margin-bottom:6px">Hangi urunler</div>
+        <div style="display:flex;gap:18px;flex-wrap:wrap">${secenek('detayKapsam','filtre','Yalniz filtreye uyan urunler')}${secenek('detayKapsam','tum','Siparisin tum urunleri')}</div>
+        ${opdfSatirSuzgeciVar()?'':'<div class="t-meta" style="margin-top:4px">Su an urun duzeyinde filtre yok - ikisi ayni sonucu verir.</div>'}</div>
+      <div><div class="t-meta" style="margin-bottom:6px">Ek sutunlar <span>(Spek No, Malzeme, Miktar, Birim her zaman var)</span></div>
+        <div style="display:flex;gap:18px;flex-wrap:wrap">${kutu('detaySart','Sartname')}${kutu('detayEtiket','Etiket')}</div></div>
+      <div class="t-meta"><b>${fmtNum(detaySatir)}</b> urun satiri tabloya girecek</div>
+    </div>`:'';
   el.innerHTML=`
     <div class="ord-sumline" style="margin:0 0 12px"><b>${fmtNum(list.length)}</b> siparis · <b>${fmtNum(inecek.length)}</b> PDF birlestirilecek${mb}</div>
     ${yok.length?`<p class="mdp-bosbilgi" style="margin-bottom:12px">${icoInfoSm()}<span><b>${yok.length}</b> sipariste PDF yok - atlanir${st.icindekiler?', icindekilerde "PDF yok" diye yazar':''}: ${esc(yok.slice(0,8).map(g=>g.etiket).join(', '))}${yok.length>8?` +${yok.length-8}`:''}</span></p>`:''}
     <div style="display:grid;gap:10px;font-size:13px">
       <div><div class="t-meta" style="margin-bottom:6px">Sira</div>
         <div style="display:flex;gap:18px;flex-wrap:wrap">${secenek('sira','ekran','Ekrandaki sira (yeniden eskiye)')}${secenek('sira','eski','Eskiden yeniye')}</div></div>
-      <label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" ${st.icindekiler?'checked':''} onchange="opdfSet('icindekiler',this.checked)">Basa icindekiler sayfasi ekle <span class="t-meta">(siparis no → sayfa)</span></label>
-      ${iadeSay?`<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" ${st.iade?'checked':''} onchange="opdfSet('iade',this.checked)">Iade fislerinin PDF'lerini de ekle <span class="t-meta">(${iadeSay} belge, kendi siparisinin arkasina)</span></label>`:''}
+      ${kutu('icindekiler','Basa icindekiler sayfasi ekle','(siparis no → sayfa)')}
+      ${kutu('detay','Detay tablosu ekle','(siparislerde aldigimiz urunler - icindekilerin arkasina)')}
+      ${detayPanel}
+      ${iadeSay?kutu('iade',"Iade fislerinin PDF'lerini de ekle",`(${iadeSay} belge, kendi siparisinin arkasina)`):''}
     </div>
     <div class="t-meta" id="opdfDurum" style="margin-top:14px;min-height:18px"></div>`;
   const btn=document.getElementById('opdfBtn'); if(btn) btn.disabled=!inecek.length;
@@ -13966,11 +13987,95 @@ function opdfIcindekilerPng(satirlar,altBaslik){
     g.fillStyle='#9ca3af'; g.font='18px '+yazi;
     g.fillText(`${fmtDate(simdi)} ${String(simdi.getHours()).padStart(2,'0')}:${String(simdi.getMinutes()).padStart(2,'0')} · ${(CURRENT_USER&&CURRENT_USER.username)||''}`,sol,H-70);
     g.textAlign='right'; g.fillText(`İçindekiler ${p+1} / ${sayfaSay}`,sag,H-70); g.textAlign='left';
-    const bin=atob(c.toDataURL('image/png').split(',')[1]), u=new Uint8Array(bin.length);
-    for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
-    out.push(u);
+    out.push(opdfPngBayt(c));
   }
   return out;
+}
+function opdfPngBayt(c){ const bin=atob(c.toDataURL('image/png').split(',')[1]), u=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u; }
+function opdfGirdiTarih(g){ return fmtDate(g.ia?g.ia.tarih:g.o.date); }
+/* DETAY TABLOSU verisi: her girdi (siparis / iade fisi) bir blok, altinda urun satirlari.
+   Kapsam 'filtre' -> Ozel Indir ile AYNI satir suzgeci (ordSatirSuzgeci); 'tum' -> siparisin
+   butun satirlari. Iade fisinde fisin kendi satirlari (iade edilen miktarlar) yazilir. */
+function opdfDetayBloklar(girdiler,st){
+  const suz=st.detayKapsam==='tum'?null:ordSatirSuzgeci();
+  const etk=st.detayEtiket?ordEtiketCozucu():null;
+  return girdiler.map(g=>{
+    const ham=g.ia?(g.ia.satirlar||[]):(g.o.lines||[]);
+    const lines=suz?suz({...g.o,lines:ham}):ham;
+    return {g,satirlar:lines.map(l=>({code:l.code||'',ad:l.ad||'',sart:l.grup||g.o.grup||'',etiket:etk?etk(l).join(', '):'',
+      qty:(g.iade?'−':'')+fmtNum(Number(l.qty)||0),unit:l.unit||''}))};
+  });
+}
+// kelime sarma: en fazla maxSatir satir, sigmayan son satir kisaltilir; tek kelime sigmazsa harften bolunur
+function opdfSarmala(g,s,w,maxSatir){
+  const out=[]; let cur='';
+  String(s||'').split(/\s+/).filter(Boolean).forEach(k=>{
+    const t=cur?cur+' '+k:k;
+    if(g.measureText(t).width<=w){ cur=t; return; }
+    if(cur) out.push(cur); cur=k;
+    while(cur.length>1&&g.measureText(cur).width>w){ let i=cur.length; while(i>1&&g.measureText(cur.slice(0,i)).width>w) i--; out.push(cur.slice(0,i)); cur=cur.slice(i); }
+  });
+  if(cur) out.push(cur);
+  if(out.length>maxSatir){ const kes=out.slice(0,maxSatir); kes[maxSatir-1]=opdfKisalt(g,out.slice(maxSatir-1).join(' '),w); return kes; }
+  return out.length?out:[''];
+}
+/* Detay sayfalari: A4 @150dpi tuval. Blok basligi (siparis no · tarih · bina · sirket +
+   sagda faturanin bu dosyadaki sayfasi), altinda urun satirlari; blok sayfa sonuna denk
+   gelirse yeni sayfada "(devam)" basligiyla surer. sayfaOf(g) -> sayi | not metni.
+   kodla=false: yalniz sayfa SAYISI icin cizilir (sayfa numaralari detay sayfalarinin
+   sayisina bagli, detay duzeni ise numaralara bagli degil - once say, sonra ciz). */
+function opdfDetayPng(bloklar,altBaslik,sayfaOf,st,kodla){
+  const W=1240,H=1754,sol=90,sag=1150,ust=232,altSin=H-110,yazi='system-ui,"Segoe UI",Arial,sans-serif',lh=25;
+  const kol=[{k:'n',ad:'#',w:44,m:1},{k:'code',ad:'Spek No',w:190,m:2},{k:'ad',ad:'Malzeme',w:0,m:4}];
+  if(st.detaySart) kol.push({k:'sart',ad:'Şartname',w:180,m:2});
+  if(st.detayEtiket) kol.push({k:'etiket',ad:'Etiket',w:140,m:2});
+  kol.push({k:'qty',ad:'Miktar',w:110,m:1,sag:true},{k:'unit',ad:'Birim',w:72,m:1});
+  kol.find(k=>k.k==='ad').w=(sag-sol)-kol.reduce((s,k)=>s+k.w,0);
+  let x=sol; kol.forEach(k=>{ k.x=x; x+=k.w; });
+  const sayfalar=[]; let g=null, y=0;
+  const yeniSayfa=()=>{ const c=document.createElement('canvas'); c.width=W; c.height=H; g=c.getContext('2d'); sayfalar.push(c);
+    g.fillStyle='#fff'; g.fillRect(0,0,W,H); g.textBaseline='alphabetic'; g.textAlign='left';
+    g.fillStyle='#1f2937'; g.font='bold 40px '+yazi; g.fillText('Sipariş Detayı',sol,120);
+    g.fillStyle='#6b7280'; g.font='21px '+yazi; g.fillText(opdfKisalt(g,altBaslik,sag-sol),sol,158);
+    g.fillStyle='#333'; g.fillRect(sol,ust-36,sag-sol,2);
+    g.font='bold 19px '+yazi; g.fillStyle='#374151';
+    kol.forEach(k=>{ if(k.sag){ g.textAlign='right'; g.fillText(k.ad,k.x+k.w-12,ust-10); g.textAlign='left'; } else g.fillText(k.ad,k.x,ust-10); });
+    g.fillStyle='#d1d5db'; g.fillRect(sol,ust-2,sag-sol,1);
+    y=ust+6; };
+  const baslik=(b,devam)=>{
+    const h=46; g.fillStyle='#e5e7eb'; g.fillRect(sol,y,sag-sol,h);
+    const s=sayfaOf(b.g), sagMetin=typeof s==='number'?(s?'Fatura s. '+s:''):s;
+    g.font='bold 19px '+yazi; g.textAlign='right'; g.fillStyle=typeof s==='number'?'#1f2937':'#9ca3af'; g.fillText(sagMetin,sag-12,y+30);
+    const sagW=g.measureText(sagMetin).width; g.textAlign='left';
+    const metin=[b.g.etiket,opdfGirdiTarih(b.g),b.g.o.bina||'',orderCompany(b.g.o)].filter(Boolean).join('  ·  ')+(devam?'  (devam)':'');
+    g.font=(b.g.iade?'bold italic ':'bold ')+'20px '+yazi; g.fillStyle='#111827'; g.fillText(opdfKisalt(g,metin,sag-sol-sagW-40),sol+12,y+30);
+    y+=h; };
+  yeniSayfa();
+  bloklar.forEach(b=>{
+    if(y+46+lh+14>altSin) yeniSayfa();
+    baslik(b,false);
+    const satirlar=b.satirlar.length?b.satirlar:[{bos:true}];
+    satirlar.forEach((r,i)=>{
+      g.font='19px '+yazi;
+      const hucre=r.bos?null:kol.map(k=>k.k==='n'?[String(i+1)]:opdfSarmala(g,r[k.k],k.w-14,k.m));
+      const n=hucre?Math.max(...hucre.map(h=>h.length)):1, rh=n*lh+12;
+      if(y+rh>altSin){ yeniSayfa(); baslik(b,true); g.font='19px '+yazi; }
+      if(r.bos){ g.fillStyle='#9ca3af'; g.fillText('— bu sipariste filtreye uyan urun yok —',sol+12,y+lh+2); }
+      else hucre.forEach((satir,j)=>{ const k=kol[j]; g.fillStyle=k.k==='n'?'#9ca3af':'#1f2937';
+        g.font=(k.k==='qty'?'bold ':'')+'19px '+yazi;
+        satir.forEach((t,m)=>{ const ty=y+lh+2+m*lh;
+          if(k.sag){ g.textAlign='right'; g.fillText(t,k.x+k.w-12,ty); g.textAlign='left'; } else g.fillText(t,k.x,ty); }); });
+      y+=rh; g.fillStyle='#e5e7eb'; g.fillRect(sol,y-1,sag-sol,1);
+    });
+    y+=16;
+  });
+  if(!kodla) return {sayfa:sayfalar.length,png:[]};
+  const simdi=new Date(), P=sayfalar.length;
+  const zaman=`${fmtDate(simdi)} ${String(simdi.getHours()).padStart(2,'0')}:${String(simdi.getMinutes()).padStart(2,'0')} · ${(CURRENT_USER&&CURRENT_USER.username)||''}`;
+  return {sayfa:P,png:sayfalar.map((c,i)=>{ const x2=c.getContext('2d'); x2.fillStyle='#9ca3af'; x2.font='18px '+yazi;
+    x2.textAlign='left'; x2.fillText(zaman,sol,H-70); x2.textAlign='right'; x2.fillText(`Detay ${i+1} / ${P}`,sag,H-70);
+    return opdfPngBayt(c); })};
 }
 async function ordPdfBirlestir(){
   const st=_OPDF; if(!st||st.calisiyor) return;
@@ -13999,16 +14104,25 @@ async function ordPdfBirlestir(){
       try{ const ps=await out.copyPages(g.doc,g.doc.getPageIndices()); g.ilk=sayfa+1; ps.forEach(pg=>out.addPage(pg)); sayfa+=ps.length; }
       catch(e){ g.hata=(e&&e.message)||'kopyalanamadi'; console.warn('PDF birlestir',g.etiket,e); } }
     if(!sayfa) throw new Error('Hicbir PDF acilamadi');
+    /* On sayfalar: icindekiler + (istenirse) detay tablosu, faturalarin ONUNE eklenir; fatura
+       sayfa numaralari bu yuzden on sayfa sayisi kadar kayar. Detay sayfa sayisi once
+       kodlamadan sayilir, sonra gercek numaralarla cizilir. */
+    const filtre=ordFiltreOzeti().map(([a,v])=>a+': '+v).join(' · ')||'Filtre yok - tüm siparişler';
+    const icP=st.icindekiler?Math.max(1,Math.ceil(girdiler.length/OPDF_SATIR)):0;
+    let bloklar=null, dP=0;
+    const detayAlt=filtre+' · '+(st.detayKapsam==='tum'?'siparişin tüm ürünleri':'yalnız filtreye uyan ürünler');
+    if(st.detay){ opdfDurum('Detay tablosu hazirlaniyor…'); bloklar=opdfDetayBloklar(girdiler,st); dP=opdfDetayPng(bloklar,detayAlt,()=>0,st,false).sayfa; }
+    const ofset=icP+dP;
+    const sayfaNo=g=>{ const k=g.tekrar||g; return k.ilk?k.ilk+ofset:0; };
+    const notu=g=>{ const k=g.tekrar||g; return g.yok?'PDF yok':(k.hata?'açılamadı':''); };
+    const onEkle=async(pngs,bas)=>{ for(let i=0;i<pngs.length;i++){ const img=await out.embedPng(pngs[i]); const pg=out.insertPage(bas+i,OPDF_A4);
+      pg.drawImage(img,{x:0,y:0,width:OPDF_A4[0],height:OPDF_A4[1]}); } };
     if(st.icindekiler){
-      const filtre=ordFiltreOzeti().map(([a,v])=>a+': '+v).join(' · ')||'Filtre yok - tüm siparişler';
-      const icP=Math.max(1,Math.ceil(girdiler.length/OPDF_SATIR));
-      const satirlar=girdiler.map((g,i)=>{ const kaynak=g.tekrar||g;
-        return {sira:i+1,no:g.etiket,tarih:fmtDate(g.iade?(orderIadeler(g.o).find(ia=>ia.pdf===g.pdf)||{}).tarih:g.o.date),bina:g.o.bina||'',sirket:orderCompany(g.o),iade:g.iade,
-          sayfa:kaynak.ilk?kaynak.ilk+icP:0, not:g.yok?'PDF yok':(kaynak.hata?'açılamadı':'')}; });
-      const pngs=opdfIcindekilerPng(satirlar,filtre);
-      for(let i=0;i<pngs.length;i++){ const img=await out.embedPng(pngs[i]); const pg=out.insertPage(i,OPDF_A4);
-        pg.drawImage(img,{x:0,y:0,width:OPDF_A4[0],height:OPDF_A4[1]}); }
+      const satirlar=girdiler.map((g,i)=>({sira:i+1,no:g.etiket,tarih:opdfGirdiTarih(g),bina:g.o.bina||'',sirket:orderCompany(g.o),iade:g.iade,
+          sayfa:sayfaNo(g), not:notu(g)}));
+      await onEkle(opdfIcindekilerPng(satirlar,filtre),0);
     }
+    if(st.detay) await onEkle(opdfDetayPng(bloklar,detayAlt,g=>sayfaNo(g)||notu(g),st,true).png,icP);
     const blob=new Blob([await out.save()],{type:'application/pdf'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
     a.download=`Siparis_Faturalari_${ORDBINA||'tum'}_${new Date().toISOString().slice(0,10)}.pdf`;
