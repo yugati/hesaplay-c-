@@ -71,6 +71,7 @@ import {
   sbInsertAletLibItems,
   sbUpdateAletLibItem,
   sbDeleteAletLibItem,
+  sbUpsertAletLibItems,
   // Saha
   sbGetSahaPanels,
   sbInsertSahaPanel,
@@ -107,6 +108,7 @@ import {
   sbInsertGeciciLibItems,
   sbUpdateGeciciLibItem,
   sbDeleteGeciciLibItem,
+  sbUpsertGeciciLibItems,
   sbGetGeciciMoves,
   sbInsertGeciciMove,
   sbInsertGeciciMoves,
@@ -526,6 +528,11 @@ window.SB_STRICT = {
   insertSpecs:       guardedStrict('proje', 'create', sbInsertProjeSpecs),
   upsertSpecs:       guardedStrict('proje', 'update', sbUpsertProjeSpecs),   // Toplu Kurulum: mevcut kalemin yeri (sp.yerIds)
   deleteSpecs:       guardedStrict('proje', 'delete', sbDeleteProjeSpecsToplu),
+  // Varyant ailesi (index.html VA_KUT): ailenin uyeleri birlikte yazilir; yarim kalan
+  // kayit "kaydedildi" gorunmesin diye hata cagirana firlatilir
+  upsertMaterials:   guardedStrict('kutuphane', 'update', sbUpsertProjeMaterials),
+  upsertGeciciLib:   guardedStrict('gecici', 'update', sbUpsertGeciciLibItems),
+  upsertAletLib:     guardedStrict('alet', 'update', sbUpsertAletLibItems),
 }
 
 // ─── Gunluk Isler ────────────────────────────────────────────────────────────

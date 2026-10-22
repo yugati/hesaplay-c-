@@ -713,6 +713,8 @@ export async function sbInsertAletLibItem(e) { return sbInsertEntity('alet_lib',
 export async function sbInsertAletLibItems(items) { return sbInsertEntities('alet_lib', items) }
 export async function sbUpdateAletLibItem(id, e) { return sbUpdateEntity('alet_lib', id, e) }
 export async function sbDeleteAletLibItem(id) { return sbDeleteEntity('alet_lib', id) }
+// Varyant ailesi kaydi: ailenin tum uyeleri tek istekte yazilir (bkz. index.html VA_KUT)
+export async function sbUpsertAletLibItems(items) { return sbUpsertEntities('alet_lib', items) }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Saha modülü
@@ -796,6 +798,8 @@ export async function sbInsertGeciciLibItem(e) { return sbInsertEntity('gecici_l
 export async function sbInsertGeciciLibItems(items) { return sbInsertEntities('gecici_lib', items) }
 export async function sbUpdateGeciciLibItem(id, e) { return sbUpdateEntity('gecici_lib', id, e) }
 export async function sbDeleteGeciciLibItem(id) { return sbDeleteEntity('gecici_lib', id) }
+// Varyant ailesi kaydi: ailenin tum uyeleri tek istekte yazilir (bkz. index.html VA_KUT)
+export async function sbUpsertGeciciLibItems(items) { return sbUpsertEntities('gecici_lib', items) }
 
 export async function sbGetGeciciMoves() { return sbGetAll('gecici_moves') }
 export async function sbInsertGeciciMove(e) { return sbInsertEntity('gecici_moves', e) }
