@@ -8121,7 +8121,31 @@ function mainNitelik(kaynak,hedef,atla){
   [...kaynak.attributes].forEach(a=>{ if(a.name!==atla&&hedef.getAttribute(a.name)!==a.value) hedef.setAttribute(a.name,a.value); });
 }
 
+/* ═══ CIZIM ONBELLEGI (hesapOnbellek) ══════════════════════════════════════════
+   Bir cizim (render) sirasinda ayni sorular yuzlerce kez sorulur: "bu urun hangi
+   kalemlerde geciyor" (materialUsage), "bu kalemden ne kadar alindi / monte edildi"
+   (specProgress / specMontajProgress). Her biri tum diziyi bastan tariyordu:
+   kutuphane aramasinda her tusta 703 urun x 938 kalem (~250 ms), Sartname ekraninda
+   ve Panoda 938 kalem x 1524 hareket (~90 ms). Burada dizinler cizim BASINA BIR KEZ
+   kurulur ve cizim bitince atilir. Cizim disinda (kayit, silme, birlestirme) onbellek
+   kapalidir; islevler eski dogrudan taramayla calisir - veri degisirken bayat dizin
+   okunmaz. Dizin, kurulduktan sonra dizi degistirildiyse (push/yeniden atama) kendini
+   yeniler; alan degisikligi cizim icinde beklenmez. Ic ice render derinlik sayar. */
+let _HO=null, _HOderin=0;
+function hesapOnbellekAc(){ if(_HOderin++===0) _HO={}; }
+function hesapOnbellekKapat(){ if(--_HOderin<=0){ _HOderin=0; _HO=null; } }
+// ad: onbellek anahtari; dizi: dizinin kaynagi (kimlik+uzunluk degisirse yeniden kurulur); kur: dizini ureten islev
+function hesapDizin(ad,dizi,kur){
+  if(!_HO) return null;
+  const v=_HO[ad];
+  if(v && v.kaynak===dizi && v.uzunluk===dizi.length) return v.ix;
+  const ix=kur(); _HO[ad]={kaynak:dizi,uzunluk:dizi.length,ix}; return ix;
+}
 function render(){
+  hesapOnbellekAc();
+  try{ _renderIc(); } finally{ hesapOnbellekKapat(); }
+}
+function _renderIc(){
   const m=document.getElementById('mainArea');
   // Kutuphane siralama sayaclari (kullanim / siparis) cizim basina bir kez kurulur;
   // burada dusurulmezse siparis girildikten sonra sira eski rakamlarla kalirdi.
@@ -27627,8 +27651,20 @@ function specRevizeRozet(sp){
   const r=specRevize(sp); if(!r) return '';
   return ` <span class="spec-rev-rozet${r<0?' eksi':''}" title="Sartname hedefi ${fmtNum(specSartHedef(sp))} · Revize ${specRevizeYaz(r)}${sp.revizeNot?' · '+esc(sp.revizeNot):''}">sartname ${fmtNum(specSartHedef(sp))} · ${specRevizeYaz(r)} rev.</span>`;
 }
+// kalemsiz (eski) hareket kalemle kategori + ad uzerinden eslesir - ayni anahtar iki tarafta da bu
+function _spAdAnahtar(cat,name){ return String(cat||'')+'\u0001'+String(name||'').trim().toLowerCase(); }
+function _spAlimDizinKur(){
+  const byId=new Map(), byKey=new Map();
+  (DB.proje.items||[]).forEach(it=>{ if(it.type==='out') return; const q=Number(it.qty)||0;
+    if(it.specId) byId.set(it.specId,(byId.get(it.specId)||0)+q);
+    else { const k=_spAdAnahtar(it.cat,it.name); byKey.set(k,(byKey.get(k)||0)+q); } });
+  return {byId,byKey};
+}
 function specProgress(spec){
-  const got=DB.proje.items.filter(it=> (it.type!=='out') && ( it.specId===spec.id || (!it.specId && it.cat===spec.cat&&it.name.trim().toLowerCase()===spec.name.trim().toLowerCase()) ) ).reduce((s,i)=>s+(Number(i.qty)||0),0);
+  const ix=hesapDizin('spAlim',DB.proje.items||[],_spAlimDizinKur);
+  const got=ix
+    ? (ix.byId.get(spec.id)||0)+(ix.byKey.get(_spAdAnahtar(spec.cat,spec.name))||0)
+    : (DB.proje.items||[]).filter(it=> (it.type!=='out') && ( it.specId===spec.id || (!it.specId && it.cat===spec.cat&&String(it.name||'').trim().toLowerCase()===String(spec.name||'').trim().toLowerCase()) ) ).reduce((s,i)=>s+(Number(i.qty)||0),0);
   // IADE negatif miktarli hareket uretir (bkz. orderIadeItems): iade alimi asarsa got
   // eksiye duser ve yuzde negatif cikardi - cubuk ters yone tasardi. Alt sinir da clamp'lenir.
   const pct=spec.target>0?Math.max(0,Math.min(100,(got/spec.target)*100)):0; return {got,pct};
@@ -27636,7 +27672,9 @@ function specProgress(spec){
 function specMontajProgress(spec){
   // hedef 0/belirsiz olsa da islenen montaj miktari sayilir (acik kalemde montaj takibi onemli);
   // yuzde ise ancak hedef varsa hesaplanabilir
-  const installed=(DB.rapor.entries||[]).filter(e=>e.specId===spec.id).reduce((s,e)=>s+(Number(e.miktar)||0),0);
+  const ix=hesapDizin('spMontaj',DB.rapor.entries||[],()=>{ const m=new Map();
+    (DB.rapor.entries||[]).forEach(e=>m.set(e.specId,(m.get(e.specId)||0)+(Number(e.miktar)||0))); return m; });
+  const installed=ix?(ix.get(spec.id)||0):(DB.rapor.entries||[]).filter(e=>e.specId===spec.id).reduce((s,e)=>s+(Number(e.miktar)||0),0);
   const pct=Number(spec.target)>0?Math.min(100,(installed/Number(spec.target))*100):0;
   return {installed, pct};
 }
@@ -28557,7 +28595,9 @@ function findMaterialLoose(code,name){
   const n=norm(name||'').trim(); if(!n)return null;
   return (DB.proje.materials||[]).find(m=>!m.is_deleted&&String(m.name||'').split(/\s+\/\s+/).some(part=>norm(part).trim()===n))||null;
 }
-function getMaterial(id){ return (DB.proje.materials||[]).find(m=>m.id===id); }
+function getMaterial(id){
+  const ix=hesapDizin('matById',DB.proje.materials||[],()=>new Map((DB.proje.materials||[]).map(m=>[m.id,m])));
+  return ix?ix.get(id):(DB.proje.materials||[]).find(m=>m.id===id); }
 function ensureMaterial(o){ // {code,name,unit,cat,brand,note,standart,weight,tags,proje,img} -> mevcut varsa dondur, yoksa olustur
   let mt=findMaterial(o.code,o.name);
   if(mt){
@@ -28577,9 +28617,22 @@ function ensureMaterial(o){ // {code,name,unit,cat,brand,note,standart,weight,ta
   DB.proje.materials.push(mt); return mt;
 }
 // bir malzemenin kac spesifikasyonda kullanildigi (varyant kodlarla eslesen satirlar dahil)
+// Cizim icinde kalemler tek gecisle kod/ad anahtarina ve matId'ye dizinlenir (bkz. hesapDizin);
+// sonuc, dogrudan taramayla AYNI kalemler AYNI sirada (dizideki sira korunur).
+function _matUsageDizinKur(){
+  const byKey=new Map(), byId=new Map(), sira=new Map();
+  const ek=(m,k,s)=>{ const a=m.get(k); if(a) a.push(s); else m.set(k,[s]); };
+  (DB.proje.specs||[]).forEach((s,i)=>{ if(s.is_deleted) return; sira.set(s,i);
+    ek(byKey,matKey(s.code,s.name),s); if(s.matId) ek(byId,s.matId,s); });
+  return {byKey,byId,sira};
+}
 function materialUsage(matId){ const mt=getMaterial(matId); if(!mt)return[];
-  const keys=new Set([matKey(mt.code,mt.name),...(mt.altCodes||[]).filter(c=>String(c).trim()).map(c=>matKey(c,''))]);
-  return DB.proje.specs.filter(s=>!s.is_deleted && (s.matId===matId || keys.has(matKey(s.code,s.name)))); }
+  const keys=[matKey(mt.code,mt.name),...(mt.altCodes||[]).filter(c=>String(c).trim()).map(c=>matKey(c,''))];
+  const ix=hesapDizin('matUsage',DB.proje.specs||[],_matUsageDizinKur);
+  if(!ix){ const ks=new Set(keys); return (DB.proje.specs||[]).filter(s=>!s.is_deleted && (s.matId===matId || ks.has(matKey(s.code,s.name)))); }
+  const out=new Set(ix.byId.get(matId)||[]);
+  keys.forEach(k=>(ix.byKey.get(k)||[]).forEach(s=>out.add(s)));
+  return [...out].sort((a,b)=>ix.sira.get(a)-ix.sira.get(b)); }
 /* ALTERNATIF KULLANIMI - materialUsage'in esi.
    materialUsage "hangi sartname kalemi BU URUNDUR" sorusunu yanitlar; bu ise "bu urun hangi
    kalemin YERINE onerildi / kullaniliyor" sorusunu. Alternatif olarak kullanilan bir urun
