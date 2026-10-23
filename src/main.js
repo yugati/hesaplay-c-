@@ -4,7 +4,6 @@
 // HTML'deki inline onclick/kod bloklarının erişebilmesi için gerekli.
 // ═══════════════════════════════════════════════════════════════════════
 import * as XLSX from 'xlsx'
-import { initBinaViewer } from './bina3d.js'
 
 import {
   // Users
@@ -497,7 +496,14 @@ window.sbBelgeYukle = async function (kind, id, file) {
   return sbBelgeYukle(kind, id, file)
 }
 window.sbBelgeSil               = sbBelgeSil                                   // govdesi hatayi zaten yutuyor
-window.initBinaViewer           = initBinaViewer
+// 3D bina goruntuleyici: three.js + GLTFLoader + OrbitControls (~700 KB) ana pakete girmez,
+// ilk 3D pencere acilisinda bir kez indirilir (bkz. index.html mount3DBinaViewer - await eder).
+// Donus Promise'tir; tekrar cagrilarda ayni modul kullanilir.
+let _bina3dModul = null
+window.initBinaViewer = (el, url, opt) => {
+  if (!_bina3dModul) _bina3dModul = import('./bina3d.js').catch(e => { _bina3dModul = null; throw e })
+  return _bina3dModul.then(m => m.initBinaViewer(el, url, opt))
+}
 
 // ─── Parcali giris: lokasyon kirilim agaci (Kat / Fragment / Oda) ────────────
 window.sbInsertProjeLokasyon    = guardedSafe('tanimlar', 'create', sbInsertProjeLokasyon)

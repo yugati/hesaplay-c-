@@ -7555,7 +7555,6 @@ function binaKatIlerleme(bina,katSayisi){
   return {floors,avgPct,unmatched};
 }
 function katHeatColor(pct){ const hue=Math.max(0,Math.min(120,pct*1.2)); return `hsl(${hue},62%,42%)`; }
-function tavaSeedSpecs(){ return TAVA_SPEC_SEED.map(s=>({id:uid(),code:s.code,name:s.name,target:s.target,unit:s.unit,cat:s.cat,bina:s.bina,grup:s.grup||''})); }
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const fmtDate=ts=>{ if(ts==null||ts==='')return''; const d=new Date(ts); return isNaN(d)?String(ts):d.toLocaleDateString('tr-TR',{day:'2-digit',month:'2-digit',year:'numeric'}); };
 const fmtNum=n=>(Math.round((Number(n)||0)*100)/100).toLocaleString('tr-TR');
@@ -8247,7 +8246,6 @@ function _renderIc(){
   wireToolbar();
 }
 // proje filtrelenmis item/spec/order yardimcilari
-function pSpecsAll(){ return DB.proje.specs.filter(s=>!s.is_deleted && (s.bina||'')===PBINA && (s.cat||'')===PCAT); }
 function pItems(){ return DB.proje.items.filter(it=>!it.is_deleted && (it.bina||'')===PBINA && (it.cat||'')===PCAT && (PSPEC==='__all' || (it.grup||'')===PSPEC)); }
 function pSpecs(){ return DB.proje.specs.filter(s=>!s.is_deleted && (s.bina||'')===PBINA && (s.cat||'')===PCAT && (PSPEC==='__all' || specGroupKey(s)===PSPEC)); }
 /* Siparisteki sirket adi. Siparise kayit aninda hem companyId hem de o gunku AD
@@ -9562,7 +9560,6 @@ function gySahaToplam(y){
   const e=y&&y.toplamElle;
   return (e===0||e)&&String(e).trim()!=='' ? gySayi(e) : null;
 }
-function gyFark(y){ const s=gySahaToplam(y); return s==null?0:s-gyToplam(y); }
 // metin basligindaki tarih GG.AA.YYYY - giKey ('YYYY-AA-GG') bicimini cevirir
 function gyTarihTR(k){ const p=giParcala(k); return p?giZ(p[2])+'.'+giZ(p[1])+'.'+p[0]:''; }
 
@@ -9804,7 +9801,6 @@ function gyOdaSecenekleri(bina){
     .forEach(o=>out.push({v:o, etiket:puan[o]?'':'onceden yazilan'}));
   return out.slice(0,1500);
 }
-function gyOdaOnerileri(bina){ return gyOdaSecenekleri(bina).map(o=>o.v); }
 function gyOdaDatalist(id,bina){
   return `<datalist id="${id}">${gyOdaSecenekleri(bina).map(o=>`<option value="${esc(o.v)}"${o.etiket?` label="${esc(o.etiket)}"`:''}></option>`).join('')}</datalist>`;
 }
@@ -17138,14 +17134,6 @@ function varyantSatirEkle(){
   setTimeout(()=>{ const el=document.querySelector('#mt_varyantBox .vr-row:last-child input'); if(el) el.focus(); },0);
 }
 function varyantSatirSil(i){ modalVaryant.satirlar.splice(i,1); varyantKutuCiz(); }
-function varyantAlanEkle(){
-  if(modalVaryant.alanlar.length>=6){ toast('En fazla 6 ozellik sutunu','err'); return; }
-  modalVaryant.alanlar.push('');
-  modalVaryant.satirlar.forEach(r=>r.d.push(''));
-  if(!modalVaryant.satirlar.length) modalVaryant.satirlar.push({kod:'',d:modalVaryant.alanlar.map(()=>'')});
-  varyantKutuCiz();
-  setTimeout(()=>{ const el=document.querySelector('#mt_varyantBox .vr-th:last-of-type input'); if(el) el.focus(); },0);
-}
 function varyantAlanSil(i){
   modalVaryant.alanlar.splice(i,1);
   modalVaryant.satirlar.forEach(r=>r.d.splice(i,1));
@@ -17475,15 +17463,6 @@ function topmVarSatirEkle(i){
   const el=document.querySelector('#topmVar_'+i+' .vr-row:last-child input'); if(el) el.focus({preventScroll:true});
 }
 function topmVarSatirSil(i,j){ const r=_topmR(i); if(!r)return; r.varyant.satirlar.splice(j,1); topmVarCiz(i); topmCount(); }
-function topmVarAlanEkle(i){
-  const r=_topmR(i); if(!r)return;
-  if(r.varyant.alanlar.length>=6){ toast('En fazla 6 ozellik sutunu','err'); return; }
-  r.varyant.alanlar.push('');
-  r.varyant.satirlar.forEach(x=>x.d.push(''));
-  if(!r.varyant.satirlar.length) r.varyant.satirlar.push({kod:'',d:r.varyant.alanlar.map(()=>'')});
-  topmVarCiz(i);
-  const el=document.querySelector('#topmVar_'+i+' .vr-th:last-of-type input'); if(el) el.focus({preventScroll:true});
-}
 function topmVarAlanSil(i,j){
   const r=_topmR(i); if(!r)return;
   r.varyant.alanlar.splice(j,1); r.varyant.satirlar.forEach(x=>x.d.splice(j,1)); topmVarCiz(i); topmCount();
@@ -19949,13 +19928,6 @@ async function addSartnameForSel(){
   logAction('define','Sartname eklendi: '+c+' ('+PBINA+' / '+PCAT+')');
   setPSpec(c); TAB="spec"; render(); toast("Sartname eklendi - Kalem Ekle ile urun girin");
 }
-async function addSpekPrompt(){
-  const cnt=[...new Set(DB.proje.specs.filter(s=>s.bina===PBINA&&s.cat===PCAT).map(s=>specGroupKey(s)))].length;
-  const v=prompt("Yeni spesifikasyon dosyasi adi:", PCAT+" Spek-"+(cnt+1));
-  if(!v)return; const g=v.trim(); if(!g)return;
-  setPSpec(g); TAB="spec"; SEARCH=""; render();
-  toast(`"${g}" secildi - Kalem Ekle ile spesifikasyon girin`);
-}
 function renderKategoriSecim(){
   const col=buildingColor(PBINA);
   const cats=projeCats();
@@ -20123,7 +20095,6 @@ async function saveBinaGiris(bina){
   // Binalar yonetim ekranindayken genis calisma alanina, diger ekranlarda kompakt modala yonlendir
   if(model==='parcali'&&!binaLoklar(bina).length){ if(PBINAY) openLokWorkspace(bina); else openLokasyonModal(bina); }
 }
-async function addCatPrompt(){ const v=prompt("Yeni kategori adi (orn. Kablo Kanali):"); if(!v)return; const c=v.trim(); if(!c)return; setPCat(c); }
 /* ===== LOKASYON YONETIMI (parcali giris agac editoru) ===== */
 function openLokasyonModal(bina){
   if(!guard('define',{bina}))return;
@@ -22477,8 +22448,6 @@ function flowHaritaDegis(){ FLOW_HARITA=!FLOW_HARITA; try{ localStorage.setItem(
 // yakinlastirma siniri: en kucuk nesil de okunabilsin diye tuvaldeki en kucuk Boy oraniyla buyur
 function flowZoomMax(){ const m=(FLOWW._L&&FLOWW._L.minOlc)||1; return Math.min(400,Math.max(16,16/m)); }
 function flowZoomSinir(z){ return Math.min(flowZoomMax(),Math.max(FLOW_ZMIN,z)); }
-// dugumun yazisi bu olcekte okunamiyor mu (UZAK katman)
-function flowUzak(n){ return FLOWW.zoom*(n.olc||1)<FLOW_UZAK; }
 // UZAK katman grubu: nesil; kilcal kodlar ayri grupta ("k" + nesil) - daha yakinda noktaya donerler
 function flowLodGrup(n){ return n.type==='kod'?'k'+(n.nesil||1):(n.nesil||1); }
 // mikro agaci (yapragin altindaki bir sonraki nesil) gizle / goster - yalniz gorunum
@@ -25838,10 +25807,17 @@ function mount3DBinaViewer(bina,bm){
         el.innerHTML=`<div class="bina3d-loading" style="color:var(--red)">Model adresi alinamadi</div>`; return; }
     }
     if(!url){ el.innerHTML=`<div class="bina3d-loading" style="color:var(--red)">Model dosyasi bulunamadi</div>`; return; }
-    window._binaViewer=window.initBinaViewer(el,url,{
-      onLoaded:()=>{ const l=el.querySelector('.bina3d-loading'); if(l)l.remove(); },
-      onError:(err)=>{ console.error('3D model yuklenemedi:',err); el.innerHTML=`<div class="bina3d-loading" style="color:var(--red)">Model yuklenemedi - dosya bozuk olabilir</div>`; }
-    });
+    // initBinaViewer tembel yuklenir (three.js ilk acilista iner) - Promise doner
+    let v=null;
+    try{
+      v=await window.initBinaViewer(el,url,{
+        onLoaded:()=>{ const l=el.querySelector('.bina3d-loading'); if(l)l.remove(); },
+        onError:(err)=>{ console.error('3D model yuklenemedi:',err); el.innerHTML=`<div class="bina3d-loading" style="color:var(--red)">Model yuklenemedi - dosya bozuk olabilir</div>`; }
+      });
+    }catch(e){ console.error('3D goruntuleyici yuklenemedi:',e);
+      el.innerHTML=`<div class="bina3d-loading" style="color:var(--red)">3D goruntuleyici yuklenemedi - baglantiyi kontrol edin</div>`; return; }
+    if(!el.isConnected){ try{ v&&v.dispose(); }catch(e){} return; }   // yukleme surerken pencere kapandi
+    window._binaViewer=v;
   });
 }
 async function upload3DBinaModel(bina,e){
@@ -27263,42 +27239,6 @@ function groupByMaterial(items){
     map[k].entries.push(it);
   });
   return Object.values(map).sort((a,b)=>a.name.localeCompare(b.name,'tr'));
-}
-function renderProjeStock(){
-  const items=pItems().filter(it=>{ if(!SEARCH)return true;
-    return matchText(it.name+' '+(it.order||''), SEARCH); });
-  const groups=groupByMaterial(items);
-  const totalQty=items.reduce((s,i)=>s+(Number(i.qty)||0),0);
-  const withImg=items.filter(i=>i.img).length, withPdf=items.filter(i=>itemPdf(i)).length;
-  let rows='';
-  if(groups.length===0) rows=emptyRow(7,SEARCH?'Eslesen malzeme yok':'Henuz malzeme eklenmedi','"Malzeme Ekle" ile ilk girisi yapin');
-  else groups.forEach(g=>{
-    const first=g.entries.find(e=>e.img);
-    const catTag=g.cat?`<span class="cat-tag" style="background:${catColor(g.cat)}22;color:${catColor(g.cat)}">${esc(g.cat)}</span>`:'';
-    const codes=[...new Set(g.entries.map(e=>e.code).filter(Boolean))];
-    const codeTag=codes.length?`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(codes.join(', '))}</span>`:'';
-    const binas=[...new Set(g.entries.map(e=>e.bina).filter(Boolean))];
-    const binaTags=binas.map(b=>`<span class="bina-tag" style="background:${buildingColor(b)}22;color:${buildingColor(b)};border:1px solid ${buildingColor(b)}55">${esc(b)}</span>`).join('');
-    const dates=[...new Set(g.entries.map(e=>fmtDate(e.date)))];
-    const orders=[...new Set(g.entries.map(e=>e.order).filter(Boolean))];
-    const thumb=first?`<img class="thumb" src="${first.img}" onclick="lightbox('${first.img}')">`:phThumb();
-    const net=g.total; const netCls=net<=0?'zero':'';
-    rows+=`<tr><td>${thumb}</td><td class="t-name">${esc(g.name)} ${catTag} ${codeTag}<div style="margin-top:4px">${binaTags}</div></td>
-      <td class="t-qty" style="color:var(--green)">+${fmtNum(g.giren)}${g.iade>0?`<div style="color:var(--amber);font-size:10.5px;font-weight:600" title="Tedarikciye iade edilen miktar - mevcuttan dusuldu">-${fmtNum(g.iade)} iade</div>`:''}</td>
-      <td class="t-qty" style="color:${g.cikan>0?'var(--red)':'var(--mute)'}">${g.cikan>0?'-'+fmtNum(g.cikan):'0'}</td>
-      <td class="t-qty"><b class="bal ${netCls}">${fmtNum(net)}</b> <span style="color:var(--mute);font-weight:400">${esc(g.unit||'')}</span></td>
-      <td class="t-meta">${dates.slice(0,2).join(', ')}${dates.length>2?` +${dates.length-2}`:''}</td>
-      <td><div class="row-actions">
-        ${canCreate('gecici')||canUpdate('gecici')?`<button class="mini-btn out" title="Sahaya Sevk / Cikar" onclick="openProjeOut(this.dataset.n,this.dataset.u,this.dataset.c)" data-n="${esc(g.name)}" data-u="${esc(g.unit||'')}" data-c="${esc(g.cat||'')}">${icoArr('up')}</button>`:''}
-        ${canEdit('proje')?`<button class="mini-btn" title="Hareketler & Duzenle" onclick="showProjeHistory(this.dataset.n,this.dataset.u,this.dataset.c)" data-n="${esc(g.name)}" data-u="${esc(g.unit||'')}" data-c="${esc(g.cat||'')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></button>`:''}
-      </div></td></tr>`;
-  });
-  return statRow([['Toplam Malzeme',groups.length,items.length+' hareket','var(--blue)'],['Net Miktar',fmtNum(groups.reduce((s,g)=>s+g.total,0)),'giren - cikan','var(--amber)'],['Resimli',withImg,'fotografli','var(--green)'],['PDF',withPdf,'ekli belge','var(--red)']])
-    +`<div class="toolbar">${searchBox('Malzeme adi veya siparis no ara...')}
-      <button class="btn btn-grid" onclick="exportProjeExcel()">${icoXls()} Excel Raporu</button>
-      ${canCreate('proje')?`<button class="btn btn-order" onclick="openProjeOrderModal()">${icoDoc()} Siparis / Fatura Gir</button>`:''}
-      ${canCreate('proje')?`<button class="btn btn-add" onclick="openProjeItemModal()">${icoPlus()} Malzeme Ekle</button>`:''}</div>`
-    +`<div class="tablewrap"><table><thead><tr><th></th><th>Malzeme</th><th>Giren</th><th>Cikan</th><th>Mevcut</th><th>Tarihler</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 /* ---------- GECICI (ambar/kutuphane) ---------- */
@@ -31024,8 +30964,6 @@ function ktopKotFmt(v){
   return s;
 }
 function ktopBatches(){ return (DB.meta&&DB.meta.mergeBatches)||[]; }
-async function ktopBatchSave(list){ if(!DB.meta)DB.meta={}; DB.meta.mergeBatches=list;
-  try{ await sbSetSetting('mergeBatches',list); }catch(e){ console.warn('mergeBatches kaydedilemedi:',e); } }
 // id'nin basindaki Date.now().toString(36) kismindan yaklasik olusturulma zamanini cikarir
 // (uid() = zaman damgasi + 5 karakterlik rastgele son ek). Kart listesinde "ne zaman girildi"
 // bilgisini gostermek icin kullanilir; ayri bir created_at alani gerektirmez.
@@ -31628,63 +31566,6 @@ async function confirmWipe(){
   }catch(e){
     errEl.textContent='Hata: '+(e.message||'Islem basarisiz'); btn.disabled=false;
   }
-}
-function factoryImportExcel(e){ if(!guard('import')){e.target.value='';return;} const f=e.target.files[0]; if(!f)return;
-  const onay=confirm(
-    "DIKKAT - TEMIZ KURULUM\n\n"+
-    "Bu islem GERI ALINAMAZ.\n\n"+
-    "Once TUM mevcut veriler silinecek:\n"+
-    "• Proje (bina, spesifikasyon, malzeme kutuphanesi, siparis, hareket)\n"+
-    "• Gecici elektrik ambari\n"+
-    "• El aletleri\n"+
-    "• Santiye sahasi\n\n"+
-    "Ardindan sectiginiz Excel dosyasi temiz sisteme yuklenecek.\n\n"+
-    "Devam etmek istiyor musunuz?"
-  );
-  if(!onay){ e.target.value=''; return; }
-  const r=new FileReader();
-  r.onload=async ev=>{ try{
-    const wb=XLSX.read(ev.target.result,{type:'binary'});
-    // 1) once parse + on-dogrulama: dosyada ise yarar sayfa var mi?
-    const matRowsChk=_sheetRows(wb,['2_Materials','Materials','Malzeme_Kutuphanesi','3.Malzeme_Kutuphanesi','Malzeme']);
-    const specRowsChk=_sheetRows(wb,['3_Specifications','Specifications','Spesifikasyonlar','4.Spesifikasyonlar']);
-    const firstChk=_sheetRows(wb,[wb.SheetNames[0]]);
-    if((!matRowsChk||matRowsChk.length<2) && (!specRowsChk||specRowsChk.length<2) && (!firstChk||firstChk.length<2)){
-      toast("Excel bos veya tanimli veri sayfasi yok","err"); e.target.value=''; return;
-    }
-    // 2) SISTEMI SIFIRLA (her sey)
-    DB=emptyDB();
-    // secimleri de sifirla
-    PBINA=""; PCAT=""; PSPEC=""; PLIB=false; SEC="proje"; TAB="spec"; SEARCH="";
-    // 3) Excel'den yukle (once malzemeler -> FK, sonra spec'ler)
-    const report={matCreated:0,matUpdated:0,matDeleted:0,specCreated:0,specUpdated:0,specDeleted:0,errors:[]};
-    const matRows=matRowsChk;
-    if(matRows) upsertMaterialsFromRows(matRows, report);
-    // teknik bilgi sekmesi (varsa): malzemelerden SONRA - yeni acilan kalemler de eslessin
-    const tekRows=_tekRows(wb); if(tekRows) upsertTekFromRows(tekRows, report);
-    const specRows=specRowsChk || firstChk;
-    if(specRows) upsertSpecsFromRows(specRows, report);
-    // 4) bina listesini Excel'deki binalarla genislet
-    const allBinas=[...new Set(DB.proje.specs.map(s=>s.bina).filter(Boolean))];
-    allBinas.forEach(b=>{ if(!DB.proje.buildings.includes(b)) DB.proje.buildings.push(b); });
-    // 5) kaydet + bildir
-    const total=report.matCreated+report.specCreated;
-    if(total===0 && report.errors.length){
-      // hicbir sey yuklenemedi - bos sistemde kaldi
-      render();
-      showImportReport(report,'Temiz Kurulum (BASARISIZ - sistem bos)');
-      e.target.value=''; return;
-    }
-    await sbWipeAllData();
-    await Promise.all([sbInsertProjeBuildings(DB.proje.buildings),sbInsertProjeSections(DB.proje.sections)]);
-    await Promise.all([sbUpsertProjeMaterials(DB.proje.materials),sbUpsertProjeSpecs(DB.proje.specs)]);
-    render();
-    report._factory=true;
-    logAction('wipe','Temiz kurulum (Excel): tum sistem sifirlandi ve yeniden yuklendi');
-    showImportReport(report,'Temiz Kurulum');
-  }catch(err){ toast('Excel okunamadi: '+err.message,'err'); }
-  e.target.value=''; };
-  r.readAsBinaryString(f);
 }
 // ICE AKTARMA SONUC RAPORU
 function showImportReport(rep,baslik){
@@ -32859,7 +32740,6 @@ function icoXlsYazi(txt){
 }
 function icoXlsRapor(){ return icoXlsYazi('RAPOR'); }  // Excel raporu indir
 function icoMerge(){return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v7a3 3 0 003 3h5"/><path d="M16 10l3-3-3-3M8 21v-7a3 3 0 013-3h5"/><path d="M16 14l3 3-3 3"/></svg>';}
-function icoDup(){return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="13" height="13" rx="2"/><path d="M8 16v3a2 2 0 002 2h9a2 2 0 002-2V10a2 2 0 00-2-2h-3"/></svg>';}
 function icoPlus(){return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>';}
 /* MALZEME EKLE ikonu: DIKEY kutu; icinde ustte ortalanmis arti, altinda "MAL" yazisi.
    Excel IC/DIS ikonlariyla ayni mantik - anlam ikonun ICINDE tasinir, dugmede metin yok.
@@ -32931,7 +32811,6 @@ function icoBekle(cls){ return '<svg class="bkl'+(cls?' '+cls:'')+'" aria-hidden
 function icoDoc(){return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>';}
 function icoArr(d){ if(d==='left')return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>'; return d==='down'?'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>':'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>'; }
 function renkHex(r){ const m={'Kirmizi':'#ef4444','Kırmızı':'#ef4444','Siyah':'#1a1a1a','Mavi':'#3b82f6','Gri':'#9ca3af','Beyaz':'#f3f4f6','Sari':'#eab308','Sarı':'#eab308','Yesil':'#22c55e','Yeşil':'#22c55e','Turuncu':'#f97316','Kahverengi':'#92400e'}; return m[r]||'#6b7280'; }
-function attr(o){ return JSON.stringify(JSON.stringify(o)).replace(/'/g,"\\'"); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function wireToolbar(){ const s=document.getElementById('searchBox');
   if(s) s.oninput=e=>{ SEARCH=e.target.value; const el=e.target, p=el.selectionStart; render();
@@ -33080,8 +32959,6 @@ function applyImgUrl(v,dropId,slot){ v=String(v||'').trim();
 }
 function setMatImgUrl(v){ applyImgUrl(v,'mtImgDrop',1); }
 function setMatImgUrl2(v){ applyImgUrl(v,'mtImg2Drop',2); }
-function setAletImgUrl(v){ applyImgUrl(v,'aImgDrop',1); }
-function setAletImgUrl2(v){ applyImgUrl(v,'aImg2Drop',2); }
 /* PDF SECIMI - dosya artik kayda base64 olarak GOMULMEZ; Storage'a yuklenir, kayitta yalnizca
    {name, path, size} kunyesi durur (bkz. api/dosya.js, src/supabase.js sbBelgeYukle).
    Neden: gomulu PDF'ler uygulamanin her acilista indirdigi veriyi 33 MB'a cikarmisti.
@@ -36534,7 +36411,6 @@ function sahaEnsureLayers(){
   if(!map.getLayer('saha-measure-lines'))map.addLayer({id:'saha-measure-lines',type:'line',source:'saha-measurements',paint:{'line-color':'#22d3ee','line-width':3,'line-dasharray':[2,1]}});
   if(!map.getLayer('saha-measure-labels'))map.addLayer({id:'saha-measure-labels',type:'symbol',source:'saha-measurements',layout:{'symbol-placement':'line','text-field':['get','label'],'text-size':12,'text-font':['Open Sans Bold','Arial Unicode MS Bold']},paint:{'text-color':'#e0fbff','text-halo-color':'#0b2830','text-halo-width':2}});
 }
-function sahaMapPoint(lng,lat){return {x:Number(lng),y:Number(lat),coord:'wgs84'};}
 function sahaMapClick(pos,point){
   if(point&&SV.map&&SV.mode!=='area'&&SV.mode!=='measure'){
     const layers=['saha-panel-points','saha-socket-points'].filter(id=>SV.map.getLayer(id));
@@ -37699,8 +37575,6 @@ function isgDagitimGrubu(e){
   if(!g) return [e];
   return rEntries().filter(x=>x.isgucu&&x.isgucuDagitimId===g).sort((a,b)=>(a.created||0)-(b.created||0));
 }
-// gruptaki paylarin okunur dokumu: "SEZGİN SÜRER 2, YILMAZ KABAAĞIL 1"
-function isgDagitimOzet(grup){ return grup.map(x=>(shortEkip(x.ekip)||'ekipsiz')+' '+(Number(x.adamSayisi)||0)).join(', '); }
 function isgGyDurum(){
   const v=id=>(document.getElementById(id)||{}).value||'';
     return {tarih:v('isg_tarih'), bina:v('isg_bina').trim(), vardiya:v('isg_vardiya')||'GUNDUZ', cat:v('isg_gorev').split('/')[0].trim(),
@@ -38208,7 +38082,6 @@ function renderRaporOzet(list){
   }
   return `<div class="cal-wrap">${html}</div>`;
 }
-function icoTeamSm(){ return '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/><circle cx="9" cy="7" r="4"/></svg>'; }
 function shortEkip(e){ if(!e)return''; const parts=String(e).split(' - '); return parts[parts.length-1]||e; }
 function icoUserSm(){ return '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>'; }
 // Bir kayit listesindeki essiz "olusturan kisi" adlarini dondurur (bos olanlar atlanir)
@@ -38743,7 +38616,6 @@ function rSetBlockSart(bi,v){
   if(sr && sr.section && bk.cat!==sr.section){ rSetBlockCat(bi,sr.section); return; }
   rRenderBlocks();
 }
-function rUpdBlock(bi,k,v){ if(_rBlocks[bi]) _rBlocks[bi][k]=v; }
 /* ADAM SAYISI GUNLUK YAZI'DAN (Saha Kaydi formu) - Saha Linki'ndeki panelin aynisi, BOLUM
    BASINA: formun TARIHINE yazilmis Gunluk Yazi'nin dolu basliklari secilir, toplami o bolumun
    adam sayisina yazilir. Tarih / bina / yazi degisince secili basliklar yeniden toplanir;
@@ -50399,182 +50271,6 @@ function fatNotAc(el){
   el.classList.toggle('acik',ac);
   el.setAttribute('aria-expanded',ac?'true':'false');
 }
-function renderFaturaListe(){
-  const yuklendi=_FAT_YUKLENDI;
-  const list=fatListeFiltreli();
-  const tumu=fatKayitlar();
-  const firmalar=fatFirmalar();
-  // urun listesi TEK KEZ kurulur: hem satir rozetleri hem sekme sayaci ondan okur
-  const urunler=yuklendi?fatUrunListesiGenel(''):[];
-  const durumMap=new Map(urunler.map(u=>[u.key,u]));
-  const nihaiHarita=fatNihaiHaritasi();   // satir rozeti icin tek kez
-  const filtreVar=fatFiltreVar();
-  /* TUTAR FARKI TOPLAMI satirlar cizilirken biriktirilir - ozet satiri icin
-     butun kayitlarin toplamini ikinci kez hesaplamaya gerek kalmasin.
-     Para birimi basina AYRI tutulur: farkli kurlardaki sapmalari tek sayida
-     toplamak, odenecek toplaminda oldugu gibi anlamsiz bir sayi uretirdi. */
-  const farkOzet=new Map();
-  let rows='';
-  if(!yuklendi) rows=window.__faturaTableMissing
-    ? emptyRow(10,'Fatura tablosu henuz kurulmamis','Yukaridaki uyaridaki SQL dosyasini bir kez calistirin')
-    : emptyRow(10,'Fatura kayitlari yukleniyor...','Defter acilista inmez, bu ekrana girilince bir kez cekilir',true);
-  else if(!list.length) rows=emptyRow(10,filtreVar?'Eslesen fatura yok':'Henuz fatura kaydi girilmedi',
-    filtreVar?'Filtreleri degistirin':'"Yeni Fatura" ile tedarikciden gelen faturadaki urunleri ve miktarlarini girin');
-  else list.forEach(f=>{
-    const uy=fatKayitUyarisi(f,durumMap);
-    const sat=fatSatirlari(f);
-    const top=fatKayitToplam(f);
-    const tutarFarki=fatTutarFarki(f.beyanTutar,top.toplam,f.farkTolerans);
-    const belge=fatBelgeTutari(f);
-    if(tutarFarki){ const fpb=f.paraBirimi||'TRY';
-      const g=farkOzet.get(fpb)||{pb:fpb,net:0,mutlak:0,adet:0};
-      g.net+=tutarFarki; g.mutlak+=Math.abs(tutarFarki); g.adet++; farkOzet.set(fpb,g); }
-    /* ICERIK artik satirda metin olarak DEGIL, bilgi topunda durur: uc urun
-       adi hucreyi uc satira sisiriyor, faturanin tamamini yine gostermiyordu.
-       Notta TUM satirlar miktarlariyla listelenir. */
-    /* MARKER (fatAramaEsler'in alanlari: no, firma, not, satir ad/kod). Icerik
-       bilgi topunda gizli durur: mod acikken TUTAN satirlar notun basina alinir,
-       satir yalnizca koddan tuttuysa kod da yazilir, topun ustunde kac satirin
-       tuttugu sayilir - aranan urunun hangi faturada oldugu topu acmadan belli olsun. */
-    const q=FATV.q;
-    const satTutar=r=>markVarMi(r.ad,q)||markVarMi(r.code,q);
-    const btSat=markOneAl(sat,q,r=>[r.ad,r.code].filter(Boolean).join(' '));
-    const tutanSay=(MKR.acik&&q)?sat.filter(satTutar).length:0;
-    const btIc=`<div class="bt-bas"><b>${markIsaret(f.no||'(no yok)',q)}</b>
-        <span>${fmtNum(sat.length)} urun · toplam ${fmtNum(fatToplamMiktar(f))} miktar${tutanSay?` · <b style="font-family:inherit">${fmtNum(tutanSay)}</b> satir aramayla tuttu`:''}</span></div>
-      <ul>${btSat.slice(0,BT_LIMIT).map(r=>`<li><i>${markIsaret(r.ad||r.code||'?',q)}${
-          (r.ad&&r.code&&markVarMi(r.code,q))?`<small>${markIsaret(r.code,q)}</small>`:''}</i><b>${fmtNum(fatSayi(r.qty))}${r.unit?' '+esc(r.unit):''}</b></li>`).join('')}${
-        sat.length>BT_LIMIT?`<li class="daha">+${fmtNum(sat.length-BT_LIMIT)} urun daha - tamami detay sayfasinda</li>`:''}</ul>`;
-    rows+=`<tr>
-      <td><b style="font-family:var(--mono);font-size:12.5px">${markIsaret(f.no||'(no yok)',q)}</b>
-        ${fatBelgeSayisi(f)?` <span title="${esc(fatBelgeOzet(f))}" style="color:var(--mute)">${icoDoc()}${
-          fatBelgeSayisi(f)>1?`<b style="font-size:9.5px;vertical-align:super">${fatBelgeSayisi(f)}</b>`:''}</span>`:''}
-        <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">${fatKayitRozeti(f)}${fatOnayRozeti(f)}${(()=>{ const n=fatHamNihai(f,nihaiHarita);
-          return n?`<button class="fat-rozet kesin" style="cursor:pointer;border:0" onclick="nhfDetayAc('${n.id}')" title="Bu ham belge nihai fatura ${esc(n.no||'')} ile bagli - faturalanana sayilmaz, miktari o belgeyi asamaz. Tiklayin: nihai fatura">&rarr; ${esc(n.no||'NIHAI')}</button>`:''; })()}${fatKilitSonrasiDegisti(f)
-          ?`<span class="fat-rozet fazla" title="Bu fatura kilitlendikten sonra acilmis ve degistirilmis - ne degistigi detaydaki gecmiste satir satir duruyor">KILIT SONRASI DEGISTI</span>`:''}</div>
-        ${(f.olusturan&&!kisiYoneticiMi(f.olusturan))?`<div class="fat-acan" title="Faturayi acan kisi${f.olusturmaTs?' · '+esc(fmtDate(f.olusturmaTs)):''}">${icoUserSm()}<span>${esc(kisiAd(f.olusturan))}</span>${fatBenim(f)?'<i>(siz)</i>':''}</div>`:''}
-        ${uy.fazla?`<div class="fat-rozet fazla" style="margin-top:4px" title="Bu faturadaki ${uy.fazla} urun, alinan miktardan fazla faturalanmis">${fmtNum(uy.fazla)} URUNDE FAZLA</div>`:''}
-        ${(()=>{ const fn=fatKayitFarkSayisi(f);
-          return fn?`<div class="fat-rozet fazla" style="margin-top:4px;background:color-mix(in srgb,var(--blue) 14%,transparent);color:var(--blue);border-color:color-mix(in srgb,var(--blue) 35%,transparent)"
-            title="Tedarikcinin belgesinde yazan adetlerin ${fn} tanesi bu faturaya kabul edilenle uyusmuyor - detay sayfasindaki Fark Raporuna bakin">${fmtNum(fn)} ADETTE FARK</div>`:''; })()}
-        ${f.not?(()=>{ const ac=markVarMi(f.not,q);   // tutan not ACIK gelir: isaret 2 satirlik kirpmanin altinda kalmasin
-          return `<button class="fat-not${ac?' acik':''}" onclick="fatNotAc(this)" aria-expanded="${ac?'true':'false'}"
-          title="Belgeyle ilgili not - tiklayin, bu faturanin satiri genisler ve notun tamami gorunur; ikinci tik kapatir"><span class="mt">${markIsaret(f.not,q)}</span><svg class="ok" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 9l6 6 6-6"/></svg></button>`; })():''}</td>
-      <td class="fat-ref">${f.sartnameNo?markIsaret(f.sartnameNo,q):'<span class="bos">-</span>'}</td>
-      <td class="fat-ref">${f.sozlesmeNo?markIsaret(f.sozlesmeNo,q):'<span class="bos">-</span>'}</td>
-      <td class="fat-ref">${f.irsaliyeNo?markIsaret(f.irsaliyeNo,q):'<span class="bos">-</span>'}${
-        f.irsaliyeTarihi?`<div class="alt">${esc(fmtDate(f.irsaliyeTarihi))}</div>`:''}</td>
-      <td class="t-meta">${esc(fmtDate(f.tarih))}${fatSaatGoster(f)
-        ?`<div style="font-family:var(--mono);font-size:11px;color:var(--dim)" title="Belgedeki saat - ayni gunun faturalari saate gore siralanir">${esc(fatSaatGoster(f))}</div>`:''}</td>
-      <td class="t-meta">${markIsaret(fatCompany(f)||'-',q)}</td>
-      <td class="ic">${sat.length?`<button class="btop${tutanSay?' mkr-tut':''}" onclick="bilgiTopu(this)" aria-expanded="false"
-          title="Faturadaki urunler - tiklayin, not olarak acilir; ikinci tik kapatir${tutanSay?` · ${tutanSay} satir aramayla tuttu`:''}">B${tutanSay?`<span class="mkr-say">${fmtNum(tutanSay)}</span>`:''}</button>
-        <div class="btop-ic" hidden>${btIc}</div>`:'<span style="color:var(--dim)">-</span>'}</td>
-      <td class="t-qty">${fmtNum(fatToplamMiktar(f))}<div class="t-meta" style="font-size:11px">${fmtNum(sat.length)} urun</div></td>
-      <td class="t-qty">${(top.toplam>0||belge>0)?(()=>{
-        const pb=f.paraBirimi||'TRY', kur=fatSayi(f.kur), od=fatOdenecek(f);
-        return `<div class="fat-tut">
-          <div class="sat"><i>Toplam</i><span>${esc(fatPara(top.matrah,''))}</span></div>
-          <div class="sat"><i>KDV</i><span>${esc(fatPara(top.kdv,''))}</span></div>
-          ${top.diger>0?`<div class="sat"><i>Diger</i><span>${esc(fatPara(top.diger,''))}</span></div>`:''}
-          ${(belge>0&&tutarFarki)?`<div class="sat hesap" title="Satirlardan hesaplanan tutar - odenecek olan bu degil, belgeyi dogrulayan sayidir">
-            <i>Hesaplanan</i><span>${esc(fatPara(top.toplam,''))}</span></div>`:''}
-          <div class="ana" title="${belge>0?'BELGEDE yazan odenecek tutar - bankadan bu firma adina cikacak para budur'
-            :'Belgede odenecek tutar yazilmamis - satirlardan hesaplanan tutar gosteriliyor'}">
-            <i>${belge>0?'Odenecek':'Tutar'}</i><b>${esc(fatPara(od,''))}<em>${esc(pb)}</em></b></div>
-          ${(pb!=='TRY'&&kur>0)?`<div class="sat kur" title="Kur ${fmtNum(kur)} - ${esc(fatPara(od,pb))} karsiligi">
-            <i>&asymp; TL</i><span>${esc(fatPara(od*kur,''))}</span></div>`:''}
-        </div>`; })():'<span style="color:var(--dim)">-</span>'}
-        ${tutarFarki?(()=>{ const fpb=f.paraBirimi||'TRY';
-          return `<div class="fat-rozet kismi fark" style="margin-top:4px" title="Belgede yazan ${esc(fatPara(f.beyanTutar,fpb))}, satirlardan hesaplanan ${esc(fatPara(top.toplam,fpb))} - ${tutarFarki>0?'belge daha yuksek':'hesap daha yuksek'}">TUTAR FARKI<b>${tutarFarki>0?'+':'&minus;'}${esc(fatPara(Math.abs(tutarFarki),''))}</b><em>${esc(fpb)}</em></div>`; })():''}</td>
-      <td class="ust"><div class="row-actions">
-        <button class="mini-btn" title="Faturanin icerigini gor" onclick="openFaturaDetay('${f.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></button>
-        ${FAT_BELGELER.filter(bl=>f[bl.k]).map(bl=>`<button class="mini-btn bel"
-          title="${esc(bl.ad)}${(f[bl.k]&&f[bl.k].name)?' - '+esc(f[bl.k].name):''} - yeni sekmede acilir"
-          onclick="fatPdfAc('${f.id}','${bl.k}')">${icoDoc()}<em>${bl.kisa}</em></button>`).join('')}
-        ${fatDuzenlenebilir(f)?`<button class="mini-btn" title="${fatTaslakMi(f)?'Taslagi ac - kesinlestirebilirsiniz':'Duzenle'}" onclick="fatDuzenle('${f.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>`:''}
-        ${fatKilitlenebilir(f)?(isAdmin()
-          ?`<button class="mini-btn" title="Faturayi kilitle - bir daha degistirilemez" onclick="fatKilitle('${f.id}')">${icoKilit(false)}</button>`
-          :`<button class="mini-btn bel" title="Kilitlenmesi icin yonetici onayina gonder" onclick="fatKilitle('${f.id}')">${icoKilit(false)}<em>?</em></button>`):''}
-        ${(fatOnayBekliyor(f)&&isAdmin())?`<button class="mini-btn" style="color:var(--green)" title="Kilit talebini ONAYLA - fatura kilitlenir" onclick="fatKilitle('${f.id}')">${icoOnay()}</button>
-          <button class="mini-btn del" title="Kilit talebini REDDET" onclick="fatKilitReddet('${f.id}')">${icoRed()}</button>`:''}
-        ${(fatOnayBekliyor(f)&&fatBenim(f)&&!isAdmin())?`<button class="mini-btn" title="Kilit talebini geri cek - fatura yeniden duzenlenebilir" onclick="fatKilitTalepGeriCek('${f.id}')">${icoGeriCek()}</button>`:''}
-        ${(fatKilitliMi(f)&&isAdmin())?`<button class="mini-btn" title="Kilidi ac (yonetici)" onclick="fatKilitAc('${f.id}')">${icoKilit(true)}</button>`:''}
-        ${fatSilinebilir(f)?`<button class="mini-btn del" title="Sil" onclick="fatSil('${f.id}')">${icoTrash()}</button>`:''}
-        ${(()=>{ const n=fatKapaliNedeni(f);   // kendi bekleyen talebinde rozet + geri cek dugmesi zaten anlatiyor
-          return (n&&!isAdmin()&&!(fatOnayBekliyor(f)&&fatBenim(f)))?`<span class="fat-ro" title="${esc(n)}">salt okunur</span>`:''; })()}
-      </div></td></tr>`;
-  });
-  const toplamMiktar=list.reduce((s,f)=>s+fatToplamMiktar(f),0);
-  /* Para toplami YALNIZCA tek para birimi varken gosterilir: farkli kurlardaki
-     tutarlari toplamak anlamsiz bir sayi uretir (kur alani opsiyonel oldugu icin
-     TL'ye cevirmek de her zaman mumkun degil). */
-  const paralar=[...new Set(list.map(f=>f.paraBirimi||'TRY'))];
-  const toplamPara=paralar.length===1?list.reduce((s,f)=>s+fatOdenecek(f),0):null;
-  /* TUTAR FARKI OZETI: kac belgede fark var ve o farklarin toplami ne kadar.
-     NET toplam yazilir (+ ve - birbirini goturur). Isaretler birbirini
-     goturuyorsa TOPLAM SAPMA da ayrica yazilir: net sifira inen iki hatali
-     belge, "her sey tutuyor" diye okunmasin. */
-  const farkListe=[...farkOzet.values()];
-  const farkAdet=farkListe.reduce((s,g)=>s+g.adet,0);
-  const farkNet=farkListe.map(g=>(g.net>0?'+':'−')+fatPara(Math.abs(g.net),g.pb)).join(' · ');
-  const farkKarma=farkListe.some(g=>g.mutlak-Math.abs(g.net)>0.005);
-  const farkSapma=farkListe.map(g=>fatPara(g.mutlak,g.pb)).join(' · ');
-  return `<div class="tut-wrap fat-genis">
-    <div class="sel-bc"><button onclick="closeFatura()">${icoArr('left')} Geri Don</button></div>
-    <div class="sel-head"><h2>Fatura Kontrol</h2><p>Tedarikciden gelen faturadaki <b>urunler ve miktarlar</b> girilir; miktar o urunun
-      <b>toplam alimindan</b> dusulur. Alinandan fazlasi yazilamaz - ayni malin ikinci kez faturalanmasi boyle onlenir.
-      <b>Ham faturalar</b> tedarikcinin gonderdigi belgelerdir: formdaki <b>Bagli Nihai Fatura</b> secilirse belge o nihai faturayla
-      karsilastirilir ve faturalanana ayrica sayilmaz; bagsiz birakilan ham fatura onayli sartname kagitlarina yazilmis mali da yiyemez.
-      ${fatCanEdit()?(isAdmin()?'':'<b>Yalnizca kendi actiginiz faturalari</b> duzenleyip silebilirsiniz; yoneticinin actigi ve kilitli faturalar salt okunurdur. Kilit <b>yonetici onayiyla</b> konur.')
-        :'<b>Yalnizca goruntuleme yetkiniz var.</b>'}</p></div>
-    ${fatMissingWarn()}
-    ${(()=>{ if(!isAdmin()||!yuklendi||FATV.durum==='onay') return '';
-      const b=fatOnayBekleyenler(); if(!b.length) return '';
-      const kisiler=[...new Set(b.map(f=>kisiAd(fatKilitTalebi(f).user)))];
-      return `<div class="fat-uyari dikkat" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <div style="flex:1;min-width:220px"><h5>${icoKilit(false)} ${fmtNum(b.length)} fatura kilit onayi bekliyor</h5>
-        <p>${esc(kisiler.slice(0,4).join(', '))}${kisiler.length>4?` +${kisiler.length-4} kisi`:''} kilitlenmesini istedi.
-        Onaylanana ya da reddedilene kadar bu faturalar sahiplerine kapalidir.</p></div>
-        <button class="btn btn-ghost" onclick="fatSetF('durum','onay')">Onay bekleyenleri goster</button></div>`; })()}
-    ${fatSekmeler(urunler)}
-    <div class="iht-bar">
-      <div class="iht-search">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
-        <input value="${esc(FATV.q)}" placeholder="fatura no, firma, urun..." onchange="fatSetF('q',this.value.trim())">
-        ${FATV.q?`<button class="iht-x" title="Aramayi temizle" onclick="fatSetF('q','')">&times;</button>`:''}
-      </div>
-      <select onchange="fatSetF('comp',this.value)"><option value="">Tum firmalar</option>
-        ${firmalar.map(c=>`<option value="${esc(c.id)}" ${FATV.comp===c.id?'selected':''}>${esc(c.ad||'-')}</option>`).join('')}</select>
-      <input type="date" value="${esc(FATV.from)}" title="Baslangic tarihi" onchange="fatSetF('from',this.value)" style="background:var(--bg);border:1px solid var(--line);color:var(--ink);padding:8px 10px;border-radius:9px;font-size:13px">
-      <input type="date" value="${esc(FATV.to)}" title="Bitis tarihi" onchange="fatSetF('to',this.value)" style="background:var(--bg);border:1px solid var(--line);color:var(--ink);padding:8px 10px;border-radius:9px;font-size:13px">
-      <div class="iht-sag">
-        ${filtreVar?`<button class="iht-reset" onclick="fatFiltreTemizle()">Filtreleri temizle</button>`:''}
-        ${list.length?`<button class="btn btn-ghost" onclick="fatKitapDilSor()" title="Cok sayfali renkli rapor: her fatura KENDI sayfasinda, ozet sayfasindan koprulerle gezilir; ayrica urun mutabakati ve firma ozeti sayfalari. Turkce / Rusca / Ingilizce secilebilir">${icoKitap()} Excel Kitabi</button>`:''}
-        ${list.length?`<button class="btn btn-ghost" onclick="exportFaturaXlsx()" title="Duz liste: her fatura SATIRI bir Excel satiri - pivot/filtre cekmek icin">${icoXls()} Duz Excel</button>`:''}
-        ${fatCanEdit()?`<button class="btn btn-add" onclick="fatYeni()">${icoPlus()} Yeni Fatura</button>`:''}
-      </div>
-    </div>
-    <div class="iht-seg fat-seg" style="margin-bottom:10px">
-      ${(()=>{ const t=fatKayitlar();
-        const say=d=>t.filter(f=>fatDurumu(f)===d).length;
-        const g=(v,l,n,ip)=>`<button class="${FATV.durum===v?'on':''}" onclick="fatSetF('durum','${v}')" title="${esc(ip)}">${l}<i>${fmtNum(n)}</i></button>`;
-        return g('','Tumu',t.length,'Butun fatura kayitlari')
-          +g('taslak','Taslak',say('taslak'),FAT_KAYIT_DURUM.taslak.aciklama)
-          +g('kesin','Kesin',say('kesin'),FAT_KAYIT_DURUM.kesin.aciklama)
-          +g('kilitli','Kilitli',say('kilitli'),FAT_KAYIT_DURUM.kilitli.aciklama)
-          +(()=>{ const n=t.filter(fatOnayBekliyor).length;   // yalnizca bekleyen varken (ya da secilmisken) gorunur
-            return (n||FATV.durum==='onay')?g('onay','Onay Bekleyen',n,'Sahibinin kilitlenmesini istedigi, yonetici onayi bekleyen kesin faturalar'):''; })(); })()}
-    </div>
-    <div class="ord-sumline"><b>${fmtNum(list.length)}</b> fatura gosteriliyor · toplam <b>${fmtNum(toplamMiktar)}</b> miktar${
-      toplamPara!=null&&toplamPara>0?` · odenecek <b>${esc(fatPara(toplamPara,paralar[0]))}</b>`:''}${
-      farkAdet?` · <span class="fark" title="${esc(fmtNum(farkAdet)+' belgede, belgede yazan odenecek tutar ile satirlardan hesaplanan tutar tutmuyor. Yazan sayi NET toplamdir: + belgenin, − hesabin daha yuksek oldugu anlamina gelir.'+(farkKarma?' Artilarla eksiler birbirini goturdugu icin toplam sapma ayrica yazildi.':''))}">${fmtNum(farkAdet)} belgede tutar farki · net ${esc(farkNet)}${farkKarma?` · toplam sapma ${esc(farkSapma)}`:''}</span>`:''}${
-      filtreVar?` <span class="t-meta">· ${fmtNum(tumu.length)} kayit icinden suzuldu</span>`:''}</div>
-    <div class="tablewrap"><table class="fat-liste"><thead><tr>
-      <th>Fatura No</th><th>Sartname No</th><th>Sozlesme No</th><th>Irsaliye No</th><th>Tarih</th><th>Firma</th><th class="ic" title="Faturadaki urunler - bilgi topuna tiklayin">Icerik</th><th>Miktar</th><th>Odenecek Tutar</th><th></th>
-    </tr></thead><tbody>${rows}</tbody></table></div>
-  </div>`;
-}
 
 /* ==================================================================
    SARTNAME KAGITLARI  (Fatura Kontrol yeniden tasarimi - ASAMA 1)
@@ -53488,317 +53184,6 @@ function fatKilitEtiketleri(f){
   });
   return et;
 }
-function renderFaturaDetay(){
-  const f=fatKayitlar().find(x=>x.id===FATV.detay);
-  if(!f) return `<div class="tut-wrap">
-    <div class="sel-bc"><button onclick="fatDetayKapat()">${icoArr('left')} Fatura Kontrol</button></div>
-    <div class="empty" style="padding:40px"><p>Fatura bulunamadi</p>
-      <span style="font-size:12px">Silinmis olabilir - listeye donup tekrar bakin</span></div></div>`;
-  /* Satir durumlari FATURANIN FIRMASINA gore: "alim durumu" sutununda baska bir
-     firmadan alinan mal gorunmemeli - bu belgenin dayanagi yalnizca kendi
-     firmasinin alimlaridir. */
-  const dm=new Map(fatHamHavuzu('',f.companyId||'',fatHamNihaiId(f)).map(u=>[u.key,u]));
-  const satirlar=fatSatirlari(f);
-  const pb=f.paraBirimi||'TRY';
-  const top=fatKayitToplam(f);
-  const fark=fatTutarFarki(f.beyanTutar,top.toplam,f.farkTolerans);
-  const kodOzet=fatKayitKodOzeti(f,dm);
-  // bu faturadaki urunlerden kaci alinandan FAZLA faturalanmis durumda
-  const fazlalar=satirlar.map(r=>dm.get(String(r.key||''))).filter(u=>u&&u.durum==='fazla');
-  /* BELGEDE YAZAN ADETLERIN FARKI. Kayit bu sutunu hic kullanmadiysa liste
-     bostur ve asagida hicbir sey cizilmez - eski faturalarda bos bir kutu
-     durmasin. */
-  const farklar=fatKayitFarklari(f);
-  const farkliOlan=farklar.filter(x=>x.durum!=='denk');
-  const alimYoklar=farklar.filter(x=>x.kod==='alim-yok');
-
-  /* SATIR TABLOSU GORUNUM SIRASIYLA cizilir (bkz. fatSiraAnahtarlari). Sira
-     duzenlenirken bekleyen sira (FAT_SIRA) gosterilir - kaydedilene kadar
-     kayda yazilmaz. Yalnizca beyan girilmis urunler de satir olarak cikar:
-     kagit faturada onlar da bir satirdir; tutarlari yoktur, hesaba girmezler. */
-  const siraModu=!!(FAT_SIRA&&FAT_SIRA.id===f.id);
-  const siraKeys=siraModu?FAT_SIRA.keys:fatSiraAnahtarlari(f);
-  const satMap=new Map(satirlar.map(r=>[String(r.key||''),r]));
-  const beyMap=new Map(fatBeyanlari(f).map(b=>[String((b&&b.key)||''),b]));
-  const yalnizBeyan=siraKeys.filter(k=>!satMap.has(k)).length;
-  const siraHucre=(i)=>siraModu
-    ?`<td class="tl-no fat-sira-td"><input type="number" class="fat-sira-inp" min="1" max="${siraKeys.length}"
-        value="${i+1}" onchange="fatSiraTasi(${i},this.value)" onkeydown="if(event.key==='Enter')this.blur()"
-        title="Kagit faturadaki satir numarasini yazin - satir o siraya tasinir">
-        <div class="fat-sira-ok"><button class="mini-btn" ${i===0?'disabled':''} onclick="fatSiraAdim(${i},-1)" title="Bir yukari">&#9650;</button><button
-        class="mini-btn" ${i===siraKeys.length-1?'disabled':''} onclick="fatSiraAdim(${i},1)" title="Bir asagi">&#9660;</button></div></td>`
-    :`<td class="tl-no">${i+1}</td>`;
-
-  const rows=siraKeys.length?siraKeys.map((k,i)=>{
-    const r=satMap.get(k);
-    if(!r){
-      const b=beyMap.get(k)||{}, u=dm.get(k);
-      return `<tr class="fat-yalniz-beyan">${siraHucre(i)}
-        <td><div style="font-size:12.5px">${b.matId
-          ?`<button class="fat-link" title="Malzeme kunyesini ac" onclick="openMatDetail('${esc(b.matId)}')">${esc(b.ad||'-')}</button>`
-          :esc(b.ad||(u&&u.ad)||'-')}</div>
-          ${(b.code||(u&&u.code))?`<div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(b.code||u.code)}</div>`:''}
-          <div style="margin-top:3px">${u?'':'<span class="fat-rozet hic" style="margin-right:5px" title="Bu firmanin siparislerinde bu urun icin hicbir alim kaydi yok">BU FİRMADAN ALIM YOK</span>'}<span class="fat-yb-rz" title="Bu urun tedarikcinin faturasinda yaziyor ama bu faturaya kabul edilen miktari yok - tutari hesaba girmez, yalnizca Fark Raporunda gorunur">YALNIZCA FATURADA YAZAN</span></div></td>
-        <td class="fat-alim">${u?`<b>${fmtNum(u.alinan)}</b>${u.iade>0?` · <span style="color:var(--amber)">-${fmtNum(u.iade)}</span>`:''}
-          <div class="t-meta" style="font-size:10.5px">${fatDetayAlimAlt(u)}</div>`
-          :'<span style="color:var(--red)">bu firmadan alim yok</span>'}</td>
-        <td class="num">0${(b.unit||(u&&u.unit))?' <span style="color:var(--mute)">'+esc(b.unit||u.unit)+'</span>':''}
-          <div class="t-meta" style="font-size:10.5px">faturada ${fmtNum(fatSayi(b.qty))}</div></td>
-        <td colspan="7" class="t-meta" style="font-size:11px">Kabul edilen miktar yok - bu satirin tutari hesaba girmez</td>
-      </tr>`;
-    }
-    const u=dm.get(String(r.key||''));
-    const h=fatSatirHesap(r);
-    const pay=fatSatirPaylari(r);
-    return `<tr${(u&&u.durum==='fazla')?' style="background:color-mix(in srgb,var(--red) 8%,transparent)"':''}>
-      ${siraHucre(i)}
-      <td><div style="font-size:12.5px">${r.matId
-        ?`<button class="fat-link" title="Malzeme kunyesini ac" onclick="openMatDetail('${r.matId}')">${esc(r.ad||'-')}</button>`
-        :esc(r.ad||'-')}</div>
-        ${r.code?`<div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(r.code)}</div>`:''}
-        ${pay.length?`<div class="t-meta" style="font-size:11px;font-family:var(--mono);color:var(--amber)"
-          title="Bu satirin parasi asagidaki yerlesimler icin odendi">${esc(pay.map(x=>x.kod+': '+fmtNum(x.qty)).join(' · '))}</div>`
-          :((u&&u.kodlar&&u.kodlar.length)?`<div class="t-meta" style="font-size:11px">yerlesim kodu secilmemis</div>`:'')}
-        ${u?`<div style="margin-top:3px">${fatRozet(u.durum)}${u.kalan<-FAT_EPS?` <span style="color:var(--red);font-size:11px">fazla ${fmtNum(-u.kalan)}</span>`:''}</div>`:''}</td>
-      <td class="fat-alim" title="${u?`${esc(fatCompany(f)||'Bu firma')} siparislerinde alim ${fmtNum(u.alinan)}${u.iade>0?', iade '+fmtNum(u.iade):''}${u.bagli?", bagli nihai fatura "+esc(u.bagliNo||"")+" "+fmtNum(u.nhfHedef||0)+", ayni nihaiye bagli ham faturalarda "+fmtNum(u.fat):", kagitsiz ham faturalar ve onayli kagitlarda "+fmtNum(u.fat)}, kalan ${fmtNum(Math.max(0,u.kalan))}`:'Bu firmadan bu urun icin alim kaydi yok'}">
-        ${u?`<b>${fmtNum(u.alinan)}</b>${u.iade>0?` · <span style="color:var(--amber)">-${fmtNum(u.iade)}</span>`:''}
-          <div class="t-meta" style="font-size:10.5px">${fatDetayAlimAlt(u)}</div>`
-        :'<span style="color:var(--red)">bu firmadan alim yok</span>'}</td>
-      <td class="num">${fmtNum(h.qty)}${r.unit?' <span style="color:var(--mute)">'+esc(r.unit)+'</span>':''}</td>
-      <td class="num">${h.fiyat?fatPara(h.fiyat,''):'-'}</td>
-      <td class="num">${h.iskO?'%'+fmtNum(h.iskO):'-'}</td>
-      <td class="num">${h.iskonto?fatPara(h.iskonto,''):'-'}</td>
-      <td class="num">%${fmtNum(h.kdvO)}</td>
-      <td class="num">${h.kdv?fatPara(h.kdv,''):'-'}</td>
-      <td class="num">${h.diger?fatPara(h.diger,''):'-'}</td>
-      <td class="satir-tutar">
-        <div class="ktutar haric"><i>KDV haric</i><b>${h.matrah?fatPara(h.matrah,''):'-'}</b></div>
-        <div class="ktutar dahil"><i>KDV dahil</i><b>${h.toplam?fatPara(h.toplam,''):'-'}</b></div>
-      </td>
-    </tr>`;
-  }).join('')
-    :emptyRow(11,'Bu faturada satir yok','Duzenleyip urun ekleyebilirsiniz');
-
-  /* GECMIS: modaldeki 10 kayit siniri KALDIRILDI. Kilit acildiktan sonraki
-     duzenlemeleri gormek icin gelinen sayfa burasi - kirpmak, tam da aranan
-     kaydi gizleyebilirdi. */
-  const kilitEt=fatKilitEtiketleri(f);
-  const gecmis=(f.history||[]).slice().reverse().map(h=>{
-    const tur=fatGecTur(h);
-    /* Kirmizi ONCELIKLI: bir satir hem kilit sonrasi hem baska bir sey olamaz,
-       ama olsaydi "acildiktan sonra degistirildi" bilgisi digerlerinden onemli. */
-    const sinif=h.kilitSonrasi?' kilit':({kilit:' kapandi',kilitAc:' acildi',kilitTalep:' talep',
-      kilitTalepGeri:' acildi',kilitRed:' acildi'}[tur]||'');
-    const im=h.kilitSonrasi?'<span class="im">KILIT ACILDIKTAN SONRA</span>'
-      :(tur==='kilit'?`<span class="im ok">${esc(kilitEt.get(h)||'KILITLENDI')}</span>`
-      :({kilitAc:'<span class="im uyari">ACILDI</span>',
-         kilitTalep:'<span class="im mor">ONAYA GONDERILDI</span>',
-         kilitTalepGeri:'<span class="im uyari">TALEP GERI CEKILDI</span>',
-         kilitRed:'<span class="im uyari">TALEP REDDEDILDI</span>'}[tur]||''));
-    return `<div class="fat-gec${sinif}">
-      <div class="bas">${esc(_auditTime(h.ts))} · <b>${esc(h.user||'-')}</b>${im}</div>
-      <div class="ne">${esc(h.ne||'')}</div>
-      ${(h.degisiklikler&&h.degisiklikler.length)?`<ul>${h.degisiklikler.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
-    </div>`; }).join('');
-
-  const kunye=[['Fatura No',f.no],
-    ['Fatura Tarihi',fmtDate(f.tarih)+(fatSaatGoster(f)?' · '+fatSaatGoster(f):'')],
-    ['Firma',fatCompany(f)],
-    ['Senaryo',(FAT_SENARYO.find(x=>x[0]===f.senaryo)||[])[1]||f.senaryo],
-    ['Fatura Tipi',(FAT_TIPI.find(x=>x[0]===f.faturaTipi)||[])[1]||f.faturaTipi],
-    ['Ozellestirme No',f.ozellestirmeNo],
-    ['Irsaliye No',f.irsaliyeNo],
-    ['Irsaliye Tarihi',f.irsaliyeTarihi?fmtDate(f.irsaliyeTarihi):''],
-    ['Sartname No',f.sartnameNo],
-    ['Sozlesme No',f.sozlesmeNo],
-    ['Bagli Nihai Fatura',(fatHamNihai(f)||{}).no||(f.nihaiId?'(silinmis ya da taslak - bag gecersiz)':'')],
-    ['ETTN',f.ettn],
-    ['Para Birimi',(f.paraBirimi||'TRY')+(f.kur?' · kur '+fmtNum(f.kur):'')],
-    /* Belgenin kendi odenecek tutari kunyede de yazar: bu sayfada "bankadan ne
-       cikacak" sorusunun cevabi, hesapla farki olmasa bile gorunur olmali. */
-    ['Belgedeki Odenecek Tutar',fatBelgeTutari(f)?fatPara(fatBelgeTutari(f),pb):''],
-    // pay bir uyariyi susturabildigi icin kunyede gorunur - sifirsa satir hic cikmaz
-    ['Tutar Hata Payi',fatTolerans(f.farkTolerans)?fatPara(fatTolerans(f.farkTolerans),pb):'']]
-    .filter(x=>x[1]).map(([l,v])=>`<div><div class="et">${esc(l)}</div><div class="dg">${esc(v)}</div></div>`).join('');
-
-  return `<div class="tut-wrap">
-    <div class="sel-bc"><button onclick="fatDetayKapat()">${icoArr('left')} ${FATV.detayGeri==='mutabakat'?'Mutabakat':'Fatura Kontrol'}</button></div>
-    <div class="sel-head">
-      <h2>Fatura ${esc(f.no||'(no yok)')} ${fatKayitRozeti(f)} ${fatOnayRozeti(f)}</h2>
-      <p>${esc(fatCompany(f)||'firma yok')} · ${esc(fmtDate(f.tarih))} ·
-        ${fmtNum(satirlar.length)} urun · toplam miktar ${fmtNum(fatToplamMiktar(f))}</p>
-    </div>
-    ${fatMissingWarn()}
-    ${(()=>{ const t=fatKilitTalebi(f), r=f.kilitRed;
-      if(t) return `<div class="fat-uyari bilgi" style="border-left-color:#a855f7">
-        <h5 style="color:#a855f7">${icoKilit(false)} Kilit onayi bekliyor</h5>
-        <p><b>${esc(kisiAd(t.user))}</b> ${esc(fmtDate(t.ts))} tarihinde bu faturanin kilitlenmesini istedi.
-        ${isAdmin()?'Belgeyi kontrol edip <b>Onayla</b> (fatura kilitlenir) ya da <b>Reddet</b> deyin.'
-          :'Yonetici karar verene kadar fatura degistirilemez ve silinemez'+(fatBenim(f)?' - duzenlemeniz gerekirse talebi geri cekin.':'.')}</p></div>`;
-      if(r&&r.ts&&!fatKilitliMi(f)) return `<div class="fat-uyari dikkat">
-        <h5>Kilit talebi reddedildi</h5>
-        <p><b>${esc(kisiAd(r.user))}</b> ${esc(fmtDate(r.ts))} tarihinde ${esc(kisiAd(r.talepEden))} kullanicisinin kilit talebini reddetti.
-        ${r.neden?`Neden: <b>${esc(r.neden)}</b>`:'Neden yazilmadi.'}
-        ${fatBenim(f)?' Gerekeni duzeltip yeniden kilit talep edebilirsiniz.':''}</p></div>`;
-      return ''; })()}
-    ${fatKilitSonrasiDegisti(f)?`<div class="fat-uyari kritik">
-      <h5>&#9888; Bu fatura kilitlendikten SONRA degistirilmis</h5>
-      <p>Kilit ${esc((f.sonKilitAcma&&f.sonKilitAcma.user)||'-')} tarafindan
-      ${esc((f.sonKilitAcma&&f.sonKilitAcma.ts)?fmtDate(f.sonKilitAcma.ts):'-')} tarihinde acildi
-      ${(f.sonKilitAcma&&f.sonKilitAcma.kilitleyen)?`(kilitleyen: ${esc(f.sonKilitAcma.kilitleyen)})`:''}
-      ve ardindan kayit uzerinde degisiklik yapildi. Ne degistigi asagidaki <b>Duzenleme Gecmisi</b>
-      bolumunde satir satir duruyor; ayni dokum denetim kaydinda da var.</p></div>`:''}
-    ${fazlalar.length?`<div class="fat-uyari kritik">
-      <h5>&#9888; ${fmtNum(fazlalar.length)} urun alinandan fazla faturalanmis</h5>
-      <p>${esc(fazlalar.slice(0,4).map(u=>`${u.ad||u.code||'urun'} (alinan ${fmtNum(u.net)}, faturalanan ${fmtNum(u.fat)})`).join(' ; '))}${
-        fazlalar.length>4?` (+${fazlalar.length-4} urun daha)`:''}.
-      Bu urunler asagida kirmizi satirla isaretli. Ayni mal ikinci kez faturalanmis olabilir -
-      Mutabakat ekranindan hangi faturalarin bu urune yazdigini gorebilirsiniz.</p></div>`:''}
-    ${alimYoklar.length?`<div class="fat-uyari kritik">
-      <h5>&#9888; Faturada yazan ${fmtNum(alimYoklar.length)} urun bu firmadan HİÇ ALINMAMIŞ</h5>
-      <p>${esc(alimYoklar.slice(0,4).map(x=>`${x.sira?'#'+x.sira+' ':''}${x.ad||x.code||'urun'} (faturada ${fmtNum(x.beyan)})`).join(' ; '))}${
-        alimYoklar.length>4?` (+${alimYoklar.length-4} urun daha)`:''}.
-      ${esc(fatCompany(f)||'Bu firma')} siparislerinde bu urunler icin hicbir alim kaydi yok - kabul edilen miktarlari 0, tutara girmezler.
-      Fark Raporunda "alim yok" gerekcesiyle duruyorlar.</p></div>`:''}
-    ${farkliOlan.length?`<div class="fat-uyari kritik">
-      <h5>&#9888; Faturada yazan adetlerin ${fmtNum(farkliOlan.length)} tanesi kayitlarla uyusmuyor</h5>
-      <p>Tedarikcinin belgesinde yazan adetler ile bu faturaya kabul edilen adetler ayni degil.
-      Hangi urunde ne kadar fark oldugu ve <b>neden</b> uymadigi asagidaki <b>Fark Raporu</b> bolumunde satir satir duruyor;
-      oradan duz metin olarak kopyalayip karsi tarafa gonderebilirsiniz.</p></div>`:''}
-    ${fark?`<div class="fat-uyari dikkat">
-      <h5>&#9888; Belge tutari ile hesaplanan tutar tutmuyor</h5>
-      <p>Belgede yazan <b>${esc(fatPara(f.beyanTutar,pb))}</b>, satirlardan hesaplanan
-      <b>${esc(fatPara(top.toplam,pb))}</b> — fark <b>${esc(fatPara(Math.abs(f.beyanTutar-top.toplam),pb))}</b>.
-      Eksik girilmis bir satir ya da belgede fazla hesaplanmis bir tutar olabilir.</p></div>`:''}
-    ${fatTaslakMi(f)?`<div class="fat-uyari bilgi"><h5>Bu bir taslak</h5>
-      <p>Miktarlar tavan hesabina <b>sayilmaz</b>; urunlerin kalani bu satirlar yokmus gibi hesaplanir.
-      Kesinlestirmek icin "Taslagi Ac" deyip formdaki <b>Faturayi Kesinlestir</b> dugmesini kullanin.</p></div>`:''}
-
-    <div class="matd-stats alt6">
-      <div><b>${fmtNum(satirlar.length)}</b><span>Urun</span></div>
-      <div><b>${fmtNum(fatToplamMiktar(f))}</b><span>Toplam Miktar</span></div>
-      <div><b>${esc(fatPara(top.matrah,''))}</b><span>Matrah</span></div>
-      <div><b>${esc(fatPara(top.kdv,''))}</b><span>KDV</span></div>
-      <div><b>${esc(fatPara(top.diger,''))}</b><span>Diger Vergi</span></div>
-      <div title="${fatBelgeTutari(f)
-        ?'BELGEDE yazan odenecek tutar - bankadan bu firma adina cikacak para. Satirlardan hesaplanan: '+esc(fatPara(top.toplam,pb))
-        :'Belgede odenecek tutar yazilmamis - satirlardan hesaplanan tutar'}"><b style="color:var(--amber)">${esc(fatPara(fatOdenecek(f),''))}</b><span>Odenecek ${esc(pb)}</span></div>
-    </div>
-
-    <div class="tut-card">
-      <h4>Belge Kunyesi <i>TC e-Faturasindaki basik alanlari - belgeyle yan yana karsilastirilabilir</i></h4>
-      <div class="fdet-kunye">${kunye}</div>
-      ${f.not?`<p style="font-size:12.5px;margin:14px 0 0;padding-top:12px;border-top:1px solid var(--line);white-space:pre-wrap">
-        <span class="t-meta" style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-weight:700">Not</span><br>${esc(f.not)}</p>`:''}
-    </div>
-
-    ${(()=>{ const n=fatHamNihai(f); if(!n) return '';
-      /* bu ham belge ve AYNI nihaiye bagli diger ham belgeler birlikte karsilastirilir:
-         tavan da oyle (nihaideki miktar - diger bagli ham) - tek basina bakmak eksik gosterirdi */
-      const hl=nhfBagliHamlar(n.id); if(!hl.some(h=>h.id===f.id)) hl.push(f);
-      const diger=hl.filter(h=>h.id!==f.id);
-      return `<div class="tut-card">
-      <h4>Nihai Fatura ile Karsilastirma <i>bagli nihai fatura <button class="fat-link" onclick="nhfDetayAc('${n.id}')">${esc(n.no||'(no yok)')}</button> ${nhfRozet(n)}${
-        diger.length?' · ayni nihaiye bagli diger ham belgeler de hesapta: '+esc(diger.map(h=>h.no||'(no yok)').join(', ')):''}</i></h4>
-      ${fatTaslakMi(f)?`<p class="t-meta" style="font-size:11.5px;margin:0 0 8px">Bu fatura TASLAK - kesinlesene kadar karsilastirmaya girmez.</p>`:''}
-      ${nhfKarsilastirHtml(n,hl)}</div>`; })()}
-    <div class="tut-card">
-      <h4>Belgeler <i>${fmtNum(fatBelgeSayisi(f))} / ${fmtNum(FAT_BELGELER.length)} nusha ekli</i></h4>
-      <div class="fdet-belge">
-        ${FAT_BELGELER.map(bl=>{ const v=f[bl.k];
-          return `<div class="fdet-bel${v?' var':''}">
-            <div class="ad">${icoDoc()} ${esc(bl.ad)}</div>
-            ${v?`<button class="fat-link" onclick="fatPdfAc('${f.id}','${bl.k}')" title="Nushayi ac">${esc(v.name||'ac')}</button>`
-               :`<span class="yok">eklenmemis</span>`}
-            <div class="ip">${esc(bl.ip)}</div>
-          </div>`; }).join('')}
-      </div>
-    </div>
-
-    <div class="tut-card">
-      <h4 class="fat-sat-h4"><span>Fatura Satirlari <i>${fmtNum(satirlar.length)} satir${yalnizBeyan?' + '+fmtNum(yalnizBeyan)+' yalnizca faturada yazan':''} · "Alim Durumu" o urunun ${esc(fatCompany(f)||'bu firma')} siparislerindeki durumudur</i></span>
-        ${siraModu?`<span class="fat-sira-bar">
-            <button class="btn btn-ghost" onclick="fatSiraGirise()" title="Kayitli sirayi birakip urunlerin girildigi siraya doner">Giris Sirasina Don</button>
-            <button class="btn btn-ghost" onclick="fatSiraVazgec()">Vazgec</button>
-            <button class="btn btn-add" onclick="fatSiraKaydet('${f.id}')">Sirayi Kaydet</button></span>`
-          :(fatSiraDegisebilir(f)&&siraKeys.length>1)?`<button class="btn btn-ghost fat-sira-ac" onclick="fatSiraBasla('${f.id}')"
-            title="Satirlari kagit faturadaki siraya dizin - Fark Raporu ciktisi bu sirayi ve bu numaralari kullanir">&#8645; Sirayi Degistir</button>`:''}
-      </h4>
-      ${siraModu?`<div class="fat-uyari bilgi" style="margin:0 0 10px"><p style="margin:0">Her satirin solundaki kutuya
-        <b>kagit faturadaki satir numarasini</b> yazin (ya da oklarla tasiyin). Sira yalnizca GORUNUMDUR: tutarlar, miktar
-        tavani ve mutabakat degismez. Kaydettiginizde Fark Raporu (ekran, kopya metin, PDF ve Excel) bu sirayi ve bu
-        numaralari kullanir.</p></div>`:''}
-      <div class="tablewrap"><table class="tut-lines fat-lines"><thead><tr>
-        <th>Sira No</th><th>Mal Hizmet</th>
-        <th title="BU FIRMADAN alinan · iade · bu firmanin faturalarinda faturalanan · kalan">Alim Durumu</th>
-        <th class="num">Miktar</th><th class="num">Birim Fiyat</th>
-        <th class="num">Iskonto Orani</th><th class="num">Iskonto Tutari</th>
-        <th class="num">KDV Orani</th><th class="num">KDV Tutari</th>
-        <th class="num">Diger Vergiler</th>
-        <th class="num" title="Ust satir KDV haric (matrah), alt satir KDV dahil toplam">Mal Hizmet Tutari</th>
-      </tr></thead><tbody>${rows}</tbody></table></div>
-      <div class="fat-toplam"><div class="fat-toplam-ic">${fatToplamBlokIc(f)}</div></div>
-    </div>
-
-    ${farklar.length?`<div class="tut-card">
-      <h4>Fark Raporu <i>tedarikcinin belgesinde yazan adetler ile bu faturaya kabul edilenlerin karsilastirmasi</i></h4>
-      ${fatFarkPanelHtml(farklar,farkliOlan,{no:f.no,firma:fatCompany(f),tarih:f.tarih,pb:f.paraBirimi||'TRY'},f.id)}
-    </div>`:''}
-
-    ${(kodOzet.kodlar.length||kodOzet.secilebilir>FAT_EPS)?`<div class="tut-card">
-      <h4>Yerlesim Kodu Ozeti <i>bu belgenin parasi hangi yerlesimler icin odendi</i></h4>
-      ${kodOzet.kodlar.length?`<div class="fdet-kod">${kodOzet.kodlar.map(k=>
-        `<span>${esc(k.kod)}<b>${fmtNum(k.qty)}</b></span>`).join('')}</div>
-        <p class="t-meta" style="font-size:11.5px;margin:10px 0 0">${fmtNum(kodOzet.kodlar.length)} yerlesim ·
-        ${fmtNum(kodOzet.kodluSatir)} / ${fmtNum(kodOzet.satir)} satirda kod secilmis</p>`:''}
-      ${kodOzet.secilebilir>FAT_EPS?`<p class="t-meta" style="font-size:11.5px;margin:${kodOzet.kodlar.length?'6px':'0'} 0 0">
-        <b style="color:var(--amber)">${fmtNum(kodOzet.secilebilir)}</b> birim, yerlesim kodu OLAN urunlerde
-        kod secilmeden faturalanmis - o miktar hicbir yerlesimin "faturalanan" hanesine yazilmaz.
-        Urun tavani yine de korunur; duzeltmek icin faturayi duzenleyip satirin kod kirilimini doldurun.</p>`:''}
-    </div>`:''}
-
-    ${gecmis?`<div class="tut-card">
-      <h4>Duzenleme Gecmisi <i>${fmtNum((f.history||[]).length)} kayit · en yenisi ustte</i></h4>
-      ${gecmis}
-    </div>`:''}
-
-    <div class="tut-card">
-      <h4>Kayit Bilgisi</h4>
-      <div class="fdet-kunye">
-        <div><div class="et">Kaydeden</div><div class="dg">${esc(f.olusturan?kisiAd(f.olusturan):'-')}${f.olusturmaTs?' · '+esc(fmtDate(f.olusturmaTs)):''}</div></div>
-        ${f.guncelleyen?`<div><div class="et">Son Duzenleyen</div><div class="dg">${esc(f.guncelleyen)}${f.guncellemeTs?' · '+esc(fmtDate(f.guncellemeTs)):''}</div></div>`:''}
-        ${f.kesinTs?`<div><div class="et">Kesinlestiren</div><div class="dg">${esc(f.kesinBy||'-')} · ${esc(fmtDate(f.kesinTs))}</div></div>`:''}
-        ${f.kilitTs?`<div><div class="et">Kilitleyen</div><div class="dg" style="color:var(--amber)">${esc(f.kilitBy||'-')} · ${esc(fmtDate(f.kilitTs))}</div></div>`:''}
-        ${(f.kilitOnay&&f.kilitOnay.talepEden&&fatKilitliMi(f))?`<div><div class="et">Kilit Talebi</div><div class="dg">${esc(kisiAd(f.kilitOnay.talepEden))}${f.kilitOnay.talepTs?' · '+esc(fmtDate(f.kilitOnay.talepTs)):''} · onaylayan ${esc(kisiAd(f.kilitOnay.user||''))}</div></div>`:''}
-        ${fatKilitTalebi(f)?`<div><div class="et">Kilit Talebi</div><div class="dg" style="color:#a855f7">${esc(kisiAd(fatKilitTalebi(f).user))} · ${esc(fmtDate(fatKilitTalebi(f).ts))} · onay bekliyor</div></div>`:''}
-      </div>
-    </div>
-
-    <div class="fat-foot">
-      <div class="ozet">
-        <span title="${fatBelgeTutari(f)?'BELGEDE yazan odenecek tutar - bankadan bu firma adina cikacak para':'Belgede odenecek tutar yazilmamis - satirlardan hesaplanan tutar'}">Odenecek <b>${esc(fatPara(fatOdenecek(f),pb))}</b></span>
-        <span>Miktar <b>${fmtNum(fatToplamMiktar(f))}</b></span>
-      </div>
-      <div class="sag">
-        ${FAT_BELGELER.filter(bl=>f[bl.k]).map(bl=>
-          `<button class="btn btn-ghost" onclick="fatPdfAc('${f.id}','${bl.k}')" title="${esc(bl.ip)}">${icoDoc()} ${esc(bl.ad.replace(' Nushasi',''))}</button>`).join('')}
-        ${fatBeyanVar(f)?`<button class="btn btn-ghost" onclick="fatFarkPdfDilSor('${f.id}')"
-          title="Fark Raporu ciktisi (A4 dikey) - her uyusmayan urun icin gerekce ve dayanagi olan siparis/fatura dokumu">${icoTutPrint()} Fark Raporu</button>`:''}
-        ${(()=>{ const n=fatKapaliNedeni(f);
-          return (n&&!isAdmin()&&!(fatOnayBekliyor(f)&&fatBenim(f)))?`<span class="fat-ro" title="${esc(n)}">salt okunur</span>`:''; })()}
-        ${fatDuzenlenebilir(f)?`<button class="btn btn-ghost" onclick="fatDuzenle('${f.id}')">${fatTaslakMi(f)?'Taslagi Ac':'Duzenle'}</button>`:''}
-        ${fatKilitlenebilir(f)?`<button class="btn btn-ghost" onclick="fatKilitle('${f.id}')"
-          title="${isAdmin()?'Faturayi kilitle - bir daha degistirilemez':'Kilitlenmesi icin yonetici onayina gonder'}">${icoKilit(false)} ${isAdmin()?'Kilitle':'Kilit Onayina Gonder'}</button>`:''}
-        ${(fatOnayBekliyor(f)&&isAdmin())?`<button class="btn btn-ghost" onclick="fatKilitReddet('${f.id}')">${icoRed()} Reddet</button>
-          <button class="btn btn-ghost" style="color:var(--green)" onclick="fatKilitle('${f.id}')">${icoOnay()} Onayla ve Kilitle</button>`:''}
-        ${(fatOnayBekliyor(f)&&fatBenim(f)&&!isAdmin())?`<button class="btn btn-ghost" onclick="fatKilitTalepGeriCek('${f.id}')">${icoGeriCek()} Talebi Geri Cek</button>`:''}
-        ${(fatKilitliMi(f)&&isAdmin())?`<button class="btn btn-ghost" onclick="fatKilitAc('${f.id}')">${icoKilit(true)} Kilidi Ac</button>`:''}
-        ${fatSilinebilir(f)?`<button class="btn btn-ghost" onclick="fatSil('${f.id}')">${icoTrash()} Sil</button>`:''}
-        <button class="btn btn-add" onclick="fatDetayKapat()">Listeye Don</button>
-      </div>
-    </div>
-  </div>`;
-}
 // acik/kapali kilit - liste satirinda ve detay dugmelerinde ayni ikon kullanilir
 function icoKilit(acik){
   return acik
@@ -54455,15 +53840,6 @@ function fatPayTemizle(ham){
     if(v) v.qty=Math.round((v.qty+q)*1e6)/1e6; else out.push({kod,qty:q});
   });
   return out;
-}
-/* Satirin kirilim durumu: 'yok' (hic dagitilmamis), 'tam' (toplam miktara esit),
-   'eksik'/'fazla' (uyusmuyor). Kirilim ZORUNLU DEGIL - alimlarin cogunda
-   (canli veride 400 satirin 344'u) yerlesim kodu hic yok. Ama BASLANMISSA
-   tamamlanmali: yarim dagilim, hangi yerlesimin odendigi sorusuna yanlis
-   cevap verir. */
-function fatPayDurumu(key){
-  const st=_FAT; if(!st) return {durum:'yok',girilen:0,hedef:0,artan:0};
-  return fatPayDurumHesap(fatSayi(st.qty[key]),fatFormPay(key));
 }
 // Saf hesap - ham fatura ve sartname kagidi formu ayni kurali kullanir
 function fatPayDurumHesap(hedef,pay){
