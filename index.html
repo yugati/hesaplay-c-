@@ -30836,11 +30836,6 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
   const defaultCat=opts.defaultCat||'';
   const defaultGrup=opts.defaultGrup||'';
   const h=_firstDataRow(rows); const pick=_hdrMap(rows[h]);
-  // SARTNAME NOTU sutunu (kalemin kendi notu, sp.note - kutuphanedeki urun notundan ayridir; Toplu
-  // Kalem Girisi'ndeki alanla ayni ad). YALNIZ birebir baslikla okunur: "icerir" aramasi bu basligi
-  // "sartname" (grup) ve "notu" (urun notu) alias'larina kaptirirdi - pickSn o ikisinde bu sutunu atlar.
-  const iSpNot=(rows[h]||[]).map(x=>norm(String(x||'').trim())).indexOf(norm('sartname notu'));
-  const pickSn=(...a)=>{ const i=pick(...a); return (i>=0&&i===iSpNot)?-1:i; };
   const iExt=pick('spec_external_id','specexternalid','spec id','spec_id');
   const iPoz=pick('poz','poz no','poz_no','pos','pos no');
   const iOzel=pick('ozel no','ozel_no','ozelno','özel no','ozel');
@@ -30848,11 +30843,11 @@ function upsertSpecsFromRows(rows, report, defaultBina='', opts={}){
   const iName=pick('material_name','materialname','malzeme adi','malzeme ismi','malzeme','ad','name');
   const iBina=pick('building','bina');
   const iSec=pick('section','bolum','category','kategori');
-  const iGrup=pickSn('sartname','spec_group','specgroup','spesifikasyon grubu','grup','group');
+  const iGrup=pick('sartname','spec_group','specgroup','spesifikasyon grubu','grup','group');
   const iTgt=pick('target_qty','targetqty','hedef miktar','hedef','miktar','target');
   const iUnit=pick('unit','birim');
   const iBrand=pick('brand','marka');
-  const iNote=pickSn('note','aciklama','not','notu');
+  const iNote=pick('note','aciklama','not','notu');
   const iStd=pick('standart','standart no','standart numarasi','standardi','standart numarasi','standard');
   const iWeight=pick('agirlik','agirligi','agirlik_kg','agirlik (kg)','agirlik(kg)','weight','weight (kg)','kg');
   const iTags=pick('etiket','etiketler','tags','tag');
@@ -31020,9 +31015,6 @@ const openEvet=['evet','e','var','acik','yes','y','true','x','1'].includes(norm(
     };
     const brand=iBrand>=0?String(row[iBrand]??'').trim():'';
     const note=iNote>=0?String(row[iNote]??'').trim():'';
-    // bos hucre "dokunma" demektir (mevcut sartname notu silinmez); "-" belgelerde "not yok" yazimidir
-    const _spNot=iSpNot>=0?String(row[iSpNot]??'').trim():'';
-    const spNot=(_spNot==='-')?'':_spNot;
     const standart=iStd>=0?String(row[iStd]??'').trim():'';
     const weightRaw=iWeight>=0?String(row[iWeight]??'').trim():'';
     const weight=(weightRaw!==''&&!isNaN(Number(weightRaw)))?Number(weightRaw):null;
@@ -31061,7 +31053,7 @@ const openEvet=['evet','e','var','acik','yes','y','true','x','1'].includes(norm(
       // acik kalem (openQty) korunur: Excel'de hedef girildiyse acik kalem normale doner
       else if(existing.openQty && tgt>0){ existing.openQty=false; existing.target=Math.round((tgt+revUygula(existing))*1e6)/1e6; existing.exclude=exclude; }
       else { existing.target=Math.round((tgt+revUygula(existing))*1e6)/1e6; existing.exclude=exclude; }
-      if(useExt&&ext)existing.extId=ext; if(poz)existing.poz=poz; if(ozelNo)existing.ozelNo=ozelNo; if(spNot)existing.note=spNot;
+      if(useExt&&ext)existing.extId=ext; if(poz)existing.poz=poz; if(ozelNo)existing.ozelNo=ozelNo;
       if(!existing.openQty&&ozelPayToplam(ozelPaylari(existing))>(Number(existing.target)||0)+1e-9)
         report.errors.push(`${existing.code||existing.name}: yeni hedef (${fmtNum(existing.target)}) ozel kod kirilimi toplaminin (${fmtNum(ozelPayToplam(ozelPaylari(existing)))}) altinda - kalem detayindan kirilimi gozden gecirin`);
       existing.standart=mat.standart||''; existing.weight=mat.weight!=null?mat.weight:null; existing.tags=(mat.tags||[]).slice(); existing.img=mat.img||null;
@@ -31072,7 +31064,6 @@ const openEvet=['evet','e','var','acik','yes','y','true','x','1'].includes(norm(
       // tum yuzde hesaplari exclude'u atladigi icin miktari bilinmeyen kalem oranlari bozmaz.
       const nsp={id:newId,extId:(useExt?ext:''),poz,ozelNo,code:code||mat.code,name:name||mat.name,target:acikSon?0:Math.round((tgt+(revOku||0))*1e6)/1e6,unit,cat,bina:insertBina,grup,
         ...(!acikSon&&revOku?{revize:revOku,...(revNotOku?{revizeNot:revNotOku}:{})}:{}),
-        ...(spNot?{note:spNot}:{}),
         standart:mat.standart||'',weight:mat.weight!=null?mat.weight:null,tags:(mat.tags||[]).slice(),img:mat.img||null,matId:mat.id,brand:mat.brand||'',
         openQty:acikSon,exclude:acikSon?true:exclude};
       DB.proje.specs.push(nsp);
