@@ -17688,11 +17688,12 @@ function topmYapistirUygula(){
   satirlar.forEach(sat=>{
     const h=sat.split('\t'), r=_topmBosSatir();
     TOPM_YAPISTIR_SUTUN.forEach((k,ix)=>{
-      const v=String(h[ix]==null?'':h[ix]).trim(); if(!v)return;
+      const v=_topgYerTutucu(h[ix]); if(!v)return;
       if(k==='brand') r.brand=matBrandParts(v.replace(/\s*,\s*/g,'\n'));
       else if(k==='tags') r.tags=parseTagsCell(v);
       else if(k==='varyant') r.varyant={alanlar:[],satirlar:parseTagsCell(v).map(c=>({kod:c,d:[]}))};
       else if(k==='img'||k==='img2') r[k]=v;
+      else if(k==='weight') r.weight=_topmSayiHucre(v);
       else r[k]=v;
     });
     f.rows.push(r);
@@ -17937,9 +17938,10 @@ function _topmXlsSayfa(wb){
   return bosAday;
 }
 /* Virgullu ondalik: hucre METIN olarak bicimlenmisse ("0,45") sayiya cevrilir.
-   Gercek sayi hucreleri zaten 0.45 olarak gelir, dokunulmaz. */
+   Gercek sayi hucreleri zaten 0.45 olarak gelir, dokunulmaz. "-" yer tutucusu bos
+   sayilir (dis listelerde "Масса 1 ед." hucresi bilinmiyorsa tire yaziliyor). */
 function _topmSayiHucre(v){
-  const s=String(v==null?'':v).trim().replace(/\s/g,'');
+  const s=_topgYerTutucu(v).replace(/\s/g,'');
   return /^-?\d+(?:[.,]\d+)?$/.test(s)?s.replace(',','.'):s;
 }
 function topmExcelDosya(e){
@@ -17980,7 +17982,8 @@ function topmExcelDosya(e){
     if(veri.length>200 && !confirm(veri.length+' satir bulundu - hepsi ayri urun kutusu olarak acilacak ve sayfa yavaslayabilir.\n\nDevam edilsin mi?')) return;
     let eklenen=0, atlanan=0;
     veri.forEach(row=>{
-      const al=ix=>ix>=0?_crTemiz(row[ix]).trim():'';
+      // "-" yer tutucu bos sayilir: yoksa Marka'ya "-" adli marka, Agirlik'a tire girerdi
+      const al=ix=>ix>=0?_topgYerTutucu(_crTemiz(row[ix])):'';
       const name=al(iName), code=al(iCode);
       if(!name&&!code){ atlanan++; return; }
       if(/^(REQUIRED|optional|REQ|blank|ZORUNLU|ops)\b/i.test(name)){ atlanan++; return; }   // sablon aciklama satiri
@@ -18047,8 +18050,9 @@ function _topmSatirCoz(r,i,gorulen){
   const name=String(r.name||'').trim();
   const code=String(r.code||'').trim();
   if(!name) return {err:'Malzeme adi zorunlu'};
-  const weightRaw=String(r.weight||'').trim();
-  if(weightRaw!=='' && isNaN(Number(weightRaw))) return {err:'Agirlik sayisal olmali'};
+  const weightRaw=_topmSayiHucre(r.weight);
+  // agirlik kutusu type=number: sayi olmayan deger kutuda GORUNMEZ, mesajda yazilir
+  if(weightRaw!=='' && isNaN(Number(weightRaw))) return {err:'Agirlik sayisal olmali - gelen deger "'+weightRaw+'" (kutuda gorunmez; Agirlik alanina sayi yazin)'};
   const cat=String(r.cat||'').trim();
   if(cat && !topmKategoriler().some(c=>norm(c)===norm(cat)))
     return {err:'"'+cat+'" bolumu tanimli degil - Bolum & Sartname ekranindan ekleyin'};
