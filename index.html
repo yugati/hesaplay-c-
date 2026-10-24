@@ -40786,6 +40786,12 @@ function matchText(text,query){ // tablo aramalari icin: karakter-bazli esleme
   if(noSp && hay.replace(/\s+/g,'').indexOf(noSp)>=0) return true;
   return subseq(hay, noSp||q);
 }
+/* ACILIR LISTE ARAMA BICIMI: norm + Kiril/Latin homoglif + carpi isareti katlama (aramaNorm,
+   bkz. _ARAMA_HOMO). "5x25" (Latin x), "5×25" (carpi) ve "5х25" (Kiril) ayni sonucu getirir;
+   kutuphane adlari uc bicimde de yazilmis durumda. norm() bilerek degistirilmedi: 547 yerde
+   kullaniliyor ve bir kismi kimlik karsilastirmasi - orada × ile x ayri kalmali. Karakter
+   sayisi korunur (1:1 donusum), acHighlight'in konum esleme varsayimi bozulmaz. */
+function acNorm(s){ return aramaNorm(norm(s)); }
 function acScore(hay,q){ // dusuk = daha iyi; -1 = eslesmez
   if(!q) return 0;
   const idx=hay.indexOf(q);
@@ -40796,11 +40802,11 @@ function acScore(hay,q){ // dusuk = daha iyi; -1 = eslesmez
   return -1;
 }
 function acFilter(src, q){
-  q=norm(q).trim();
+  q=acNorm(q).trim();
   if(!q) return src.slice(0,30);
   const scored=[];
   for(const it of src){
-    const hay=norm((it.ad||'')+' '+(it.alt||''));
+    const hay=acNorm((it.ad||'')+' '+(it.alt||''));
     const sc=acScore(hay,q);
     if(sc>=0) scored.push([sc, it]);
   }
@@ -40808,9 +40814,9 @@ function acFilter(src, q){
   return scored.slice(0,40).map(x=>x[1]);
 }
 function acHighlight(name,q){
-  const nq=norm(q).trim();
+  const nq=acNorm(q).trim();
   if(!nq) return esc(name);
-  const nName=norm(name);
+  const nName=acNorm(name);
   const mark=new Array(name.length).fill(false);
   const idx=nName.indexOf(nq);
   if(idx>=0){ for(let k=idx;k<idx+nq.length;k++)mark[k]=true; }
@@ -42660,7 +42666,9 @@ function nordYerineSpec(l){ return (l&&l.yerineSpecId)?((DB.proje.specs||[]).fin
    eslenmek zorunda kalmisti). Gorunusu ayni olan harfler Latin karsiligina indirgenir;
    ayni donusum HEM sorguya HEM metne uygulandigi icin Rusca yazan da ayni sonucu bulur. */
 const _ARAMA_HOMO={'а':'a','в':'b','е':'e','к':'k','м':'m','н':'h','о':'o','р':'p','с':'c','т':'t','х':'x','у':'y',
-  'ı':'i','ş':'s','ğ':'g','ü':'u','ö':'o','ç':'c'};
+  'ı':'i','ş':'s','ğ':'g','ü':'u','ö':'o','ç':'c',
+  // olcu yazimindaki carpi isaretleri: "25×4", "25✕4", Kiril "25х4" ve Latin "25x4" ayni sorguyla bulunsun
+  '×':'x','✕':'x'};
 /* Metni aranabilir hale getirir VE her karakterin orijinal metindeki yerini (m) tutar,
    boylece eslesen bolum orijinal yazimiyla <mark>'lenebilir. */
 function aramaHay(s){
