@@ -1366,6 +1366,11 @@ export async function sbMigrateLocalDB(localDB) {
     push('Alim/Hareket Kayitlari', sbInsertEntities('proje_items', localDB.proje.items))
   if (localDB.proje?.orders?.length)
     push('Siparisler', sbInsertEntities('proje_orders', localDB.proje.orders))
+  // BORCLAR ayni tabloda (tur:'borc') ama tarayici onlari yuklemede proje.orders'tan
+  // proje.borclar'a ayirir (index.html borcAyir) - yedek bellekteki DB'den alindigi icin
+  // burada ayrica yazilmazsa geri yuklemede butun borclar sessizce kaybolurdu
+  if (localDB.proje?.borclar?.length)
+    push('Borclar', sbInsertEntities('proje_orders', localDB.proje.borclar))
   if (localDB.proje?.binaModelleri?.length)
     push('3D Bina Modelleri', sbInsertEntities('proje_bina_modelleri', localDB.proje.binaModelleri))
   if (localDB.proje?.alternatives?.length)
