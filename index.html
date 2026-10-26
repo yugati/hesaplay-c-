@@ -47572,6 +47572,37 @@ function _xmIpucuHtml(r,i,X){
   return `<span class="xm-ipucu">Benzer ad: <b>${esc(p.ad)}</b>${p.kod?' · kod '+esc(p.kod):''} (%${Math.round(r.ipucu.skor*100)}) - kodu farkli, otomatik baglanmadi <button class="xm-link" onclick="xmIpucuSec(${i})">Bunu sec</button></span>`;
 }
 const XM_PILL={kod:'KOD',eskod:'ES KOD',ad:'AD',elle:'SECILDI',kodyazim:'KOD ~'};
+/* ORTAK YAZIM ISARETI (Marker modu acikken): Excel metni ile eslesen urunun ORTAK kelimeleri iki
+   tarafta da isaretlenir - "neden eslesti, nerede ayrisiyor" tek bakista okunur. Ayni adli iki
+   adayda (AD x2) farki yaratan parca (1-HF-10 / 1-HF-25'teki 10 ve 25) isaretsiz kalir. Kelime =
+   harf/rakam dizisi (bosluk, tire, egik cizgi, parantez ayirir); Kiril/Latin ikiz harfler ve carpi
+   isareti ayni sayilir (aramaHay). Tek harfli kelime sayilmaz, tek rakam sayilir. Birim ve marka
+   KUMEYE GIRMEZ (her satirda ayni "adet" boyanip gurultu olurdu). Isaret mark.mkr: kullanicinin
+   Marker rengi / gorunumu ayarlariyla cizilir; mod kapaliyken duz metin. */
+function _xmKelimeler(s){
+  const {h,m}=aramaHay(s); const kel=[]; let bas=-1;
+  for(let i=0;i<=h.length;i++){
+    const c=i<h.length?h[i]:'', harf=!!c&&/[0-9a-zа-яё]/.test(c);
+    if(harf){ if(bas<0) bas=i; }
+    else if(bas>=0){ kel.push({t:h.slice(bas,i),bas,son:i}); bas=-1; }
+  }
+  return {h,m,kel};
+}
+function _xmOrtakKume(aList,bList){
+  if(!MKR.acik) return null;
+  const say=t=>t.length>=2||/^\d+$/.test(t), A=new Set(), B=new Set();
+  (aList||[]).forEach(x=>_xmKelimeler(String(x==null?'':x)).kel.forEach(k=>{ if(say(k.t)) A.add(k.t); }));
+  (bList||[]).forEach(x=>_xmKelimeler(String(x==null?'':x)).kel.forEach(k=>{ if(say(k.t)) B.add(k.t); }));
+  const o=new Set(); A.forEach(t=>{ if(B.has(t)) o.add(t); });
+  return o.size?o:null;
+}
+function _xmOrtakHtml(txt,kume){
+  const o=String(txt==null?'':txt);
+  if(!kume||!o) return esc(o);
+  const {m,kel}=_xmKelimeler(o), im=new Array(o.length).fill(0);
+  kel.forEach(k=>{ if(!kume.has(k.t)) return; for(let j=k.bas;j<k.son;j++){ const q=m[j]; if(q!=null) im[q]=2; } });
+  return markHtml(o,im,0,o.length);
+}
 function _xmSatirHtml(r,i,it,u,st,X){
   const hedef=X.cfg.satirAlt?X.cfg.satirAlt(r,X):'';
   // dar sutunda iki dilli birimin ilk parcasi ("шт. / pcs" -> "шт."), tamami ipucunda
@@ -47579,14 +47610,16 @@ function _xmSatirHtml(r,i,it,u,st,X){
   const pct=Math.round((r.skor||0)*100);
   const kt=it?(tutKaynakTanim(it.src)||{}):null;
   const pill=XM_PILL[r.neden]||(r.neden==='cokkod'?'KOD x'+r.coklu:r.neden==='cokad'?'AD x'+r.coklu:pct+'%');
+  // Marker acikken Excel metni <-> urun metni ortak kelimeleri (ad + kod + es kodlar) iki tarafta isaretli
+  const kume=it?_xmOrtakKume([r.ad,r.kod],[it.ad,it.kod,...(it.es||[])]):null, isr=t=>_xmOrtakHtml(t,kume);
   const esl=it
-    ?`${_xmThumb(it.img)}<div class="xm-mad"><b>${esc(it.ad||'-')}</b><span>${esc([it.kod,it.marka,it.birim].filter(Boolean).join(' · ')||'kod yok')}${
+    ?`${_xmThumb(it.img)}<div class="xm-mad"><b>${it.ad?isr(it.ad):'-'}</b><span>${[it.kod,it.marka,it.birim].filter(Boolean).length?isr([it.kod,it.marka,it.birim].filter(Boolean).join(' · ')):'kod yok'}${
         X.I.coklu?`<i class="xm-kut" style="color:${kt.renk||'var(--dim)'}">${esc(kt.label||it.src)}</i>`:''}</span><span class="xm-neden">${esc(_xmNeden(r,pct,X))}</span></div>
       <span class="xm-pill ${st}">${esc(pill)}</span>`
     :`<div class="xm-mad yok"><b>Eslesme yok</b><span class="xm-neden">${esc(_xmYokNeden(r,X))}</span>${_xmIpucuHtml(r,i,X)}</div><span class="xm-pill yok">ELLE</span>`;
   return `<div class="xm-row st-${st}${r.dahil?'':' off'}" data-i="${i}">
     <label class="xm-chk"><input type="checkbox" ${r.dahil?'checked':''} onchange="xmDahil(${i},this.checked)" title="Bu satiri listeye ekle"></label>
-    <div class="xm-src"><b>${esc(r.ad||'(ad yok)')}</b><span><em title="Excel satir no">${r.rn}</em>${esc([r.kod,r.marka,r.birim].filter(Boolean).join(' · ')||'kod yok')}</span>${
+    <div class="xm-src"><b>${r.ad?isr(r.ad):'(ad yok)'}</b><span><em title="Excel satir no">${r.rn}</em>${[r.kod,r.marka,r.birim].filter(Boolean).length?isr([r.kod,r.marka,r.birim].filter(Boolean).join(' · ')):'kod yok'}</span>${
       hedef?`<span class="xm-hedef">${esc(hedef)}</span>`:''}${u.map(m=>`<span class="xm-uy">&#9888; ${esc(m)}</span>`).join('')}</div>
     <div class="xm-qty"><input value="${esc(r.qty==null?'':String(r.qty))}" inputmode="decimal" placeholder="0" oninput="xmMiktar(${i},this.value)" title="${esc(X.cfg.miktarAd||'Miktar')} - duzeltilebilir"><span title="${esc(birim)}">${esc(birimKisa)}</span></div>
     <div class="xm-ok">${icoChevron()}</div>
@@ -47683,9 +47716,10 @@ function xmSecAc(i){
 }
 function _xmPickSatir(m,i,rozet,skor){
   const kt=tutKaynakTanim(m.src)||{}, r=_XM&&_XM.rows[i], su=!!(r&&r.id===m.id&&r.src===m.src);
+  const kume=r?_xmOrtakKume([r.ad,r.kod],[m.ad,m.kod,...(m.es||[])]):null;
   return `<div class="tut-pick-row" onclick="xmUrunSec(${i},'${m.src}','${m.id}')">
     ${_xmThumb(m.img)}
-    <div class="pk-name">${esc(m.ad||'-')}<i>${esc([m.kod,m.marka,m.birim,m.ek].filter(Boolean).join(' · ')||'kod yok')}</i></div>
+    <div class="pk-name">${m.ad?_xmOrtakHtml(m.ad,kume):'-'}<i>${[m.kod,m.marka,m.birim,m.ek].filter(Boolean).length?_xmOrtakHtml([m.kod,m.marka,m.birim,m.ek].filter(Boolean).join(' · '),kume):'kod yok'}</i></div>
     ${skor!=null?`<span class="xm-pill ${skor>=0.85?'tam':'oneri'}">%${Math.round(skor*100)}</span>`:''}
     ${rozet?`<span class="pk-src" style="color:${kt.renk||'var(--dim)'}">${esc(kt.label||m.src)}</span>`:''}
     <span class="pk-add">${su?'Secili':'Sec'}</span></div>`;
@@ -47711,7 +47745,8 @@ function _xmSecCiz(X){
   bas.innerHTML=`<h3>${r.rn}. satir · urun sec</h3><button class="mini-btn" onclick="xmSecGeri()">x</button>`;
   arac.innerHTML='';
   govde.className='modal-body';
-  govde.innerHTML=`<div class="xm-secx">Excel: <b>${esc(r.ad||'(ad yok)')}</b><span>${esc([r.kod,r.marka,r.birim,r.qty?'miktar '+r.qty:''].filter(Boolean).join(' · ')||'kod yok')}</span></div>
+  const kumeX=_xmOrtakKume([r.ad,r.kod],adaylar.flatMap(a=>[a.it.ad,a.it.kod,...(a.it.es||[])]));
+  govde.innerHTML=`<div class="xm-secx">Excel: <b>${r.ad?_xmOrtakHtml(r.ad,kumeX):'(ad yok)'}</b><span>${esc([r.kod,r.marka,r.birim,r.qty?'miktar '+r.qty:''].filter(Boolean).join(' · ')||'kod yok')}</span></div>
     ${adaylar.length?`<div class="xm-aday-bas">En yakin adaylar</div><div class="tut-pick xm-aday">${adaylar.map(a=>_xmPickSatir(a.it,i,X.I.coklu,a.skor)).join('')}</div>`:''}
     ${seg}
     <div class="frow"><input id="xmSecQ" data-guard="off" value="${esc(X.secQ)}" placeholder="Malzeme adi, urun kodu, marka veya barkod ara..." oninput="xmSecAra(this.value)"></div>
