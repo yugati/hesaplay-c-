@@ -5239,6 +5239,16 @@ datalist{display:none}
 .xm-modal>.modal-body{flex:1 1 auto;min-height:0;overflow-y:auto}
 .xm-modal>.modal-body.liste{padding:0}
 .xm-modal .modal-head h3{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Excel Motoru acilis penceresi: sablon onizlemesi + Sablon Indir / Excel Sec */
+.modal.xm-acilis{max-width:720px}
+.xm-acilis .modal-head h3 .t-meta{font-size:12px;font-weight:500;margin-left:8px}
+.xm-acilis-not{font-size:12px;line-height:1.6;margin:0 0 12px}
+.xm-sablon-kap{overflow-x:auto;border:1px solid var(--line);border-radius:9px;background:var(--panel2)}
+.xm-sablon{border-collapse:collapse;font-size:11px;font-family:var(--mono);white-space:nowrap}
+.xm-sablon th,.xm-sablon td{padding:6px 10px;border-right:1px solid var(--line);text-align:left}
+.xm-sablon th{background:var(--hover);color:var(--ink);font-weight:700;border-bottom:1px solid var(--line)}
+.xm-sablon th.z{color:var(--amber)}
+.xm-sablon td{color:var(--dim)}
 .xm-modal .modal-head h3 .t-meta{font-size:12px;font-weight:500;margin-left:8px}
 .xm-arac{display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel2)}
 .xm-arac:empty{display:none}
@@ -33875,9 +33885,10 @@ function specfTopPick(it,isNew){
    kullanici secer ya da + ile kutuphaneye ekler. Yalnizca Proje kutuphanesi aranir. */
 function specfXmProfil(){
   const tani=k=>(XM_SUTUN_IHT.find(x=>x[0]===k)||[])[1]||(()=>false);
-  return {id:'sartname',baslik:'Toplu Kalem Girisi',miktarAd:'Hedef',
-    alanlar:[{k:'kod',t:'Urun / stok kodu'},{k:'ad',t:'Malzeme adi'},{k:'poz',t:'Poz No'},{k:'ozelNo',t:'Ozel No'},
-      {k:'miktar',t:'Hedef (miktar)'},{k:'birim',t:'Birim'},{k:'marka',t:'Marka'},{k:'not',t:'Sartname notu'}],
+  return {id:'sartname',baslik:'Toplu Kalem Girisi',miktarAd:'Hedef',sablonAd:'toplu-kalem',satirAd:'sartname kalemi',
+    alanlar:[{k:'kod',t:'Urun / stok kodu',sablon:'Urun Kodu'},{k:'ad',t:'Malzeme adi',sablon:'Malzeme Adi'},{k:'poz',t:'Poz No'},{k:'ozelNo',t:'Ozel No'},
+      {k:'miktar',t:'Hedef (miktar)',sablon:'Hedef'},{k:'birim',t:'Birim'},{k:'marka',t:'Marka'},{k:'not',t:'Sartname notu',sablon:'Sartname Notu'}],
+    ornek:[['ORNEK-KOD','Ornek malzeme (bu satiri silin)','191','',120,'m','','']],
     // SIRA ONEMLI: baslik ilk tutan alana gider; 'Ozel No' kod sayilmaz (kod tanimi 'ozel'i disliyor)
     sutun:[['kod',tani('kod')],
       ['poz',h=>/^(poz|poz no|poz numarasi|pozisyon|position|pos|item no|sira no|s\.?no|№ поз|позиция|поз)$/.test(h)],
@@ -33908,11 +33919,7 @@ function specfXmUyarilar(r,it){
 }
 function specfXmSec(){
   const f=_SPECF; if(!f||f.id) return;
-  const inp=document.getElementById('specfXmFile'); if(inp) inp.click();
-}
-function specfXmDosya(e){
-  const file=e&&e.target&&e.target.files&&e.target.files[0]; if(e&&e.target) e.target.value=''; if(!file) return;
-  xmDosyaAc(file,specfXmProfil(),()=>!!_SPECF);
+  xmAcilis(specfXmProfil(),()=>!!_SPECF);
 }
 // kutuphane kaydi -> grid satirinin malzeme nesnesi (matLibSrc().obj ile ayni alanlar)
 function _specfXmMatObj(m){
@@ -34052,7 +34059,6 @@ function renderSpecFormPage(){
       </div>
       <span class="specf-topsearch-hint">sec &rarr; satir eklenir &rarr; arama hazir kalir</span>
       <button class="btn btn-ghost" onclick="specfXmSec()" title="Excel Motoru: Excel'deki kalem listesini (kod, ad, poz, ozel no, hedef, birim, not) okur, her satiri kutuphane urunuyle eslestirir; onayladiklariniz gride satir olarak eklenir">${icoXlsIc()} Excel Motoru</button>
-      <input type="file" id="specfXmFile" accept=".xlsx,.xls,.xlsm,.csv" class="hidden" onchange="specfXmDosya(event)">
     </div>`}
     <div class="specfg-wrap"><table class="specfg"><thead><tr>
       <th></th>
@@ -43873,6 +43879,75 @@ function nordPaste(text){
   nordRenderLines();
   if(added) toast(`${added} satir yapistirildi - ${matched} tanesi otomatik eslesti${added>matched?', '+(added-matched)+' tanesi elle secim bekliyor':''}`,added===matched?undefined:'err');
 }
+/* ═══ EXCEL MOTORU PROFILI: SIPARIS EKLE ═══════════════════════════════════
+   Excel satirlari SARTNAME KALEMLERIYLE eslesir (siparis satiri bir kaleme baglanir, kutuphane
+   urunune degil): kaynak = secili binanin (ve secili sartnamelerin) kalemleri; kalemin urun kodu
+   KOD, ozel kodlari (ozel no, kirilim kodlari) ve malzemenin varyant kodlari ES KOD sayilir.
+   Excel'de Ozel No sutunu varsa once o denenir (welding box gibi ayni urunun cok kalemi); ayni
+   urun birden fazla kalemdeyse motor "ayni kod N kalemde" der, kullanici dogru kalemi secer.
+   Eslesmeyen satir Yapistir'daki gibi "elle secim bekliyor" satiri olur (Excel metni satirda).
+   Alternatif urunler ve baska binanin urunleri motora girmez - arama ve yapistirma yolu ayni.
+   Atama siparisinde kullanilmaz (satirlar kaynak sartnameden secilir). */
+function nordXmProfil(){
+  const tani=k=>(XM_SUTUN_IHT.find(x=>x[0]===k)||[])[1]||(()=>false);
+  return {id:'siparis',baslik:'Siparis Ekle',miktarAd:'Miktar',eslAd:'Sartname kalemi',sablonAd:'siparis',satirAd:'siparis satiri',
+    alanlar:[{k:'kod',t:'Urun / stok kodu',sablon:'Urun Kodu'},{k:'ad',t:'Malzeme adi',sablon:'Malzeme Adi'},{k:'ozelNo',t:'Ozel No'},
+      {k:'miktar',t:'Miktar'},{k:'birim',t:'Birim'},{k:'marka',t:'Marka'}],
+    sutun:[['kod',tani('kod')],
+      ['ozelNo',h=>/^(ozel no|ozel numara|ozel kod|yerlesim kodu|yerlesim no|kks|kks kodu|tag|tag no|etiket no|обозначение|маркировка)$/.test(h)],
+      ['miktar',tani('miktar')],['birim',tani('birim')],['marka',tani('marka')],['ad',tani('ad')]],
+    ornek:[['ORNEK-KOD','Ornek malzeme (bu satiri silin)','',10,'adet','']],
+    kaynaklar:()=>[{src:'sart',label:'Sartname',renk:'var(--blue)',items:()=>nordXmKalemler()}],
+    kodlar:r=>[r.ozelNo,r.kod],
+    neden:{kod:'kalemin urun kodu birebir',eskod:'Excel kodu kalemin ozel / varyant kodu',
+      cokkod:r=>`ayni kod ${r.coklu} kalemde - dogru kalemi secin`,cokad:r=>`ayni adla ${r.coklu} kalem - dogru kalemi secin`,
+      kodsuz:r=>`ad benzerligi %${Math.round((r.skor||0)*100)} - kalemin urun kodu yok (Excel "${r.kod}")`},
+    sart:null,hedef:null,
+    uyarilar:(r,it)=>{ const u=[]; if(it&&(NORD.lines||[]).some(l=>l.specId===it.id)) u.push('siparis satirlarinda zaten var - eklenirse ikinci satir olur (mukerrer rozeti)'); return u; },
+    satirAlt:r=>r.ozelNo?'Ozel No '+r.ozelNo:'',
+    sutunNot:'<b>Ozel No</b> sutunu varsa once o denenir - ayni urunun birden fazla kalemi (welding box, klemens kutusu) bu numarayla ayrisir.',
+    yokNot:'elle secim bekleyen satir olarak eklenir (Excel metni satirda kalir)',
+    ekleEtiket:n=>fmtNum(n)+' Satiri Siparise Ekle',
+    ekle:(sec,X)=>nordXmEkle(sec,X)};
+}
+// secili bina + sartname kalemleri motor kaynagi olarak (nordSpecSrc ile ayni suzgec)
+function nordXmKalemler(){
+  return DB.proje.specs.filter(s=>!s.is_deleted&&(s.bina||'')===(NORD.bina||'')&&nordSartMatch(s)).map(s=>{
+    const mt=specMaterial(s), koz=katAtaKodlar(s);
+    return {src:'sart',id:s.id,ad:s.name||s.code||'?',kod:s.code||'',marka:(mt&&mt.brand)||s.brand||'',birim:s.unit||'',img:specImgOf(s)||'',
+      es:[...koz,...((mt&&mt.altCodes)||[])],
+      ek:[s.poz?'Poz '+s.poz:'',koz.length?'Ozel '+koz.slice(0,3).join(', ')+(koz.length>3?' +'+(koz.length-3):''):'',specGroupKey(s)].filter(Boolean).join(' · '),
+      ara:[s.name,s.code,s.poz,koz.join(' '),s.cat,specGroupKey(s)].filter(Boolean).join(' ')};
+  });
+}
+function nordXmSec(){
+  if(!NORD) return;
+  if(nordAtama()){ toast('Excel Motoru atama siparisinde kullanilmaz - Toplu Sec ile kaynak sartnameden secin','err'); return; }
+  if(!NORD.bina){ toast('Once bina secin','err'); return; }
+  xmAcilis(nordXmProfil(),()=>!!(PNEWORD&&NORD));
+}
+function nordXmEkle(sec,X){
+  if(!NORD) return;
+  let kut=0; const yeni=[];
+  sec.forEach(r=>{
+    const qs=String(r.qty==null?'':r.qty).trim(), qn=nordParseQty(qs), qty=(!isNaN(qn)&&qn>0)?qn:NaN;
+    const raw=[r.kod,r.ozelNo,r.ad].filter(Boolean).join(' | ');
+    const sp=r.id?(DB.proje.specs||[]).find(s=>s.id===r.id):null;
+    if(sp){
+      const line=nordSpecToLine(sp,qty,raw);
+      // Excel'deki kod kalemin kirilim (plan) koduysa satirin kirilimi da o kod (yapistirmayla ayni kural)
+      const kod=nordPlanKodu([r.kod,r.ozelNo].filter(Boolean),sp);
+      if(kod&&qty>0){ const lid=ozelKodLokId(NORD.bina,kod); line.ozelPay=[lid?{kod,qty,lokId:lid}:{kod,qty}]; if(lid) line.lokId=lid; }
+      yeni.push(line); kut++;
+    } else { const l=_nordEmptyLine(); l.raw=raw; l.qty=!isNaN(qty)?qty:''; yeni.push(l); }
+  });
+  NORD.lines.push(...yeni);
+  NORD.lines=NORD.lines.filter((l,i)=>nordLineOk(l)||l.raw||l.qty!==''||NORD.lines.length===1);
+  if(!NORD.lines.length) NORD.lines.push(_nordEmptyLine());
+  nordRenderLines();
+  const elle=yeni.length-kut;
+  toast(fmtNum(yeni.length)+' satir eklendi - '+fmtNum(kut)+' tanesi kaleme baglandi'+(elle?', '+fmtNum(elle)+' tanesi elle secim bekliyor':''),elle?'err':undefined);
+}
 function nordOnPaste(e){
   const t=(e.clipboardData||window.clipboardData).getData('text')||'';
   const tag=(e.target.tagName||'').toLowerCase();
@@ -44208,7 +44283,7 @@ function renderNewOrderPage(){
     <div class="sel-bc"><button onclick="closeNewOrderPage()">${icoArr('left')} ${NORD.editId?'Vazgec':'Binalara Don'}</button></div>
     <div class="sel-head"><h2>${nordBorc()?(NORD.editId?'Borc Duzenle':'Borc Ekle'):(NORD.editId?'Siparis Duzenle':'Siparis Ekle')}</h2><p>${nordBorc()
       ?(NORD.editId?`"${esc(NORD.no)}" borcunu duzenliyorsunuz - borc stok hareketi uretmez, kaydetmek hicbir sayimi degistirmez.`:'Odunc alinan malzemeyi girin - normal siparisle ayni form, ama stok, alim ve ilerleme sayilarina girmez.')
-      :(NORD.editId?`"${esc(NORD.no)}" siparisini duzenliyorsunuz - kaydedince bagli tum stok girisleri ve ilerleme otomatik guncellenir.`:'Siparis / fatura bilgilerini girin, urunleri arayarak veya Excel\'den kopyala-yapistir ile ekleyin.')}</p></div>
+      :(NORD.editId?`"${esc(NORD.no)}" siparisini duzenliyorsunuz - kaydedince bagli tum stok girisleri ve ilerleme otomatik guncellenir.`:'Siparis / fatura bilgilerini girin; urunleri arayarak, Excel Motoru ile dosyadan ya da Excel\'den kopyala-yapistir ile ekleyin.')}</p></div>
     <div class="nord-grid">
       <div class="nord-info">
         <div class="nord-card">
@@ -44280,15 +44355,18 @@ function renderNewOrderPage(){
         </div>
         <div class="nord-card nord-paste-hint">
           <div class="nord-card-title">${icoUp()} Excel'den Yapistir
-            <span class="ibi" tabindex="0">i<span>Excel'de urun satirlarini kopyalayin (kod / ad / miktar sutunlari) ve bu sayfada <kbd>Ctrl+V</kbd> yapin.</span></span>
+            <span class="ibi" tabindex="0">i<span>Excel'de urun satirlarini kopyalayin (kod / ad / miktar sutunlari) ve bu sayfada <kbd>Ctrl+V</kbd> yapin. Dosya olarak yuklemek ve sablon indirmek icin Malzeme Satirlari basligindaki <b>Excel Motoru</b>.</span></span>
           </div>
         </div>
       </div>
       <div class="nord-lines">
         <div class="nord-lines-head">
           <span>${nordAtama()?'Atanacak Malzemeler':(nordBorc()?'Odunc Alinan Malzemeler':'Malzeme Satirlari')}</span>
-          ${nordAtama()?`<button class="btn btn-ghost" style="padding:6px 12px" onclick="nordAtamaPickOpen()" title="Kaynak sartnameden birden fazla malzemeyi tek seferde ekleyin">${icoPlus()} Toplu Sec</button>`:''}
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${nordAtama()?`<button class="btn btn-ghost" style="padding:6px 12px" onclick="nordAtamaPickOpen()" title="Kaynak sartnameden birden fazla malzemeyi tek seferde ekleyin">${icoPlus()} Toplu Sec</button>`
+            :`<button class="btn btn-ghost" style="padding:6px 12px" onclick="nordXmSec()" title="Excel Motoru: Excel dosyasindaki satirlari (kod / ozel no / ad / miktar) secili binanin sartname kalemleriyle eslestirir; onayladiklariniz siparis satiri olur. Sablon da buradan indirilir.">${icoXlsIc()} Excel Motoru</button>`}
           <button class="btn btn-ghost" style="padding:6px 12px" onclick="nordAdd()">${icoPlus()} Satir Ekle</button>
+          </div>
         </div>
         <div class="nord-rows-wrap" id="nordLinesWrap">${nordLinesHtml()}</div>
         <div class="nord-summary" id="nordSummary">${nordSummaryHtml()}</div>
@@ -46568,8 +46646,7 @@ function renderIhtiyacList(){
       <div class="iht-sag">
         ${filtreVar?`<button class="iht-reset" onclick="ihtFiltreTemizle()">Filtreleri temizle</button>`:''}
         ${ihtCanEdit()?`<button class="btn btn-ghost" onclick="ihtKombinYeniListe()" title="Yeni liste acar ve insan bedeni uzerinde kombin kurdurur - orn. yarin gelecek 1 kisinin baret, yelek, elbise, ayakkabisi">${icoKisiKombin()} Kisi Kombini</button>`:''}
-        ${ihtCanEdit()?`<button class="btn btn-ghost" onclick="ihtXmSec(true)" title="Excel Motoru: Excel'deki ihtiyac tablosundan yeni liste - satirlar kutuphane urunleriyle eslestirilir, onaylayinca yeni listeye eklenir">${icoXlsIc()} Excel Motoru</button>
-          <input type="file" id="ihtXmFileYeni" accept=".xlsx,.xls,.xlsm,.csv" class="hidden" onchange="ihtXmDosya(event,true)">`:''}
+        ${ihtCanEdit()?`<button class="btn btn-ghost" onclick="ihtXmSec(true)" title="Excel Motoru: Excel'deki ihtiyac tablosundan yeni liste - satirlar kutuphane urunleriyle eslestirilir, onaylayinca yeni listeye eklenir">${icoXlsIc()} Excel Motoru</button>`:''}
         ${ihtCanEdit()?`<button class="btn btn-add" onclick="newIhtiyac()">${icoPlus()} Yeni Liste</button>`:''}
       </div>
     </div>
@@ -46813,7 +46890,6 @@ function renderIhtiyacForm(){
         <button class="btn btn-ghost" onclick="ihtAddBlankLine()">${icoPlus()} Bos Satir</button>
         <button class="btn btn-ghost" onclick="openIhtKombin()" title="Insan bedeni uzerinde kombin kurun (baret, yelek, elbise, ayakkabi...) - kisi sayisi ve bedenlerle listeye eklenir">${icoKisiKombin()} Kisi Kombini</button>
         <button class="btn btn-ghost" onclick="ihtXmSec(false)" title="Excel Motoru: Excel'deki ihtiyac tablosunu okur, her satiri kutuphane urunuyle eslestirir - eslesmeleri gorup onaylarsiniz, sonra satirlar listeye eklenir">${icoXlsIc()} Excel Motoru</button>
-        <input type="file" id="ihtXmFile" accept=".xlsx,.xls,.xlsm,.csv" class="hidden" onchange="ihtXmDosya(event,false)">
       </div>
       <div class="tut-tot">
         <div id="ihtTotEksik" style="margin-right:auto">${tt.eksik?`<span class="iht-uyari">&#9888; ${fmtNum(tt.eksik)} satirda bina/kat secilmedi</span>`:''}</div>
@@ -47059,9 +47135,9 @@ function ihtSatirBirlestir(line){
    ══════════════════════════════════════════════════════════════════════════ */
 let _XM=null;   // acik Excel Motoru penceresi: profil (cfg), dosya, sutun eslemesi, satirlar, gorunum (bkz. _xmOku)
 // IHTIYAC PROFILININ alanlari (pencere sirasi). Zorunlu: kod YA DA ad
-const XM_ALAN_IHT=[{k:'kod',t:'Urun / stok kodu'},{k:'ad',t:'Malzeme adi'},{k:'miktar',t:'Miktar'},{k:'birim',t:'Birim'},
-  {k:'marka',t:'Marka'},{k:'bina',t:'Bina'},{k:'kat',t:'Kat'},{k:'konum',t:'Konum (oda / aks)'},{k:'not',t:'Not'},
-  {k:'kut',t:'Kutuphane (Proje / Mobilizasyon / Mekanik)'}];
+const XM_ALAN_IHT=[{k:'kod',t:'Urun / stok kodu',sablon:'Urun Kodu'},{k:'ad',t:'Malzeme adi',sablon:'Malzeme Adi'},{k:'miktar',t:'Miktar'},{k:'birim',t:'Birim'},
+  {k:'marka',t:'Marka'},{k:'bina',t:'Bina'},{k:'kat',t:'Kat'},{k:'konum',t:'Konum (oda / aks)',sablon:'Konum'},{k:'not',t:'Not'},
+  {k:'kut',t:'Kutuphane (Proje / Mobilizasyon / Mekanik)',sablon:'Kutuphane'}];
 /* Baslik tanima. SIRA ONEMLI: baslik ILK tutan alana gider - "Malzeme Kodu" kod'dur (ad degil),
    "Birim Fiyat" / "Stok Miktari" / "Bina Kodu" hicbir alana gitmez. Bu ekranin kendi Excel'i
    (urun_kodu, malzeme, miktar, bina, kat, konum, not, kutuphane) birebir okunur. */
@@ -47178,7 +47254,8 @@ function _xmIndeks(X){
   const koy=(map,k,it)=>{ if(!k) return; const a=map.get(k); if(!a) map.set(k,[it]); else if(!a.includes(it)) a.push(it); };
   items.forEach(it=>{
     I.by.set(it.src+':'+it.id,it);
-    const es=it.src==='proje'?(((proje.get(it.id)||{}).altCodes)||[]).map(c=>String(c==null?'':c).trim()).filter(Boolean):[];
+    // es kodlar: kaynak kendisi verebilir (it.es - Siparis profili: ozel / varyant kodlari), yoksa Proje urununun varyant kodlari
+    const es=(it.es||(it.src==='proje'?(((proje.get(it.id)||{}).altCodes)||[]):[])).map(c=>String(c==null?'':c).trim()).filter(Boolean);
     koy(I.kod,_kimlikTemiz(it.kod),it);
     es.forEach(c=>koy(I.es,_kimlikTemiz(c),it));
     [it.kod,...es].forEach(c=>koy(I.gev,_xmKodGevsek(c),it));
@@ -47238,13 +47315,16 @@ function _xmTercih(its,r,I){
 }
 /* durum: tam (yesil) | oneri (sari, onay ister) | yok (kirmizi - elle satir).
    neden: kod, eskod, kodyazim, cokkod, kodsuz, kodyok, ad, cokad, benzer, elle */
-function _xmEsle(r,I){
+function _xmEsle(r,I,X){
   Object.assign(r,{src:'',id:'',skor:0,durum:'yok',neden:'',onay:false,ipucu:null,aday:[],coklu:0,kodTuttu:false});
   if(!I.items.length) return;
   const yaz=(it,skor,durum,neden)=>Object.assign(r,{src:it.src,id:it.id,skor,durum,neden});
   const kod=String(r.kod||'').trim();
-  if(kod){
-    const k=_kimlikTemiz(kod);
+  /* Birden fazla kod alani olan profil (Siparis: once Ozel No, sonra urun kodu) en ayirt edici kodu
+     once dener; hicbiri birebir / es kod tutmazsa yazim benzerligi ve ad yolu ana kodla surer. */
+  const kodlar=((X&&X.cfg&&X.cfg.kodlar)?X.cfg.kodlar(r):[kod]).map(c=>String(c==null?'':c).trim()).filter(Boolean);
+  for(const kk of kodlar){
+    const k=_kimlikTemiz(kk);
     let hit=I.kod.get(k)||[], neden='kod';
     if(!hit.length){ hit=I.es.get(k)||[]; neden='eskod'; }
     if(hit.length){
@@ -47252,6 +47332,8 @@ function _xmEsle(r,I){
       Object.assign(r,{aday:hit.map(it=>({it,skor:1})),coklu:hit.length,kodTuttu:true});
       yaz(t.it,1,t.kesin?'tam':'oneri',t.kesin?neden:'cokkod'); return;
     }
+  }
+  if(kod){
     const gev=I.gev.get(_xmKodGevsek(kod))||[];
     if(gev.length){
       const t=_xmTercih(gev,r,I);
@@ -47332,11 +47414,55 @@ function _xmKur(X){
     // baslik satiri gibi duran satir ("ELEKTRIK MALZEMELERI": kodu, miktari, birimi yok) isaretsiz gelir
     r.baslik=X.col.miktar!=null&&!r.kod&&!r.qYazi&&!r.marka&&!r.birim;
     r.dahil=!r.baslik;
-    _xmEsle(r,X.I);
+    _xmEsle(r,X.I,X);
     r.hedef=X.cfg.hedef?X.cfg.hedef(r,X):null;
   });
   Object.assign(X,{rows,filtre:'hepsi',q:'',kuruldu:true});
   return rows.length;
+}
+/* ---- acilis penceresi: her profil ayni kucuk pencereyle baslar ----
+   Sablon onizlemesi (profilin sutunlari), "Sablon Indir" (ayni basliklarla bos Excel) ve
+   "Excel Sec ve Eslestir" (dosya kutusu). Dosya secilince pencere kapanir, motor acilir. */
+let _XM_ACILIS=null;   // {cfg,onOku} - acilis penceresi acikken
+function xmSablonBasliklar(cfg){ return cfg.alanlar.map(a=>a.sablon||a.t.replace(/ \(.*$/,'')); }
+function xmAcilis(cfg,onOku){
+  _XM_ACILIS={cfg,onOku};
+  const bas=xmSablonBasliklar(cfg), ornek=(cfg.ornek||[])[0]||[], zorunlu=k=>k==='kod'||k==='ad';
+  closeModal();
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg" onclick="if(event.target===this)xmAcilisKapat()"><div class="modal xm-acilis">
+    <div class="modal-head"><h3>Excel Motoru<span class="t-meta">${esc(cfg.baslik)}</span></h3><button class="mini-btn" onclick="xmAcilisKapat()">x</button></div>
+    <div class="modal-body">
+      <p class="t-meta xm-acilis-not">Excel'deki her satir bir <b>${esc(cfg.satirAd||'satir')}</b> olur: once <b>stok kodu</b> (kod kimliktir), kod yoksa <b>malzeme adi</b> ile ${esc(cfg.eslAd?cfg.eslAd.toLowerCase():'kutuphane urunu')} bulunur.
+        Yesil satir hazir, sari satir onayinizi bekler, kirmizi satir eslesmedi. Ilk satir basliktir; basliklar sablondaki gibiyse sutunlar kendiliginden taninir, degilse <b>Sutunlar</b> penceresinden secersiniz.</p>
+      <div class="xm-sablon-kap"><table class="xm-sablon">
+        <tr>${cfg.alanlar.map((a,i)=>`<th${zorunlu(a.k)?' class="z"':''}>${esc(bas[i])}${zorunlu(a.k)?' *':''}</th>`).join('')}</tr>
+        <tr>${cfg.alanlar.map((a,i)=>`<td>${esc(ornek[i]==null?'':String(ornek[i]))}</td>`).join('')}</tr>
+      </table></div>
+      <p class="t-meta" style="margin:8px 0 0;font-size:11px;line-height:1.55">* Kod ya da malzeme adi sutunlarindan en az biri gerekli. ${cfg.sutunNot||''}</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" style="margin-right:auto" onclick="xmSablonIndir()" title="Bu basliklarla bos bir Excel sablonu indirir - doldurup geri yukleyin">${icoXlsIc()} Sablon Indir</button>
+      <button class="btn btn-ghost" onclick="xmAcilisKapat()">Vazgec</button>
+      <button class="btn btn-add" onclick="document.getElementById('xmAcilisFile').click()">${icoUp()} Excel Sec ve Eslestir</button>
+      <input type="file" id="xmAcilisFile" accept=".xlsx,.xls,.xlsm,.csv" class="hidden" onchange="xmAcilisDosya(event)">
+    </div></div></div>`);
+}
+function xmAcilisKapat(){ _XM_ACILIS=null; closeModal(); }
+function xmAcilisDosya(e){
+  const A=_XM_ACILIS, f=e&&e.target&&e.target.files&&e.target.files[0]; if(e&&e.target) e.target.value='';
+  if(!A||!f) return;
+  _XM_ACILIS=null; closeModal();
+  xmDosyaAc(f,A.cfg,A.onOku);
+}
+// profilin basliklariyla bos sablon: ilk satir baslik, ikinci satir silinecek ornek
+function xmSablonIndir(){
+  const A=_XM_ACILIS; if(!A) return;
+  const cfg=A.cfg, bas=xmSablonBasliklar(cfg);
+  const ws=XLSX.utils.aoa_to_sheet([bas,...(cfg.ornek||[])]);
+  ws['!cols']=bas.map(h=>({wch:Math.max(14,Math.min(40,h.length+6))}));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Liste');
+  XLSX.writeFile(wb,(cfg.sablonAd||'excel-motoru')+'-sablon.xlsx');
+  toast('Sablon indirildi - doldurup "Excel Sec" ile geri yukleyin');
 }
 /* ---- giris: dosya okuma ---- */
 /* Dosyayi okur ve profille pencereyi acar. onOku(X): profilin on kosulu - false donerse
@@ -47418,7 +47544,8 @@ function _xmThumb(img){ return img?`<img class="tut-thumb" src="${esc(img)}" alt
   :`<div class="tut-thumb-ph"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="9" cy="9" r="2"/></svg></div>`; }
 // eslesmeyi kopar: kirik zincir
 function icoBagKopar(){ return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 017 7h2M15 7h2a5 5 0 014.5 7.2M8 12h3M3 3l18 18"/></svg>'; }
-function _xmNeden(r,pct){
+function _xmNeden(r,pct,X){
+  const oz=X&&X.cfg&&X.cfg.neden&&X.cfg.neden[r.neden]; if(oz) return typeof oz==='function'?oz(r,pct):oz;
   switch(r.neden){
     case 'kod': return 'stok kodu birebir';
     case 'eskod': return 'Excel kodu bu urunun es kodu';
@@ -47454,7 +47581,7 @@ function _xmSatirHtml(r,i,it,u,st,X){
   const pill=XM_PILL[r.neden]||(r.neden==='cokkod'?'KOD x'+r.coklu:r.neden==='cokad'?'AD x'+r.coklu:pct+'%');
   const esl=it
     ?`${_xmThumb(it.img)}<div class="xm-mad"><b>${esc(it.ad||'-')}</b><span>${esc([it.kod,it.marka,it.birim].filter(Boolean).join(' · ')||'kod yok')}${
-        X.I.coklu?`<i class="xm-kut" style="color:${kt.renk||'var(--dim)'}">${esc(kt.label||it.src)}</i>`:''}</span><span class="xm-neden">${esc(_xmNeden(r,pct))}</span></div>
+        X.I.coklu?`<i class="xm-kut" style="color:${kt.renk||'var(--dim)'}">${esc(kt.label||it.src)}</i>`:''}</span><span class="xm-neden">${esc(_xmNeden(r,pct,X))}</span></div>
       <span class="xm-pill ${st}">${esc(pill)}</span>`
     :`<div class="xm-mad yok"><b>Eslesme yok</b><span class="xm-neden">${esc(_xmYokNeden(r,X))}</span>${_xmIpucuHtml(r,i,X)}</div><span class="xm-pill yok">ELLE</span>`;
   return `<div class="xm-row st-${st}${r.dahil?'':' off'}" data-i="${i}">
@@ -47490,7 +47617,7 @@ function _xmSatirlarHtml(X){
   if(!n) return `<div class="xm-bos">${X.q?'Aramaya uyan satir yok':'Bu suzgecte satir yok'}</div>`;
   return `<div class="xm-satirlar">
     <div class="xm-row xm-thead"><label class="xm-chk" title="Suzgecteki ${fmtNum(n)} satirin hepsini isaretle / birak"><input type="checkbox" ${hepsiDahil?'checked':''} onchange="xmGorunenDahil(this.checked)"></label>
-      <span class="xm-src">Excel satiri</span><span class="xm-qty">${esc(X.cfg.miktarAd||'Miktar')}</span><span class="xm-ok"></span><span class="xm-esl">Kutuphane urunu</span><span class="xm-act"></span></div>
+      <span class="xm-src">Excel satiri</span><span class="xm-qty">${esc(X.cfg.miktarAd||'Miktar')}</span><span class="xm-ok"></span><span class="xm-esl">${esc(X.cfg.eslAd||'Kutuphane urunu')}</span><span class="xm-act"></span></div>
     ${satir.join('')}${n>satir.length?`<div class="xm-bos">+${fmtNum(n-satir.length)} satir daha - suzgec ya da aramayla daraltin</div>`:''}</div>`;
 }
 function _xmListeCiz(X){
@@ -47696,6 +47823,7 @@ function xmAktar(){
    Uc kutuphane de aranir (Proje / Mobilizasyon / Mekanik), secili sartname onceliklidir. */
 function ihtXmProfil(){
   return {id:'ihtiyac',baslik:'Ihtiyac Listesi',alanlar:XM_ALAN_IHT,sutun:XM_SUTUN_IHT,miktarAd:'Miktar',
+    sablonAd:'ihtiyac-listesi',satirAd:'ihtiyac satiri',ornek:[['ORNEK-KOD','Ornek malzeme (bu satiri silin)',10,'adet','','','','','','']],
     kaynaklar:()=>tutKaynaklar(),sart:()=>ihtSartUrunSuzgeci(),
     baslat:X=>{ X.bina=(_IHT&&_IHT.bina)||''; X.varK=_ihtXmVarK(); },
     hedef:(r,X)=>_ihtXmHedef(r,X.bina),
@@ -47712,15 +47840,11 @@ function ihtXmProfil(){
     // liste ekranindan acilan BOS yeni liste, vazgecilince geride bos form olarak kalmasin (kmbKapat ile ayni)
     kapat:X=>{ if(X.yeniListe&&_IHT&&_IHT._yeni&&!ihtFilledLines(_IHT).length) ihtBackToList(); }};
 }
+// yeni=true: liste ekranindan - dosya OKUNABILIRSE yeni liste acilir (okunamazsa ekran degismez)
 function ihtXmSec(yeni){
   if(!ihtCanEdit()){ toast('Bu islem icin yetkiniz yok','err'); return; }
   if(!yeni&&!_IHT){ toast('Once bir ihtiyac listesi acin','err'); return; }
-  const inp=document.getElementById(yeni?'ihtXmFileYeni':'ihtXmFile'); if(inp) inp.click();
-}
-// yeni=true: liste ekranindan - dosya OKUNABILIRSE yeni liste acilir (okunamazsa ekran degismez)
-function ihtXmDosya(e,yeni){
-  const f=e&&e.target&&e.target.files&&e.target.files[0]; if(e&&e.target) e.target.value=''; if(!f) return;
-  xmDosyaAc(f,ihtXmProfil(),X=>{
+  xmAcilis(ihtXmProfil(),X=>{
     if(yeni){ newIhtiyac(); if(!_IHT||IHTV.mode!=='form') return false; X.yeniListe=true; }
     if(!_IHT){ toast('Once bir ihtiyac listesi acin','err'); return false; }
     return true;
