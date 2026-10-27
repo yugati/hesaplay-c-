@@ -10020,6 +10020,49 @@ function gyOdaSecenekleri(bina){
     .forEach(o=>out.push({v:o, etiket:puan[o]?'':'onceden yazilan'}));
   return out.slice(0,1500);
 }
+/* ODA KODU SUZGECI (Gunluk Yazi oda kutusu). Tarayicinin datalist'i yalniz "icinde gecen"
+   bakar ve siralanamaz: "12" yazinca 00UYB10R012 ile 00UYB12R001 ve 00UYB10R120 karisik
+   gelirdi. Burada yalin sayi ODA NUMARASI sayilir ve siralanir:
+     0 oda no birebir (…R012)   1 kat birebir (00UYB12R…)   2 oda no "12" ile biter
+     3 oda no "12" ile baslar (R120)   4 kodun herhangi bir sayi obeginde gecer
+   "12 5" / "12-5" / "12/5" = 12. kat 5 no'lu oda. Harf iceren sorgu acFilter'a gider.
+   Kod obekleri: son sayi = oda no, ondan onceki = kat (00UYB10R039 -> kat 10, oda 039). */
+function gyOdaSuz(src,q){
+  q=String(q||'').trim();
+  if(!q) return src.slice(0,40);
+  const m=q.match(/^[rR]?(\d+)$/), m2=q.match(/^(\d+)[\s\-\/.kK]+[rR]?(\d+)$/);
+  if(!m&&!m2) return acFilter(src,q);
+  const n=x=>String(parseInt(x,10));
+  const puanla=it=>{
+    const ob=String(it.ad||'').match(/\d+/g)||[];
+    if(!ob.length) return -1;
+    const oda=ob[ob.length-1], kat=ob.length>1?ob[ob.length-2]:'';
+    if(m2) return (n(kat)===n(m2[1])&&n(oda)===n(m2[2]))?0:-1;
+    const ham=m[1], s=n(ham);
+    if(n(oda)===s) return 0;
+    if(kat&&n(kat)===s) return 1;
+    if(oda.endsWith(ham)) return 2;
+    if(oda.startsWith(ham)||n(oda).startsWith(s)) return 3;
+    if(ob.some(g=>g.includes(ham))) return 4;
+    return -1;
+  };
+  const out=[];
+  src.forEach((it,i)=>{ const p=puanla(it); if(p>=0) out.push([p,i,it]); });
+  out.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+  return out.slice(0,60).map(x=>x[2]);
+}
+// oda kutusuna odaklaninca acilir liste; secimde oda yazilir, imlec kisi kutusuna gecer
+function gyOdaAc(el,i,j){
+  if(!_GY||!el||el.disabled||el.readOnly) return;
+  const src=gyOdaSecenekleri(_GY.bina).map(o=>({ad:o.v, sub:o.etiket||'', alt:o.etiket||''}));
+  acOpen(el, src, it=>{
+    el.value=it.ad; gySetOda(i,j,it.ad);
+    const sat=el.closest('.gy-satir'), k=sat&&sat.querySelector('input.gy-kisi');
+    if(k){ k.focus(); if(k.select) k.select(); }
+  }, false, gyOdaSuz);
+  // Tab ile cikinca liste asili kalmasin (tiklamada acPick once calisir, AC.el degismis olur)
+  el.addEventListener('blur',()=>setTimeout(()=>{ if(AC.el===el) acClose(); },150),{once:true});
+}
 function gyOdaDatalist(id,bina){
   return `<datalist id="${id}">${gyOdaSecenekleri(bina).map(o=>`<option value="${esc(o.v)}"${o.etiket?` label="${esc(o.etiket)}"`:''}></option>`).join('')}</datalist>`;
 }
@@ -10329,7 +10372,7 @@ function gyGruplarHtml(){
         <span class="gy-gt" id="gyGT${i}"></span></div>
     </div>`;
     const satirlar=(g.satirlar||[]).map((r,j)=>`<div class="gy-satir${r&&r.tahmin?' tahmin':''}" id="gyR${i}_${j}"${r&&r.tahmin?' title="Tahmin Ata ile dagitildi - elle degistirince isaret kalkar"':''}>
-      <span class="gy-oda-k"><input class="gy-oda" list="gyOdaListesi" value="${esc((r&&r.oda)||'')}" placeholder="oda kodu - orn. 00UYB14R017" oninput="gySetOda(${i},${j},this.value)"${kilit}>${gyOdaBagHtml(odaIdx,r&&r.oda,'gyOB'+i+'_'+j)}</span>
+      <span class="gy-oda-k"><input class="gy-oda" value="${esc((r&&r.oda)||'')}" placeholder="oda kodu - orn. 00UYB14R017" autocomplete="off" onfocus="gyOdaAc(this,${i},${j})" oninput="gySetOda(${i},${j},this.value)"${kilit}>${gyOdaBagHtml(odaIdx,r&&r.oda,'gyOB'+i+'_'+j)}</span>
       <input class="gy-kisi" type="number" min="0" step="1" value="${say(r&&r.kisi)}" placeholder="kisi" oninput="gySetKisi(${i},${j},this.value)"${kilit}>
       ${_GY.geceVar?`<input class="gy-kisi gy-gece-kisi" type="number" min="0" step="1" value="${say(r&&r.geceKisi)}" placeholder="gece" title="Gece kişi sayısı" oninput="gySetGeceKisi(${i},${j},this.value)"${kilit}>`:''}
       <button class="mini-btn del"${kilit} title="Satiri sil" onclick="gySatirSil(${i},${j})">${icoTrash()}</button>
@@ -10341,8 +10384,7 @@ function gyGruplarHtml(){
       ${_GYT&&_GYT.gid===g.gid?`<div class="gy-tahmin" id="gyTP">${gyTahminHtml(i)}</div>`:''}
     </div>`;
   }).join('');
-  return govde
-    +gyOdaDatalist('gyOdaListesi',y.bina);
+  return govde;
 }
 
 // baslik ORTAK listede yasar: buradaki degisiklik tum firmalarin formuna yansir
@@ -41422,10 +41464,11 @@ mkrGenelIzle(MKR.acik);
 
 // global aktif autocomplete durumu
 let AC={el:null,drop:null,src:[],onPick:null,allowNew:true,hl:-1,q:''};
-function acOpen(inputEl, src, onPick, allowNew){
+function acOpen(inputEl, src, onPick, allowNew, filtre){
   acClose();
   inputEl._mkrAra=false;   // secici alan: degeri secilen urunun adi, arama sorgusu degil (bkz. mkrGenelKutuMu)
-  AC={el:inputEl,src,onPick,allowNew:allowNew!==false,hl:-1,q:inputEl.value,drop:null};
+  // filtre: (src,q)=>liste - verilmezse acFilter (oda kodu gibi alana ozel siralama icin)
+  AC={el:inputEl,src,onPick,allowNew:allowNew!==false,hl:-1,q:inputEl.value,drop:null,filtre:filtre||null};
   const drop=document.createElement('div'); drop.className='ac-drop'; AC.drop=drop;
   document.body.appendChild(drop); // GOVDEYE portal - kirpilma ve katmanlama sorunlari icin
   acPos(); acRender();
@@ -41471,7 +41514,7 @@ function acSatirIsaret(it,q){
 }
 function acRender(){
   if(!AC.drop)return;
-  const list=acFilter(AC.src,AC.q);
+  const list=(AC.filtre||acFilter)(AC.src,AC.q);
   let html=list.map((it,i)=>{ const mk=acSatirIsaret(it,AC.q);
     return `<div class="ac-item ${i===AC.hl?'hl':''}" onmousedown="acPick(${i})" style="${it.img!==undefined?'display:flex;align-items:center;gap:9px':''}">
     ${it.img!==undefined?(it.img?`<img src="${it.img}" style="width:34px;height:34px;border-radius:6px;object-fit:contain;background:#fff;flex-shrink:0">`:`<div style="width:34px;height:34px;border-radius:6px;background:var(--dim)22;display:flex;align-items:center;justify-content:center;flex-shrink:0">${phIcoSm()}</div>`):''}
@@ -41494,7 +41537,7 @@ function acPick(i){ const it=AC._list[i]; if(!it)return; const cb=AC.onPick, el=
 function acPickNew(){ const q=AC.q.trim(); const cb=AC.onPick; acClose(); cb({ad:q}, true); }
 function acClose(){ if(AC.el){ AC.el.removeEventListener('input',acInput); AC.el.removeEventListener('keydown',acKey); }
   window.removeEventListener('scroll',acPos,true); window.removeEventListener('resize',acPos);
-  if(AC.drop)AC.drop.remove(); AC={el:null,drop:null,src:[],onPick:null,allowNew:true,hl:-1,q:''}; }
+  if(AC.drop)AC.drop.remove(); AC={el:null,drop:null,src:[],onPick:null,allowNew:true,hl:-1,q:'',filtre:null}; }
 document.addEventListener('mousedown',e=>{ if(AC.drop && !e.target.closest('.ac-drop') && e.target!==AC.el) acClose(); });
 
 /* ===================================================================
