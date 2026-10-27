@@ -4,6 +4,7 @@ import { oturumlariKapat } from '../lib/oturum.js'
 import { hashPassword, sifreKurallari } from '../lib/password.js'
 import { aktifOrg, VARSAYILAN_ORG } from '../lib/org.js'
 import { aktifTasari } from '../lib/tasari.js'
+import { aktifBirim, birimIdGecerli } from '../lib/birim.js'
 import { denetimGorebilir, tokenKullanici } from '../lib/yetki.js'
 import { adUyumlu } from '../lib/adSutunu.js'
 
@@ -24,6 +25,13 @@ import { adUyumlu } from '../lib/adSutunu.js'
 // Vercel projesinde o desen yok - rota tek segmentlik kalir, /api/users 404
 // doner ve parametre 'id' degil '[...id]' adiyla gelir. 14 Eylul 2026'da canli
 // bu yuzden bozuldu (Kullanici Yonetimi "Istek basarisiz (404)").
+
+// Birim erisim listesi: yalnizca gecerli kimlikler, tekil, en fazla 50
+function birimTemizle(liste) {
+  if (!Array.isArray(liste)) return []
+  return [...new Set(liste.filter(birimIdGecerli))].slice(0, 50)
+}
+
 export default async function handler(req, res) {
   const claims = await requireAdmin(req)
   if (!claims) { res.status(403).json({ error: 'Yetkiniz yok' }); return }
@@ -47,7 +55,7 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { username, password, role, sections, buildings, permissions, tel, email, meslek, ad } = req.body || {}
+      const { username, password, role, sections, buildings, permissions, tel, email, meslek, ad, birimler } = req.body || {}
       if (!username || !password) { res.status(400).json({ error: 'Kullanici adi ve sifre gerekli' }); return }
       // Asama 4: yeni sifreler asgari kuraldan gecer (bkz. lib/password.js sifreKurallari)
       const kuralHatasi = sifreKurallari(password, username)
@@ -86,9 +94,14 @@ export default async function handler(req, res) {
            adUyumlu'nun DISINDA cozulur: o sarmalayici geri cagirmayi gerektiginde
            ikinci kez calistiriyor ve geri cagirma senkron - icine await konamaz. */
         const tasari = await aktifTasari(claims)
+        /* birim_id de ayni kuralla: olusturan yoneticinin aktif birimi, bir baslangic
+           noktasi. birimler = girebildigi birimler (bos = tumu; bina erisimiyle ayni
+           kural) - yonetici rolunde her zaman bos yazilir, yonetici her birime girer. */
+        const birim = await aktifBirim(claims)
+        const birimListesi = role === 'admin' ? [] : birimTemizle(birimler)
         // adUyumlu: users.ad sutunu henuz eklenmemisse kayit adsiz gecer (bkz. lib/adSutunu.js)
         const { data, error } = await adUyumlu(adDahil => {
-          const satir = { username, password: hashed, role, sections, buildings, permissions: izinler, tel: tel || '', email: email || '', meslek: meslek || '', org_id: org, tasari_id: tasari, is_super: false }
+          const satir = { username, password: hashed, role, sections, buildings, permissions: izinler, tel: tel || '', email: email || '', meslek: meslek || '', org_id: org, tasari_id: tasari, birim_id: birim, birimler: birimListesi, is_super: false }
           if (adDahil) satir.ad = ad || ''
           return supabaseAdmin.from('users').insert([satir]).select().single()
         })
@@ -130,9 +143,15 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
-    const { password, role, sections, buildings, permissions, tel, email, meslek, ad } = req.body || {}
+    const { password, role, sections, buildings, permissions, tel, email, meslek, ad, birimler } = req.body || {}
     const update = { role, sections, buildings }
     if (permissions !== undefined) update.permissions = permissions
+    /* BIRIM ERISIMI. Yalnizca gonderildiyse yazilir (eski istemci / toplu tasima
+       cagrilari bu alani gondermez, mevcut liste korunur). Yonetici rolunde liste
+       bosaltilir: yonetici her birime girer, dolu liste yaniltici olurdu. Kaydin
+       aktif oturumu 20 dakikada bir tazelenirken (api/me.js) erisimini kaybettigi
+       birimden dusurulur - degisiklik en gec o kadar sonra etkili olur. */
+    if (birimler !== undefined) update.birimler = (role || hedef.role) === 'admin' ? [] : birimTemizle(birimler)
 
     /* ─── DENETIM KAYDI YETKISI ────────────────────────────────────────────
        Yetki users.permissions.denetim icinde durur ve UC kurala baglidir:
@@ -205,7 +224,7 @@ export default async function handler(req, res) {
         const yeniSurum = await oturumlariKapat(id)
         if (yeniSurum !== null && id === claims.sub) {
           const ttl = yenilenenTtl(claims)
-          res.status(200).json({ ...safe, token: signSession({ ...data, oturum_surumu: yeniSurum }, ttl, claims.org, claims.tas), ttl })
+          res.status(200).json({ ...safe, token: signSession({ ...data, oturum_surumu: yeniSurum }, ttl, claims.org, claims.tas, claims.bir), ttl })
           return
         }
       }

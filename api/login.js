@@ -4,6 +4,8 @@ import { verifyPassword, hashPassword, isHashed } from '../lib/password.js'
 import { girisKilitli, hataliDeneme, basariliGiris, istekIp } from '../lib/girisKoruma.js'
 import { denetimYaz } from '../lib/denetim.js'
 import { VARSAYILAN_ORG } from '../lib/org.js'
+import { VARSAYILAN_TASARI } from '../lib/tasari.js'
+import { birimCoz } from '../lib/birim.js'
 
 // Kilit mesaji: kalan sureyi insan diliyle yazar
 function kalanMetin(sn) {
@@ -94,7 +96,11 @@ export default async function handler(req, res) {
   delete safeUser.password
   // Giriste aktif organizasyon HER ZAMAN kullanicinin kendi organizasyonudur;
   // super yonetici gecis yaparsa token api/org.js'te yeniden imzalanir.
-  const token = signSession(safeUser, ttlMs)
+  /* AKTIF BIRIM giriste COZULUR, kullanici satirindan dogrudan alinmaz: yonetici
+     kisinin birim erisimini daraltmis ya da varsayilan birimi kapatilmis olabilir.
+     birimCoz erisebildigi gecerli bir birim secer (bkz. lib/birim.js). */
+  const birim = await birimCoz(safeUser.org_id || VARSAYILAN_ORG, safeUser.tasari_id || VARSAYILAN_TASARI, safeUser.birim_id, safeUser)
+  const token = signSession(safeUser, ttlMs, null, null, birim)
   /* GIRIS KAYDI ARTIK SUNUCUDA. Eskiden index.html afterLogin icinde, veri
      yuklendikten SONRA atiliyordu: yukleme hata verirse ya da istemci logAction'i
      atlarsa giris hic kaydedilmiyordu. Buradan yazilinca "kim ne zaman girdi"
@@ -103,5 +109,5 @@ export default async function handler(req, res) {
     user: safeUser.username, role: safeUser.role, action: 'login', ip,
     detail: 'Giris yapildi' + (rememberMe ? ' (beni hatirla)' : ''),
   })
-  res.status(200).json({ user: safeUser, org: safeUser.org_id || VARSAYILAN_ORG, token })
+  res.status(200).json({ user: safeUser, org: safeUser.org_id || VARSAYILAN_ORG, birim, token })
 }

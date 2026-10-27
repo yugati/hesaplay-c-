@@ -34,6 +34,8 @@ import {
   sbOrgSil,
   sbTasariGecis,
   sbTasariYeni,
+  sbBirimGecis,
+  sbBirimYeni,
   // Core
   sbLoadAllData,
   sbMigrateLocalDB,
@@ -308,6 +310,9 @@ window.sbOrgSil            = sbOrgSil
 // Tasari (proje katmani) - liste sbOrgListesi yanitinda geliyor, ayri uc yok
 window.sbTasariGecis       = sbTasariGecis
 window.sbTasariYeni        = sbTasariYeni
+// Birim (disiplin katmani) - liste yine sbOrgListesi yanitinda, ayri uc yok
+window.sbBirimGecis        = sbBirimGecis
+window.sbBirimYeni         = sbBirimYeni
 
 // ─── Core ────────────────────────────────────────────────────────────────────
 window.sbLoadAllData       = sbLoadAllData

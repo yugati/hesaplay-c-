@@ -5,6 +5,7 @@ import { signSession, SESSION_TTL_DEFAULT } from '../lib/auth.js'
 import { girisKilitli, hataliDeneme, basariliGiris, istekIp } from '../lib/girisKoruma.js'
 import { denetimYaz } from '../lib/denetim.js'
 import { ilkTasari, VARSAYILAN_TASARI } from '../lib/tasari.js'
+import { ilkBirim, VARSAYILAN_BIRIM } from '../lib/birim.js'
 import sahaLink from '../lib/sahaLink.js'
 
 const ROL_AD = { admin: 'Yonetici', izleyici: 'Izleyici', saha_personeli: 'Saha Personeli' }
@@ -111,12 +112,17 @@ async function davetKabul(req, res, token) {
        acilir. Bir kilit degil, bir baslangic noktasi: giris yaptiktan sonra
        diger projelere gecebilir. */
     const ilkTas = (await ilkTasari(davet.org_id)) || VARSAYILAN_TASARI
+    /* birim_id de ACIKCA yazilir (migration_birim_2.sql varsayilani dusurur).
+       Davetteki birim erisim listesi (birimler, bos = tumu) kullaniciya gecer;
+       varsayilan birim o listeye gore erisebildigi ILK birimdir. */
+    const birimler = Array.isArray(davet.birimler) ? davet.birimler : []
+    const ilkBir = (await ilkBirim(davet.org_id, ilkTas, { role: davet.role, birimler })) || VARSAYILAN_BIRIM
     const { data: user, error: insErr } = await supabaseAdmin
       .from('users')
       .insert([{
         username, password: hashed, role: davet.role, sections: davet.sections || [],
-        buildings: davet.buildings || [], permissions: izinler,
-        email: davet.email, org_id: davet.org_id, tasari_id: ilkTas, is_super: false,
+        buildings: davet.buildings || [], permissions: izinler, birimler,
+        email: davet.email, org_id: davet.org_id, tasari_id: ilkTas, birim_id: ilkBir, is_super: false,
       }])
       .select().single()
     if (insErr) {

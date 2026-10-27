@@ -37,16 +37,18 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      const { email, role, sections, buildings, permissions } = req.body || {}
+      const { email, role, sections, buildings, permissions, birimler } = req.body || {}
       if (!email || !String(email).includes('@')) { res.status(400).json({ error: 'Gecerli bir e-posta girin' }); return }
       if (!role) { res.status(400).json({ error: 'Rol gerekli' }); return }
       try {
         const token = uretToken()
         const expiresAt = new Date(Date.now() + DAVET_GECERLILIK_MS).toISOString()
+        // birimler: davet edilenin girebilecegi birimler (bos = tumu) - kabulde kullaniciya yazilir
         const { data, error } = await supabaseAdmin
           .from('invites')
           .insert([{
             org_id: org, email, role, sections: sections || [], buildings: buildings || [],
+            birimler: Array.isArray(birimler) ? birimler : [],
             permissions: permissions || {}, token_hash: tokenHash(token),
             created_by: claims.sub, expires_at: expiresAt,
           }])

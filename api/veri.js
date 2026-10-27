@@ -4,6 +4,7 @@ import { yetkiKontrol, denetimGorebilir, faturaYazmaKontrol, faturaGovdeSabitle 
 import { denetimYaz } from '../lib/denetim.js'
 import { VARSAYILAN_ORG } from '../lib/org.js'
 import { VARSAYILAN_TASARI, tasariFiltrelenir, tasariDamgalanir } from '../lib/tasari.js'
+import { VARSAYILAN_BIRIM, ORTAK_BIRIM, birimFiltrelenir, birimDamgalanir, ayarBirimi } from '../lib/birim.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // VERI ERISIM UCU (Asama 1)
@@ -90,6 +91,11 @@ const CAKISMA_ANAHTAR = {
 function cakismaHedefi(table) {
   // Listede olmayan tablolar varlik tablolaridir: anahtar 'id'.
   const anahtar = CAKISMA_ANAHTAR[table] || 'id'
+  /* BIRIM ozel tablolarda hedef birim_id de tasir (migration_birim_1.sql'deki
+     benzersiz indeksler). Tasimasaydi Insaat'in "Ekip 1"i Elektrik'in ekibini
+     GUNCELLERDI. app_settings dahil: ortak anahtarlar '_tasari' kimligiyle,
+     digerleri aktif birimle yazilir (bkz. damga). */
+  if (birimFiltrelenir(table)) return `org_id,tasari_id,birim_id,${anahtar}`
   return tasariFiltrelenir(table) ? `org_id,tasari_id,${anahtar}` : `org_id,${anahtar}`
 }
 
@@ -97,10 +103,10 @@ function cakismaHedefi(table) {
    kisi 'proje_items' degil 'Siparis satiri' gormeli - listede bilmedigi bir tablo
    adi gorurse kaydi okumaz. Listede olmayan tablo kendi adiyla yazilir. */
 const TABLO_ADI = {
-  companies: 'Sirket', tutanaklar: 'Tutanak', alet_items: 'El aleti', alet_lib: 'Alet kunyesi',
+  companies: 'Sirket', tutanaklar: 'Tutanak', alet_items: 'El aleti', alet_lib: 'El aleti kunyesi',
   saha_panels: 'Saha panosu', saha_lines: 'Saha hatti', saha_sockets: 'Saha prizi',
-  rapor_entries: 'Rapor kaydi', gecici_lib: 'Gecici elektrik kunyesi',
-  gecici_moves: 'Gecici elektrik hareketi', gecici_orders: 'Gecici elektrik siparisi',
+  rapor_entries: 'Rapor kaydi', gecici_lib: 'Mobilizasyon kunyesi',
+  gecici_moves: 'Mobilizasyon hareketi', gecici_orders: 'Mobilizasyon siparisi',
   proje_sartnames: 'Sartname', proje_materials: 'Malzeme', proje_specs: 'Spesifikasyon',
   proje_items: 'Siparis satiri', proje_orders: 'Siparis', proje_alternatives: 'Alternatif',
   proje_bina_modelleri: 'Bina modeli', proje_lokasyonlar: 'Lokasyon',
@@ -154,18 +160,23 @@ export default async function handler(req, res) {
        kullanici satirindan okunur, boylece tasari katmanindan ONCE imzalanmis
        tokenler de calismaya devam eder: o oturumlar AKKUYU NGS'de kalir ve
        token 20 dakikada bir tazelenirken alan kendiliginden yerine oturur. */
-    let kullanici, org = null, tasari = null
+    /* BIRIM de ayni yerden: tokende 'bir' varsa o (kullanici baska birime GECMIS
+       olabilir ve token imzalanirken erisimi dogrulanmistir), yoksa kullanici
+       satiri - birim katmanindan onceki tokenler Elektrik'te kalir. */
+    let kullanici, org = null, tasari = null, birim = null
     if (claims.perms || claims.sections) {
       kullanici = { role: claims.role, sections: claims.sections || [], permissions: claims.perms || {} }
     }
     if (typeof claims.org === 'string' && claims.org) org = claims.org
     if (typeof claims.tas === 'string' && claims.tas) tasari = claims.tas
-    if (!kullanici || !org || !tasari) {
-      const { data } = await supabaseAdmin.from('users').select('role, sections, permissions, org_id, tasari_id').eq('id', claims.sub).maybeSingle()
+    if (typeof claims.bir === 'string' && claims.bir) birim = claims.bir
+    if (!kullanici || !org || !tasari || !birim) {
+      const { data } = await supabaseAdmin.from('users').select('role, sections, permissions, org_id, tasari_id, birim_id').eq('id', claims.sub).maybeSingle()
       if (!data) return hata(res, 401, 'Kullanici bulunamadi - yeniden giris yapin')
       kullanici = kullanici || { role: data.role, sections: data.sections || [], permissions: data.permissions || {} }
       org = org || data.org_id || VARSAYILAN_ORG
       tasari = tasari || data.tasari_id || VARSAYILAN_TASARI
+      birim = birim || data.birim_id || VARSAYILAN_BIRIM
     }
     const izin = yetkiKontrol(kullanici, table, op, !!g.all)
     if (!izin.ok) return hata(res, izin.kod, izin.mesaj)
@@ -175,9 +186,16 @@ export default async function handler(req, res) {
        proje_materials, alet_lib, gecici_lib) ve denetim kaydi disarida kalir.
        Elle tekrarlansaydi, yeni bir dal eklendiginde filtrelerden biri unutulur
        ve o yol sessizce butun projelerin verisini gorurdu. */
+    /* BIRIM filtresi yalnizca birime ozel tablolara (lib/birim.js). app_settings
+       KARMADIR: bina listesi ve migration bayraklari tasarinin tum birimlerinde
+       ortak ('_tasari' kimligiyle durur), kalan anahtarlar birime ozel. Okuma iki
+       kumeyi BIRLIKTE doner - istemci tek 'app_settings' tablosu okur, ayrimi
+       bilmez. Ayni anahtar iki kumede birden olamaz (anahtar ya ortaktir ya degil,
+       bkz. ayarBirimi), yani tekil okuma yine tek satir dondurur. */
     const kapsa = (sorgu) => {
       let x = sorgu.eq('org_id', org)
       if (tasariFiltrelenir(table)) x = x.eq('tasari_id', tasari)
+      if (birimFiltrelenir(table)) x = table === 'app_settings' ? x.in('birim_id', [birim, ORTAK_BIRIM]) : x.eq('birim_id', birim)
       return x
     }
 
@@ -298,7 +316,12 @@ export default async function handler(req, res) {
         govde = rows.map(r => ({ ...r, data: faturaGovdeSabitle(kullanici, claims.username, 'insert', null, r.data) }))
       }
       const damga = tasariDamgalanir(table) ? { org_id: org, tasari_id: tasari } : { org_id: org }
-      const satirlar = govde.map(r => ({ ...r, ...damga }))
+      /* birim_id de ZORLA: birime ozel tablolarda aktif birim; app_settings'te
+         anahtara gore ortak ('_tasari') ya da aktif birim; audit_log damgalanir. */
+      const birimDamga = r => birimDamgalanir(table)
+        ? { birim_id: table === 'app_settings' ? ayarBirimi(r && r.key, birim) : birim }
+        : {}
+      const satirlar = govde.map(r => ({ ...r, ...damga, ...birimDamga(r) }))
       const { error } = op === 'insert'
         ? await q.insert(satirlar)
         : await q.upsert(satirlar, { onConflict: cakismaHedefi(table) })
@@ -317,6 +340,7 @@ export default async function handler(req, res) {
       const yama = { ...g.patch }
       delete yama.org_id
       delete yama.tasari_id
+      delete yama.birim_id   // kayit bu uctan baska birime de tasinamaz
       if (faturaSahipligi) {
         if (g.eq.col !== 'id' || !yama.data) return hata(res, 400, 'Fatura yalnizca kimligiyle ve govdesiyle guncellenebilir')
         const eski = await faturaEski(g.eq.val)
@@ -379,6 +403,7 @@ export default async function handler(req, res) {
           // filtrelenmedigi icin, damga olmadan "hangi projenin binasi silindi"
           // sorusunun cevabi kaybolurdu.
           tasari: tasariFiltrelenir(table) ? tasari : '',
+          birim: birimFiltrelenir(table) ? birim : '',
         })
       }
       res.status(200).json({ ok: true })

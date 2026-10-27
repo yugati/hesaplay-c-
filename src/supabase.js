@@ -51,12 +51,14 @@ async function authFetch(path, opts = {}) {
 // (sifre yeniden dogrulama akislari) bu alani yok sayar.
 export async function sbLoginUser(username, password, rememberMe) {
   try {
-    const { user, token } = await authFetch('/api/login', {
+    const { user, token, birim } = await authFetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password, rememberMe: !!rememberMe }),
     })
-    return { ...user, __token: token }
+    // __birim: sunucunun COZDUGU aktif birim - kullanici satirindaki birim_id
+    // erisimi kapatilmis olabilir, token hangisiyle imzalandiysa o dogrudur
+    return { ...user, __token: token, __birim: birim }
   } catch (e) {
     if (e.status === 401) return null
     throw e
@@ -103,8 +105,10 @@ export async function sbGetUserByUsername() {
     // FARKLI olabilir - baska bir projeye gecmisse dogru cevap budur ve tazeleme
     // sonrasi da korunur (bkz. api/me.js). Korunmasaydi kullanici 20 dakikada bir
     // sessizce varsayilan projesine geri atilirdi.
-    const { user, token, ttl, org, tasari } = await authFetch('/api/me')
-    return user ? { ...user, __token: token, __ttl: ttl, __org: org, __tasari: tasari } : null
+    // __birim: AKTIF birim (disiplin) - ayni gerekcenin bir kat asagisi; yonetici
+    // erisimi kapattiysa sunucu burada erisebildigi ilk birime dusurur.
+    const { user, token, ttl, org, tasari, birim } = await authFetch('/api/me')
+    return user ? { ...user, __token: token, __ttl: ttl, __org: org, __tasari: tasari, __birim: birim } : null
   } catch (e) {
     // Token gecersiz/suresi dolmus ya da kullanici silinmis: gercekten
     // cikis yaptirilmali. Diger tum hatalar (ag, 5xx) yukari firlatilir ki
@@ -118,11 +122,12 @@ export async function sbGetAllUsers() {
   return authFetch('/api/users')
 }
 
-export async function sbCreateUser({ username, password, role, sections, buildings, permissions, tel, email, meslek, ad }) {
+// birimler: girebildigi birimler (bos = tumu) - bkz. lib/birim.js
+export async function sbCreateUser({ username, password, role, sections, buildings, permissions, tel, email, meslek, ad, birimler }) {
   return authFetch('/api/users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password, role, sections, buildings, permissions: permissions || {}, tel, email, meslek, ad }),
+    body: JSON.stringify({ username, password, role, sections, buildings, permissions: permissions || {}, tel, email, meslek, ad, birimler }),
   })
 }
 
@@ -135,11 +140,11 @@ function tokenAyir(govde) {
   return token ? { ...kullanici, __token: token, __ttl: ttl } : kullanici
 }
 
-export async function sbUpdateUser(id, { password, role, sections, buildings, permissions, tel, email, meslek, ad }) {
+export async function sbUpdateUser(id, { password, role, sections, buildings, permissions, tel, email, meslek, ad, birimler }) {
   return tokenAyir(await authFetch(`/api/users/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password, role, sections, buildings, permissions, tel, email, meslek, ad }),
+    body: JSON.stringify({ password, role, sections, buildings, permissions, tel, email, meslek, ad, birimler }),
   }))
 }
 
@@ -184,11 +189,11 @@ export async function sbListInvites() {
   return authFetch('/api/invites')
 }
 
-export async function sbCreateInvite({ email, role, sections, buildings, permissions }) {
+export async function sbCreateInvite({ email, role, sections, buildings, permissions, birimler }) {
   return authFetch('/api/invites', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, role, sections, buildings, permissions: permissions || {} }),
+    body: JSON.stringify({ email, role, sections, buildings, permissions: permissions || {}, birimler }),
   })
 }
 
@@ -244,14 +249,14 @@ export async function sbOrgListesi() {
   return authFetch('/api/org')
 }
 
-// { token, org, ad, tasari, ttl }
-// tasari verilirse sunucu onu - hedef organizasyonda gecerliyse - aktif yapar;
-// verilmezse ya da gecersizse hedef organizasyonun ilk tasarisina inilir.
-export async function sbOrgGecis(org, tasari) {
+// { token, org, ad, tasari, birim, ttl }
+// tasari/birim verilirse sunucu onlari - hedef organizasyonda gecerliyse - aktif yapar;
+// verilmezse ya da gecersizse hedef organizasyonun ilk tasarisina / erisilebilen ilk birimine inilir.
+export async function sbOrgGecis(org, tasari, birim) {
   return authFetch('/api/org', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ op: 'gecis', org, tasari: tasari || undefined }),
+    body: JSON.stringify({ op: 'gecis', org, tasari: tasari || undefined, birim: birim || undefined }),
   })
 }
 
@@ -304,12 +309,38 @@ export async function sbOrgSil(org, onay) {
 // tasariYonetici } de donuyor - iki ayri istek atmamak icin tek yanitta birlesik.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// { token, tasari, ad, ttl } - organizasyondaki HERKESE acik
-export async function sbTasariGecis(tasari) {
+// { token, tasari, ad, birim, ttl } - organizasyondaki HERKESE acik
+// birim verilirse hedef tasarida o birime (erisim varsa) gecilir, yoksa erisilebilen ilk birime
+export async function sbTasariGecis(tasari, birim) {
   return authFetch('/api/org', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ op: 'tasariGecis', tasari }),
+    body: JSON.stringify({ op: 'tasariGecis', tasari, birim: birim || undefined }),
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Birimler (disiplin katmani) - tasarinin ALTINDAKI ucuncu kapsam
+// Birim gecisi bir YETKI SINIRIDIR: sunucu kullanicinin o birime erisimini
+// dogrular (users.birimler, bkz. lib/birim.js). Liste sbOrgListesi yanitinda
+// ({ birimler, aktifBirim, birimYonetici }), ayri uc yok.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// { token, birim, ad, ttl } - erisimi olan herkese acik
+export async function sbBirimGecis(birim) {
+  return authFetch('/api/org', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op: 'birimGecis', birim }),
+  })
+}
+
+// { birim:{id, ad, aktif} } - yalnizca yonetici (role==='admin'), aktif tasarida acilir
+export async function sbBirimYeni(id, ad) {
+  return authFetch('/api/org', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op: 'birimYeni', id, ad }),
   })
 }
 
@@ -368,11 +399,12 @@ const ONBELLEK_DB = 'saha-onbellek'
 const ONBELLEK_DEPO = 'tablolar'
 // 2: anahtar artik ORGANIZASYONU da iceriyor (asagidaki onbellekAnahtar).
 // 3: anahtar artik TASARIYI (proje) da iceriyor.
+// 4: anahtar artik BIRIMI (disiplin) de iceriyor.
 // Surum artisi eski onbellegi tamamen gecersiz kilar - bu sefer sart: 2. surumde
 // yazilmis satirlar 'bykara|proje_items' anahtarindadir ve hangi projeye ait
 // olduklari bilinmiyor. Surum artirilmasaydi o satirlar yeni anahtarla
 // eslesmeyip sessizce oylece kalir, disk dolu tutardi.
-const ONBELLEK_SURUM = 3
+const ONBELLEK_SURUM = 4
 let _idb = null
 
 /* ONBELLEK ANAHTARI ORGANIZASYONU DA ICERIR.
@@ -402,10 +434,15 @@ let _idb = null
    okumasiyla ayni desen - oturum bilgisi uygulamada tutulur, bu katman onu
    yalnizca okur. Kapsam henuz bilinmiyorsa ayri bir kova kullanilir: yanlis veri
    gostermektense o acilista bir kez fazladan indirme yapilir. */
+/* ANAHTAR BIRIMI DE ICERIR - ucuncu kat, ayni gerekce: Elektrik'in 'proje_orders'
+   onbellegi Insaat'ta ekrana gelmesin. Tasari geneli tablolar (bina, lokasyon,
+   El Aleti, Mobilizasyon) da birim basina ayri kovada durur - kutuphane
+   tablolarindaki kararla ayni: fazladan indirme, yanlis veriden ucuzdur. */
 function onbellekAnahtar(table) {
   const org = (typeof window !== 'undefined' && window.AKTIF_ORG) || 'bilinmeyen'
   const tasari = (typeof window !== 'undefined' && window.AKTIF_TASARI) || 'bilinmeyen'
-  return org + '|' + tasari + '|' + table
+  const birim = (typeof window !== 'undefined' && window.AKTIF_BIRIM) || 'bilinmeyen'
+  return org + '|' + tasari + '|' + birim + '|' + table
 }
 
 function idbAc() {
@@ -877,8 +914,19 @@ export async function sbUpdateProjeSartname(id, e) { return sbUpdateEntity('proj
 export async function sbDeleteProjeSartname(id) { return sbDeleteEntity('proje_sartnames', id) }
 
 export async function sbGetProjeMaterials() { return sbGetAll('proje_materials') }
-export async function sbInsertProjeMaterial(e) { return sbInsertEntity('proje_materials', e) }
-export async function sbInsertProjeMaterials(items) { return sbInsertEntities('proje_materials', items) }
+/* KUTUPHANE BIRIM ETIKETI. proje_materials ORTAK tablodur (birim_id sutunu yok)
+   ama her urun hangi birimden girildigini data.birim'de tasir (alinan karar:
+   "kutuphane ayni olmali, fakat hangi birimden girildiyse o birimin etiketi").
+   Etiket TEK yerden, buradan basilir: urunu yaratan her yol (kunye formu, toplu
+   ekleme, Excel, sartname formundan otomatik olusan urun) bu sarmalayicilardan
+   gecer. Zaten etiketli urune dokunulmaz - Elektrik urunu Insaat'tan duzenlenince
+   Insaat'a gecmez. */
+function matBirimDamga(e) {
+  const b = typeof window !== 'undefined' && window.AKTIF_BIRIM
+  return (e && !e.birim && b) ? { ...e, birim: b } : e
+}
+export async function sbInsertProjeMaterial(e) { return sbInsertEntity('proje_materials', matBirimDamga(e)) }
+export async function sbInsertProjeMaterials(items) { return sbInsertEntities('proje_materials', (items || []).map(matBirimDamga)) }
 export async function sbUpdateProjeMaterial(id, e) { return sbUpdateEntity('proje_materials', id, e) }
 export async function sbDeleteProjeMaterial(id) { return sbDeleteEntity('proje_materials', id) }
 export async function sbDeleteProjeMaterials(ids) {
@@ -1085,7 +1133,7 @@ export async function sbBelgeSil(path) { return dosyaSil(path) }
 // halinde gidiyorlardi, bayt siniri yoktu. Gomulu foto/PDF tasiyan kayitlarda bu
 // blok onlarca MB'a cikabiliyor; istek artik Vercel fonksiyonundan gectigi icin
 // 4.5 MB govde sinirini asar ve sessizce basarisiz olurdu.
-export async function sbUpsertProjeMaterials(items) { return sbUpsertEntities('proje_materials', items) }
+export async function sbUpsertProjeMaterials(items) { return sbUpsertEntities('proje_materials', (items || []).map(matBirimDamga)) }
 export async function sbUpsertProjeSpecs(items) { return sbUpsertEntities('proje_specs', items) }
 export async function sbUpsertProjeItems(items) { return sbUpsertEntities('proje_items', items) }
 

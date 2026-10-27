@@ -59,7 +59,7 @@ async function digerOturumlariKapat(req, res, claims) {
     surumBelirle(user.id, yeni)
 
     const ttl = yenilenenTtl(claims)
-    const token = signSession({ ...user, oturum_surumu: yeni }, ttl, claims.org, claims.tas)
+    const token = signSession({ ...user, oturum_surumu: yeni }, ttl, claims.org, claims.tas, claims.bir)
 
     await denetimYaz(await aktifOrg(claims), {
       user: user.username, role: user.role, action: 'logout', ip: istekIp(req),

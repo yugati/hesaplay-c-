@@ -2,6 +2,7 @@ import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { requireAuth, signSession, SESSION_TTL_DEFAULT, SESSION_TTL_REMEMBER } from '../lib/auth.js'
 import { VARSAYILAN_ORG, orgKullanilabilir } from '../lib/org.js'
 import { tasariCoz } from '../lib/tasari.js'
+import { birimCoz } from '../lib/birim.js'
 
 // Aktif oturumun kullanicisini tazeler (ör. baska bir admin yetkisini
 // degistirdiyse sayfa yenilemede yansisin diye arka planda cagrilir).
@@ -56,10 +57,15 @@ export default async function handler(req, res) {
 
        Tasari sonradan silinmis/askiya alinmissa da ayni yol calisir. */
     const aktifTas = await tasariCoz(aktif, claims.tas, user)
+    /* AKTIF BIRIM DE KORUNUR - ayni gerekcenin bir kat asagisi. Ek olarak ERISIM
+       yeniden dogrulanir: yonetici bu kullanicinin birim listesinden aktif birimi
+       cikardiysa, 20 dakika icinde token erisebildigi ilk birimle imzalanir ve
+       istemci "Aktif birim degisti" der (index.html oturumTazeleUygula). */
+    const aktifBir = await birimCoz(aktif, aktifTas, claims.bir, user)
 
     res.status(200).json({
-      user: safeUser, org: aktif, tasari: aktifTas,
-      token: signSession(user, ttl, aktif, aktifTas), ttl,
+      user: safeUser, org: aktif, tasari: aktifTas, birim: aktifBir,
+      token: signSession(user, ttl, aktif, aktifTas, aktifBir), ttl,
     })
   } catch (e) {
     console.error('me: kullanici sorgusu basarisiz', e)

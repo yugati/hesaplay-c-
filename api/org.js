@@ -2,19 +2,28 @@ import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { requireAuth, signSession, SESSION_TTL_DEFAULT, SESSION_TTL_REMEMBER } from '../lib/auth.js'
 import { aktifOrg, orgIdGecerli, VARSAYILAN_ORG } from '../lib/org.js'
 import { tasariIdGecerli, tasariCoz, TASIYAN_AYARLAR } from '../lib/tasari.js'
+import { birimIdGecerli, birimCoz, birimErisebilir, birimSatiri, ORTAK_BIRIM, VARSAYILAN_BIRIM } from '../lib/birim.js'
 import { denetimYaz } from '../lib/denetim.js'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ORGANIZASYON UCU
 //
-// GET  /api/org                              -> { orgs, aktif, super, tasarilar, aktifTasari, agac }
-// GET  /api/org?ozet=1                       -> { ozet:{ tasari:{'org/tas':{bina,siparis,son}}, org:{org:{kullanici}} } }
-// POST /api/org  { op:'gecis', org, tasari? }-> { token, org, tasari, ttl }  (yalnizca super)
-// POST /api/org  { op:'yeni', id, ad }       -> { org }                      (yalnizca super)
+// GET  /api/org                              -> { orgs, aktif, super, tasarilar, aktifTasari, birimler, aktifBirim, agac }
+// GET  /api/org?ozet=1                       -> { ozet:{ tasari:{'org/tas':{bina,birim}}, birim:{'org/tas/bir':{siparis,son}}, org:{org:{kullanici}} } }
+// POST /api/org  { op:'gecis', org, tasari?, birim? } -> { token, org, tasari, birim, ttl } (yalnizca super)
+// POST /api/org  { op:'yeni', id, ad }       -> { org, tasari, birim }       (yalnizca super)
 // POST /api/org  { op:'silOnizle', org }     -> { org, ad, tablolar, tasari, dosya } (yalnizca super)
 // POST /api/org  { op:'sil', org, onay }     -> { ok, ...ozet }              (yalnizca super, GERI ALINAMAZ)
-// POST /api/org  { op:'tasariGecis', tasari} -> { token, tasari, ad, ttl }   (HERKES)
-// POST /api/org  { op:'tasariYeni', id, ad } -> { tasari }                   (yalnizca admin)
+// POST /api/org  { op:'tasariGecis', tasari, birim? } -> { token, tasari, ad, birim, ttl } (HERKES)
+// POST /api/org  { op:'tasariYeni', id, ad } -> { tasari, birim }            (yalnizca admin)
+// POST /api/org  { op:'birimGecis', birim }  -> { token, birim, ad, ttl }    (erisimi olan herkes)
+// POST /api/org  { op:'birimYeni', id, ad }  -> { birim }                    (yalnizca admin)
+//
+// BIRIM (DISIPLIN) KATMANI tasarinin altindadir: Elektrik / Insaat / Mekanik.
+// Birim gecisi tasari gecisinden farkli olarak bir YETKI SINIRIDIR: kullanici
+// yalnizca Kullanicilar ekraninda kendisine acilan birimlere gecebilir
+// (users.birimler, bos = tumu; bkz. lib/birim.js). Liste ve agac da o suzgecten
+// gecer - kullanici giremeyecegi birimi haritada gormez.
 //
 // NEDEN AYRI BIR UC: 'organizations' ve 'tasarilar' tablolari bilerek /api/veri
 // beyaz listesinde degil. Oradan erisilebilseydi herhangi bir kullanici kendi
@@ -67,7 +76,7 @@ const ORG_TABLOLARI = [
   'proje_orders', 'proje_alternatives', 'proje_bina_modelleri', 'proje_lokasyonlar',
   'gunluk_isler', 'ihtiyac_listeleri', 'faturalar', 'katalog', 'audit_log',
   'app_settings', 'saha_settings', 'rapor_ekipler', 'proje_buildings', 'proje_sections',
-  'invites', 'users', 'saha_linkleri',
+  'invites', 'users', 'saha_linkleri', 'birimler',
 ]
 // Dosyalar '<org>/...' onekiyle bu iki kovada durur (bkz. api/dosya.js)
 const ORG_KOVALARI = ['belgeler', 'bina-modelleri']
@@ -114,44 +123,58 @@ async function orgDokumu(hedef) {
 }
 
 /* KAPSAM HARITASININ SAYILARI (GET ?ozet=1). Iskeletten AYRI istenir: harita
-   once cizilir, sayilar arkadan dolar - her tasari icin uc kucuk sorgu var ve
+   once cizilir, sayilar arkadan dolar - kart basina bir iki kucuk sorgu var ve
    menunun acilmasini onlara bekletmek gereksizdi.
-     bina    : proje_buildings satiri   (tasariya ozel)
-     siparis : proje_orders satiri      (tasariya ozel)
-     son     : o tasaridaki SON ISLEM - giris/cikis gibi tasariya bagli olmayan
-               olaylar sayilmaz (onlar kullanicinin varsayilan tasarisina damgalanir,
-               bkz. lib/denetim.js), yoksa hic dokunulmamis bir proje "az once" gorunurdu.
-     kullanici (org basina): kullanicilar organizasyona baglidir, tasariya degil.
+     TASARI karti
+       bina    : proje_buildings satiri   (tasari geneli - binalar birimler arasi ortak)
+       birim   : tasarinin aktif birim sayisi
+     BIRIM karti
+       siparis : proje_orders satiri      (birime ozel)
+       son     : o birimdeki SON ISLEM - giris/cikis gibi birime bagli olmayan
+                 olaylar sayilmaz (onlar kullanicinin varsayilan birimine damgalanir,
+                 bkz. lib/denetim.js), yoksa hic dokunulmamis bir birim "az once" gorunurdu.
+     kullanici (org basina): kullanicilar organizasyona baglidir.
    Sayim HEAD istegiyle - govde inmez, egress'e yuk olmaz. Bir sayim hata verirse
    null doner: ekranda "-" gorunur, harita yine cizilir. */
 async function kapsamOzeti(orgIdleri) {
-  const { data: tData, error } = await supabaseAdmin
-    .from('tasarilar').select('org_id, id, aktif').in('org_id', orgIdleri)
+  const [{ data: tData, error }, { data: bData, error: bErr }] = await Promise.all([
+    supabaseAdmin.from('tasarilar').select('org_id, id, aktif').in('org_id', orgIdleri),
+    supabaseAdmin.from('birimler').select('org_id, tasari_id, id, aktif').in('org_id', orgIdleri),
+  ])
   if (error) throw error
-  const say = async (tablo, o, t) => {
-    const { count, error: e } = await supabaseAdmin
-      .from(tablo).select('*', { count: 'exact', head: true }).eq('org_id', o).eq('tasari_id', t)
+  if (bErr) throw bErr
+  const birimler = (bData || []).filter(r => r.aktif !== false)
+  const say = async (tablo, suz) => {
+    let q = supabaseAdmin.from(tablo).select('*', { count: 'exact', head: true })
+    for (const [k, v] of Object.entries(suz)) q = q.eq(k, v)
+    const { count, error: e } = await q
     return e || count == null ? null : count
   }
-  const sonIslem = async (o, t) => {
+  const sonIslem = async (o, t, b) => {
     const { data, error: e } = await supabaseAdmin
-      .from('audit_log').select('created_at').eq('org_id', o).eq('tasari_id', t)
+      .from('audit_log').select('created_at').eq('org_id', o).eq('tasari_id', t).eq('birim_id', b)
       .not('data->>action', 'in', '(login,logout,girisHata,kilit,profil)')
       .order('created_at', { ascending: false }).limit(1)
     return e || !data || !data[0] ? null : data[0].created_at
   }
-  const tasari = {}
-  await Promise.all((tData || []).filter(r => r.aktif !== false).map(async r => {
-    const [bina, siparis, son] = await Promise.all([
-      say('proje_buildings', r.org_id, r.id), say('proje_orders', r.org_id, r.id), sonIslem(r.org_id, r.id),
-    ])
-    tasari[r.org_id + '/' + r.id] = { bina, siparis, son }
-  }))
+  const tasari = {}, birim = {}
+  await Promise.all([
+    ...(tData || []).filter(r => r.aktif !== false).map(async r => {
+      const bina = await say('proje_buildings', { org_id: r.org_id, tasari_id: r.id })
+      tasari[r.org_id + '/' + r.id] = { bina, birim: birimler.filter(b => b.org_id === r.org_id && b.tasari_id === r.id).length }
+    }),
+    ...birimler.map(async r => {
+      const [siparis, son] = await Promise.all([
+        say('proje_orders', { org_id: r.org_id, tasari_id: r.tasari_id, birim_id: r.id }), sonIslem(r.org_id, r.tasari_id, r.id),
+      ])
+      birim[r.org_id + '/' + r.tasari_id + '/' + r.id] = { siparis, son }
+    }),
+  ])
   const org = {}
   for (const id of orgIdleri) org[id] = { kullanici: 0 }
   const { data: uData } = await supabaseAdmin.from('users').select('org_id').in('org_id', orgIdleri)
   for (const u of uData || []) if (org[u.org_id]) org[u.org_id].kullanici++
-  return { tasari, org }
+  return { tasari, birim, org }
 }
 
 function orgSatiri(r) {
@@ -159,6 +182,17 @@ function orgSatiri(r) {
 }
 // tasarilar tablosu organizations ile ayni desende (id + data{ad}) - ayni okuyucu.
 const tasariSatiri = orgSatiri
+
+/* Yeni tasari / organizasyonun ILK BIRIMI: acan kisinin o anki birimi (kimlik +
+   ad). Satir bulunamazsa (eski token, silinmis birim) VARSAYILAN_BIRIM'in adi
+   bas harfi buyuk yazilir. */
+async function kaynakBirim(org, tasari, aday) {
+  const id = birimIdGecerli(aday) ? aday : VARSAYILAN_BIRIM
+  const { data } = await supabaseAdmin
+    .from('birimler').select('id, data').eq('org_id', org).eq('tasari_id', tasari).eq('id', id).maybeSingle()
+  if (data) return { id: data.id, ad: birimSatiri(data).ad }
+  return { id, ad: id.charAt(0).toUpperCase() + id.slice(1) }
+}
 
 /* Ad -> kimlik. Istemcideki orgKimlikOner'in (index.html) sunucu tarafi
    karsiligi: kullanici kimligi elle girmek zorunda kalmasin diye tasari adindan
@@ -219,6 +253,21 @@ export default async function handler(req, res) {
       // gecersizse dogru cevap organizasyonun ilk tasarisidir.
       const aktifTasari = await tasariCoz(org, claims.tas, null)
 
+      /* BIRIMLER - kullanicinin ERISEBILDIGI birimler. Birim bir yetki siniri
+         oldugu icin liste kullanici satirindan suzulur (users.birimler); yonetici
+         ve listesi bos olan hepsini gorur. Super butun organizasyonlarin
+         birimlerini gorur (haritada tek adimda gecis icin), digerleri yalnizca
+         kendi organizasyonununkileri. */
+      const { data: user } = await supabaseAdmin
+        .from('users').select('id, role, org_id, tasari_id, birim_id, birimler').eq('id', claims.sub).maybeSingle()
+      let bSorgu = supabaseAdmin.from('birimler').select('org_id, tasari_id, id, data, aktif').order('created_at', { ascending: true })
+      if (!claims.sup) bSorgu = bSorgu.eq('org_id', org)
+      const { data: bData, error: bErr } = await bSorgu
+      if (bErr) throw bErr
+      const birimAgaci = (bData || []).filter(r => r.aktif !== false && birimErisebilir(user, r.id))
+      const birimler = birimAgaci.filter(r => r.org_id === org && r.tasari_id === aktifTasari).map(birimSatiri)
+      const aktifBirim = await birimCoz(org, aktifTasari, claims.bir, user)
+
       /* Super olmayan kullanici YALNIZCA kendi organizasyonunu gorur. Tam listeyi
          donmek, degistirici dugmeyi gizlesek bile sirket adlarini sizdirirdi. */
       let sorgu = supabaseAdmin.from('organizations').select('id, data, aktif')
@@ -239,18 +288,21 @@ export default async function handler(req, res) {
         if (aErr) throw aErr
         agacTasari = aData || []
       }
+      // her tasari dugumu kendi birimlerini tasir (ucuncu sutun)
+      const birimleri = (o, t) => birimAgaci.filter(r => r.org_id === o && r.tasari_id === t).map(birimSatiri)
       const agac = orgs.map(o => ({
         ...o,
-        tasarilar: agacTasari
+        tasarilar: (agacTasari
           ? agacTasari.filter(r => r.org_id === o.id && r.aktif !== false).map(tasariSatiri)
-          : (o.id === org ? tasarilar : []),
+          : (o.id === org ? tasarilar : [])).map(t => ({ ...t, birimler: birimleri(o.id, t.id) })),
       }))
       res.status(200).json({
         orgs, aktif: org, super: !!claims.sup,
-        tasarilar, aktifTasari, agac,
-        // Yeni tasari acma dugmesi yalnizca yoneticide gorunur; sunucu da oyle
-        // davranir (asagidaki op:'tasariYeni'). Istemci bunu gizlemek icin okur.
+        tasarilar, aktifTasari, birimler, aktifBirim, agac,
+        // Yeni tasari / birim acma dugmeleri yalnizca yoneticide gorunur; sunucu da
+        // oyle davranir (asagidaki op:'tasariYeni' / 'birimYeni'). Istemci gizlemek icin okur.
         tasariYonetici: claims.role === 'admin',
+        birimYonetici: claims.role === 'admin',
       })
     } catch (e) {
       console.error('org GET basarisiz', e)
@@ -261,7 +313,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'POST') {
     const { op } = req.body || {}
-    const GECERLI = ['gecis', 'yeni', 'silOnizle', 'sil', 'tasariGecis', 'tasariYeni']
+    const GECERLI = ['gecis', 'yeni', 'silOnizle', 'sil', 'tasariGecis', 'tasariYeni', 'birimGecis', 'birimYeni']
     if (!GECERLI.includes(op)) { res.status(400).json({ error: 'Bilinmeyen islem' }); return }
 
     /* YETKI KAPISI ISLEME GORE AYRILIR - hepsi super istemez:
@@ -276,6 +328,74 @@ export default async function handler(req, res) {
     }
     if (op === 'tasariYeni' && claims.role !== 'admin') {
       res.status(403).json({ error: 'Yeni tasari acmak icin yonetici olmalisiniz' }); return
+    }
+    if (op === 'birimYeni' && claims.role !== 'admin') {
+      res.status(403).json({ error: 'Yeni birim acmak icin yonetici olmalisiniz' }); return
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       BIRIM GECISI - erisimi olan herkese acik.
+       Token yeniden imzalanir. Hedef birim AKTIF TASARIDA olmali ve kullanici
+       o birime girebilmeli (users.birimler) - ikisi de SUNUCUDA dogrulanir;
+       aksi halde kisitli kullanici kapali birimin kimligini gonderip oraya
+       gecebilirdi. Bayrak kayittan okunur (token eski olabilir).
+       ───────────────────────────────────────────────────────────────────── */
+    if (op === 'birimGecis') {
+      const hedef = (req.body || {}).birim
+      if (!birimIdGecerli(hedef)) { res.status(400).json({ error: 'Gecersiz birim' }); return }
+      try {
+        const { data: user, error: uErr } = await supabaseAdmin
+          .from('users').select('*').eq('id', claims.sub).maybeSingle()
+        if (uErr) throw uErr
+        if (!user) { res.status(401).json({ error: 'Kullanici bulunamadi' }); return }
+        const tasari = await tasariCoz(org, claims.tas, user)
+        const { data: b, error: bErr } = await supabaseAdmin
+          .from('birimler').select('id, data, aktif').eq('org_id', org).eq('tasari_id', tasari).eq('id', hedef).maybeSingle()
+        if (bErr) throw bErr
+        if (!b || b.aktif === false) { res.status(404).json({ error: 'Birim bulunamadi' }); return }
+        if (!birimErisebilir(user, b.id)) { res.status(403).json({ error: 'Bu birime erisim yetkiniz yok - yoneticiniz Kullanicilar ekranindan acabilir' }); return }
+        const kalanMs = claims.exp ? (claims.exp * 1000 - Date.now()) : 0
+        const ttl = kalanMs > SESSION_TTL_DEFAULT ? SESSION_TTL_REMEMBER : SESSION_TTL_DEFAULT
+        res.status(200).json({
+          token: signSession(user, ttl, org, tasari, b.id),
+          birim: b.id, ad: birimSatiri(b).ad, ttl,
+        })
+      } catch (e) {
+        console.error('birim gecis basarisiz', e)
+        res.status(500).json({ error: 'Sunucu hatasi' })
+      }
+      return
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       YENI BIRIM - yalnizca yonetici. Birim AKTIF TASARIDA acilir.
+       Hicbir sey kopyalanmaz: bina listesi ve migration bayraklari zaten tasari
+       genelinde ortak (lib/birim.js ORTAK_AYARLAR), yeni birim onlari hazir bulur;
+       bolum, sartname, siparis bos baslar.
+       ───────────────────────────────────────────────────────────────────── */
+    if (op === 'birimYeni') {
+      const isim = String((req.body || {}).ad || '').trim()
+      if (!isim || isim.length > 60) { res.status(400).json({ error: 'Birim adi gerekli (en fazla 60 karakter)' }); return }
+      const id = String((req.body || {}).id || '').trim() || kimlikTuret(isim)
+      if (!birimIdGecerli(id)) {
+        res.status(400).json({ error: 'Kimlik yalnizca kucuk harf, rakam ve tire icerebilir (ornek: insaat)' }); return
+      }
+      try {
+        const tasari = await tasariCoz(org, claims.tas, null)
+        const { error } = await supabaseAdmin
+          .from('birimler').insert([{ org_id: org, tasari_id: tasari, id, data: { ad: isim } }])
+        if (error) {
+          if (error.code === '23505') { res.status(409).json({ error: 'Bu kimlikte bir birim zaten var' }); return }
+          throw error
+        }
+        await denetimYaz(org, { user: claims.username, role: claims.role, action: 'org', tasari,
+          detail: `Birim olusturuldu: ${isim} (${id})` })
+        res.status(201).json({ birim: { id, ad: isim, aktif: true } })
+      } catch (e) {
+        console.error('birim yeni basarisiz', e)
+        res.status(500).json({ error: 'Sunucu hatasi' })
+      }
+      return
     }
 
     /* ─────────────────────────────────────────────────────────────────────
@@ -304,9 +424,16 @@ export default async function handler(req, res) {
         const kalanMs = claims.exp ? (claims.exp * 1000 - Date.now()) : 0
         const ttl = kalanMs > SESSION_TTL_DEFAULT ? SESSION_TTL_REMEMBER : SESSION_TTL_DEFAULT
 
+        /* HEDEF TASARININ BIRIMI DE COZULUR - org gecisindeki tasari cozumuyle
+           ayni gerekce: elindeki birim kimligi eski tasarinin birimidir, yeni
+           tasarida karsiligi (ya da erisimi) olmayabilir. Istemci hedef birimi
+           soyleyebilir (haritada tek adim); birimCoz onu yalnizca gecerli ve
+           erisilebilirse kabul eder, degilse erisebildigi ilk birime duser. */
+        const istenenBirim = (req.body || {}).birim
+        const hedefBirim = await birimCoz(org, t.id, birimIdGecerli(istenenBirim) ? istenenBirim : null, user)
         res.status(200).json({
-          token: signSession(user, ttl, org, t.id),
-          tasari: t.id, ad: tasariSatiri(t).ad, ttl,
+          token: signSession(user, ttl, org, t.id, hedefBirim),
+          tasari: t.id, ad: tasariSatiri(t).ad, birim: hedefBirim, ttl,
         })
       } catch (e) {
         console.error('tasari gecis basarisiz', e)
@@ -335,6 +462,21 @@ export default async function handler(req, res) {
           throw error
         }
 
+        /* HER TASARI EN AZ BIR BIRIMLE DOGAR - birimsiz tasarida aktif birim
+           cozulemez ve VARSAYILAN_BIRIM'e duserdi: o kimlikle yazilan satir
+           hicbir birim kartinda gorunmezdi. Ilk birim, tasariyi ACAN yoneticinin
+           o anki birimidir (Elektrik'ten acan Elektrik'i hazir bulur); digerleri
+           Calisma Alani > Yeni Birim ile eklenir. Basarisiz olursa tasari geri alinir. */
+        const kaynakTasari = await tasariCoz(org, claims.tas, null)
+        const ilkBirim = await kaynakBirim(org, kaynakTasari, claims.bir)
+        const { error: bErr } = await supabaseAdmin
+          .from('birimler').insert([{ org_id: org, tasari_id: id, id: ilkBirim.id, data: { ad: ilkBirim.ad } }])
+        if (bErr) {
+          await supabaseAdmin.from('tasarilar').delete().eq('org_id', org).eq('id', id)
+          console.error('tasari yeni: ilk birim acilamadi, tasari geri alindi', bErr)
+          res.status(500).json({ error: 'Tasari olusturulamadi (birim acilamadi)' }); return
+        }
+
         /* MIGRATION BAYRAKLARI VE MARKA LISTESI YENI TASARIYA KOPYALANIR.
            app_settings tasari ozeldir, yani yeni tasari BOS bir ayar tablosuyla
            dogar. Bu, iki sorun uretirdi:
@@ -344,22 +486,22 @@ export default async function handler(req, res) {
              2) Marka listesi malzeme kunyesinin parcasidir ve kunye ortak kaldi -
                 markasiz dogan tasari, ortak kutuphanedeki malzemelerin markasini
                 cozemezdi.
-           Kopyalama YALNIZCA kurulusta bir kez yapilir; sonrasinda iki tasarinin
-           listeleri bagimsizdir. Basarisiz olursa tasari yine de acilir (uyari
-           basilir): yarim kalan bir ayar kopyasi, acilmayan bir projeden iyidir. */
+           Bu anahtarlar birim katmaninda TASARI GENELI ortak satirlardir
+           (birim_id = ORTAK_BIRIM, bkz. lib/birim.js) - yeni tasarinin her birimi
+           onlari hazir bulur. Kopyalama YALNIZCA kurulusta bir kez yapilir;
+           basarisiz olursa tasari yine de acilir (uyari basilir). */
         try {
-          const kaynakTasari = await tasariCoz(org, claims.tas, null)
           const { data: ayarlar } = await supabaseAdmin
-            .from('app_settings').select('key, value').eq('org_id', org).eq('tasari_id', kaynakTasari)
+            .from('app_settings').select('key, value').eq('org_id', org).eq('tasari_id', kaynakTasari).eq('birim_id', ORTAK_BIRIM)
           const kopya = (ayarlar || [])
             .filter(a => TASIYAN_AYARLAR.has(a.key))
-            .map(a => ({ org_id: org, tasari_id: id, key: a.key, value: a.value }))
+            .map(a => ({ org_id: org, tasari_id: id, birim_id: ORTAK_BIRIM, key: a.key, value: a.value }))
           if (kopya.length) await supabaseAdmin.from('app_settings').insert(kopya)
         } catch (e) {
           console.warn('tasari: ayar kopyalanamadi:', e && e.message)
         }
 
-        res.status(201).json({ tasari: { id, ad: isim, aktif: true } })
+        res.status(201).json({ tasari: { id, ad: isim, aktif: true }, birim: { ...ilkBirim, aktif: true } })
       } catch (e) {
         console.error('tasari yeni basarisiz', e)
         res.status(500).json({ error: 'Sunucu hatasi' })
@@ -399,6 +541,18 @@ export default async function handler(req, res) {
           console.error('org yeni: ilk tasari acilamadi, organizasyon geri alindi', tErr)
           res.status(500).json({ error: 'Organizasyon olusturulamadi (tasari acilamadi)' }); return
         }
+        /* ... VE ILK TASARI EN AZ BIR BIRIMLE: acan super yoneticinin o anki
+           birimi kopyalanir (kimlik + ad). Basarisizsa tasari ve organizasyon
+           birlikte geri alinir - birimsiz tasari kullanilamaz durumdadir. */
+        const ilkBirim = await kaynakBirim(org, await tasariCoz(org, claims.tas, null), claims.bir)
+        const { error: bErr } = await supabaseAdmin
+          .from('birimler').insert([{ org_id: id, tasari_id: ilkTasariId, id: ilkBirim.id, data: { ad: ilkBirim.ad } }])
+        if (bErr) {
+          await supabaseAdmin.from('tasarilar').delete().eq('org_id', id).eq('id', ilkTasariId)
+          await supabaseAdmin.from('organizations').delete().eq('id', id)
+          console.error('org yeni: ilk birim acilamadi, organizasyon geri alindi', bErr)
+          res.status(500).json({ error: 'Organizasyon olusturulamadi (birim acilamadi)' }); return
+        }
 
         // Denetim kaydi ACAN organizasyona yazilir: yeni organizasyonun kaydini
         // okuyacak kimse yok, "bunu kim acti" sorusu buradan sorulur.
@@ -407,7 +561,7 @@ export default async function handler(req, res) {
 
         // Organizasyon BOS dogar; ilk kullanicisi Kullanicilar ekranindan, o
         // organizasyona GECILDIKTEN sonra acilir (api/users.js aktif org'a yazar).
-        res.status(201).json({ org: { id, ad: isim, aktif: true }, tasari: { id: ilkTasariId, ad: isim, aktif: true } })
+        res.status(201).json({ org: { id, ad: isim, aktif: true }, tasari: { id: ilkTasariId, ad: isim, aktif: true }, birim: { ...ilkBirim, aktif: true } })
       } catch (e) {
         console.error('org yeni basarisiz', e)
         res.status(500).json({ error: 'Sunucu hatasi' })
@@ -529,9 +683,12 @@ export default async function handler(req, res) {
          organizasyonda gecerliyse kabul eder; degilse eskisi gibi ilk tasariya duser. */
       const istenen = (req.body || {}).tasari
       const hedefTasari = await tasariCoz(o.id, tasariIdGecerli(istenen) ? istenen : null, user)
+      // ... ve o tasarinin birimi (istenen gecerliyse o, degilse erisilebilen ilk birim)
+      const istenenBirim = (req.body || {}).birim
+      const hedefBirim = await birimCoz(o.id, hedefTasari, birimIdGecerli(istenenBirim) ? istenenBirim : null, user)
       res.status(200).json({
-        token: signSession(user, ttl, o.id, hedefTasari),
-        org: o.id, ad: orgSatiri(o).ad, tasari: hedefTasari, ttl,
+        token: signSession(user, ttl, o.id, hedefTasari, hedefBirim),
+        org: o.id, ad: orgSatiri(o).ad, tasari: hedefTasari, birim: hedefBirim, ttl,
       })
     } catch (e) {
       console.error('org gecis basarisiz', e)

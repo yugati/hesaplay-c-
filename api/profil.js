@@ -145,7 +145,7 @@ export default async function handler(req, res) {
     })
     if (yeniSurum !== null) {
       const ttl = yenilenenTtl(claims)
-      res.status(200).json({ ...safe, token: signSession(data, ttl, claims.org, claims.tas), ttl })
+      res.status(200).json({ ...safe, token: signSession(data, ttl, claims.org, claims.tas, claims.bir), ttl })
       return
     }
     res.status(200).json(safe)
