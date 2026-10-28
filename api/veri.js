@@ -103,7 +103,7 @@ function cakismaHedefi(table) {
    kisi 'proje_items' degil 'Siparis satiri' gormeli - listede bilmedigi bir tablo
    adi gorurse kaydi okumaz. Listede olmayan tablo kendi adiyla yazilir. */
 const TABLO_ADI = {
-  companies: 'Sirket', tutanaklar: 'Tutanak', alet_items: 'El aleti', alet_lib: 'El aleti kunyesi',
+  companies: 'Sirket', tutanaklar: 'Tutanak', alet_items: 'Araç ve gereç', alet_lib: 'Araç ve gereç kunyesi',
   saha_panels: 'Saha panosu', saha_lines: 'Saha hatti', saha_sockets: 'Saha prizi',
   rapor_entries: 'Rapor kaydi', gecici_lib: 'Mobilizasyon kunyesi',
   gecici_moves: 'Mobilizasyon hareketi', gecici_orders: 'Mobilizasyon siparisi',

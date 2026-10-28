@@ -436,7 +436,7 @@ let _idb = null
    gostermektense o acilista bir kez fazladan indirme yapilir. */
 /* ANAHTAR BIRIMI DE ICERIR - ucuncu kat, ayni gerekce: Elektrik'in 'proje_orders'
    onbellegi Insaat'ta ekrana gelmesin. Tasari geneli tablolar (bina, lokasyon,
-   El Aleti, Mobilizasyon) da birim basina ayri kovada durur - kutuphane
+   Araç ve Gereç, Mobilizasyon) da birim basina ayri kovada durur - kutuphane
    tablolarindaki kararla ayni: fazladan indirme, yanlis veriden ucuzdur. */
 function onbellekAnahtar(table) {
   const org = (typeof window !== 'undefined' && window.AKTIF_ORG) || 'bilinmeyen'
@@ -1143,7 +1143,7 @@ export async function sbUpsertProjeItems(items) { return sbUpsertEntities('proje
 
 // scope: kullanicinin gorebildigi modul listesi (CURRENT_USER.sections), ornegin ['rapor'].
 // Verilirse yalnizca o modullerin (+ onlarin bagimli olduğu proje temel verisinin) sorgulari
-// atilir - digerleri (el aletleri, santiye sahasi, gecici elektrik, siparis/hareket, denetim
+// atilir - digerleri (araç ve gereçler, santiye sahasi, gecici elektrik, siparis/hareket, denetim
 // kaydi vb.) atlanir. scope verilmezse (admin / eski cagirim) tum veri onceki gibi yuklenir.
 export async function sbLoadAllData(scope) {
   const need = name => !scope || scope.includes(name)
@@ -1365,7 +1365,7 @@ export async function sbMigrateLocalDB(localDB) {
   if (localDB.alet?.lib?.length)
     push('Mekanik (Alet) Kutuphanesi', sbInsertEntities('alet_lib', localDB.alet.lib))
   if (localDB.alet?.items?.length)
-    push('El Aletleri', sbInsertEntities('alet_items', localDB.alet.items))
+    push('Araç ve Gereçler', sbInsertEntities('alet_items', localDB.alet.items))
   if (localDB.saha?.panels?.length)
     push('Saha Panolari', sbInsertEntities('saha_panels', localDB.saha.panels))
   if (localDB.saha?.lines?.length)
@@ -1540,7 +1540,7 @@ export async function sbWipeProjeSiparisData() {
   ])
 }
 
-// Sadece el aletleri (zimmet/depo) kayitlarini sil - kutuphane KALIR
+// Sadece araç ve gereçler (zimmet/depo) kayitlarini sil - kutuphane KALIR
 export async function sbWipeAletData() {
   await sbDeleteAll('alet_items')
 }
