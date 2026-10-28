@@ -4750,6 +4750,11 @@ tr.va-uye>td:first-child{box-shadow:inset 3px 0 0 color-mix(in srgb,var(--accent
    kutunun icinde kirilirdi. Her secenek en az yarim genislik alir: Normal | Atama ustte,
    Borc alt satirda tam genislikte. Borc secilince turkuaz (bkz. .ord-borc). */
 .nord-tur label{min-width:calc(50% - 4px)}
+/* Belge no turu (Siparis No | Irsaliye No): iki secenek yan yana, daha sik */
+.nord-tur.nord-notur{margin-bottom:6px}
+.nord-tur.nord-notur label{padding:6px 10px;font-size:12px}
+.ord-irs{display:inline-flex;align-items:center;height:17px;padding:0 5px;border-radius:5px;font-size:10px;font-weight:700;letter-spacing:.4px;
+  background:color-mix(in srgb,var(--amber) 14%,transparent);color:var(--amber);border:1px solid color-mix(in srgb,var(--amber) 40%,transparent)}
 .nord-tur label.borc:hover{border-color:color-mix(in srgb,var(--grid) 45%,transparent)}
 .nord-tur label.borc.on{border-color:var(--grid);background:color-mix(in srgb,var(--grid) 10%,var(--panel))}
 .nord-tur-info{font-size:11px;color:var(--dim);font-family:var(--mono);margin-top:7px;line-height:1.55}
@@ -14918,7 +14923,7 @@ function renderAllOrders(){
       // notlar kartta yazmaz: siparis YALNIZCA nottan tuttuysa hangi notun tuttugu iz olarak gorunur
       const notIz=(MKR.acik&&SEARCH&&![o.no,o.bina,o.grup,orderCompany(o),...(o.lines||[]).flatMap(l=>[l.ad,l.code])].some(x=>markVarMi(x,SEARCH)))
         ?markGizliIz([['Not',orderNotlar(o).map(nt=>nt.text||'')]],SEARCH):'';
-      const badges=[atamaBadge(o),imzaWarnBadge(o),iadeBadge(o),notBadge(o)].join('');
+      const badges=[atamaBadge(o),irsaliyeBadge(o),imzaWarnBadge(o),iadeBadge(o),notBadge(o)].join('');
       cards+=`<div class="order-card" onclick="openOrderDetail('${o.id}')">
         <div class="order-card-head">
           <div class="order-badges">${badges}</div>
@@ -15002,7 +15007,7 @@ function renderBorclar(tabs){
       const ozet=(o.lines||[]).slice(0,3).map(l=>markIsaret(String(l.ad||'').split('/').pop().trim(),SEARCH)).join(', ')+((o.lines||[]).length>3?` +${(o.lines||[]).length-3} urun`:'');
       cards+=`<div class="order-card" onclick="openOrderDetail('${o.id}')">
         <div class="order-card-head">
-          <div class="order-badges">${[borcBadge(o),imzaWarnBadge(o),notBadge(o)].join('')}</div>
+          <div class="order-badges">${[borcBadge(o),irsaliyeBadge(o),imzaWarnBadge(o),notBadge(o)].join('')}</div>
           <span class="order-date">${fmtDate(o.date)}</span>
         </div>
         <div class="order-card-top"><div class="order-no">${icoDoc()} <b>${markIsaret(o.no,SEARCH)}</b></div></div>
@@ -32645,7 +32650,7 @@ function renderProjeOrders(){
       const qty=o.lines.reduce((x,l)=>x+(Number(l.qty)||0),0);
       const col=buildingColor(o.bina);
       const urunOzet=o.lines.slice(0,3).map(l=>esc(l.ad.split('/').pop().trim())).join(', ')+(o.lines.length>3?` +${o.lines.length-3} urun`:'');
-      const badges=[atamaBadge(o),imzaWarnBadge(o),iadeBadge(o),notBadge(o)].join('');
+      const badges=[atamaBadge(o),irsaliyeBadge(o),imzaWarnBadge(o),iadeBadge(o),notBadge(o)].join('');
       cards+=`<div class="order-card" onclick="openOrderDetail('${o.id}')">
         <div class="order-card-head">
           <div class="order-badges">${badges}</div>
@@ -32811,7 +32816,7 @@ function orderInvoiceHtml(o,genis){
   const qty=o.lines.reduce((x,l)=>x+(Number(l.qty)||0),0);
   return `<div class="invoice${genis?' inv-page':''}">
         <div class="inv-top">
-          <div class="inv-id">${icoDoc()}<div><span>${borc?'Borc Belge No':'Fatura / Siparis No'}</span><b>${esc(o.no)}</b></div>${borcBadge(o)}${iadeBadge(o)}${notBadge(o)}</div>
+          <div class="inv-id">${icoDoc()}<div><span>${borc?'Borc Belge No':(o.noTur==='irsaliye'?'Irsaliye No':'Siparis No')}</span><b>${esc(o.no)}</b></div>${borcBadge(o)}${irsaliyeBadge(o)}${iadeBadge(o)}${notBadge(o)}</div>
           <span class="bina-tag" style="background:${col}22;color:${col};border:1px solid ${col}55;font-size:12px">${esc(o.bina||'-')}</span>
         </div>
         ${o.imzaYok?`<div class="inv-imza-warn"><span class="ord-imza-warn">!</span><div><b>Imzali kagit elde degil.</b> Bu siparisin imzali asil evraki henuz teslim alinmadi (elde yalnizca fotograf/kopya var). Evrak ulasinca asagidaki dugmeyle isareti kaldirin.</div></div>`:''}
@@ -32907,6 +32912,8 @@ function openOrderDetail(id,fromMatId){
 /* IMZALI KAGIT ELDE DEGIL (o.imzaYok): imzali asil evrak henuz teslim alinmamis siparisler.
    Siparis/taslak karesinde kucuk kirmizi unlem olarak gorunur; detayda uyari seridi + tek
    dugumle durum degistirilir. Yalniz evrak takibi icindir - stok/ilerleme hesaplarina KARISMAZ. */
+// Siparis numarasi olmayan, irsaliye numarasiyla girilmis kayit
+function irsaliyeBadge(o){ return (o&&o.noTur==='irsaliye')?`<span class="ord-irs" title="Siparis numarasi yok - kayit irsaliye numarasiyla girildi">IRS</span>`:''; }
 function imzaWarnBadge(o){ return (o&&o.imzaYok)?`<span class="ord-imza-warn" title="Imzali kagit elde degil - asil evrak henuz teslim alinmadi">!</span>`:''; }
 /* AS = ATANMIS SIPARIS. Siparis atamasiyla girilen fatura, listede tek bakista ayirt edilsin
    diye. Kaynak/hedef bilgisi ipucunda durur - kart yuzeyi kalabaliklasmasin. Taslaklarda da
@@ -42476,7 +42483,7 @@ function openNewOrderPage(tur){
   if(!guard('order'))return;
   if(DB.proje.specs.filter(s=>!s.is_deleted).length===0){ toast("Once sartname kalemleri tanimlanmali","err"); return; }
   const bins=binaOptsFor('').filter(b=>canSeeBuilding(b));
-  NORD={no:'',date:new Date().toISOString().slice(0,10),bina:bins[0]||'',sart:'',sartCoklu:false,sartlar:[],companyId:'',newCompany:'',pdf:null,imzaYok:false,not:'',lines:[_nordEmptyLine()],editId:null,draftId:null,..._nordAtamaDefaults()};
+  NORD={no:'',noTur:'siparis',date:new Date().toISOString().slice(0,10),bina:bins[0]||'',sart:'',sartCoklu:false,sartlar:[],companyId:'',newCompany:'',pdf:null,imzaYok:false,not:'',lines:[_nordEmptyLine()],editId:null,draftId:null,..._nordAtamaDefaults()};
   if(tur==='borc') NORD.tur='borc';
   // PINV: fatura detay sayfasindan gelinmis olabilir - o sayfa render sirasinda panellerden
   // ONCE bakildigi icin burada kapatilmazsa siparis ekrani hic gorunmez
@@ -42586,7 +42593,7 @@ function openEditOrderPage(orderId){
   // ATAMA siparisi duzenlenirken sart bos birakilmaz: atamada NORD.sart HEDEF SARTNAME'dir
   // (karsilik kalemin acildigi yer), yalnizca bir arama filtresi degil.
   const _sd=o.tur==='atama'?{coklu:false,sartlar:[],sart:o.hedefSart||''}:nordEditSartDurumu(o,lines);
-  NORD={no:o.no||'',date:o.date?new Date(o.date).toISOString().slice(0,10):new Date().toISOString().slice(0,10),
+  NORD={no:o.no||'',noTur:o.noTur==='irsaliye'?'irsaliye':'siparis',date:o.date?new Date(o.date).toISOString().slice(0,10):new Date().toISOString().slice(0,10),
     bina:o.bina||'',sart:_sd.sart,sartCoklu:_sd.coklu,sartlar:_sd.sartlar,companyId,newCompany,pdf:o.pdf||null,imzaYok:!!o.imzaYok,not:'',lines:lines.length?lines:[_nordEmptyLine()],editId:orderId,draftId:null,
     tur:(o.tur==='atama'||o.tur==='borc')?o.tur:'normal',kaynakBina:o.kaynakBina||'',kaynakSart:o.kaynakSart||'',atamaNeden:o.atamaNeden||'',atamaAciklama:o.atamaAciklama||'',
     tedarikBina:o.tedarikBina||'',tedarikSart:o.tedarikSart||'',tedarikNot:o.tedarikNot||''};
@@ -42739,6 +42746,10 @@ const ATAMA_NEDENLERI=[['sartname-disi','Hedef binanin sartnamesinde tanimli deg
   ['tedarik','Tedarik / lojistik gerekcesi'],
   ['diger','Diger']];
 function atamaNedenLabel(k){ const x=ATAMA_NEDENLERI.find(n=>n[0]===k); return x?x[1]:(k||''); }
+/* BELGE NO TURU: bazi siparislerin numarasi yok, kayit irsaliye numarasiyla acilir.
+   NORD.noTur / o.noTur = 'irsaliye' bu durumu isaretler; bos veya 'siparis' = siparis no. */
+function nordIrsaliye(){ return !!(NORD&&NORD.noTur==='irsaliye'); }
+function nordSetNoTur(v){ if(!NORD) return; NORD.noTur=(v==='irsaliye')?'irsaliye':'siparis'; render(); const i=document.getElementById('nord_no'); if(i) i.focus(); }
 function nordSetTur(v){
   const yeni=(v==='atama'||v==='borc')?v:'normal';
   if((NORD.tur||'normal')===yeni) return;
@@ -44783,7 +44794,11 @@ function renderNewOrderPage(){
             ${nordAtama()?`<p class="nord-tur-info">Malzeme <b>kaynak</b> sartnameden secilir, siparis <b>hedef</b> binaya yazilir. Kaynak sartnameden <b>hicbir dusum yapilmaz</b> - hedef/alim/montaj sayilari degismez. Hedef sartnamede urunun karsiligi yoksa <b>acik kalem</b> olarak acilir (hakedis ve yuzdeler etkilenmez).</p>`:''}
             ${nordBorc()?`<p class="nord-tur-info">Baska firmadan <b>odunc alinan</b> malzeme. <b>Stok hareketi uretmez</b> - alim, stok, ilerleme, fatura ve mutabakat sayilarina girmez. Ayni malzeme geri verildikce (<b>Geri Ver</b> fisi) kalan duser; kalan 0 olunca borc kapanir. Kayitlar Tum Siparisler &gt; <b>Borclar</b> sekmesinde.</p>`:''}
           </div>
-          <div class="frow"><label>${nordBorc()?'Borc Belge No *':'Siparis / Fatura No *'}</label><input id="nord_no" placeholder="${nordBorc()?'orn. irsaliye / teslim fisi no':'orn. FTR-2026-0145'}" value="${esc(NORD.no)}" oninput="NORD.no=this.value"></div>
+          ${nordBorc()?`<div class="frow"><label>Borc Belge No *</label>`:`<div class="frow"><label>Belge No * <span class="t-meta">(siparis no yoksa irsaliye no ile girin)</span></label>
+            <div class="nord-tur nord-notur">
+              <label class="${nordIrsaliye()?'':'on'}"><input type="radio" name="nordnotur" ${nordIrsaliye()?'':'checked'} onchange="nordSetNoTur('siparis')"> Siparis No</label>
+              <label class="${nordIrsaliye()?'on':''}"><input type="radio" name="nordnotur" ${nordIrsaliye()?'checked':''} onchange="nordSetNoTur('irsaliye')"> Irsaliye No</label>
+            </div>`}<input id="nord_no" placeholder="${nordBorc()?'orn. irsaliye / teslim fisi no':(nordIrsaliye()?'orn. IRS-2026-0145':'orn. SIP-2026-0145')}" value="${esc(NORD.no)}" oninput="NORD.no=this.value"></div>
           <div class="frow"><label>Tarih</label><input id="nord_date" type="date" value="${esc(NORD.date)}" onchange="NORD.date=this.value"></div>
           ${nordAtama()?`
           <div class="frow"><label>Kaynak Bina * <span class="t-meta">(malzemenin tanimli oldugu bina)</span></label>
@@ -44877,7 +44892,7 @@ async function saveNewOrder(){
   // BORC: ayni dogrulamalardan gecer ama stok hareketi URETMEZ ve DB.proje.borclar'a yazilir
   // (bkz. borcMu). No tekilligi kendi listesi icindedir - borc belgesi baska firmanin irsaliyesi.
   const borc=nordBorc(), kayitlar=borc?(DB.proje.borclar||[]):(DB.proje.orders||[]);
-  const no=(NORD.no||'').trim(); if(!no){toast(borc?"Borc belge no zorunlu":"Siparis / fatura no zorunlu","err");document.getElementById('nord_no').focus();return;}
+  const no=(NORD.no||'').trim(); if(!no){toast(borc?"Borc belge no zorunlu":(nordIrsaliye()?"Irsaliye no zorunlu":"Siparis no zorunlu"),"err");document.getElementById('nord_no').focus();return;}
   const dupOrder=kayitlar.find(o=>o.id!==(NORD.editId||null)&&norm(o.no)===norm(no));
   if(dupOrder){toast(`"${no}" ${borc?'borc belge':'siparis/fatura'} no zaten kayitli (${dupOrder.bina})`,"err");document.getElementById('nord_no').focus();return;}
   const bina=NORD.bina; if(!bina){toast("Bina secimi zorunlu","err");return;}
@@ -44978,7 +44993,7 @@ async function saveNewOrder(){
   });
   const orderGrups=[...new Set(lines.map(l=>l.grup).filter(Boolean))];
   const orderGrup=orderGrups.length===1?orderGrups[0]:(orderGrups.length>1?'Karma ('+orderGrups.length+' spek)':'');
-  const order={id:orderId,no,date,bina,companyId,company:companyName,grup:orderGrup,grups:orderGrups,lines,pdf:NORD.pdf,imzaYok:!!NORD.imzaYok,created:exOrder?exOrder.created:Date.now(),
+  const order={id:orderId,no,noTur:(!borc&&nordIrsaliye())?'irsaliye':'',date,bina,companyId,company:companyName,grup:orderGrup,grups:orderGrups,lines,pdf:NORD.pdf,imzaYok:!!NORD.imzaYok,created:exOrder?exOrder.created:Date.now(),
     // SARTNAME FILTRESI: kullanicinin aramayi daraltmak icin sectigi grup. Hicbir hesaba
     // girmez - grup/grups SATIRLARDAN turetilir, bu ise kullanicinin SECIMIDIR. Yalnizca
     // siparis yeniden duzenlemeye acildiginda ayni secimle acilsin diye saklanir
@@ -45095,7 +45110,7 @@ async function nordSaveDraft(){
   const hasAny=(NORD.no||'').trim() || NORD.lines.some(l=>nordLineOk(l)||l.raw);
   if(!hasAny){ toast('Taslak icin en az siparis no veya bir urun girin','err'); return; }
   const id=NORD.draftId||uid();
-  const draft={ id, src:'nord', no:(NORD.no||'').trim(), date:NORD.date, bina:NORD.bina, sart:NORD.sart||'',
+  const draft={ id, src:'nord', no:(NORD.no||'').trim(), noTur:NORD.noTur||'siparis', date:NORD.date, bina:NORD.bina, sart:NORD.sart||'',
     sartCoklu:!!NORD.sartCoklu, sartlar:nordSartlar().slice(),
     companyId:NORD.companyId||'', newCompany:NORD.newCompany||'', pdf:NORD.pdf||null, imzaYok:!!NORD.imzaYok, not:NORD.not||'',
     tur:NORD.tur||'normal', kaynakBina:NORD.kaynakBina||'', kaynakSart:NORD.kaynakSart||'',
@@ -45115,7 +45130,7 @@ function nordOpenDraft(id){
   if(!guard('order'))return;
   const d=orderDraftsGet().find(x=>x.id===id);
   if(!d){ toast('Taslak bulunamadi','err'); return; }
-  NORD={ no:d.no||'', date:d.date||new Date().toISOString().slice(0,10), bina:d.bina||'', sart:d.sart||'',
+  NORD={ no:d.no||'', noTur:d.noTur==='irsaliye'?'irsaliye':'siparis', date:d.date||new Date().toISOString().slice(0,10), bina:d.bina||'', sart:d.sart||'',
     sartCoklu:!!d.sartCoklu, sartlar:Array.isArray(d.sartlar)?d.sartlar.slice():[],
     companyId:d.companyId||'', newCompany:d.newCompany||'', pdf:d.pdf||null, imzaYok:!!d.imzaYok, not:d.not||'',
     tur:(d.tur==='atama'||d.tur==='borc')?d.tur:'normal',   // borc taslagi siparise DONMEMELI (sayimlara girerdi)
