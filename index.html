@@ -37834,7 +37834,9 @@ function openSahaLinkModal(){
 function slinkModalCiz(zorla){
   const m=document.getElementById('slinkModal'); if(!m) return;
   if(SLINK.gorunum!=='liste' && !zorla) return;
+  const eskiGovde=m.querySelector('.modal-body'), kay=eskiGovde?eskiGovde.scrollTop:0;   // secim degisince form bastan cizilir - kaydirma yerinde kalsin
   m.innerHTML = SLINK.gorunum==='yeni' ? slinkYeniHtml() : SLINK.gorunum==='sonuc' ? slinkSonucHtml() : slinkListeHtml();
+  if(kay){ const g=m.querySelector('.modal-body'); if(g) g.scrollTop=kay; }
 }
 function slinkListeyeDon(){ SLINK.gorunum='liste'; SLINK.sonuc=null; slinkModalCiz(true); }
 function slinkListeHtml(){
@@ -38038,8 +38040,44 @@ function slinkGyHtml(y,o){
 }
 function slinkYeniAc(){
   const binalar=binaOptsFor('');
-  SLINK.yeni={tarih:rISO(Date.now()), vardiya:VARDIYALAR[0], bina:binalar[0]||'', cat:'', ekip:'', sartlar:[], katId:'', dolduran:'', adam:'', gySec:[], gyKaynak:'', sure:'6s', stokDus:true};
+  SLINK.yeni={tarih:rISO(Date.now()), vardiya:VARDIYALAR[0], bina:binalar[0]||'', cat:'', ekip:'', sartlar:[], katId:'', dolduran:'', dolduranElle:false, adam:'', gySec:[], gyKaynak:'', sure:'6s', stokDus:true};
   SLINK.gorunum='yeni'; slinkModalCiz(true);
+}
+/* DOLDURACAK KISI: secilen ekibe atanmis kullanicilar (Kullanici Yonetimi > Ekip; app_settings >
+   userEkip) gorunen adlariyla listelenir; ayni ekibin onceki linklerinde yazilmis adlar da secenek
+   olur. Listede olmayan biri "elle yaz" ile girilir. Kayda yine SERBEST METIN (ad) gider -
+   link/gonderim yapisi degismedi. */
+function slinkEkipKisileri(ekip){
+  if(!ekip) return [];
+  const m=(DB.meta&&DB.meta.userEkip)||{};
+  const adlar=Object.keys(m).filter(u=>m[u]===ekip).map(u=>kisiAd(u)).filter(Boolean);
+  return [...new Set(adlar)].sort((a,b)=>a.localeCompare(b,'tr'));
+}
+function slinkDolduranGecmis(ekip,haric){
+  if(!ekip) return [];
+  const h=new Set(haric||[]);
+  const adlar=(SLINK.linkler||[]).filter(l=>l.ekip===ekip&&l.dolduran).map(l=>String(l.dolduran).trim()).filter(a=>a&&!h.has(a));
+  return [...new Set(adlar)].sort((a,b)=>a.localeCompare(b,'tr'));
+}
+function slinkDolduranSec(v){
+  const y=SLINK.yeni; if(!y) return;
+  if(v==='__elle'){ y.dolduranElle=true; y.dolduran=''; }
+  else { y.dolduranElle=false; y.dolduran=v; }
+  slinkModalCiz(true);
+  if(y.dolduranElle) setTimeout(()=>{ const i=document.getElementById('slinkDolduranElle'); if(i) i.focus(); },0);
+}
+function slinkDolduranHtml(y){
+  const opt=(v,t,sel)=>`<option value="${esc(v)}" ${sel?'selected':''}>${esc(t)}</option>`;
+  const kisiler=slinkEkipKisileri(y.ekip), gecmis=slinkDolduranGecmis(y.ekip,kisiler);
+  const girdi=(ph,ekstra)=>`<input id="slinkDolduranElle" maxlength="60" value="${esc(y.dolduran)}" placeholder="${ph}" oninput="SLINK.yeni.dolduran=this.value"${ekstra||''}>`;
+  if(!kisiler.length&&!gecmis.length)
+    return girdi('boş bırakılırsa linkte sorulur')+(y.ekip?'<div class="t-meta" style="margin-top:4px;text-transform:none;letter-spacing:0">Bu ekibe atanmış kullanıcı yok - Kullanıcı Yönetimi &gt; Ekip ile atanır.</div>':'');
+  const listede=kisiler.includes(y.dolduran)||gecmis.includes(y.dolduran);
+  const elle=y.dolduranElle||(!!y.dolduran&&!listede);
+  return `<select onchange="slinkDolduranSec(this.value)">${opt('','- boş: linkte sorulur -',!y.dolduran&&!elle)}
+    ${kisiler.length?`<optgroup label="Ekip üyeleri">${kisiler.map(a=>opt(a,a,!elle&&y.dolduran===a)).join('')}</optgroup>`:''}
+    ${gecmis.length?`<optgroup label="Önceki linklerde yazılanlar">${gecmis.map(a=>opt(a,a,!elle&&y.dolduran===a)).join('')}</optgroup>`:''}
+    ${opt('__elle','Başka biri (elle yaz)',elle)}</select>${elle?girdi('adı yazın',' style="margin-top:6px"'):''}`;
 }
 // bina/bolum/sartname birbirine bagli: bina degisince sartname ve kat, bolum degisince o bolume
 // ait olmayan sartnameler temizlenir (rSetBlockCat ile ayni kural)
@@ -38049,6 +38087,8 @@ function slinkYeniSet(k,v){
   // bina degisince Gunluk Yazi kaynagi yeni binanin yazisina doner, secili basliklar oradan toplanir
   if(k==='bina'){ y.sartlar=[]; y.katId=''; y.gyKaynak=''; slinkGyUygula(); }
   if(k==='cat'){ const ok=new Set(slinkSartListesi(y).map(s=>s.code)); y.sartlar=y.sartlar.filter(c=>ok.has(c)); }
+  // ekip degisince listeden secilmis kisi yeni ekipte yoksa bosalir; elle yazilan ad kalir
+  if(k==='ekip'&&!y.dolduranElle&&y.dolduran){ const k2=slinkEkipKisileri(v); if(!k2.includes(y.dolduran)&&!slinkDolduranGecmis(v,k2).includes(y.dolduran)) y.dolduran=''; }
   if(y.katId&&!slinkKatSecenek(y).some(x=>x.id===y.katId)) y.katId='';
   slinkModalCiz(true);
 }
@@ -38089,8 +38129,8 @@ function slinkYeniHtml(){
       <div><label>Vardiya *</label><select onchange="slinkVardiyaDegis(this.value)">${VARDIYALAR.map(v=>opt(v,v,y.vardiya===v)).join('')}</select></div></div>
     <div class="frow two"><div><label>Bina *</label><select onchange="slinkYeniSet('bina',this.value)">${binaOptsFor(y.bina).map(b=>opt(b,b,y.bina===b)).join('')}</select></div>
       <div><label>Bölüm *</label><select onchange="slinkYeniSet('cat',this.value)">${opt('','- bölüm seçin -',!y.cat)}${(DB.proje.sections||[]).map(s=>opt(s,s,y.cat===s)).join('')}</select></div></div>
-    <div class="frow"><label>Ekip *</label><select onchange="SLINK.yeni.ekip=this.value">${opt('','- ekip seçin -',!y.ekip)}${(DB.rapor.ekipler||[]).map(e=>opt(e,e,y.ekip===e)).join('')}</select></div>
-    <div class="frow two"><div><label>Dolduracak kişi</label><input maxlength="60" value="${esc(y.dolduran)}" placeholder="boş bırakılırsa linkte sorulur" oninput="SLINK.yeni.dolduran=this.value"></div>
+    <div class="frow"><label>Ekip *</label><select onchange="slinkYeniSet('ekip',this.value)">${opt('','- ekip seçin -',!y.ekip)}${(DB.rapor.ekipler||[]).map(e=>opt(e,e,y.ekip===e)).join('')}</select></div>
+    <div class="frow two"><div><label>Dolduracak kişi${y.ekip?' <span class="t-meta" style="text-transform:none;letter-spacing:0">(ekipten seçin)</span>':''}</label>${slinkDolduranHtml(y)}</div>
       <div><label>Adam sayısı</label>${adamGyZorunlu()
         ?`<input id="slinkAdam" type="number" value="${esc(y.adam)}" placeholder="Günlük Yazı'dan - seçilmezse onayda" readonly class="adam-gy-kilit${y.gySec.length&&String(y.adam)!==''?' slink-adam-gy':''}" title="${esc(ADAM_GY_IPUCU+'. Seçmezseniz linkte adam sorulmaz; onaylarken seçersiniz.')}">`
         :`<input id="slinkAdam" type="number" min="0" max="999" step="1" value="${esc(y.adam)}" placeholder="boş bırakılırsa linkte sorulur" oninput="slinkAdamYaz(this.value)"${y.gySec.length&&String(y.adam)!==''?' class="slink-adam-gy" title="Günlük Yazı başlıklarından toplandı - elle yazarsanız seçim bırakılır"':''}>`}</div></div>
