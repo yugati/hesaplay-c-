@@ -17594,7 +17594,7 @@ function renderMaterialLibGecici(){
    =================================================================== */
 function matLibAletFiltered(){
   let lib=aletLib().slice();
-  if(SEARCH) lib=lib.filter(x=>matchText([x.ad,x.kod,x.barkod,x.marka,x.grup,x.renk,x.olcu,x.madde,x.aile&&x.aile.ad].filter(Boolean).join(' '),SEARCH));
+  if(SEARCH) lib=lib.filter(x=>matchText([x.ad,x.kod,x.barkod,x.marka,x.grup,x.renk,x.olcu,x.madde,agaOzMetin(x),x.aile&&x.aile.ad].filter(Boolean).join(' '),SEARCH));
   lib=lib.filter(x=>{
     if(MATF.cat && (x.grup||'')!==MATF.cat) return false;
     if(MATF.brand && norm(x.marka||'')!==norm(MATF.brand)) return false;
@@ -17652,7 +17652,7 @@ function renderMaterialLibAlet(){
         ?markGizliIz([['Barkod',x.barkod],['Olcu',x.olcu],['Madde',x.madde]],SEARCH):'';
       return `<tr${gr?' class="va-uye"':''}><td>${thumb}</td>
         <td><div class="t-name">${gr?vaUyeCip(gr.aile,x):''}${markIsaret(x.ad,SEARCH)}</div><div class="t-code">${markIsaret(x.kod||'-',SEARCH)}</div>${iz}</td>
-        <td><span class="grp-tag">${markIsaret(x.grup||'-',SEARCH)}</span></td>
+        <td><span class="grp-tag">${markIsaret(x.grup||'-',SEARCH)}</span>${agaOzHtml(x)}</td>
         <td class="t-meta">${markIsaret(x.marka||'-',SEARCH)}</td>
         <td class="t-meta">${esc(x.birim||'-')}</td>
         <td class="t-meta">${dot}${markIsaret(x.renk||'-',SEARCH)}</td>
@@ -17677,7 +17677,8 @@ function renderMaterialLibAlet(){
       <button class="btn btn-ciplak" title="Excel Raporu - Araç ve Gereç kutuphanesini Excel dosyasi olarak indirir" aria-label="Excel raporu" onclick="exportAletLibExcel()">${icoXlsRapor()}</button>
       ${canCreate('alet')?`<button class="btn btn-ciplak" title="Kutuphaneye yeni alet kunyesi ekle" aria-label="Alet ekle" onclick="openAletLibModal()">${icoMalEkle()}</button>`:''}
       ${canCreate('alet')?`<button class="btn btn-ciplak" title="Toplu Alet Ekleme - formdaki tum alanlar sutun halinde tek sayfada; her satir bir yeni alet kunyesi, Excel'den yapistirarak da doldurabilirsiniz" aria-label="Toplu alet ekleme" onclick="openTopluAletPage()">${icoTopluMal()}</button>`:''}
-      ${VA_KUT.alet.yetki()?`<button class="btn btn-ciplak" title="Varyant Ailesi - ayri aletleri (orn. ayni matkap ucunun 6, 8, 10 mm olculeri) tek ailede baglar; listede tek satir olur. Benzer adli aletler pencerede oneri olarak gelir" aria-label="Varyant ailesi" onclick="vaAc('alet')">${icoVaryantAile()}</button>`:''}</div>
+      ${VA_KUT.alet.yetki()?`<button class="btn btn-ciplak" title="Varyant Ailesi - ayri aletleri (orn. ayni matkap ucunun 6, 8, 10 mm olculeri) tek ailede baglar; listede tek satir olur. Benzer adli aletler pencerede oneri olarak gelir" aria-label="Varyant ailesi" onclick="vaAc('alet')">${icoVaryantAile()}</button>`:''}
+      ${canEdit('alet')?`<button class="btn btn-ciplak" title="Grup Ozellikleri - gruba ozel ek kunye alanlari (orn. Iklimlendirme > BTU, Arac > Yakit); kunye formunda grup yazilinca otomatik cikar" aria-label="Grup ozellikleri" onclick="agaAyarAc('')">${icoDisli(15)}</button>`:''}</div>
     <div style="margin-top:10px">${filterbar}</div>
     ${pgbar}
     </div>
@@ -36120,7 +36121,7 @@ function aletLibGroups(){ return [...new Set(aletLib().map(x=>x.grup).filter(Boo
 function aletAdet(x){ const n=Number(x&&x.adet); return n>0?n:1; }
 function aletKunyeOzet(l){ return [l.kod,l.marka,l.birim].filter(Boolean).join(' · ')||l.ad||''; }
 function aletArananMetin(x){ const k=aletKunye(x);
-  return [k.ad,k.kod,k.marka,k.barkod,k.renk,k.olcu,k.madde,k.grup,x.seri,x.zimkod,x.zimmet,x.konum,x.note].filter(Boolean).join(' '); }
+  return [k.ad,k.kod,k.marka,k.barkod,k.renk,k.olcu,k.madde,k.grup,agaOzMetin(k),x.seri,x.zimkod,x.zimmet,x.konum,x.note].filter(Boolean).join(' '); }
 // Araç ve Gereçler ekranindan kutuphaneye atlama (kutuphane ekraninin Araç ve Gereç kapsami)
 function openAletLib(){ if(!canSee('alet')){toast('Yetkiniz yok','err');return;}
   MATF={scope:'alet',cat:'',brand:'',unit:'',tag:'',img:'',renk:'',sort:''}; _matUsageFilter='all'; _matSel.clear(); _matPage=0; openMaterialLib(); }
@@ -36180,7 +36181,7 @@ function renderAletler(){
     const thumb=imgs.length?`<img class="thumb" src="${imgs[0]}" onclick="lightbox(${lbCall(imgs)})">`:phThumb();
     const kodMarka=[k.kod,k.marka].filter(Boolean).join(' · ');
     rows+=`<tr><td>${thumb}</td>
-      <td><div class="t-name">${esc(k.ad||'(kunye yok)')}</div><div class="t-code">${esc(kodMarka||'-')}</div>${x.libId?'':`<div class="t-meta" style="font-size:10px;color:var(--dim)">kutuphaneye bagli degil</div>`}</td>
+      <td><div class="t-name">${esc(k.ad||'(kunye yok)')}</div><div class="t-code">${esc(kodMarka||'-')}</div>${agaOzHtml(k)}${x.libId?'':`<div class="t-meta" style="font-size:10px;color:var(--dim)">kutuphaneye bagli degil</div>`}</td>
       <td class="t-code" style="font-size:12px">${esc(x.seri||'-')}</td>
       <td class="t-qty">${fmtNum(aletAdet(x))} <span class="t-meta">${esc(k.birim||'')}</span></td>
       <td>${aletDurumTag(x.durum)}</td>
@@ -36206,14 +36207,14 @@ function renderAletler(){
 function aletKunyeBoxHtml(l){
   if(!l) return `<div class="t-meta" style="font-size:11px">Alet secilince kunye (kod, marka, birim, barkod, renk, olcu, agirlik, madde) burada gorunur.</div>`;
   const imgs=[l.img,l.img2].filter(Boolean);
-  const sat=[['Urun Kodu',l.kod],['Marka',l.marka],['Birim',l.birim],['Barkod',l.barkod],['Renk',l.renk],['Olcu',l.olcu],['Agirlik',(l.agirlik!=null&&l.agirlik!=='')?l.agirlik+' kg':''],['Madde',l.madde],['Grup',l.grup]].filter(a=>a[1]);
+  const sat=[['Urun Kodu',l.kod],['Marka',l.marka],['Birim',l.birim],['Barkod',l.barkod],['Renk',l.renk],['Olcu',l.olcu],['Agirlik',(l.agirlik!=null&&l.agirlik!=='')?l.agirlik+' kg':''],['Madde',l.madde],['Grup',l.grup],...agaOzListe(l)].filter(a=>a[1]);
   return `<div style="display:flex;gap:10px;align-items:flex-start;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px">
     ${imgs.length?`<img src="${imgs[0]}" style="width:58px;height:58px;border-radius:7px;object-fit:contain;background:#fff;border:1px solid var(--line);cursor:pointer;flex-shrink:0" onclick="lightbox(${lbCall(imgs)})">`:''}
     <div style="min-width:0;flex:1;display:flex;flex-wrap:wrap;gap:3px 12px">${sat.length?sat.map(a=>`<span style="font-size:11px;font-family:var(--mono)"><b style="color:var(--mute)">${a[0]}:</b> ${esc(String(a[1]))}</span>`).join(''):`<span class="t-meta" style="font-size:11px">Kunye alanlari bos</span>`}</div>
   </div>`;
 }
 function aletLibSrc(){ return aletLib().map(l=>({ad:l.ad||'',
-  alt:[l.kod,l.marka,l.barkod,l.grup,l.renk,l.madde,vaAraMetni('alet',l)].filter(Boolean).join(' '),
+  alt:[l.kod,l.marka,l.barkod,l.grup,l.renk,l.madde,agaOzMetin(l),vaAraMetni('alet',l)].filter(Boolean).join(' '),
   sub:[vaEtiket('alet',l),aletKunyeOzet(l)].filter(Boolean).join(' · '), img:l.img||'', obj:l})); }
 function acAletLib(){ const el=document.getElementById('a_lib'); if(!el)return;
   el.removeAttribute('readonly'); el.value=''; el.focus();
@@ -36353,6 +36354,148 @@ async function saveAlet(id){ if(!guard('define',{bina:PBINA}))return;
 }
 async function delAlet(id){ if(!guard('delete'))return; if(!confirm("Bu aleti silmek istiyor musunuz?"))return; await sbDeleteAletItem(id); DB.alet.items=DB.alet.items.filter(i=>i.id!==id); render(); toast("Alet silindi"); }
 
+/* ===================================================================
+   GRUP OZELLIKLERI (Arac ve Gerec kutuphanesi)
+   Grup adi serbest metindir; her gruba kullanici tarafindan ek alanlar
+   baglanir (orn. IKLIMLENDIRME -> BTU, Enerji Sinifi). Kunye formu grubu
+   okuyunca o alanlari cizer, degerler kunyede `ozellik:{[alanAdi]:deger}`
+   olarak durur - mevcut alanlara dokunulmaz.
+   AYAR: app_settings 'alet_grup_alanlar' (org geneli, acilista DB.meta'ya iner)
+     [{grup:'IKLIMLENDIRME SISTEMLERI', alanlar:[{ad:'BTU',tur:'sayi',birim:'BTU',secenek:[]}]}]
+   tur: 'metin' | 'sayi' | 'secim' (secenek listesinden)
+   Eslesme norm(grup) ile yapilir: buyuk/kucuk harf ve Turkce karakter farki grup
+   bolmez. Alan adi degistirilirse eski kayitlardaki deger o adla kalir (tasinmaz).
+   =================================================================== */
+const AGA_AYAR='alet_grup_alanlar';
+const AGA_TURLER=[['metin','Metin'],['sayi','Sayi'],['secim','Secim']];
+const AGA_VARSAYILAN=[
+  {grup:'IKLIMLENDIRME SISTEMLERI', alanlar:[
+    {ad:'BTU',tur:'sayi',birim:'BTU',secenek:[]},
+    {ad:'Enerji Sinifi',tur:'secim',birim:'',secenek:['A+++','A++','A+','A','B','C']}]},
+  {grup:'ARAC', alanlar:[
+    {ad:'Yakit',tur:'secim',birim:'',secenek:['Benzin','Dizel','LPG','Elektrik','Hibrit']},
+    {ad:'Model Yili',tur:'sayi',birim:'',secenek:[]},
+    {ad:'Motor Hacmi',tur:'sayi',birim:'cc',secenek:[]}]}
+];
+function agaTanim(){ const a=DB&&DB.meta&&DB.meta[AGA_AYAR]; return Array.isArray(a)?a:AGA_VARSAYILAN; }
+function agaTanimli(){ return !!(DB&&DB.meta&&Array.isArray(DB.meta[AGA_AYAR])); }
+function agaGrupBul(grup){ const n=norm(String(grup||'')); if(!n) return null; return agaTanim().find(g=>norm(g.grup||'')===n)||null; }
+function agaAlanlar(grup){ const g=agaGrupBul(grup); return g?(g.alanlar||[]).filter(a=>a&&String(a.ad||'').trim()):[]; }
+// kunyedeki ozellikleri "BTU: 120000 BTU · Enerji Sinifi: A++" metnine cevirir (liste, arama, Excel)
+function agaOzListe(l){ const oz=(l&&l.ozellik&&typeof l.ozellik==='object')?l.ozellik:{}; const alan=agaAlanlar(l&&l.grup);
+  const out=[]; const gorulen=new Set();
+  alan.forEach(a=>{ const v=oz[a.ad]; gorulen.add(a.ad); if(v!=null&&String(v).trim()!=='') out.push([a.ad,String(v)+(a.birim?' '+a.birim:'')]); });
+  Object.keys(oz).forEach(k=>{ if(gorulen.has(k)) return; const v=oz[k]; if(v!=null&&String(v).trim()!=='') out.push([k,String(v)]); });
+  return out; }
+function agaOzMetin(l,ayrac){ return agaOzListe(l).map(a=>a[0]+': '+a[1]).join(ayrac||' · '); }
+function agaOzHtml(l){ const ls=agaOzListe(l); if(!ls.length) return '';
+  return `<div class="t-meta" style="font-size:10.5px;font-family:var(--mono)">${ls.map(a=>`<span style="margin-right:8px"><b style="color:var(--mute)">${esc(a[0])}:</b> ${esc(a[1])}</span>`).join('')}</div>`; }
+/* Form parcasi: idPrefix altinda [data-ozad] tasiyan girdiler. onAttr: girdiye eklenecek
+   olay niteligi (modal: bos, toplu sayfa: oninput). Grup icin alan tanimi yoksa yalnizca
+   yetkili kullaniciya "Grup Ozellikleri" baglantisi gosterilir. */
+function agaFormHtml(grup,oz,idPrefix,onAttr){
+  const alan=agaAlanlar(grup); oz=(oz&&typeof oz==='object')?oz:{};
+  const link=canEdit('alet')?`<button type="button" class="btn btn-ghost" style="padding:4px 9px;font-size:11px" onclick="agaAyarAc(${JSON.stringify(String(grup||''))})">${icoDisli(12)} Grup Ozellikleri</button>`:'';
+  if(!alan.length) return String(grup||'').trim()&&link?`<div class="frow" style="display:flex;align-items:center;gap:8px"><span class="t-meta" style="font-size:11px">Bu grup icin ek ozellik tanimli degil.</span>${link}</div>`:'';
+  const girdi=(a,i)=>{ const id=`${idPrefix}_oz_${i}`, v=oz[a.ad]!=null?String(oz[a.ad]):'';
+    if(a.tur==='secim'){ const ops=(a.secenek||[]).map(s=>`<option value="${esc(s)}" ${s===v?'selected':''}>${esc(s)}</option>`).join('');
+      return `<select id="${id}" data-ozad="${esc(a.ad)}" ${onAttr||''}><option value="">-</option>${ops}${v&&!(a.secenek||[]).includes(v)?`<option value="${esc(v)}" selected>${esc(v)}</option>`:''}</select>`; }
+    if(a.tur==='sayi') return `<input id="${id}" data-ozad="${esc(a.ad)}" type="number" step="any" value="${esc(v)}" placeholder="${esc(a.birim||'0')}" ${onAttr||''}>`;
+    return `<input id="${id}" data-ozad="${esc(a.ad)}" value="${esc(v)}" ${onAttr||''}>`; };
+  return `<div class="frow" style="background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:9px 10px 2px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px"><label style="margin:0">Grup Ozellikleri <span class="t-meta">(${esc(String(grup||'').trim())})</span></label>${link}</div>
+    <div class="frow two" style="margin-bottom:0">${alan.map((a,i)=>`<div><label>${esc(a.ad)}${a.birim?` <span class="t-meta">(${esc(a.birim)})</span>`:''}</label>${girdi(a,i)}</div>`).join('')}</div>
+  </div>`;
+}
+// kutudaki degerleri okur; tanimli alan listesine gore suzer, sayi alanini dogrular (hata -> string)
+function agaOzOku(boxId,grup){
+  const box=document.getElementById(boxId); const alan=agaAlanlar(grup); const oz={};
+  if(!box) return {oz,err:''};
+  let err='';
+  box.querySelectorAll('[data-ozad]').forEach(el=>{ const ad=el.dataset.ozad, v=String(el.value||'').trim(); if(!v) return;
+    const a=alan.find(x=>x.ad===ad);
+    if(a&&a.tur==='sayi'&&isNaN(Number(v.replace(',','.')))){ err=ad+' sayisal olmali'; return; }
+    oz[ad]=(a&&a.tur==='sayi')?Number(v.replace(',','.')):v; });
+  return {oz,err};
+}
+// modalda grup yazildikca blok yeniden cizilir; girilmis degerler korunur
+function agaFormYenile(prefix,boxId,grupId){
+  const box=document.getElementById(boxId), g=document.getElementById(grupId); if(!box||!g) return;
+  const eski={}; box.querySelectorAll('[data-ozad]').forEach(el=>{ if(String(el.value||'').trim()) eski[el.dataset.ozad]=el.value; });
+  box.innerHTML=agaFormHtml(g.value,Object.assign({},box._oz||{},eski),prefix,'');
+}
+/* ---- Ayar penceresi: grup sec -> alan satirlari (ad / tur / birim / secenekler) ---- */
+let _AGA=null;
+function agaAyarAc(grup){ if(!canEdit('alet')){ toast('Yetkiniz yok','err'); return; }
+  const tanim=JSON.parse(JSON.stringify(agaTanim()));
+  const gruplar=[...new Set([...tanim.map(g=>g.grup),...aletLibGroups()].map(s=>String(s||'').trim()).filter(Boolean))];
+  let sec=String(grup||'').trim();
+  if(sec && !tanim.some(g=>norm(g.grup)===norm(sec))) tanim.push({grup:sec,alanlar:[]});
+  if(!sec && tanim.length) sec=tanim[0].grup;
+  _AGA={tanim,gruplar,sec,ustModal:document.querySelector('.modal-bg')?true:false};
+  const html=`<div class="modal-bg" id="agaModal" style="z-index:1200" onclick="if(event.target===this)agaAyarKapat()"><div class="modal" style="max-width:860px"><div class="modal-head"><h3>Grup Ozellikleri</h3><button class="mini-btn" onclick="agaAyarKapat()">x</button></div>
+    <div class="modal-body" id="agaBody"></div>
+    <div class="modal-foot"><span class="t-meta" style="margin-right:auto;font-size:11px">Alanlar org genelinde ortaktir. Alan adini degistirmek eski kunyelerdeki degeri tasimaz.</span><button class="btn btn-ghost" onclick="agaAyarKapat()">Iptal</button><button class="btn btn-add" onclick="agaAyarKaydet()">Kaydet</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  agaAyarCiz();
+}
+function agaAyarKapat(){ const m=document.getElementById('agaModal'); if(m) m.remove(); _AGA=null; }
+function agaSecGrup(){ return _AGA&&_AGA.tanim.find(g=>norm(g.grup)===norm(_AGA.sec))||null; }
+function agaAyarCiz(){ const b=document.getElementById('agaBody'); if(!b||!_AGA) return;
+  const s=_AGA, g=agaSecGrup();
+  const sol=`<div style="flex:0 0 240px;min-width:0">
+    <label>Gruplar</label>
+    <div style="display:flex;gap:6px;margin-bottom:8px"><input id="agaYeniGrup" list="agaGrpList" placeholder="Grup adi yazin / secin" onkeydown="if(event.key==='Enter'){event.preventDefault();agaGrupEkle();}"><button class="btn btn-ghost" style="padding:6px 10px" onclick="agaGrupEkle()">Ekle</button></div>
+    <datalist id="agaGrpList">${s.gruplar.filter(x=>!s.tanim.some(t=>norm(t.grup)===norm(x))).map(x=>`<option value="${esc(x)}">`).join('')}</datalist>
+    <div style="display:flex;flex-direction:column;gap:4px;max-height:360px;overflow:auto">${s.tanim.map(t=>`<button class="btn ${norm(t.grup)===norm(s.sec)?'btn-add':'btn-ghost'}" style="justify-content:space-between;padding:7px 10px;font-size:12px;text-align:left" onclick="_AGA.sec=${JSON.stringify(t.grup)};agaAyarCiz()"><span>${esc(t.grup)}</span><span class="t-meta">${(t.alanlar||[]).length} alan</span></button>`).join('')||'<span class="t-meta">Henuz grup yok</span>'}</div>
+  </div>`;
+  const satir=(a,i)=>`<div class="oline" style="grid-template-columns:1.4fr 110px 90px 1.6fr 30px;margin-bottom:6px">
+      <input value="${esc(a.ad||'')}" placeholder="Alan adi (orn. BTU)" oninput="agaAlanIn(${i},'ad',this.value)">
+      <select onchange="agaAlanIn(${i},'tur',this.value);agaAyarCiz()">${AGA_TURLER.map(([v,l])=>`<option value="${v}" ${a.tur===v?'selected':''}>${l}</option>`).join('')}</select>
+      <input value="${esc(a.birim||'')}" placeholder="Birim" oninput="agaAlanIn(${i},'birim',this.value)">
+      <input value="${esc((a.secenek||[]).join(', '))}" placeholder="${a.tur==='secim'?'Secenekler: A++, A+, A':'-'}" ${a.tur==='secim'?'':'disabled'} oninput="agaAlanIn(${i},'secenek',this.value)">
+      <button class="mini-btn del" title="Alani kaldir" onclick="agaAlanSil(${i})">${icoTrash()}</button>
+    </div>`;
+  const sag=g?`<div style="flex:1;min-width:0">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px"><label style="margin:0">${esc(g.grup)} - alanlar</label><button class="mini-btn del" title="Bu grubun ozellik tanimini kaldir" onclick="agaGrupSil()">${icoTrash()}</button></div>
+    <div class="oline" style="grid-template-columns:1.4fr 110px 90px 1.6fr 30px;margin-bottom:4px"><span class="t-meta">Alan</span><span class="t-meta">Tur</span><span class="t-meta">Birim</span><span class="t-meta">Secenekler (secim turunde)</span><span></span></div>
+    ${(g.alanlar||[]).map(satir).join('')||'<p class="t-meta" style="font-size:12px">Bu grupta alan yok - "+ Alan Ekle" ile baslayin.</p>'}
+    <button class="btn btn-ghost" style="margin-top:4px;padding:6px 11px;font-size:12px" onclick="agaAlanEkle()">+ Alan Ekle</button>
+    <p class="t-meta" style="margin-top:12px;font-size:11px;line-height:1.5">Kunye formunda grup bu adla yazilinca alanlar otomatik cikar. Sayi turu Excel'de sayi olarak yazilir; secim turu formda acilir liste olur.</p>
+  </div>`:`<div style="flex:1" class="t-meta">Soldan bir grup secin ya da yeni grup ekleyin.</div>`;
+  b.innerHTML=`<div style="display:flex;gap:16px;align-items:flex-start">${sol}${sag}</div>`;
+}
+function agaGrupEkle(){ const el=document.getElementById('agaYeniGrup'); const ad=String(el&&el.value||'').trim(); if(!ad){ toast('Grup adi yazin','err'); return; }
+  if(!_AGA.tanim.some(t=>norm(t.grup)===norm(ad))) _AGA.tanim.push({grup:ad,alanlar:[]});
+  _AGA.sec=ad; agaAyarCiz(); }
+function agaGrupSil(){ const g=agaSecGrup(); if(!g) return; if(!confirm('"'+g.grup+'" grubunun ozellik tanimi kaldirilsin mi? Kunyelerdeki girilmis degerler silinmez.')) return;
+  _AGA.tanim=_AGA.tanim.filter(t=>t!==g); _AGA.sec=_AGA.tanim.length?_AGA.tanim[0].grup:''; agaAyarCiz(); }
+function agaAlanEkle(){ const g=agaSecGrup(); if(!g) return; (g.alanlar=g.alanlar||[]).push({ad:'',tur:'metin',birim:'',secenek:[]}); agaAyarCiz();
+  setTimeout(()=>{ const ins=document.querySelectorAll('#agaBody .oline input'); const son=ins[ins.length-4]; if(son) son.focus(); },0); }
+function agaAlanSil(i){ const g=agaSecGrup(); if(!g) return; g.alanlar.splice(i,1); agaAyarCiz(); }
+function agaAlanIn(i,k,v){ const g=agaSecGrup(); if(!g||!g.alanlar[i]) return;
+  if(k==='secenek') g.alanlar[i].secenek=String(v||'').split(',').map(s=>s.trim()).filter(Boolean); else g.alanlar[i][k]=v; }
+async function agaAyarKaydet(){ if(!_AGA) return;
+  const tanim=_AGA.tanim.map(t=>({grup:String(t.grup||'').trim(),alanlar:(t.alanlar||[]).map(a=>({ad:String(a.ad||'').trim(),tur:AGA_TURLER.some(x=>x[0]===a.tur)?a.tur:'metin',birim:String(a.birim||'').trim(),secenek:a.tur==='secim'?(a.secenek||[]):[]})).filter(a=>a.ad)})).filter(t=>t.grup);
+  for(const t of tanim){ const adlar=t.alanlar.map(a=>norm(a.ad)); const tekrar=adlar.find((x,i)=>adlar.indexOf(x)!==i);
+    if(tekrar){ toast('"'+t.grup+'" grubunda ayni alan adi iki kez: '+tekrar,'err'); return; }
+    if(t.alanlar.some(a=>a.tur==='secim'&&!a.secenek.length)){ toast('"'+t.grup+'" grubunda secim turundeki alanin secenekleri bos','err'); return; } }
+  try{ await sbSetSetting(AGA_AYAR,tanim); }catch(e){ toast('Kaydedilemedi: '+((e&&e.message)||e),'err'); return; }
+  if(!DB.meta) DB.meta={}; DB.meta[AGA_AYAR]=tanim;
+  logAction('define','Grup ozellikleri guncellendi: '+tanim.length+' grup');
+  agaAyarKapat(); toast('Grup ozellikleri kaydedildi');
+  // acik kunye formu / toplu sayfa varsa bloklari tazele
+  const kb=document.getElementById('k_ozBox'); if(kb) agaFormYenile('k','k_ozBox','k_grup');
+  if(typeof _TOPA!=='undefined'&&_TOPA&&typeof topaDraw==='function') topaDraw();
+  if(typeof PLIB!=='undefined'&&PLIB&&!document.querySelector('.modal-bg')) render();
+}
+// Excel: kutuphanedeki gruplarin tum alan adlari (sutun birligi), tanimsiz grubun girilmis anahtarlari dahil
+function agaExcelSutunlar(lib){ const s=[]; const ekle=k=>{ if(k&&!s.includes(k)) s.push(k); };
+  lib.forEach(l=>{ agaAlanlar(l.grup).forEach(a=>ekle(a.ad)); Object.keys((l.ozellik&&typeof l.ozellik==='object')?l.ozellik:{}).forEach(ekle); });
+  return s; }
+function agaExcelDeger(l,ad){ const oz=(l&&l.ozellik&&typeof l.ozellik==='object')?l.ozellik:{}; const v=oz[ad]; if(v==null||v==='') return '';
+  return (typeof v==='number')?v:String(v); }
+
 /* ---------- Araç ve Gereç kutuphanesi: kunye modali ---------- */
 function setAletLibImgUrl(v){ applyImgUrl(v,'kImgDrop',1); }
 function setAletLibImgUrl2(v){ applyImgUrl(v,'kImg2Drop',2); }
@@ -36365,13 +36508,14 @@ function openAletLibModal(id){ if(!canEdit('alet')) return;
   modalImg=(x&&x.img)||null; modalImg2=(x&&x.img2)||null;
   const grps=aletLibGroups();
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>${x?'Alet Kunyesi Duzenle':'Kutuphaneye Alet Ekle'}</h3><button class="mini-btn" onclick="aletLibModalClose()">x</button></div><div class="modal-body">
-    <div class="frow two"><div><label>Urun Kodu</label><input id="k_kod" value="${x?esc(x.kod||''):''}" placeholder="orn. 121491"></div><div><label>Grup</label><input id="k_grup" list="aletGrpList" value="${x?esc(x.grup||''):''}" placeholder="orn. ELEKTRIKLI EL ALETI"><datalist id="aletGrpList">${grps.map(g=>`<option value="${esc(g)}">`).join('')}</datalist></div></div>
+    <div class="frow two"><div><label>Urun Kodu</label><input id="k_kod" value="${x?esc(x.kod||''):''}" placeholder="orn. 121491"></div><div><label>Grup</label><input id="k_grup" list="aletGrpList" oninput="agaFormYenile('k','k_ozBox','k_grup')" value="${x?esc(x.grup||''):''}" placeholder="orn. ELEKTRIKLI EL ALETI"><datalist id="aletGrpList">${grps.map(g=>`<option value="${esc(g)}">`).join('')}</datalist></div></div>
     <div class="frow"><label>Malzeme Adi ve Ozelligi *</label><input id="k_ad" value="${x?esc(x.ad||''):''}" placeholder="orn. Darbeli Matkap 18V / SDS-Plus"></div>
     <div class="frow"><label>Marka  <span class="t-meta">(ortak marka listesinden - model adi Olcu/Not alanina yazilir)</span></label>${markaAlaniHtml('k_marka',x?x.marka:'',false)}</div>
     <div class="frow"><label>Birim</label><input id="k_birim" value="${x?esc(x.birim||'ADET'):'ADET'}" placeholder="ADET"></div>
     <div class="frow two"><div><label>Barkod</label><input id="k_barkod" value="${x?esc(x.barkod||''):''}" placeholder="orn. 8690000000000"></div><div><label>Renk</label><input id="k_renk" value="${x?esc(x.renk||''):''}" placeholder="orn. Mavi"></div></div>
     <div class="frow two"><div><label>Olcu ve Boyut</label><input id="k_olcu" value="${x?esc(x.olcu||''):''}" placeholder="orn. 320x210x90 mm"></div><div><label>Agirlik (kg)</label><input id="k_agirlik" type="number" step="any" min="0" value="${x&&x.agirlik!=null?x.agirlik:''}" placeholder="0"></div></div>
     <div class="frow"><label>Madde</label><input id="k_madde" value="${x?esc(x.madde||''):''}" placeholder="orn. 12"></div>
+    <div id="k_ozBox">${agaFormHtml(x?x.grup:'',x?x.ozellik:null,'k','')}</div>
     <div class="frow"><label>Not</label><textarea id="k_note" placeholder="Teknik ozellik, kalibrasyon araligi, aksesuar...">${x?esc(x.note||''):''}</textarea></div>
     <div class="frow"><label>Alet Fotografi  <span class="t-meta">(dosya secin veya internetten resim linki yapistirin)</span></label>
       <div class="drop ${x&&x.img?'has':''}" id="kImgDrop" onclick="document.getElementById('kImgInput').click()">${x&&x.img?`<img class="img-prev" src="${x.img}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div>
@@ -36401,9 +36545,10 @@ async function saveAletLib(id){ if(!guard('define',{bina:PBINA}))return;
   if(!imgUrlNow && modalImg && /^https?:\/\//i.test(modalImg)) modalImg=null;
   const img2UrlNow=String((document.getElementById('k_img2Url')||{}).value||'').trim();
   if(!img2UrlNow && modalImg2 && /^https?:\/\//i.test(modalImg2)) modalImg2=null;
+  const ozR=agaOzOku('k_ozBox',g('k_grup')); if(ozR.err){ toast(ozR.err,'err'); return; }
   const data={kod,ad,grup:g('k_grup'),marka:g('k_marka'),birim:g('k_birim')||'ADET',barkod:g('k_barkod'),
     renk:g('k_renk'),olcu:g('k_olcu'),agirlik:agirlikRaw!==''?Number(agirlikRaw):null,madde:g('k_madde'),
-    note:g('k_note'),img:modalImg,img2:modalImg2};
+    note:g('k_note'),img:modalImg,img2:modalImg2,ozellik:ozR.oz};
   let entity;
   if(id){ const x=aletLib().find(i=>i.id===id); entity={...x,...data};
     await sbUpdateAletLibItem(id,entity); Object.assign(x,data);
@@ -36431,24 +36576,26 @@ async function delAletLib(id){ if(!guard('delete'))return;
 function exportAletLibExcel(){ const lib=aletLib(); if(lib.length===0){toast("Veri yok","err");return;}
   const wb=XLSX.utils.book_new();
   // varyant ailesi sona: rapor sutunlarinin yeri degismesin (bkz. vaExcelAd)
-  const rows=[["Urun Kodu","Malzeme Adi ve Ozelligi","Grup","Marka/Model","Birim","Barkod","Renk","Olcu ve Boyut","Agirlik","Madde","Not","Foto","Kayit","Urun Ailesi","Aile Degerleri"]];
+  const ozS=agaExcelSutunlar(lib);
+  const rows=[["Urun Kodu","Malzeme Adi ve Ozelligi","Grup","Marka/Model","Birim","Barkod","Renk","Olcu ve Boyut","Agirlik","Madde","Not",...ozS.map(a=>"Ozellik: "+a),"Foto","Kayit","Urun Ailesi","Aile Degerleri"]];
   lib.slice().sort((a,b)=>(a.grup||'').localeCompare(b.grup||'','tr')||(a.ad||'').localeCompare(b.ad||'','tr'))
     .forEach(x=>rows.push([x.kod||'',x.ad||'',x.grup||'',x.marka||'',x.birim||'',x.barkod||'',x.renk||'',x.olcu||'',
-      (x.agirlik!=null&&x.agirlik!=='')?Number(x.agirlik):'',x.madde||'',x.note||'',
+      (x.agirlik!=null&&x.agirlik!=='')?Number(x.agirlik):'',x.madde||'',x.note||'',...ozS.map(a=>agaExcelDeger(x,a)),
       [x.img,x.img2].filter(Boolean).length||'-',DB.alet.items.filter(i=>i.libId===x.id).length||'-',
       vaExcelAd('alet',x),vaExcelDeger('alet',x)]));
-  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:14},{wch:32},{wch:18},{wch:18},{wch:8},{wch:16},{wch:12},{wch:18},{wch:9},{wch:9},{wch:26},{wch:6},{wch:7},{wch:26},{wch:30}];
+  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:14},{wch:32},{wch:18},{wch:18},{wch:8},{wch:16},{wch:12},{wch:18},{wch:9},{wch:9},{wch:26},...ozS.map(()=>({wch:14})),{wch:6},{wch:7},{wch:26},{wch:30}];
   XLSX.utils.book_append_sheet(wb,ws,"Araç ve Gereç Kutuphane");
   XLSX.writeFile(wb,`Arac_ve_Gerec_Kutuphanesi_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel raporu indirildi");
 }
 function exportAletExcel(){ const items=DB.alet.items; if(items.length===0){toast("Veri yok","err");return;}
   const wb=XLSX.utils.book_new(); const m={depo:'Depoda',saha:'Sahada',tamir:'Tamirde',kayip:'Kayip'};
-  const rows=[["Urun Kodu","Malzeme Adi ve Ozelligi","Marka/Model","Birim","Barkod","Renk","Olcu ve Boyut","Agirlik","Madde","Seri No","Adet","Durum","Zimmet Kodu","Zimmetli Kisi","Konum","Tarih","Not","Foto"]];
+  const ozS=agaExcelSutunlar(items.map(aletKunye));
+  const rows=[["Urun Kodu","Malzeme Adi ve Ozelligi","Grup","Marka/Model","Birim","Barkod","Renk","Olcu ve Boyut","Agirlik","Madde",...ozS.map(a=>"Ozellik: "+a),"Seri No","Adet","Durum","Zimmet Kodu","Zimmetli Kisi","Konum","Tarih","Not","Foto"]];
   items.slice().sort((a,b)=>(aletKunye(a).ad||'').localeCompare(aletKunye(b).ad||'','tr')).forEach(x=>{ const k=aletKunye(x);
-    rows.push([k.kod||'',k.ad||'',k.marka||'',k.birim||'',k.barkod||'',k.renk||'',k.olcu||'',
-      (k.agirlik!=null&&k.agirlik!=='')?Number(k.agirlik):'',k.madde||'',x.seri||'',aletAdet(x),m[x.durum||'depo'],
+    rows.push([k.kod||'',k.ad||'',k.grup||'',k.marka||'',k.birim||'',k.barkod||'',k.renk||'',k.olcu||'',
+      (k.agirlik!=null&&k.agirlik!=='')?Number(k.agirlik):'',k.madde||'',...ozS.map(a=>agaExcelDeger(k,a)),x.seri||'',aletAdet(x),m[x.durum||'depo'],
       x.zimkod||'',x.zimmet||'',x.konum||'',x.tarih?fmtDate(x.tarih):'',x.note||'',[k.img,k.img2].filter(Boolean).length||'-']); });
-  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:14},{wch:32},{wch:18},{wch:8},{wch:16},{wch:12},{wch:18},{wch:9},{wch:9},{wch:18},{wch:7},{wch:10},{wch:14},{wch:20},{wch:22},{wch:12},{wch:26},{wch:6}];
+  const ws=XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:14},{wch:32},{wch:18},{wch:18},{wch:8},{wch:16},{wch:12},{wch:18},{wch:9},{wch:9},...ozS.map(()=>({wch:14})),{wch:18},{wch:7},{wch:10},{wch:14},{wch:20},{wch:22},{wch:12},{wch:26},{wch:6}];
   XLSX.utils.book_append_sheet(wb,ws,"Araç ve Gereçler"); XLSX.writeFile(wb,`Arac_ve_Gerecler_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel raporu indirildi");
 }
 
@@ -36470,7 +36617,9 @@ function exportAletExcel(){ const items=DB.alet.items; if(items.length===0){toas
    varsa kutu hata verir, ustune yazilmaz.
    =================================================================== */
 let _TOPA=null;
-function _topaBosSatir(){ return {kod:'',ad:'',grup:'',marka:'',birim:'',barkod:'',renk:'',olcu:'',agirlik:'',madde:'',note:'',img:null,img2:null,err:''}; }
+function _topaBosSatir(){ return {kod:'',ad:'',grup:'',marka:'',birim:'',barkod:'',renk:'',olcu:'',agirlik:'',madde:'',note:'',img:null,img2:null,ozellik:{},err:''}; }
+// grup ozellik degeri (bkz. agaFormHtml) - kutu grubu degisince blok yeniden cizilir, girilenler kalir
+function topaOz(i,ad,v){ const r=_topaR(i); if(!r)return; if(!r.ozellik) r.ozellik={}; if(String(v||'').trim()) r.ozellik[ad]=v; else delete r.ozellik[ad]; }
 // birim BOS baslar - "ADET" yalnizca placeholder'da gorunur, kaydederken varsayilir (bkz. saveAletLib fallback)
 function topaSatirDolu(r){
   if(!r) return false;
@@ -36494,6 +36643,7 @@ function topaIn(i,k,val){
   const r=_topaR(i); if(!r)return;
   r[k]=val;
   if(k==='ad'){ const t=document.querySelector('#topac_'+i+' .topm-card-head b'); if(t) t.textContent=String(val||'').trim()||'Yeni Alet'; }
+  if(k==='grup'){ const b=document.getElementById('topaOz_'+i); if(b) b.innerHTML=agaFormHtml(val,r.ozellik,'topa'+i,`oninput="topaOz(${i},this.dataset.ozad,this.value)" onchange="topaOz(${i},this.dataset.ozad,this.value)"`); }
   if(r.err){ r.err=''; const c=document.getElementById('topac_'+i);
     if(c){ c.classList.remove('hata'); const e=c.querySelector('.topm-err'); if(e)e.remove(); } }
   topaCount();
@@ -36732,6 +36882,8 @@ function topaExcelDosya(e){
     const iAgirlik=pick('agirlik (kg)','agirlik(kg)','agirlik_kg','agirlik','agirligi','weight','weight (kg)','kg');
     const iMadde=pick('madde');
     const iNote=pick('not','notu','note','aciklama');
+    // ozellik sutunlari: baslik "Ozellik: BTU" ise adi iki noktadan sonrasi; degilse basligin kendisi (grubun alan adiyla eslesirse)
+    const ozBas=(rows[h]||[]).map((hh,ix)=>{ const t=String(hh||'').trim(); const m=/^ozellik\s*:\s*(.+)$/i.exec(t); return {ix,ad:m?m[1].trim():t,acik:!!m}; }).filter(b=>b.ad);
     const iImg =pick('resim linki','resim_linki','image_url','imageurl','resim url','resim','fotograf linki','fotograf','foto','photo','image','gorsel');
     const iImg2=pick('resim linki 2','resim_linki_2','resim url 2','fotograf linki 2','fotograf 2','image_url_2','image2','photo2');
     if(iAd<0){ toast('Sayfada "Malzeme Adi ve Ozelligi" sutunu yok - sablonu indirip kullanin','err'); return; }
@@ -36747,6 +36899,8 @@ function topaExcelDosya(e){
       r.kod=kod; r.ad=ad; r.grup=al(iGrup); r.marka=al(iMarka); r.birim=al(iBirim);
       r.barkod=al(iBarkod); r.renk=al(iRenk); r.olcu=al(iOlcu); r.agirlik=_topaSayiHucre(al(iAgirlik));
       r.madde=al(iMadde); r.note=al(iNote);
+      r.ozellik={}; { const alan=agaAlanlar(r.grup); ozBas.forEach(b=>{ const v=al(b.ix); if(!v) return;
+        const a=alan.find(x=>norm(x.ad)===norm(b.ad)); if(a) r.ozellik[a.ad]=v; else if(b.acik) r.ozellik[b.ad]=v; }); }
       const im=al(iImg), im2=al(iImg2);
       r.img=/^https?:\/\//i.test(im)?im:null;
       r.img2=/^https?:\/\//i.test(im2)?im2:null;
@@ -36796,7 +36950,13 @@ function _topaSatirCoz(r,i,gorulen){
   return {alet:{id:uid(),kod,ad,grup:String(r.grup||'').trim(),marka:String(r.marka||'').trim(),
     birim:String(r.birim||'').trim()||'ADET',barkod:String(r.barkod||'').trim(),renk:String(r.renk||'').trim(),
     olcu:String(r.olcu||'').trim(),agirlik:agirlikRaw!==''?Number(agirlikRaw):null,madde:String(r.madde||'').trim(),
-    note:String(r.note||'').trim(),img:lnk(r.img),img2:lnk(r.img2)}};
+    note:String(r.note||'').trim(),img:lnk(r.img),img2:lnk(r.img2),ozellik:_topaOzCoz(r)}};
+}
+// toplu kutudaki ozellik: sayi alani sayiya cevrilir, bos degerler atilir
+function _topaOzCoz(r){ const oz={}; const alan=agaAlanlar(r.grup); const src=(r.ozellik&&typeof r.ozellik==='object')?r.ozellik:{};
+  Object.keys(src).forEach(ad=>{ const v=String(src[ad]==null?'':src[ad]).trim(); if(!v) return; const a=alan.find(x=>x.ad===ad);
+    if(a&&a.tur==='sayi'){ const n=Number(v.replace(',','.')); if(!isNaN(n)) oz[ad]=n; } else oz[ad]=v; });
+  return oz;
 }
 // TUMUNU EKLE: gecerli kutular tek istekte yazilir, hatali kutular sayfada kalir
 // ve nedeni kutunun basinda gorunur - kullanici bastan doldurmak zorunda kalmaz.
@@ -36872,6 +37032,7 @@ function topaCardHtml(i){
       <div><label>Agirlik (kg)</label><input type="number" step="any" min="0" value="${esc(r.agirlik)}" placeholder="0" oninput="topaIn(${i},'agirlik',this.value)"></div>
     </div>
     <div class="frow"><label>Madde</label><input value="${esc(r.madde)}" placeholder="orn. 12" oninput="topaIn(${i},'madde',this.value)"></div>
+    <div id="topaOz_${i}">${agaFormHtml(r.grup,r.ozellik,'topa'+i,`oninput="topaOz(${i},this.dataset.ozad,this.value)" onchange="topaOz(${i},this.dataset.ozad,this.value)"`)}</div>
     <div class="frow"><label>Not</label><textarea placeholder="Teknik ozellik, kalibrasyon araligi, aksesuar..." oninput="topaIn(${i},'note',this.value)">${esc(r.note)}</textarea></div>
     <div class="frow two">
       <div><label>Alet Fotografi</label>${topaImgHtml(i,1)}</div>
