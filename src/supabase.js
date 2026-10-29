@@ -1122,6 +1122,14 @@ async function dosyaSil(path, kova) {
 }
 
 export async function sbBelgeUrl(path) { return dosyaUrl(path) }
+/* Hesapsiz acilan paylasim linki (lib/belgeLink.js): {token, bitis, sure}. sure: '1g'|'7g'|'30g'|'sinirsiz' */
+export async function sbBelgePaylas(path, sure) {
+  return authFetch('/api/belge-link', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path, sure }),
+  })
+}
 export async function sbBelgeYukle(kind, id, file) { return dosyaYukle(kind, id, file) }
 export async function sbBelgeSil(path) { return dosyaSil(path) }
 

@@ -173,6 +173,7 @@ import {
   sbModelUrl,
   sbDeleteBinaModelFile,
   sbBelgeUrl,
+  sbBelgePaylas,
   sbBelgeYukle,
   sbBelgeSil,
   // Parcali giris: lokasyon kirilim agaci
@@ -470,6 +471,7 @@ function guardedThrow(module, action, fn) {
   return async function (...args) { _permCheck(module, action); return fn.apply(this, args) }
 }
 window.sbBelgeUrl               = sbBelgeUrl                                   // okuma: oturum yeter
+window.sbBelgePaylas            = sbBelgePaylas                                // paylasim linki: oturum yeter, org sunucuda dogrulanir
 /* Yukleme yetkisi TUR BAZLI: bir tur digerinin iznini sessizce genisletmesin
    (api/dosya.js'teki "uzanti listesi kova basina degil tur basina" kuralinin esi).
    Fatura/hareket PDF'i ve gorev ekran goruntusu siparis olusturmayla; tutanak PDF'i

@@ -32870,6 +32870,7 @@ function orderActionsHtml(o,sayfada){
   // alimi dusurup sayimi bozardi. Yerine Geri Ver gelir (hareket uretmez, kalani dusurur).
   const borc=borcMu(o), borcKalan=borc&&borcOzet(o).kalan>0;
   return `${o.pdf?`<button class="btn btn-ghost" onclick="openProjeOrderPdf('${o.id}')" title="${esc(o.pdf.name||'belge')} - yeni sekmede acilir">${icoDoc()} ${borc?'Belge PDF':'Siparis PDF'}</button>`:''}
+      ${o.pdf&&o.pdf.path?`<button class="btn btn-ghost" onclick="belgePaylasAc('${o.id}')" title="Hesabi olmayan kisiye gonderilebilecek link uretir">${icoShare()} Paylas</button>`:''}
       <button class="btn btn-ghost" style="${sayfada?'':'margin-right:auto;'}border-color:var(--red)55;color:var(--red)" onclick="delProjeOrder('${o.id}')">${icoTrash()} ${borc?'Borcu Sil':'Siparisi Sil'}</button>
       ${!borc&&can('order',{bina:o.bina})?`<button class="btn btn-ghost" style="border-color:var(--amber)55;color:var(--amber)" onclick="openIadeModal('${o.id}')" title="Bu siparisin bir kismini ya da tamamini tedarikciye geri gonderin - iade edilen miktar alim ve ilerleme sayilarindan dusulur">${icoArr('up')} Iade Olustur</button>`:''}
       ${borcKalan&&can('order',{bina:o.bina})?`<button class="btn btn-ghost" style="border-color:var(--grid);color:var(--grid)" onclick="openBorcGeriModal('${o.id}')" title="Odunc alinan malzemenin aynisini geri verin - borcun kalani duser; stok, alim ve ilerleme degismez">${icoArr('up')} Geri Ver</button>`:''}
@@ -32965,6 +32966,52 @@ function acPdf(pdf){
   }
 }
 function openProjeOrderPdf(id){ const o=orderBul(id); acPdf(o&&o.pdf); }
+/* ═══ BELGE PAYLASIM LINKI ═══════════════════════════════════════════════════════
+   Siparis PDF'i icin HESAPSIZ acilan link (lib/belgeLink.js). Normal PDF dugmesinin
+   adresi oturum ister ve 5 dakikada oler; bu link kisiye WhatsApp/e-posta ile
+   gonderilir, alan kisi tiklayinca PDF acilir. Sure secimi: 1 gun (varsayilan),
+   7 gun, 30 gun, SINIRSIZ. Token sunucuda imzali, tabloda tutulmaz - bu yuzden
+   uretilen link geri alinamaz; sinirsizde bu uyari pencerede yazar.
+   Yalnizca Storage'daki (pdf.path) belgeler paylasilir; eski base64 kayitlar
+   (pdf.data) icin dugme cikmaz. */
+const BELGE_LINK_SURELER=[['1g','1 gün','Varsayılan - kısa süreli paylaşım'],['7g','7 gün',''],['30g','30 gün',''],['sinirsiz','Sınırsız','Süresi dolmaz ve geri alınamaz - yalnızca gerektiğinde']];
+function icoShare(){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>'; }
+function belgePaylasAc(orderId){
+  const o=orderBul(orderId); const pdf=o&&o.pdf;
+  if(!pdf||!pdf.path){ toast('Bu belge paylasilamiyor (dosya kovada degil)','err'); return; }
+  const secenek=BELGE_LINK_SURELER.map(([k,ad,aciklama],i)=>`<label style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:8px;cursor:pointer">
+      <input type="radio" name="bl_sure" value="${k}" ${i===0?'checked':''} style="margin-top:3px">
+      <span><b>${ad}</b>${aciklama?`<div class="t-meta" style="font-size:11px;margin-top:2px">${aciklama}</div>`:''}</span></label>`).join('');
+  const html=`<div class="alt-modal-bg" onclick="if(event.target===this)closeAltModal()"><div class="modal" id="blModal" style="max-width:460px">
+    <div class="modal-head"><h3>Belge Linki Paylaş</h3><button class="mini-btn" onclick="closeAltModal()">x</button></div>
+    <div class="modal-body">
+      <div class="t-meta" style="margin-bottom:10px">${esc(o.no||'')} · ${esc(pdf.name||'belge')}</div>
+      <div class="t-meta" style="font-size:11px;margin-bottom:10px">Linki alan herkes belgeyi açabilir, hesap gerekmez. Üretilen link geri alınamaz; süre dolunca kendiliğinden kapanır.</div>
+      <div id="bl_sec" style="display:grid;gap:6px">${secenek}</div>
+      <div id="bl_sonuc" style="display:none;margin-top:12px">
+        <label class="t-meta" style="font-size:11px">Link</label>
+        <div style="display:flex;gap:6px;margin-top:4px"><input id="bl_url" readonly style="flex:1;font-family:var(--mono);font-size:11px" onclick="this.select()">
+        <button class="btn btn-ghost" onclick="copyText(document.getElementById('bl_url').value,'Link')">${icoCopy()} Kopyala</button></div>
+        <div id="bl_bitis" class="t-meta" style="font-size:11px;margin-top:6px"></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeAltModal()">Kapat</button><button class="btn btn-primary" id="bl_uret" onclick="belgePaylasUret('${esc(pdf.path)}')">Link Üret</button></div>
+  </div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function belgePaylasUret(path){
+  const sure=(document.querySelector('input[name=bl_sure]:checked')||{}).value||'1g';
+  const btn=document.getElementById('bl_uret'); if(btn){ btn.disabled=true; btn.textContent='Üretiliyor…'; }
+  try{
+    const r=await window.sbBelgePaylas(path,sure);
+    const url=SLINK_ADRES+'/b/'+r.token;
+    const kutu=document.getElementById('bl_sonuc'); if(!kutu) return;
+    kutu.style.display='block'; document.getElementById('bl_url').value=url;
+    document.getElementById('bl_bitis').textContent=r.bitis?('Son geçerlilik: '+new Date(r.bitis).toLocaleString('tr-TR')):'Süresiz - bu link geri alınamaz';
+    if(btn){ btn.disabled=false; btn.textContent='Yeni Link Üret'; }
+    copyText(url,'Link');
+  }catch(e){ toast('Link üretilemedi: '+(e.message||e),'err'); if(btn){ btn.disabled=false; btn.textContent='Link Üret'; } }
+}
 /* ═══ SIPARIS IADESI ══════════════════════════════════════════════════════════════
    Alinan bir siparisin bir kismi (ya da tamami) tedarikciye geri gonderilebilir.
    IKI YERDE BIRDEN yasar, cunku programda BELGE ile MIKTAR ayri durur:

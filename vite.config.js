@@ -87,7 +87,8 @@ function localApiPlugin() {
     return ara(apiDir, parts, {})
   }
 
-  // /api/users/abc -> URL('/api/users?id=abc') ; eslesme yoksa null.
+  // /api/users/abc -> URL('/api/users?id=abc') ; eslesme yoksa null. Hedefi /api/ olan
+  // SAYFA yollari da (/b/:token -> /api/davet?tur=belge&token=...) buradan gecer.
   // vercel.json her istekte okunur: kural eklenince sunucuyu yeniden baslatmak gerekmez.
   function yenidenYaz(pathname) {
     let kurallar = []
@@ -95,7 +96,7 @@ function localApiPlugin() {
       kurallar = JSON.parse(fs.readFileSync(path.join(kokDizin, 'vercel.json'), 'utf8')).rewrites || []
     } catch (e) { return null }
     for (const r of kurallar) {
-      if (!String(r.source).startsWith('/api/') || typeof r.destination !== 'string') continue
+      if (typeof r.destination !== 'string' || !r.destination.startsWith('/api/') || /[()]/.test(String(r.source))) continue
       const adlar = []
       const kalip = r.source.replace(/:(\w+)/g, (_, ad) => { adlar.push(ad); return '([^/]+)' })
       const m = pathname.match(new RegExp('^' + kalip + '/?$'))
@@ -140,8 +141,9 @@ function localApiPlugin() {
           // yerelde Vite'in SPA yedegi index.html'i verirdi. index.html'e giden
           // catch-all kurali Vite'in kendi davranisiyla ayni, o yuzden atlanir.
           const sayfa = sayfaYenidenYaz(url.pathname)
-          if (sayfa) req.url = sayfa + url.search
-          return next()
+          if (sayfa) { req.url = sayfa + url.search; return next() }
+          // Hedefi API olan sayfa yolu (/b/:token): asagidaki API isleyisine duser
+          if (!yenidenYaz(url.pathname)) return next()
         }
 
         // Gizli anahtarlar eksikse net bir mesajla durdur (login ekraninda gorunur)

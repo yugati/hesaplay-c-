@@ -7,6 +7,7 @@ import { denetimYaz } from '../lib/denetim.js'
 import { ilkTasari, VARSAYILAN_TASARI } from '../lib/tasari.js'
 import { ilkBirim, VARSAYILAN_BIRIM } from '../lib/birim.js'
 import sahaLink from '../lib/sahaLink.js'
+import belgeLink from '../lib/belgeLink.js'
 
 const ROL_AD = { admin: 'Yonetici', izleyici: 'Izleyici', saha_personeli: 'Saha Personeli' }
 
@@ -28,6 +29,8 @@ function kalanMetin(sn) {
 export default async function handler(req, res) {
   const tur = Array.isArray(req.query.tur) ? req.query.tur[0] : req.query.tur
   if (tur === 'saha') return sahaLink(req, res)
+  // BELGE PAYLASIM LINKI de burada (lib/belgeLink.js): /api/belge-link ve /b/:token
+  if (tur === 'belge') return belgeLink(req, res)
   const { token } = req.query
   const actionParam = req.query.action
   const action = Array.isArray(actionParam) ? actionParam[0] : actionParam
