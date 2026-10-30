@@ -866,16 +866,6 @@ html[data-mkr-kalin="0"] mark.mkr{font-weight:inherit}
 .resmi-onizle{margin-top:6px;font-size:11.5px;color:var(--mute);overflow-wrap:anywhere}
 .resmi-onizle::before{content:'Malzeme Ismi: ';color:var(--mute2,var(--mute));text-transform:uppercase;letter-spacing:.4px;font-size:10px}
 .resmi-uyari{margin-top:4px;font-size:11.5px;color:var(--amber)}
-.resmi-belirsiz{padding:4px 16px 10px;display:flex;flex-direction:column}
-.resmi-bel-satir{display:flex;align-items:center;gap:10px;font-size:12px;padding:5px 0;border-bottom:1px dashed var(--line)}
-.resmi-bel-satir span{flex:1;min-width:0;overflow-wrap:anywhere}
-.resmi-bel-satir em{flex:none;color:var(--mute);font-style:normal;font-size:11px;max-width:230px;text-align:right}
-.resmi-bel-satir .pano-btn{flex:none}
-.resmi-deg-liste{display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto}
-.resmi-deg-satir{display:flex;gap:10px;align-items:flex-start;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);cursor:pointer}
-.resmi-deg-satir input{margin-top:3px;flex:none}
-.resmi-deg-satir span{display:flex;flex-direction:column;gap:2px;font-size:12px;min-width:0;overflow-wrap:anywhere}
-.resmi-deg-satir s{color:var(--mute)}.resmi-deg-satir b{color:var(--ink)}.resmi-deg-satir i{font-style:normal;font-size:10.5px;color:var(--amber)}
 .tk-ozet span{display:block;font-size:11px;color:var(--mute);margin-top:1px}
 
 /* -- Ctrl+K komut paleti -- */
@@ -9308,80 +9298,10 @@ function renderAraclarPage(){
     <div class="sel-head"><h2>Araclar</h2><p>Kisisel gorunum tercihleri ve bakim islemleri. Pano ayarlari yalnizca sizin kullanicinizi etkiler; Birim Sozlugu ise herkes icin ortaktir.</p></div>
     ${aracPanoKart()}
     ${aracBirimKart()}
-    ${aracResmiKart()}
     ${aracBakimKart()}
   </div>`;
 }
 
-/* ── ARAC: RESMI AD AYRISTIRMA (30 Eki) ──────────────────────────────────────
-   Eski kayitlarda resmi ad tek hucrede ("RU / EN"); bu arac onlari dillere ayirip m.resmi'ye
-   yazar (bkz. resmiAdCoz). Malzeme Ismi yalnizca parcalardan kurulan ad kayitlidan farkliysa
-   degisir (ayirac bicimi, satir sonu copu, kuyruk kurali); o urunun sartname kopyalari ayni
-   istekte guncellenir (saveMaterial ile ayni). Kesin ayrilamayanlar YAZILMAZ, kartta listelenir
-   ve urun formundan elle duzeltilir. Yalnizca kutuphane duzenleme yetkisi olana. */
-function resmiAyristirPlan(){
-  const diller=resmiDiller(), out={kayitli:0,ayni:[],degisen:[],belirsiz:[],diller};
-  ((DB&&DB.proje&&DB.proje.materials)||[]).forEach(m=>{ if(m.is_deleted) return;
-    if(matResmiKayitli(m).length){ out.kayitli++; return; }
-    const c=resmiAdCoz(m.name||'',diller);
-    if(!c.kesin){ out.belirsiz.push({m,c}); return; }
-    const yeni=resmiAdKur(c.list);
-    (yeni===String(m.name||'')?out.ayni:out.degisen).push({m,c,yeni,sec:true});
-  });
-  return out;
-}
-let _RAP=null;
-function aracResmiKart(){
-  if(!(DB&&DB.proje)||!canEdit('kutuphane')) return '';
-  const p=resmiAyristirPlan(), bekleyen=p.ayni.length+p.degisen.length;
-  return `<div class="arac-kart" id="aracResmiKart">
-    <div class="arac-kart-bas">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/><path d="M17 15l3 3-3 3"/></svg>
-      <div><b>Resmi Ad Ayristirma</b><span>Tek hucrede yazilmis "RU / EN" resmi adlari dillere ayirir (bu tasarida ${esc(p.diller.join(' + '))}, Tasari Konumu'ndan); kunye formunda her dil ayri kutudur. Latin adin sonundaki kod / olcu Rusca adda yoksa ona da eklenir.</span></div>
-      ${bekleyen?`<div class="brm-tus"><button class="btn btn-add" style="padding:6px 14px" onclick="resmiAyristirAc()">Onizle ve Yaz</button></div>`:''}
-    </div>
-    <div class="arac-not">${fmtNum(p.kayitli)} urun ayrilmis. Bekleyen: ${fmtNum(p.ayni.length)} urun adi degismeden ayrilacak, ${fmtNum(p.degisen.length)} urunde Malzeme Ismi yeniden kurulacak (ayirac / kuyruk), ${fmtNum(p.belirsiz.length)} urun kesin ayrilamiyor${p.belirsiz.length?' - asagida, urun formundan elle ayirin':''}.</div>
-    ${p.belirsiz.length?`<div class="resmi-belirsiz">${p.belirsiz.slice(0,80).map(x=>`<div class="resmi-bel-satir"><span>${esc(x.m.name||'')}</span><em>${esc(x.c.neden)}</em><button class="pano-btn" title="Urun formunda dilleri elle ayirin" onclick="openMaterialModal('${esc(x.m.id)}')">Duzenle</button></div>`).join('')}${p.belirsiz.length>80?`<div class="t-meta">+${fmtNum(p.belirsiz.length-80)} urun daha</div>`:''}</div>`:''}
-  </div>`;
-}
-function resmiAyristirAc(){
-  const p=resmiAyristirPlan(); _RAP=p;
-  const satir=(x,i)=>`<label class="resmi-deg-satir"><input type="checkbox" ${x.sec?'checked':''} onchange="_RAP.degisen[${i}].sec=this.checked">
-    <span><s>${esc(x.m.name||'')}</s><b>${esc(x.yeni)}</b>${x.c.kuyruk?'<i>Latin sonundaki kod / olcu Rusca ada eklendi</i>':''}</span></label>`;
-  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:760px">
-    <div class="modal-head"><h3>Resmi Ad Ayristirma</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
-    <div class="modal-body">
-      <p class="t-meta" style="margin:0 0 10px"><b>${fmtNum(p.ayni.length)}</b> urun adi degismeden ${esc(p.diller.join(' + '))} parcalarina ayrilip yazilacak. Asagidaki <b>${fmtNum(p.degisen.length)}</b> urunde <b>Malzeme Ismi de degisir</b> (ayirac duzeltmesi, satir sonu temizligi ya da Latin adin sonundaki kod / olcunun Rusca ada eklenmesi); bagli sartname satirlari ayni istekte guncellenir. Isaretini kaldirdiginiz urun bu turda yazilmaz.</p>
-      <div class="resmi-deg-liste">${p.degisen.map(satir).join('')||'<p class="matd-empty" style="margin:0">Adi degisecek urun yok.</p>'}</div>
-      ${p.belirsiz.length?`<p class="t-meta" style="margin:10px 0 0">${fmtNum(p.belirsiz.length)} urun kesin ayrilamadigi icin yazilmaz - Araclar sayfasindaki listeden urun formuyla duzeltin.</p>`:''}
-    </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="resmiAyristirYaz()">Yaz</button></div></div></div>`;
-  document.body.insertAdjacentHTML('beforeend',html);
-}
-async function resmiAyristirYaz(){
-  const p=_RAP; if(!p) return;
-  if(!guard('editMaterial')) return;
-  const secilen=[...p.ayni,...p.degisen.filter(x=>x.sec)];
-  if(!secilen.length){ toast('Yazilacak urun yok','warn'); return; }
-  const now=Date.now(), once=new Map(secilen.map(x=>[x.m.id,materialUsage(x.m.id)]));   // kalemler AD DEGISMEDEN once
-  const mats=secilen.map(x=>({...x.m,resmi:x.c.list.map(q=>({...q})),name:x.yeni,updatedAt:now}));
-  const specs=new Map();
-  secilen.forEach(x=>{ if(x.yeni===x.m.name) return; once.get(x.m.id).forEach(sp=>specs.set(sp.id,{...sp,name:x.yeni})); });
-  let bitis='Yazilamadi';
-  wperdeAc('Resmi adlar yaziliyor',{gecikme:300,belirsiz:true,alt:mats.length+' urun'+(specs.size?' + '+specs.size+' sartname satiri':'')+' tek istekte'});
-  try{
-    await sbUpsertProjeMaterials(mats);                       // once sunucu: yazma patlarsa bellek kirlenmesin
-    if(specs.size) await sbUpsertProjeSpecs([...specs.values()]);
-    secilen.forEach(x=>{ x.m.resmi=x.c.list.map(q=>({...q})); x.m.name=x.yeni; x.m.updatedAt=now; });
-    specs.forEach((sp,id)=>{ const o=(DB.proje.specs||[]).find(s=>s.id===id); if(o) o.name=sp.name; });
-    pamOnbellekSifirla();
-    bitis=fmtNum(mats.length)+' urun ayrildi';
-    logAction('editMaterial','Resmi ad ayristirma: '+mats.length+' urun ('+p.diller.join('+')+')'+(specs.size?', '+specs.size+' sartname satiri':''));
-    closeModal(); _RAP=null; render();
-    toast(fmtNum(mats.length)+' urunun resmi adi dillere ayrildi'+(specs.size?' · '+fmtNum(specs.size)+' sartname satiri guncellendi':''));
-  }catch(e){ toast('Yazilamadi: '+((e&&e.message)||e),'err'); }
-  finally{ wperdeKapat(bitis); }
-}
 
 /* ── ARAC 1: BASLANGIC PANOSU ─────────────────────────────────────────────── */
 function aracPanoKart(){
@@ -18883,9 +18803,11 @@ function _topmVaryantTemiz(v,code){
 function _topmSatirCoz(r,i,gorulen){
   // resmi ad parcalari: kutuda girildiyse onlar; yoksa (Excel satiri) addan kesin turetilebiliyorsa o -
   // Malzeme Ismi parcalardan kurulur (ayirac / kuyruk kurali), turetilemiyorsa ad oldugu gibi kalir
-  const resmiHam=resmiTemiz(r.resmi), resmiCoz=resmiHam.length?null:resmiAdCoz(String(r.name||''));
-  const resmi=resmiHam.length?resmiHam:((resmiCoz&&resmiCoz.kesin)?resmiCoz.list:[]);
-  const name=resmi.length?resmiAdKur(resmi):String(r.name||'').trim();
+  const adHam=String(r.name||'').replace(/\s+/g,' ').trim();
+  const resmiHam=resmiTemiz(r.resmi), resmiCoz=resmiHam.length?null:resmiAdCoz(adHam);
+  // turetme adi DEGISTIRMEZ: parcalar yalniz birebir ayni adi kuruyorsa yazilir, yoksa ad oldugu gibi kalir
+  const resmi=resmiHam.length?resmiHam:((resmiCoz&&resmiCoz.kesin&&resmiAdKur(resmiCoz.list)===adHam)?resmiCoz.list:[]);
+  const name=resmiHam.length?resmiAdKur(resmiHam):adHam;
   const code=String(r.code||'').trim();
   if(!name) return {err:'Malzeme adi zorunlu'};
   const weightRaw=_topmSayiHucre(r.weight);
@@ -29999,8 +29921,8 @@ function piyasaEtiket(p){ return (p.d?p.d+': ':'')+p.ad; }
    sonundaki kod / olcu kuyrugu ("HRD-C 10x80") Rusca parcada yoksa ona da eklenir -
    kullanicinin kurali: "Анкер-шпилька / Frame anchor HRD-C 10x80" aslinda
    "Анкер-шпилька HRD-C 10x80 / Frame anchor HRD-C 10x80" demektir. Turetme kesin degilse
-   (tek dilli ad, ters sira, ayiracsiz) kesin:false doner: toplu yazim (Araclar > Resmi Ad
-   Ayristirma) bunlari atlar, form uyari gosterir. */
+   (tek dilli ad, ters sira, ayiracsiz) kesin:false doner, form uyari gosterir. Toplu DB yazimi
+   BILEREK YOK (30 Eki: deneme cok yanlis ayirdi) - eski kayitlar urun formundan elle ayrilir. */
 const RESMI_KIRIL_DIL=new Set(['RU','UK','BG','KZ','BY','SR','MK','KY','TG','MN']);
 function resmiTemiz(list){
   const out=[], gor=new Set();
