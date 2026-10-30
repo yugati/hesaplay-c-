@@ -859,6 +859,23 @@ html[data-mkr-kalin="0"] mark.mkr{font-weight:inherit}
 .tk-ozet{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);margin-bottom:12px}
 .tk-ozet .pam-ulke{font-size:12px;padding:5px 8px;color:var(--amber);opacity:1;margin:0}
 .tk-ozet b{display:block;font-size:13px;color:var(--ink)}
+/* RESMI AD PARCALARI: dil basina kutu (yan yana), altinda birlesik Malzeme Ismi onizlemesi */
+.resmi-form.coklu{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.resmi-form.coklu>div{min-width:0}
+@media(max-width:640px){.resmi-form.coklu{grid-template-columns:1fr}}
+.resmi-onizle{margin-top:6px;font-size:11.5px;color:var(--mute);overflow-wrap:anywhere}
+.resmi-onizle::before{content:'Malzeme Ismi: ';color:var(--mute2,var(--mute));text-transform:uppercase;letter-spacing:.4px;font-size:10px}
+.resmi-uyari{margin-top:4px;font-size:11.5px;color:var(--amber)}
+.resmi-belirsiz{padding:4px 16px 10px;display:flex;flex-direction:column}
+.resmi-bel-satir{display:flex;align-items:center;gap:10px;font-size:12px;padding:5px 0;border-bottom:1px dashed var(--line)}
+.resmi-bel-satir span{flex:1;min-width:0;overflow-wrap:anywhere}
+.resmi-bel-satir em{flex:none;color:var(--mute);font-style:normal;font-size:11px;max-width:230px;text-align:right}
+.resmi-bel-satir .pano-btn{flex:none}
+.resmi-deg-liste{display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto}
+.resmi-deg-satir{display:flex;gap:10px;align-items:flex-start;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);cursor:pointer}
+.resmi-deg-satir input{margin-top:3px;flex:none}
+.resmi-deg-satir span{display:flex;flex-direction:column;gap:2px;font-size:12px;min-width:0;overflow-wrap:anywhere}
+.resmi-deg-satir s{color:var(--mute)}.resmi-deg-satir b{color:var(--ink)}.resmi-deg-satir i{font-style:normal;font-size:10.5px;color:var(--amber)}
 .tk-ozet span{display:block;font-size:11px;color:var(--mute);margin-top:1px}
 
 /* -- Ctrl+K komut paleti -- */
@@ -7259,6 +7276,8 @@ function tasariYeniAc(){
         <div id="tas_il_wrap"><label>Il / sehir *</label>${konumIlAlanHtml('tas','TR','')}</div>
         <div><label>Piyasa dili</label><select id="tas_dil">${konumDilSecenekHtml('TR')}</select></div>
       </div>
+      <div class="frow"><label>Resmi ad dilleri <span class="t-meta">(isverenin sartname dili - kunyede her dil icin ayri ad kutusu; Malzeme Ismi bu sirayla " / " ile birlesir)</span></label>
+        <input id="tas_resmi" value="RU, EN" placeholder="orn. RU, EN" maxlength="24"></div>
       <p class="t-meta" style="margin:0 0 8px">Konum, projenin <b>yapildigi ulke ve ildir</b>: piyasa adi dili ve birim etiketleri (ad. / шт. / pcs) ondan turer, tum kullanicilar icin gecerlidir. Sonradan yalnizca yonetici degistirir.</p>
       <p class="t-meta" style="margin:0">Yeni tasari <b>kutuphaneyi hazir bulur</b>: malzeme kunyesi, sirketler, alet kunyesi ve marka listesi organizasyon genelinde ortaktir. Yalnizca <b>is verisi</b> bos baslar: sartname, siparis, bina, bolum, rapor, saha, tutanak ve fatura. Tasari, su an icinde bulundugunuz <b>${esc(birimAdiGoster())}</b> birimiyle acilir; diger birimler sonra Calisma Alani'ndan eklenir.</p>
     </div>
@@ -9289,8 +9308,79 @@ function renderAraclarPage(){
     <div class="sel-head"><h2>Araclar</h2><p>Kisisel gorunum tercihleri ve bakim islemleri. Pano ayarlari yalnizca sizin kullanicinizi etkiler; Birim Sozlugu ise herkes icin ortaktir.</p></div>
     ${aracPanoKart()}
     ${aracBirimKart()}
+    ${aracResmiKart()}
     ${aracBakimKart()}
   </div>`;
+}
+
+/* ── ARAC: RESMI AD AYRISTIRMA (30 Eki) ──────────────────────────────────────
+   Eski kayitlarda resmi ad tek hucrede ("RU / EN"); bu arac onlari dillere ayirip m.resmi'ye
+   yazar (bkz. resmiAdCoz). Malzeme Ismi yalnizca parcalardan kurulan ad kayitlidan farkliysa
+   degisir (ayirac bicimi, satir sonu copu, kuyruk kurali); o urunun sartname kopyalari ayni
+   istekte guncellenir (saveMaterial ile ayni). Kesin ayrilamayanlar YAZILMAZ, kartta listelenir
+   ve urun formundan elle duzeltilir. Yalnizca kutuphane duzenleme yetkisi olana. */
+function resmiAyristirPlan(){
+  const diller=resmiDiller(), out={kayitli:0,ayni:[],degisen:[],belirsiz:[],diller};
+  ((DB&&DB.proje&&DB.proje.materials)||[]).forEach(m=>{ if(m.is_deleted) return;
+    if(matResmiKayitli(m).length){ out.kayitli++; return; }
+    const c=resmiAdCoz(m.name||'',diller);
+    if(!c.kesin){ out.belirsiz.push({m,c}); return; }
+    const yeni=resmiAdKur(c.list);
+    (yeni===String(m.name||'')?out.ayni:out.degisen).push({m,c,yeni,sec:true});
+  });
+  return out;
+}
+let _RAP=null;
+function aracResmiKart(){
+  if(!(DB&&DB.proje)||!canEdit('kutuphane')) return '';
+  const p=resmiAyristirPlan(), bekleyen=p.ayni.length+p.degisen.length;
+  return `<div class="arac-kart" id="aracResmiKart">
+    <div class="arac-kart-bas">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/><path d="M17 15l3 3-3 3"/></svg>
+      <div><b>Resmi Ad Ayristirma</b><span>Tek hucrede yazilmis "RU / EN" resmi adlari dillere ayirir (bu tasarida ${esc(p.diller.join(' + '))}, Tasari Konumu'ndan); kunye formunda her dil ayri kutudur. Latin adin sonundaki kod / olcu Rusca adda yoksa ona da eklenir.</span></div>
+      ${bekleyen?`<div class="brm-tus"><button class="btn btn-add" style="padding:6px 14px" onclick="resmiAyristirAc()">Onizle ve Yaz</button></div>`:''}
+    </div>
+    <div class="arac-not">${fmtNum(p.kayitli)} urun ayrilmis. Bekleyen: ${fmtNum(p.ayni.length)} urun adi degismeden ayrilacak, ${fmtNum(p.degisen.length)} urunde Malzeme Ismi yeniden kurulacak (ayirac / kuyruk), ${fmtNum(p.belirsiz.length)} urun kesin ayrilamiyor${p.belirsiz.length?' - asagida, urun formundan elle ayirin':''}.</div>
+    ${p.belirsiz.length?`<div class="resmi-belirsiz">${p.belirsiz.slice(0,80).map(x=>`<div class="resmi-bel-satir"><span>${esc(x.m.name||'')}</span><em>${esc(x.c.neden)}</em><button class="pano-btn" title="Urun formunda dilleri elle ayirin" onclick="openMaterialModal('${esc(x.m.id)}')">Duzenle</button></div>`).join('')}${p.belirsiz.length>80?`<div class="t-meta">+${fmtNum(p.belirsiz.length-80)} urun daha</div>`:''}</div>`:''}
+  </div>`;
+}
+function resmiAyristirAc(){
+  const p=resmiAyristirPlan(); _RAP=p;
+  const satir=(x,i)=>`<label class="resmi-deg-satir"><input type="checkbox" ${x.sec?'checked':''} onchange="_RAP.degisen[${i}].sec=this.checked">
+    <span><s>${esc(x.m.name||'')}</s><b>${esc(x.yeni)}</b>${x.c.kuyruk?'<i>Latin sonundaki kod / olcu Rusca ada eklendi</i>':''}</span></label>`;
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:760px">
+    <div class="modal-head"><h3>Resmi Ad Ayristirma</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body">
+      <p class="t-meta" style="margin:0 0 10px"><b>${fmtNum(p.ayni.length)}</b> urun adi degismeden ${esc(p.diller.join(' + '))} parcalarina ayrilip yazilacak. Asagidaki <b>${fmtNum(p.degisen.length)}</b> urunde <b>Malzeme Ismi de degisir</b> (ayirac duzeltmesi, satir sonu temizligi ya da Latin adin sonundaki kod / olcunun Rusca ada eklenmesi); bagli sartname satirlari ayni istekte guncellenir. Isaretini kaldirdiginiz urun bu turda yazilmaz.</p>
+      <div class="resmi-deg-liste">${p.degisen.map(satir).join('')||'<p class="matd-empty" style="margin:0">Adi degisecek urun yok.</p>'}</div>
+      ${p.belirsiz.length?`<p class="t-meta" style="margin:10px 0 0">${fmtNum(p.belirsiz.length)} urun kesin ayrilamadigi icin yazilmaz - Araclar sayfasindaki listeden urun formuyla duzeltin.</p>`:''}
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="resmiAyristirYaz()">Yaz</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function resmiAyristirYaz(){
+  const p=_RAP; if(!p) return;
+  if(!guard('editMaterial')) return;
+  const secilen=[...p.ayni,...p.degisen.filter(x=>x.sec)];
+  if(!secilen.length){ toast('Yazilacak urun yok','warn'); return; }
+  const now=Date.now(), once=new Map(secilen.map(x=>[x.m.id,materialUsage(x.m.id)]));   // kalemler AD DEGISMEDEN once
+  const mats=secilen.map(x=>({...x.m,resmi:x.c.list.map(q=>({...q})),name:x.yeni,updatedAt:now}));
+  const specs=new Map();
+  secilen.forEach(x=>{ if(x.yeni===x.m.name) return; once.get(x.m.id).forEach(sp=>specs.set(sp.id,{...sp,name:x.yeni})); });
+  let bitis='Yazilamadi';
+  wperdeAc('Resmi adlar yaziliyor',{gecikme:300,belirsiz:true,alt:mats.length+' urun'+(specs.size?' + '+specs.size+' sartname satiri':'')+' tek istekte'});
+  try{
+    await sbUpsertProjeMaterials(mats);                       // once sunucu: yazma patlarsa bellek kirlenmesin
+    if(specs.size) await sbUpsertProjeSpecs([...specs.values()]);
+    secilen.forEach(x=>{ x.m.resmi=x.c.list.map(q=>({...q})); x.m.name=x.yeni; x.m.updatedAt=now; });
+    specs.forEach((sp,id)=>{ const o=(DB.proje.specs||[]).find(s=>s.id===id); if(o) o.name=sp.name; });
+    pamOnbellekSifirla();
+    bitis=fmtNum(mats.length)+' urun ayrildi';
+    logAction('editMaterial','Resmi ad ayristirma: '+mats.length+' urun ('+p.diller.join('+')+')'+(specs.size?', '+specs.size+' sartname satiri':''));
+    closeModal(); _RAP=null; render();
+    toast(fmtNum(mats.length)+' urunun resmi adi dillere ayrildi'+(specs.size?' · '+fmtNum(specs.size)+' sartname satiri guncellendi':''));
+  }catch(e){ toast('Yazilamadi: '+((e&&e.message)||e),'err'); }
+  finally{ wperdeKapat(bitis); }
 }
 
 /* ── ARAC 1: BASLANGIC PANOSU ─────────────────────────────────────────────── */
@@ -17831,7 +17921,7 @@ function renderMaterialLibAlet(){
 // veri kaybini onlemek icin kullanici Iptal/X ile bilerek kapatmali
 function matModalBgClick(ev){ if(ev.target!==ev.currentTarget) return; modalKazaKapat(); }
 function matFormDolu(){
-  const ids=['mt_name','mt_code','mt_barkod','mt_brand','mt_standart','mt_weight','mt_unit','mt_proje','mt_note','mt_note2','mt_imgUrl','mt_img2Url'];
+  const ids=['mt_name',...resmiDiller().map(d=>'mt_resmi_'+d),'mt_code','mt_barkod','mt_brand','mt_standart','mt_weight','mt_unit','mt_proje','mt_note','mt_note2','mt_imgUrl','mt_img2Url'];
   return formDoluMu(ids,(modalTags&&modalTags.length)||(modalVaryant&&modalVaryant.satirlar.length)
     ||(modalPiyasa&&modalPiyasa.some(p=>String((p&&p.ad)||'').trim()))||modalImg||modalImg2);
 }
@@ -17863,7 +17953,7 @@ function openMaterialModal(id,keepReturn){
   const birIds=[...new Set([...(_BIRIMLER||[]).map(b=>b.id),mBirim,window.AKTIF_BIRIM].filter(Boolean))];
   const birOpts=birIds.map(b=>`<option value="${esc(b)}" ${b===mBirim?'selected':''}>${esc(birimAdiBul(b))}</option>`).join('');
   const html=`<div class="modal-bg" onclick="matModalBgClick(event)"><div class="modal" style="max-width:860px"><div class="modal-head"><h3>${m?'Malzeme Duzenle':'Yeni Malzeme'}</h3><button class="mini-btn" onclick="matModalClose()">x</button></div><div class="modal-body">
-    <div class="frow"><label>Malzeme Adi *</label><input id="mt_name" value="${m?esc(m.name):''}" placeholder="orn. Galvaniz Kablo Tavasi 200mm"></div>
+    <div class="frow"><input type="hidden" id="mt_name" value="${m?esc(resmiAdKur(matResmi(m))||m.name):''}">${resmiFormHtml('mt',m?matResmi(m):[],'mtResmiYaz()',m?resmiCozUyari(m):'')}</div>
     <div class="frow"><label>Piyasa Adlari  <span class="t-meta">(hangi ulkede nasil araniyorsa - aramada bulunur, KIMLIK degildir)</span></label>
       <div class="vr-bar"><button type="button" class="btn btn-ghost" title="Bir dil/ulke icin piyasa adi ekleyin - TR, RU, EN ya da yeni bir kod" onclick="piyasaSatirEkle(null)">${icoPlus()} Piyasa Adi Ekle</button></div>
       <div id="mt_piyasaBox">${piyasaKutuHtml(null)}</div></div>
@@ -18026,7 +18116,9 @@ function varyantAlanSil(i){
 function varyantAlanAd(i,v){ modalVaryant.alanlar[i]=v; }
 function varyantSet(i,j,v){ const r=modalVaryant.satirlar[i]; if(!r)return; if(j<0) r.kod=v; else r.d[j]=v; }
 async function saveMaterial(id){ if(!guard('editMaterial'))return;
-  const name=document.getElementById('mt_name').value.trim();
+  // RESMI AD PARCALARI: dil basina kutu; Malzeme Ismi (kimlik) parcalardan " / " ile kurulur
+  const resmi=resmiFormOku('mt');
+  const name=resmi.length?resmiAdKur(resmi):document.getElementById('mt_name').value.trim();
   if(!name){toast("Malzeme adi zorunlu","err");return;}
   // PIYASA ADLARI: yalnizca arama/gosterim alani - kimlik (matKey) ve sartname kopyasi disinda
   const piyasa=piyasaTemiz(modalPiyasa);
@@ -18086,7 +18178,7 @@ async function saveMaterial(id){ if(!guard('editMaterial'))return;
   const birim=String((document.getElementById('mt_birim')||{}).value||'')||window.AKTIF_BIRIM||'';
   let savedMt, etkKardes=0, etkHata='';
   if(id){ const m=getMaterial(id);
-    Object.assign(m,{name,piyasa,code,barkod,brand,unit,cat,birim,note,note2,standart,weight,tags,altCodes,varyant,proje,img:modalImg,img2:modalImg2,updatedAt:Date.now()});
+    Object.assign(m,{name,resmi,piyasa,code,barkod,brand,unit,cat,birim,note,note2,standart,weight,tags,altCodes,varyant,proje,img:modalImg,img2:modalImg2,updatedAt:Date.now()});
     const affectedSpecs=materialUsage(id);
     // sp.cat BILEREK guncellenmez: bolum kalemin ozelligidir (bkz. saveSpec), malzemenin kategorisi
     // sadece kutuphane varsayilanidir. Eskiden buradaki sp.cat=cat, varsayilan kategorisi bos bir
@@ -18102,7 +18194,7 @@ async function saveMaterial(id){ if(!guard('editMaterial'))return;
     catch(err){ console.error('vaEtiketYay',err); etkHata=(err&&err.message)||String(err); }
   } else {
     const now=Date.now();
-    savedMt={id:uid(),name,piyasa,code,barkod,brand,unit,cat,birim,note,note2,standart,weight,tags,altCodes,varyant,proje,img:modalImg,img2:modalImg2,createdAt:now,updatedAt:now};
+    savedMt={id:uid(),name,resmi,piyasa,code,barkod,brand,unit,cat,birim,note,note2,standart,weight,tags,altCodes,varyant,proje,img:modalImg,img2:modalImg2,createdAt:now,updatedAt:now};
     await sbInsertProjeMaterial(savedMt);
     DB.proje.materials.push(savedMt);
   }
@@ -18149,7 +18241,7 @@ async function delMaterial(id){ if(!guard('delete'))return;
    TEK kayda gore yazilmis global'ler N kutuda calismazdi). Alan yazicilari yalniz
    state'e dokunur, kutu yeniden cizilmez - yoksa her tusta imlec kaybolurdu. */
 let _TOPM=null;
-function _topmBosSatir(){ return {name:'',piyasa:[],code:'',barkod:'',brand:[],varyant:{alanlar:[],satirlar:[]},
+function _topmBosSatir(){ return {name:'',resmi:[],piyasa:[],code:'',barkod:'',brand:[],varyant:{alanlar:[],satirlar:[]},
   standart:'',weight:'',unit:'',cat:'',tags:[],proje:'',note:'',note2:'',img:null,img2:null,err:''}; }
 function topmSatirDolu(r){
   if(!r) return false;
@@ -18196,6 +18288,15 @@ function topmSekme(m){
 function _topmR(i){ const f=_TOPM; if(!f) return null; return (f.mod==='duzen'?f.drows:f.rows)[i]; }
 /* Alan yazicisi: YALNIZ state. Kutu yeniden cizilmez (imlec kaybolmaz); yalnizca
    kutu basligindaki ad ve varsa hata uyarisi tazelenir. */
+/* Resmi ad kutusu (dil basina): parca diziye yazilir, Malzeme Ismi parcalardan kurulup
+   topmIn ile 'name' olarak islenir (baslik, hata temizligi, sayac); birlesik ad onizlenir. */
+function topmResmiIn(i,d,val){
+  const r=_topmR(i); if(!r) return;
+  if(!Array.isArray(r.resmi)||!r.resmi.length) r.resmi=resmiDiller().map(x=>({d:x,ad:''}));
+  const p=r.resmi.find(x=>x.d===d); if(p) p.ad=val; else r.resmi.push({d,ad:val});
+  topmIn(i,'name',resmiAdKur(r.resmi));
+  resmiOnizleCiz('topm_'+i,r.resmi);
+}
 function topmIn(i,k,val){
   const r=_topmR(i); if(!r)return;
   r[k]=val;
@@ -18486,6 +18587,11 @@ const KUNYE_SUTUN=[
      Sutun sona yakin durur: bastaki 15 sutun sartname Excel'i ile birebir ayni
      kalsin, iki dosya arasindaki kopyala/yapistir kaymasin diye. */
   {b:'Piyasa Adlari',     w:34, projeOnly:true},
+  /* RESMI ADLAR (30 Eki) - Malzeme Ismi'nin dil parcalari, Piyasa Adlari ile ayni hucre bicimi:
+     "RU: Анкер-шпилька HRD-C 10x80 | EN: Frame anchor HRD-C 10x80" (bkz. resmiAdCoz). Ice
+     aktarmada Malzeme Ismi bossa parcalardan " / " ile kurulur; doluysa Malzeme Ismi kimlik
+     olarak kalir, parcalar yanina yazilir. */
+  {b:'Resmi Adlar',       w:40, projeOnly:true},
   /* VARYANT AILESI (bkz. vaAileAta): ayni "Urun Ailesi" adini tasiyan satirlar tek ailede
      baglanir; "Aile Degerleri" = "Beden=XL" ya da "Boyut=M10; Uzunluk=90 mm". Iki
      kutuphanede de var (projeOnly degil). Basliklarda "varyant" kelimesi BILEREK yok -
@@ -18560,8 +18666,8 @@ function topmSablonIndir(){
   XLSX.utils.book_append_sheet(wb,ws,'Yeni Urunler');
   // 2) ORNEK: ayni basliklar + doldurulmus satirlar. Okuyucu bu sayfayi ATLAR.
   const wsOrn=XLSX.utils.aoa_to_sheet([TOPM_XLS_BASLIK.slice(),
-    ['Galvaniz Kablo Tavasi 200mm','TS EN 61386','121491','8690000000011','Hilti',0.45,'Kapakli, delikli','Yuk siniri 60 kg/m - aski araligi en cok 1,5 m','Tava, Galvaniz, Ic Mekan','','','metre','Tava','X Santiyesi','TDR-121491','TR: galvaniz tava 200luk | RU: лоток 200','Galvaniz Kablo Tavasi','Genislik=200 mm'],
-    ['Galvaniz Kablo Tavasi 300mm','TS EN 61386','121492','','Hilti',0.58,'Kapakli, delikli','','Tava, Galvaniz, Ic Mekan','','','metre','Tava','X Santiyesi','','TR: galvaniz tava 300luk','Galvaniz Kablo Tavasi','Genislik=300 mm'],
+    ['Galvaniz Kablo Tavasi 200mm','TS EN 61386','121491','8690000000011','Hilti',0.45,'Kapakli, delikli','Yuk siniri 60 kg/m - aski araligi en cok 1,5 m','Tava, Galvaniz, Ic Mekan','','','metre','Tava','X Santiyesi','TDR-121491','TR: galvaniz tava 200luk | RU: лоток 200','','Galvaniz Kablo Tavasi','Genislik=200 mm'],
+    ['Galvaniz Kablo Tavasi 300mm','TS EN 61386','121492','','Hilti',0.58,'Kapakli, delikli','','Tava, Galvaniz, Ic Mekan','','','metre','Tava','X Santiyesi','','TR: galvaniz tava 300luk','','Galvaniz Kablo Tavasi','Genislik=300 mm'],
     ['LED Armatur 36W IP65','TS EN 60598','ARM-3665','8690000000028','Philips, Osram',1.2,'','','Aydinlatma, IP65','','','adet','Aydinlatma','','','TR: 36w led armatur | EN: 36w led luminaire'],
     ['Kablo Kanali 40x40','','KK4040','','',0.28,'PVC','','Kanal','','','metre','Tava','','','TR: 40luk kablo kanali']]);
   wsOrn['!cols']=TOPM_XLS_GENIS.slice();
@@ -18591,6 +18697,8 @@ function topmSablonIndir(){
     ['   "ORNEK", "Bolumler" ve bu sayfa okunmaz - silmenize gerek yok.'],
     [''],
     ['2) ZORUNLU tek alan: Malzeme Ismi. Digerleri opsiyoneldir.'],
+    ['   Resmi Adlar: adin dil parcalari, "RU: Анкер-шпилька HRD-C 10x80 | EN: Frame anchor HRD-C 10x80".'],
+    ['   Doluysa Malzeme Ismi bos birakilabilir - parcalardan " / " ile kurulur.'],
     [''],
     ['2a) NOT ve DIGER NOT iki AYRI sutundur, biri digerinin yerine gecmez:'],
     ['    "Not"       - kisa kunye notu (kutuphane satirinda ve kunyede gorunur).'],
@@ -18696,6 +18804,7 @@ function topmExcelDosya(e){
     const iProje=pick('proje','project');
     const iImg  =pick('resim linki','resim_linki','image_url','imageurl','resim url','resim','fotograf linki','fotograf','foto','photo','image','gorsel');
     const iPiyasa=pick('piyasa adlari','piyasa adi','piyasa ismi','piyasa','market adi');
+    const iResmi=pick('resmi adlar','resmi ad','resmi adi','resmi isim','official names','official name');
     const iImg2 =pick('resim linki 2','resim_linki_2','resim url 2','fotograf linki 2','fotograf 2','image_url_2','image2','photo2');
     const vaS=vaExcelSutunlari(pick);   // Urun Ailesi + Aile Degerleri (varsa) - kayitta uygulanir
     if(iName<0){ toast('Sayfada "Malzeme Ismi" sutunu yok - sablonu indirip kullanin','err'); return; }
@@ -18708,11 +18817,12 @@ function topmExcelDosya(e){
     veri.forEach(row=>{
       // "-" yer tutucu bos sayilir: yoksa Marka'ya "-" adli marka, Agirlik'a tire girerdi
       const al=ix=>ix>=0?_topgYerTutucu(_crTemiz(row[ix])):'';
-      const name=al(iName), code=al(iCode);
+      const resmi=parsePiyasaCell(al(iResmi));
+      const name=al(iName)||resmiAdKur(resmi), code=al(iCode);   // Malzeme Ismi bossa parcalardan kurulur
       if(!name&&!code){ atlanan++; return; }
       if(/^(REQUIRED|optional|REQ|blank|ZORUNLU|ops)\b/i.test(name)){ atlanan++; return; }   // sablon aciklama satiri
       const r=_topmBosSatir();
-      r.name=name; r.code=code; r.barkod=al(iBrk);
+      r.name=name; r.resmi=resmi; r.code=code; r.barkod=al(iBrk);
       r.brand=al(iBrand)?matBrandParts(al(iBrand).replace(/\s*,\s*/g,'\n')):[];
       r.standart=al(iStd); r.weight=_topmSayiHucre(al(iWgt)); r.unit=birimKey(al(iUnit));
       r.cat=al(iCat); r.tags=parseTagsCell(al(iTags)); r.proje=al(iProje); r.piyasa=parsePiyasaCell(al(iPiyasa)); r.note=al(iNote); r.note2=al(iNote2);
@@ -18771,7 +18881,11 @@ function _topmVaryantTemiz(v,code){
 /* Tek kutunun dogrulanmasi + kayit nesnesinin uretilmesi. gorulen: bu kaydetme
    turundaki onceki kutularin anahtar/kod haritasi (sayfa ici tekrar denetimi). */
 function _topmSatirCoz(r,i,gorulen){
-  const name=String(r.name||'').trim();
+  // resmi ad parcalari: kutuda girildiyse onlar; yoksa (Excel satiri) addan kesin turetilebiliyorsa o -
+  // Malzeme Ismi parcalardan kurulur (ayirac / kuyruk kurali), turetilemiyorsa ad oldugu gibi kalir
+  const resmiHam=resmiTemiz(r.resmi), resmiCoz=resmiHam.length?null:resmiAdCoz(String(r.name||''));
+  const resmi=resmiHam.length?resmiHam:((resmiCoz&&resmiCoz.kesin)?resmiCoz.list:[]);
+  const name=resmi.length?resmiAdKur(resmi):String(r.name||'').trim();
   const code=String(r.code||'').trim();
   if(!name) return {err:'Malzeme adi zorunlu'};
   const weightRaw=_topmSayiHucre(r.weight);
@@ -18812,7 +18926,7 @@ function _topmSatirCoz(r,i,gorulen){
     return {err:(gorulen.keys.get(anahtar)+1)+'. kutudaki urunun ayni'+(code?'':' - kod bos oldugu icin ad kimlik sayilir')};
   gorulen.keys.set(anahtar,i); kodlar.forEach(c=>gorulen.codes.set(c,i));
   const now=Date.now();
-  return {mat:{id:uid(),code,barkod:String(r.barkod||'').trim(),name,piyasa:piyasaTemiz(r.piyasa),brand:(r.brand||[]).join('\n'),unit:String(r.unit||'').trim(),cat,
+  return {mat:{id:uid(),code,barkod:String(r.barkod||'').trim(),name,resmi,piyasa:piyasaTemiz(r.piyasa),brand:(r.brand||[]).join('\n'),unit:String(r.unit||'').trim(),cat,
     note:String(r.note||'').trim(),note2:String(r.note2||'').trim(),img:r.img||null,img2:r.img2||null,
     standart:String(r.standart||'').trim(),weight:weightRaw!==''?Number(weightRaw):null,
     tags:(r.tags||[]).slice(),altCodes,varyant,proje:String(r.proje||'').trim(),createdAt:now,updatedAt:now}};
@@ -18882,7 +18996,7 @@ async function topmSaveAll(){
    yalnizca eski kod/adla bagli kalemleri bu yuzden kopuyordu; burada kopmaz.
    YAZIM: tum urunler tek sbUpsertProjeMaterials, tum kalemler tek sbUpsertProjeSpecs
    istegiyle - urun basina istek kotayi bosuna yerdi. */
-const TOPM_DUZ_ALAN=['name','piyasa','code','barkod','brand','varyant','standart','weight','unit','cat','tags','proje','note','note2','img','img2'];
+const TOPM_DUZ_ALAN=['name','resmi','piyasa','code','barkod','brand','varyant','standart','weight','unit','cat','tags','proje','note','note2','img','img2'];
 // sartname satirina KOPYALANAN malzeme alanlari (bkz. saveMaterial affectedSpecs)
 const TOPM_SPEC_KOPYA=['code','name','unit','brand','standart','weight','tags','img'];
 /* Urunlerin sartname kalemlerinde FIILEN kullanildigi bolumler (materialUsage ile ayni
@@ -18908,7 +19022,7 @@ function _topmDuzSatir(m,kat){
   // tanimli bir bolumse (listedeki yazimiyla) - tanimsiz bolum on-secilmez, kayitta hata verirdi
   const catSart=(!m.cat&&useCats.length===1)?(topmKategoriler().find(c=>norm(c)===norm(useCats[0]))||''):'';
   // etiket: aile uyesinde ailenin TEK seti (bkz. vaFormEtiket) - kutu degisirse kardeslere de yazilir
-  const r={id:m.id,name:m.name||'',piyasa:matPiyasaKayitli(m),code:m.code||'',barkod:m.barkod||'',brand:matBrandParts(m.brand),
+  const r={id:m.id,name:m.name||'',resmi:matResmi(m),piyasa:matPiyasaKayitli(m),code:m.code||'',barkod:m.barkod||'',brand:matBrandParts(m.brand),
     varyant:{alanlar:v.alanlar.slice(),satirlar:v.satirlar.map(x=>({kod:x.kod,d:(x.d||[]).slice()}))},
     standart:m.standart||'',weight:m.weight!=null?String(m.weight):'',unit:m.unit||'',cat:m.cat||catSart,
     tags:vaFormEtiket('proje',m),proje:m.proje||'',note:m.note||'',note2:m.note2||'',img:m.img||null,img2:m.img2||null,err:'',
@@ -18944,6 +19058,9 @@ function _topmDuzYama(r,m){
   // (yalniz KAYITLI adlar - aileden olusan ad kutuda kilitlidir, kayda yazilmaz)
   if(d.includes('piyasa')){ const np=piyasaTemiz(r.piyasa);
     if(JSON.stringify(np)!==JSON.stringify(matPiyasaKayitli(m))) p.piyasa=np; }
+  // resmi ad parcalari: kutu kayitli parcalardan (ya da kayitsizsa turetilmisten) ayrildiysa yazilir
+  if(d.includes('resmi')){ const nr=resmiTemiz(r.resmi);
+    if(JSON.stringify(nr)!==JSON.stringify(matResmiKayitli(m))) p.resmi=nr; }
   if(d.includes('tags')&&JSON.stringify(r.tags||[])!==JSON.stringify(m.tags||[])) p.tags=(r.tags||[]).slice();
   if(d.includes('img')&&(r.img||null)!==(m.img||null)) p.img=r.img||null;
   if(d.includes('img2')&&(r.img2||null)!==(m.img2||null)) p.img2=r.img2||null;
@@ -19114,8 +19231,7 @@ function topmCardHtml(i){
     </div>
     ${r.err?`<div class="topm-err">${esc(r.err)}</div>`:''}
     ${vaTopluKutuHtml(r,`topmVaSil(${i})`)}
-    <div class="frow"><label>Malzeme Adi <span class="specf-req">*</span></label>
-      <input data-k="name" value="${esc(r.name)}" placeholder="orn. Galvaniz Kablo Tavasi 200mm" oninput="topmIn(${i},'name',this.value)"></div>
+    <div class="frow">${resmiFormHtml('topm_'+i,(r.resmi&&r.resmi.length)?r.resmi:resmiAdCoz(r.name||'').list,`topmResmiIn(${i},this.dataset.resmi,this.value)`,(duz&&dm)?resmiCozUyari(dm):'')}</div>
     <div class="frow"><label>Piyasa Adlari <span class="t-meta">(hangi ulkede nasil araniyorsa - yalnizca arama/gosterim)</span></label>
       <div class="vr-bar"><button type="button" class="btn btn-ghost" onclick="piyasaSatirEkle(${i})">${icoPlus()} Piyasa Adi Ekle</button></div>
       <div id="topmPiyasa_${i}">${piyasaKutuHtml(i)}</div></div>
@@ -20090,7 +20206,7 @@ function exportMaterialLib(){
     // base64/veri linkleri (manuel yuklenen fotograflar) hucreye sigmayacagi icin disa aktarilmaz - sadece gercek URL'ler
     const imgUrl=(m.img&&/^https?:\/\//i.test(m.img))?m.img:'';
     const imgUrl2=(m.img2&&/^https?:\/\//i.test(m.img2))?m.img2:'';
-    rows.push([m.name,m.standart||'',m.code||'',m.barkod||'',m.brand||'',m.weight!=null?m.weight:'',m.note||'',m.note2||'',formatTagsCell(m.tags),imgUrl,imgUrl2,birimAd(m.unit),m.cat||'',m.proje||'',formatTagsCell(m.altCodes),formatPiyasaCell(matPiyasa(m)),
+    rows.push([m.name,m.standart||'',m.code||'',m.barkod||'',m.brand||'',m.weight!=null?m.weight:'',m.note||'',m.note2||'',formatTagsCell(m.tags),imgUrl,imgUrl2,birimAd(m.unit),m.cat||'',m.proje||'',formatTagsCell(m.altCodes),formatPiyasaCell(matPiyasa(m)),formatPiyasaCell(matResmi(m)),
       vaExcelAd('proje',m),vaExcelDeger('proje',m),
       ortakBolumler,usage.length,specs.join(', '),m.createdAt?fmtDate(m.createdAt):'',m.updatedAt?fmtDate(m.updatedAt):'']);
   });
@@ -29871,6 +29987,107 @@ function matPiyasa(m){
 }
 function matPiyasaAdlari(m){ return matPiyasa(m).map(p=>p.ad); }
 function piyasaEtiket(p){ return (p.d?p.d+': ':'')+p.ad; }
+/* ═══ RESMI AD PARCALARI (30 Eki) ════════════════════════════════════════════
+   Resmi ad (m.name) isverenin sartname dilinde yazilir; Akkuyu'da RU / EN tek hucrede:
+   "Анкер-шпилька HRD-C 10x80 / Frame anchor HRD-C 10x80". Parcalar artik AYRI girilir ve
+   m.resmi=[{d:'RU',ad},{d:'EN',ad}] olarak saklanir; m.name bu parcalardan " / " ile
+   KURULUR (resmiAdKur) ve KIMLIK OLMAYI SURDURUR: matKey, sartname kopyalari, Excel ice
+   aktarma, Saha Linki hep m.name okur - hicbiri degismedi. Diller tasarinin konumundan
+   (resmiDiller); kutu sirasi = birlesme sirasi.
+   KAYITSIZ urunde (eski veri) parcalar addan TURETILIR (resmiAdCoz): "/" (ya da satir sonu)
+   etrafinda Kiril harf payi yuksek taraf RU, dusuk taraf Latin dil. Latin parcanin
+   sonundaki kod / olcu kuyrugu ("HRD-C 10x80") Rusca parcada yoksa ona da eklenir -
+   kullanicinin kurali: "Анкер-шпилька / Frame anchor HRD-C 10x80" aslinda
+   "Анкер-шпилька HRD-C 10x80 / Frame anchor HRD-C 10x80" demektir. Turetme kesin degilse
+   (tek dilli ad, ters sira, ayiracsiz) kesin:false doner: toplu yazim (Araclar > Resmi Ad
+   Ayristirma) bunlari atlar, form uyari gosterir. */
+const RESMI_KIRIL_DIL=new Set(['RU','UK','BG','KZ','BY','SR','MK','KY','TG','MN']);
+function resmiTemiz(list){
+  const out=[], gor=new Set();
+  (Array.isArray(list)?list:[]).forEach(p=>{
+    const ad=String((p&&p.ad)==null?'':p.ad).replace(/\s+/g,' ').trim(); if(!ad) return;
+    const d=String((p&&p.d)==null?'':p.d).replace(/\s+/g,'').toUpperCase(); if(gor.has(d)) return; gor.add(d);
+    out.push({d,ad});
+  });
+  return out;
+}
+function resmiAdKur(list){ return resmiTemiz(list).map(p=>p.ad).join(' / '); }
+// metindeki harflerin Kiril payi (0..1); harf yoksa 0
+function _resmiKirilPay(s){ const L=(String(s).match(/\p{L}/gu)||[]).length; return L?((String(s).match(/[\u0400-\u04FF]/g)||[]).length/L):0; }
+// kuyruk karsilastirmasi: Kiril benzeri harfler Latine (х->x, А->A...), kucuk harf, bosluk/virgul yok
+const _RESMI_BENZER={'А':'A','В':'B','С':'C','Е':'E','Н':'H','К':'K','М':'M','О':'O','Р':'P','Т':'T','Х':'X','У':'Y','а':'a','в':'b','с':'c','е':'e','н':'h','к':'k','м':'m','о':'o','р':'p','т':'t','х':'x','у':'y','м':'m','×':'x'};
+function _resmiLatinles(s){ return String(s==null?'':s).replace(/[А-Яа-я×]/g,c=>_RESMI_BENZER[c]||c).toLowerCase().replace(/[\s,;]+/g,''); }
+// kod gibi parca: rakam iceriyor ya da kucuk harfsiz, en az bir buyuk harfli (HDG, (PE), В/V)
+function _resmiKodGibi(t){ return /\d/.test(t)||(/\p{Lu}/u.test(t)&&!/\p{Ll}/u.test(t)); }
+/* Latin parcanin sonundaki kod / olcu kuyrugu: sondan basa kod gibi parcalar; en az bir rakam
+   icermeli, adin tamami olamaz ("HRD-C 10x80", "S-M WB-HDG-4224", "380 В/V"; "Welding box" -> ""). */
+function resmiKuyruk(en){
+  const tok=String(en||'').trim().split(/\s+/).filter(Boolean), out=[];
+  for(let i=tok.length-1;i>=0;i--){ if(_resmiKodGibi(tok[i])) out.unshift(tok[i]); else break; }
+  if(!out.length||out.length===tok.length||!/\d/.test(out.join(' '))) return '';
+  return out.join(' ');
+}
+/* Adi dillere ayirir. diller: konumun resmi ad dilleri (ilk Kiril dil + ilk Latin dil kullanilir).
+   Doner {list, kesin, kuyruk, neden}; list diller SIRASINDADIR (resmiAdKur ayni sirayla kurar). */
+function resmiAdCoz(name, diller){
+  diller=(diller&&diller.length)?diller:resmiDiller();
+  const ad=String(name==null?'':name).replace(/\r/g,'').trim();
+  if(!ad) return {list:[],kesin:false,kuyruk:false,neden:'ad bos'};
+  const kirilDil=diller.find(d=>RESMI_KIRIL_DIL.has(d)), latinDil=diller.find(d=>!RESMI_KIRIL_DIL.has(d));
+  const tek=ad.replace(/\s+/g,' ');
+  if(diller.length<2||!kirilDil||!latinDil){
+    // tek dil, ya da iki dil de ayni alfabede: yaziya bakarak ayrilamaz - adin tamami ilk dile
+    return {list:[{d:diller[0],ad:tek}],kesin:diller.length<2,kuyruk:false,neden:diller.length<2?'':'diller yaziya bakarak ayrilamiyor'};
+  }
+  const sira=l=>diller.map(d=>l.find(p=>p.d===d)).filter(Boolean);
+  const re=/(\s+\/\s*|\s*\/\s+|\s*\n\s*)/g; let m, bul=null, ters=null;
+  while((m=re.exec(ad))){
+    const L=ad.slice(0,m.index).replace(/\s+/g,' ').trim(), R=ad.slice(m.index+m[0].length).replace(/\s+/g,' ').trim();
+    if(!L||!R) continue;
+    const pl=_resmiKirilPay(L), pr=_resmiKirilPay(R);
+    if(pl>=0.3&&pl>pr+0.2) bul={ru:L,en:R};            // son uygun ayirac kazanir (Latin parcada "/" olabilir)
+    else if(pr>=0.3&&pr>pl+0.2&&!ters) ters={ru:R,en:L};
+  }
+  if(bul){
+    /* KUYRUK yalnizca Rusca parca KELIMEYLE bitiyorsa eklenir ("Анкер-шпилька"): sonu zaten
+       kod / olcu olan Rusca ad ("ПР-06-40-01-13-T3", "ВВГ") kendi kodunu tasiyor demektir -
+       cevrilmis kod (ПР vs PR) benzer harf esitligine takilmaz, ustune ikinci kod yazilmaz. */
+    let ru=bul.ru, kuyruk=false; const k=resmiKuyruk(bul.en), ruSon=ru.split(/\s+/).pop();
+    if(k&&!_resmiKodGibi(ruSon)&&!_resmiLatinles(ru).includes(_resmiLatinles(k))){ ru=ru+' '+k; kuyruk=true; }   // kod Rusca adin icinde bir yerde varsa da eklenmez ("HUS 6×120 мм / ... HUS 6x120")
+    return {list:sira([{d:kirilDil,ad:ru},{d:latinDil,ad:bul.en}]),kesin:true,kuyruk,neden:''};
+  }
+  if(ters) return {list:sira([{d:kirilDil,ad:ters.ru},{d:latinDil,ad:ters.en}]),kesin:false,kuyruk:false,neden:'ters sira: Latin ad once, Kiril ad sonra'};
+  return {list:[{d:_resmiKirilPay(tek)>=0.3?kirilDil:latinDil,ad:tek}],kesin:false,kuyruk:false,neden:'ad tek dilde ya da ayirac yok'};
+}
+// kayitli parcalar (yoksa bos)
+function matResmiKayitli(m){ return resmiTemiz(m&&m.resmi); }
+// gosterim / form icin parcalar: kayitli varsa o, yoksa addan turetilmis
+function matResmi(m){ const k=matResmiKayitli(m); return k.length?k:resmiAdCoz((m&&m.name)||'').list; }
+function matResmiAdlari(m){ return matResmi(m).map(p=>p.ad); }
+/* FORM: dil basina kutu. p on eki ('mt' tekli form, 'topm_3' toplu kutu); onInput her tusta
+   calisacak ifade (this.value / this.dataset.resmi). Birlesik ad altta onizlenir; tek dilli
+   tasarida tek kutu "Malzeme Adi"dir. Ilk kutu data-k="name": toplu sayfanin odak secicisi. */
+function resmiFormHtml(p, list, onInput, uyari){
+  const diller=resmiDiller(), l=resmiTemiz(list), tek=diller.length<2;
+  const yer={RU:'orn. Анкер-шпилька HRD-C 10x80',EN:'orn. Frame anchor HRD-C 10x80',TR:'orn. Galvaniz Kablo Tavasi 200mm'};
+  const kutular=diller.map((d,i)=>{ const v=(l.find(x=>x.d===d)||{}).ad||'';
+    return `<div><label>${tek?'Malzeme Adi':'Resmi ad ('+esc(d)+')'}${i===0?' <span class="specf-req">*</span>':''}</label>
+      <input id="${p}_resmi_${esc(d)}" data-resmi="${esc(d)}" data-k="${i===0?'name':'resmi'}" value="${esc(v)}" placeholder="${esc(yer[d]||'')}" oninput="${onInput}"></div>`; }).join('');
+  return `<div class="resmi-form${tek?'':' coklu'}">${kutular}</div>`
+    +(tek?'':`<div class="t-meta resmi-onizle" id="${p}_resmi_onizle" title="Kayitli Malzeme Ismi: parcalar ' / ' ile birlesir - kimlik, sartname kopyasi ve Excel bu adi kullanir">${esc(resmiAdKur(l))||'&nbsp;'}</div>`)
+    +(uyari?`<div class="t-meta resmi-uyari">${uyari}</div>`:'');
+}
+function resmiFormOku(p){ return resmiTemiz(resmiDiller().map(d=>({d,ad:(document.getElementById(p+'_resmi_'+d)||{}).value}))); }
+function resmiOnizleCiz(p,list){ const e=document.getElementById(p+'_resmi_onizle'); if(e) e.textContent=resmiAdKur(list)||'\u00a0'; }
+// turetilmis parcalarin formdaki uyarisi: kayitsiz urunde, turetme kesin degilse ya da adi degistirecekse
+function resmiCozUyari(m){
+  if(!m||!m.name||matResmiKayitli(m).length) return '';
+  const c=resmiAdCoz(m.name);
+  if(!c.kesin) return 'Kayitli ad dillere ayristirilamadi ('+esc(c.neden)+') - kutulari kontrol edin. Kayitli ad: <b>'+esc(m.name)+'</b>';
+  if(resmiAdKur(c.list)===String(m.name).replace(/\s+/g,' ').trim()) return '';
+  return 'Parcalar kayitli addan turetildi'+(c.kuyruk?' (Latin adin sonundaki kod / olcu Rusca ada da eklendi)':'')+' - kaydedince Malzeme Ismi bu kutulardan yeniden kurulur.';
+}
+function mtResmiYaz(){ const l=resmiFormOku('mt'); const e=document.getElementById('mt_name'); if(e) e.value=resmiAdKur(l); resmiOnizleCiz('mt',l); }
 const PIYASA_DIL_ONER=['TR','RU','EN'];
 function piyasaDilOnerileri(){
   const s=new Set(PIYASA_DIL_ONER);
@@ -30007,8 +30224,22 @@ function konumTemizIst(x){
   const ulke=String(x.ulke||'').trim().toUpperCase(), dil=String(x.dil||'').trim().toUpperCase();
   if(!/^[A-Z]{2,3}$/.test(ulke)||!/^[A-Z]{2,4}$/.test(dil)) return null;
   const il=String(x.il==null?'':x.il).replace(/\s+/g,' ').trim().slice(0,60);
-  return {ulke,dil,il};
+  return {ulke,dil,il,resmiDil:resmiDilTemizIst(x.resmiDil)};
 }
+/* RESMI AD DILLERI (30 Eki): isverenin sartname dili - kunye formunda her dil icin ayri
+   "resmi ad" kutusu, kayitli Malzeme Ismi bu parcalardan bu sirayla " / " ile kurulur
+   (bkz. resmiAdKur). Konumla birlikte tasinir. Sunucudaki resmiDilTemizle ile ayni kural:
+   dizi ya da "RU, EN" metni, 2-4 harf, en cok 4 dil; bos -> RU + EN. */
+const RESMI_DIL_VARSAYILAN=['RU','EN'];
+function resmiDilTemizIst(list){
+  const out=[];
+  (Array.isArray(list)?list:String(list==null?'':list).split(/[,\s/|+]+/)).forEach(d=>{
+    d=String(d==null?'':d).trim().toUpperCase();
+    if(/^[A-Z]{2,4}$/.test(d)&&!out.includes(d)&&out.length<4) out.push(d);
+  });
+  return out.length?out:RESMI_DIL_VARSAYILAN.slice();
+}
+function resmiDiller(){ const k=tasariKonum(); return (k&&k.resmiDil&&k.resmiDil.length)?k.resmiDil.slice():RESMI_DIL_VARSAYILAN.slice(); }
 function tasariKonum(){ return window.AKTIF_TASARI_KONUM||null; }
 function konumUlkeAd(k){ if(!k) return ''; const u=konumUlke(k.ulke); return u?u.ad:k.ulke; }
 // "Mersin, Türkiye" - il yoksa yalniz ulke
@@ -30064,7 +30295,8 @@ function konumDilOner(ulkeId, dilId){
 }
 // p on ekiyle ulke + dil + il okunur; il BOS ise null (formlar ili zorunlu tutar)
 function konumFormOku(p){
-  const k=konumTemizIst({ulke:(document.getElementById(p+'_ulke')||{}).value, dil:(document.getElementById(p+'_dil')||{}).value, il:(document.getElementById(p+'_il')||{}).value});
+  const k=konumTemizIst({ulke:(document.getElementById(p+'_ulke')||{}).value, dil:(document.getElementById(p+'_dil')||{}).value, il:(document.getElementById(p+'_il')||{}).value,
+    resmiDil:(document.getElementById(p+'_resmi')||{}).value});
   return (k&&k.il)?k:null;
 }
 /* Konum penceresi - yalnizca yonetici. o.ilk: acilista sorulan hal ("Sonra" ile bu
@@ -30077,13 +30309,15 @@ function tasariKonumAc(o){
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:460px">
     <div class="modal-head"><h3>Tasari Konumu</h3><button class="mini-btn" onclick="tasariKonumKapat(${o.ilk?'true':'false'})">x</button></div>
     <div class="modal-body">
-      <div class="tk-ozet"><span class="pam-ulke" id="tk_rozet">${esc(ulke)}</span><div><b>${esc(tasariAdiGoster())}</b><span>${k?'Konum: '+esc(konumYerAd(k))+' · piyasa dili '+esc(k.dil):'Konum henuz girilmemis'}</span></div></div>
+      <div class="tk-ozet"><span class="pam-ulke" id="tk_rozet">${esc(ulke)}</span><div><b>${esc(tasariAdiGoster())}</b><span>${k?'Konum: '+esc(konumYerAd(k))+' · piyasa dili '+esc(k.dil)+' · resmi ad '+esc(((k.resmiDil)||RESMI_DIL_VARSAYILAN).join(' + ')):'Konum henuz girilmemis'}</span></div></div>
       ${o.ilk?`<p class="t-meta" style="margin:0 0 10px"><b>Bu tasarinin konumu girilmemis.</b> Projenin yapildigi ulkeyi secin; piyasa adi dili ve birim etiketleri (ad. / шт. / pcs) buna gore olusur.</p>`:''}
       <div class="frow" style="display:grid;grid-template-columns:1fr 1fr 90px;gap:10px">
         <div><label>Ulke *</label><select id="tk_ulke" onchange="konumUlkeDegisti('tk')">${konumUlkeSecenekHtml(ulke)}</select></div>
         <div id="tk_il_wrap"><label>Il / sehir *</label>${konumIlAlanHtml('tk',ulke,k?k.il:'')}</div>
         <div><label>Piyasa dili</label><select id="tk_dil">${konumDilSecenekHtml(dil)}</select></div>
       </div>
+      <div class="frow"><label>Resmi ad dilleri <span class="t-meta">(isverenin sartname dili - kunyede her dil icin ayri ad kutusu; Malzeme Ismi bu sirayla " / " ile birlesir)</span></label>
+        <input id="tk_resmi" value="${esc(((k&&k.resmiDil)||RESMI_DIL_VARSAYILAN).join(', '))}" placeholder="orn. RU, EN" maxlength="24"></div>
       <p class="t-meta" style="margin:0">Tum kullanicilar icin gecerlidir: piyasa adi modundaki dil ve birim etiketleri bu konumdan turer; kullanici basina dil secimi yoktur. Degisiklik denetim kaydina yazilir.</p>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="tasariKonumKapat(${o.ilk?'true':'false'})">${o.ilk?'Sonra':'Iptal'}</button><button class="btn btn-add" onclick="tasariKonumKaydet()">Kaydet</button></div></div></div>`;
@@ -30139,7 +30373,7 @@ function pamMenuCiz(){
   const k=tasariKonum();
   const dilBlok=k
     ? `<div class="pam-baslik">Piyasa dili · tasari konumu</div>
-    <div class="pam-konum"><span class="pam-ulke">${esc(k.ulke)}</span><div><b>${esc(konumYerAd(k))}</b><span>${esc(tasariAdiGoster())} · piyasa dili <b>${esc(k.dil)}</b></span></div>${isAdmin()?`<button class="pam-dil-btn" onclick="tasariKonumAc()">Degistir</button>`:''}</div>`
+    <div class="pam-konum"><span class="pam-ulke">${esc(k.ulke)}</span><div><b>${esc(konumYerAd(k))}</b><span>${esc(tasariAdiGoster())} · piyasa dili <b>${esc(k.dil)}</b> · resmi ad <b>${esc((k.resmiDil||RESMI_DIL_VARSAYILAN).join(' + '))}</b></span></div>${isAdmin()?`<button class="pam-dil-btn" onclick="tasariKonumAc()">Degistir</button>`:''}</div>`
     : `<div class="pam-baslik">Dil / ulke</div>
     <div class="pam-dil">${diller.map(d=>`<button class="pam-dil-btn${d===PAM.dil?' on':''}" onclick="pamDil('${esc(d)}')">${esc(d)}</button>`).join('')}</div>
     <div class="pam-not pam-uyari">Tasari konumu girilmemis - dil simdilik bu tarayicida secili. ${isAdmin()?'<a onclick="tasariKonumAc()">Konumu belirle</a>':'Yonetici konumu belirleyince piyasa dili oradan gelir.'}</div>`;
@@ -48385,7 +48619,8 @@ function _xmIndeks(X){
     koy(I.kod,_kimlikTemiz(it.kod),it);
     es.forEach(c=>koy(I.es,_kimlikTemiz(c),it));
     [it.kod,...es].forEach(c=>koy(I.gev,_xmKodGevsek(c),it));
-    const v=_xmAdVaryant(it.ad,it.src==='gecici'?[(gecici.get(it.id)||{}).adRu]:[]);
+    // ek adlar TAM varyanttir: Mobilizasyon'un RU adi; Proje urununun resmi ad dil parcalari (RU, EN)
+    const v=_xmAdVaryant(it.ad,it.src==='gecici'?[(gecici.get(it.id)||{}).adRu]:(it.src==='proje'&&proje.get(it.id))?matResmiAdlari(proje.get(it.id)):[]);
     I.v.set(it,v);
     v.forEach(x=>koy(I.ad,x.sk,it));
     const kel=new Set(); v.forEach(x=>{ if(x.tam) x.tx.split(' ').forEach(w=>{ if(_xmKelime(w)) kel.add(w); }); });
