@@ -3311,6 +3311,7 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .arac-kart-bas{display:flex;align-items:center;gap:11px;padding:14px 16px;border-bottom:1px solid var(--line);background:var(--panel2)}
 .arac-kart-bas>svg{flex:0 0 auto;color:var(--dim)}
 .arac-kart-bas>div{flex:1;min-width:0}
+.brm-tbl-wrap{overflow-x:auto}.brm-tbl{width:100%;border-collapse:collapse;font-size:12px}.brm-tbl th{text-align:left;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--dim);padding:8px 8px 6px;border-bottom:1px solid var(--line)}.brm-tbl th.r,.brm-tbl td.brm-say{text-align:right}.brm-tbl td{padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:middle}.brm-tbl td.brm-say{font-family:var(--mono);color:var(--dim);white-space:nowrap}.brm-in{width:100%;min-width:64px;padding:6px 8px;font-size:12px}.brm-in.mono{font-family:var(--mono)}.brm-yab{padding:12px 16px;border-top:1px solid var(--line);font-size:12px}.brm-yab-satir{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:5px 0}.brm-yab-satir code{font-family:var(--mono);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:2px 7px}.brm-yab-satir select{margin-left:auto;padding:4px 8px;font-size:11.5px;max-width:260px}
 .arac-kart-bas b{display:block;font-size:13px;font-weight:700;color:var(--ink)}
 .arac-kart-bas span{display:block;font-size:11px;color:var(--dim);margin-top:2px;line-height:1.45}
 /* pano widget listesi: sira numarasi + ad/aciklama + tuslar. Dar ekranda tuslar
@@ -8528,7 +8529,7 @@ function exportBinaSpecExcel(){
   const rows=[["Poz No","Özel No","Malzeme Ismi","Standart No","Urun Kodu","Marka","Birim","Miktar","Acik Kalem","Revize","Revize Gerekcesi","Urun Agirligi (kg)","Not","Resim URL"]];
   specs.forEach(sp=>{ const mt=sp.matId?getMaterial(sp.matId):null;
     const img=(mt&&mt.img&&/^https?:\/\//i.test(mt.img))?mt.img:'';
-    rows.push([sp.poz||'', sp.ozelNo||'', sp.name||'', sp.standart||'', sp.code||'', sp.brand||'', sp.unit||(mt?mt.unit:'')||'', specSartHedef(sp), sp.openQty?'EVET':'', specRevize(sp)||'', specRevize(sp)?(sp.revizeNot||''):'', sp.weight!=null?sp.weight:'', (mt?mt.note:'')||'', img]); });
+    rows.push([sp.poz||'', sp.ozelNo||'', sp.name||'', sp.standart||'', sp.code||'', sp.brand||'', birimAd(sp.unit||(mt?mt.unit:'')), specSartHedef(sp), sp.openQty?'EVET':'', specRevize(sp)||'', specRevize(sp)?(sp.revizeNot||''):'', sp.weight!=null?sp.weight:'', (mt?mt.note:'')||'', img]); });
   if(specs.length===0) rows.push(['','','','','','','','','','','','','','']);
   const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:10},{wch:16},{wch:26},{wch:18},{wch:16},{wch:16},{wch:10},{wch:10},{wch:11},{wch:9},{wch:24},{wch:16},{wch:28},{wch:40}];
@@ -9114,7 +9115,7 @@ function panoParcalar(ctx,boyut){
   // son hareketler: en yeni 6 malzeme giris/cikisi
   const sonHareket=DB.proje.items.filter(i=>!i.is_deleted && vis.has(i.bina)).sort((a,b)=>b.date-a.date).slice(0,kucuk('hareket')?4:6);
   const hareketHtml=sonHareket.length?sonHareket.map(e=>{ const out=e.type==='out', iade=e.type==='iade';
-    return `<div class="dash-row" onclick="showProjeHistory('${esc(e.name).replace(/'/g,"\\'")}','${esc(e.unit||'')}','${esc(e.cat||'')}')">
+    return `<div class="dash-row" onclick="showProjeHistory('${esc(e.name).replace(/'/g,"\\'")}','${esc(birimAd(e.unit)||'')}','${esc(e.cat||'')}')">
       <span class="dr-qty" style="color:${iade?'var(--warning)':(out?'var(--danger)':'var(--success)')}" title="${iade?'Tedarikciye iade':(out?'Sahaya sevk':'Alim')}">${out||iade?'-':'+'}${fmtNum(Math.abs(Number(e.qty)||0))}</span>
       <span class="dr-name" title="${esc(e.name)}">${esc(e.name)}</span>
       <span class="dr-meta" title="${esc(e.bina||'')} · ${fmtDate(e.date)}">${esc(e.bina||'')} · ${fmtDate(e.date)}</span></div>`; }).join('')
@@ -9123,9 +9124,9 @@ function panoParcalar(ctx,boyut){
   // birimler cift dilli olabilir ("шт. /pieces") - dar miktar sutununa yalnizca ilk parca yazilir,
   // tam birim ve ad title ile gorunur ki kirpilan bilgi kaybolmasin
   eksik.sort((a,b)=>b.kalan-a.kalan);
-  const eksikHtml=eksik.length?eksik.slice(0,kucuk('eksik')?4:6).map(x=>{ const u=(x.sp.unit||'').split('/')[0].trim();
+  const eksikHtml=eksik.length?eksik.slice(0,kucuk('eksik')?4:6).map(x=>{ const u=birimAd(x.sp.unit);
     return `<div class="dash-row" onclick="openSpecDetail('${x.sp.id}')">
-      <span class="dr-qty" style="color:var(--warning)" title="${fmtNum(x.kalan)} ${esc(x.sp.unit||'')}">${fmtNum(x.kalan)} ${esc(u)}</span>
+      <span class="dr-qty" style="color:var(--warning)" title="${fmtNum(x.kalan)} ${esc(birimTam(x.sp.unit))}">${fmtNum(x.kalan)} ${esc(u)}</span>
       <span class="dr-name" title="${esc(x.sp.name)}">${esc(x.sp.name)}</span>
       <span class="dr-meta" title="${esc(x.sp.bina||'')} · ${esc(x.sp.cat||'')}">${esc(x.sp.bina||'')} · ${esc(x.sp.cat||'')}</span></div>`; }).join('')
     :'<div class="dash-empty">Eksik kalem yok - tum hedefler karsilandi</div>';
@@ -9191,7 +9192,7 @@ function openAraclar(){
   _INV=null; _TOPM=null; _TOPG=null; _TOPA=null;
   SEARCH=""; render();
 }
-function closeAraclar(){ PARAC=false; render(); }
+function closeAraclar(){ PARAC=false; _BRM=null; render(); }
 
 /* ── EGLENCE: menunun en altinda, Araclar'in altinda - is disi magazinsel
    takilma yeri. Simdilik bos kabuk; icerik sonradan bu sayfaya eklenecek.
@@ -9223,8 +9224,9 @@ function renderEglencePage(){
 function renderAraclarPage(){
   return `<div class="sel-wrap" style="max-width:900px">
     <div class="sel-bc"><button onclick="closeAraclar()">${icoArr('left')} Geri Don</button></div>
-    <div class="sel-head"><h2>Araclar</h2><p>Kisisel gorunum tercihleri ve bakim islemleri. Buradaki ayarlar yalnizca sizin kullanicinizi etkiler, baskasinin ekranini degistirmez.</p></div>
+    <div class="sel-head"><h2>Araclar</h2><p>Kisisel gorunum tercihleri ve bakim islemleri. Pano ayarlari yalnizca sizin kullanicinizi etkiler; Birim Sozlugu ise herkes icin ortaktir.</p></div>
     ${aracPanoKart()}
+    ${aracBirimKart()}
     ${aracBakimKart()}
   </div>`;
 }
@@ -9284,6 +9286,82 @@ function aracBakimKart(){
     </div>
     <div class="arac-tiles">${tuslar}</div>
   </div>`;
+}
+/* ── ARAC 3: BIRIM SOZLUGU ─────────────────────────────────────────────────
+   Satirlar: anahtar + TR / RU / EN etiketi + es yazimlar (virgulle). Degisiklik
+   _BRM tamponunda birikir, Kaydet ile app_settings'e (ortak) gider. Altta kutuphane,
+   sartname kalemi ve siparis satirlarinda gecen ama sozlukte OLMAYAN yazimlar listelenir;
+   her biri bir anahtara es yazim olarak baglanir (bkz. birimTanim). Sayfadaki diger
+   kartlar kisiseldir, bu sozluk tum kullanicilar icin ORTAKTIR. */
+let _BRM=null; // {liste:[...], kirli:bool} - yalnizca Araclar sayfasinda, Kaydet'e kadar
+function brmTampon(){ if(!_BRM) _BRM={liste:JSON.parse(JSON.stringify(birimSozluk())),kirli:false}; return _BRM; }
+function brmYabanciYazimlar(){
+  const yab=new Map(); const ekle=u=>{ const t=String(u==null?'':u).replace(/\s+/g,' ').trim(); if(t&&!birimTanim(t)) yab.set(t,(yab.get(t)||0)+1); };
+  (DB.proje.materials||[]).forEach(m=>{ if(!m.is_deleted) ekle(m.unit); });
+  (DB.proje.specs||[]).forEach(s=>{ if(!s.is_deleted) ekle(s.unit); });
+  (DB.proje.orders||[]).forEach(o=>(o.lines||[]).forEach(l=>ekle(l.unit)));
+  return [...yab.entries()].sort((a,b)=>b[1]-a[1]);
+}
+function aracBirimKart(){
+  const edit=canEdit('proje');
+  const b=brmTampon(), liste=b.liste;
+  const say=new Map(); (DB.proje.materials||[]).forEach(m=>{ if(m.is_deleted) return; const k=birimKey(m.unit); if(k) say.set(k,(say.get(k)||0)+1); });
+  const dis=edit?'':' disabled';
+  const satir=(t,i)=>`<tr>
+      <td><input class="brm-in mono" value="${esc(t.k||'')}" placeholder="anahtar" oninput="brmSet(${i},'k',this.value)"${dis}></td>
+      ${BRM_DILLER.map(d=>`<td><input class="brm-in" value="${esc(t[d]||'')}" placeholder="${d}" oninput="brmSet(${i},'${d}',this.value)"${dis}></td>`).join('')}
+      <td><input class="brm-in" value="${esc((t.es||[]).join(', '))}" placeholder="virgulle: pcs, шт, adet" oninput="brmSetEs(${i},this.value)"${dis}></td>
+      <td class="brm-say" title="Kutuphanede bu birimi tasiyan urun">${say.get(t.k)||0}</td>
+      <td>${edit?`<button class="mini-btn" title="Satiri sil" onclick="brmSil(${i})">x</button>`:''}</td></tr>`;
+  const yab=brmYabanciYazimlar();
+  const yabHtml=yab.length?`<div class="brm-yab"><b>Sozlukte olmayan yazimlar</b> <span class="t-meta">(kutuphane + sartname kalemi + siparis satiri - oldugu gibi gosterilir; bir anahtara baglayin)</span>
+      ${yab.map(([y,n])=>`<div class="brm-yab-satir"><code>${esc(y)}</code><span class="t-meta">${n} kayit</span>
+        ${edit?`<select onchange="brmYabanciBagla(this.value,${JSON.stringify(y).replace(/"/g,'&quot;')});this.value=''"><option value="">bagla...</option>${liste.map(t=>`<option value="${esc(t.k)}">${esc(t.k)} = ${esc(birimUcDil(t))}</option>`).join('')}</select>`:''}</div>`).join('')}</div>`
+    :`<div class="arac-not" style="padding-top:0">Kutuphane, sartname ve siparislerdeki her birim yazimi sozlukte karsilik buluyor.</div>`;
+  return `<div class="arac-kart" id="aracBirimKart">
+    <div class="arac-kart-bas">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
+      <div><b>Birim Sozlugu</b><span>Adet / metre / paket gibi birimlerin TR - RU - EN yazimi; ekranlar Piyasa adi menusundeki dile gore gosterir. Tum kullanicilar icin ORTAK.</span></div>
+      ${edit?`<button class="pano-btn" onclick="brmSatirEkle()">+ Satir</button><button class="pano-btn" onclick="brmVarsayilan()">Varsayilana Don</button><button class="btn btn-add" id="brmKaydetBtn" style="padding:6px 14px" onclick="brmKaydet()"${b.kirli?'':' disabled'}>Kaydet</button>`:''}
+    </div>
+    <div class="brm-tbl-wrap"><table class="brm-tbl"><thead><tr><th>Anahtar</th><th>Turkce</th><th>Rusca</th><th>Ingilizce</th><th>Es yazimlar</th><th class="r">Urun</th><th></th></tr></thead>
+      <tbody>${liste.map(satir).join('')}</tbody></table></div>
+    ${yabHtml}
+    <div class="arac-not">Kayitta ANAHTAR durur (orn. <code>adet</code>); ekranda ve Excel/PDF'te secili dilin yazimi basilir (TR <b>ad.</b> / RU <b>шт.</b> / EN <b>pcs.</b>). Eski kayitlardaki "шт. / pcs" gibi yazimlar es yazim olarak taninir, veri yeniden yazilmaz.${edit?' Anahtari degistirirseniz eski anahtar es yazimlara eklenir ki kayitlar kopmasin.':''}</div>
+  </div>`;
+}
+function brmCiz(){ const k=document.getElementById('aracBirimKart'); if(k) k.outerHTML=aracBirimKart(); }
+function brmKirli(){ const b=brmTampon(); b.kirli=true; const btn=document.getElementById('brmKaydetBtn'); if(btn) btn.disabled=false; }
+function brmSet(i,alan,v){ const t=brmTampon().liste[i]; if(!t) return; v=String(v||'').trim();
+  if(alan==='k'){ const eski=String(t.k||'').trim(); if(eski&&eski!==v&&!(t.es||[]).includes(eski)) t.es=[...(t.es||[]),eski]; }
+  t[alan]=v; brmKirli(); }
+function brmSetEs(i,v){ const t=brmTampon().liste[i]; if(!t) return; t.es=_brmEsAyir(v); brmKirli(); }
+function brmSil(i){ const b=brmTampon(); const t=b.liste[i]; if(!t) return;
+  const n=(DB.proje.materials||[]).filter(m=>!m.is_deleted&&birimKey(m.unit)===t.k).length;
+  if(n&&!confirm('"'+t.k+'" birimini '+n+' urun kullaniyor. Silinirse o urunlerde yazim oldugu gibi kalir. Silinsin mi?')) return;
+  b.liste.splice(i,1); b.kirli=true; brmCiz(); }
+function brmSatirEkle(){ const b=brmTampon(); b.liste.push({k:'',TR:'',RU:'',EN:'',es:[]}); b.kirli=true; brmCiz();
+  const k=document.getElementById('aracBirimKart'); const ins=k?k.querySelectorAll('tbody tr:last-child input'):null; if(ins&&ins[0]) ins[0].focus(); }
+function brmVarsayilan(){ if(!confirm('Sozluk varsayilan listeye dondurulsun mu? (Kaydet ile kesinlesir)')) return;
+  _BRM={liste:JSON.parse(JSON.stringify(BRM_VARSAYILAN)),kirli:true}; brmCiz(); }
+function brmYabanciBagla(k,yazim){ if(!k) return; const t=brmTampon().liste.find(x=>x.k===k); if(!t) return;
+  if(!(t.es||[]).includes(yazim)) t.es=[...(t.es||[]),yazim]; brmKirli();
+  toast('"'+yazim+'" -> '+k+' (Kaydet ile kesinlesir)'); }
+async function brmKaydet(){
+  if(!canEdit('proje')){ toast('Yetkiniz yok','err'); return; }
+  const b=brmTampon();
+  const liste=b.liste.map(t=>({k:String(t.k||'').trim(),TR:String(t.TR||'').trim(),RU:String(t.RU||'').trim(),EN:String(t.EN||'').trim(),es:_brmEsAyir((t.es||[]).join(','))}))
+    .filter(t=>t.k||t.TR||t.RU||t.EN||t.es.length);
+  if(!liste.length){ toast('Sozluk bos olamaz','err'); return; }
+  for(const t of liste){ if(!t.k){ toast('Anahtari bos satir var','err'); return; } if(!t.TR){ toast('"'+t.k+'" icin Turkce yazim bos','err'); return; } }
+  // ayni yazim iki anahtara gidemez (anahtar, etiketler ve es yazimlar birlikte)
+  const gor=new Map();
+  for(const t of liste){ for(const x of [t.k,t.TR,t.RU,t.EN,...t.es]){ const n=_brmNorm(x); if(!n) continue;
+    if(gor.has(n)&&gor.get(n)!==t.k){ toast('"'+x+'" hem "'+gor.get(n)+'" hem "'+t.k+'" altinda','err'); return; } gor.set(n,t.k); } }
+  try{ await sbSetSetting(BRM_AYAR,liste); }catch(e){ toast('Kaydedilemedi: '+((e&&e.message)||e),'err'); return; }
+  if(!DB.meta) DB.meta={}; DB.meta[BRM_AYAR]=liste; birimSozlukSifirla(); _BRM=null;
+  logAction('define','Birim sozlugu guncellendi: '+liste.length+' birim');
+  toast('Birim sozlugu kaydedildi'); brmCiz();
 }
 /* ══════════════════════════════════════════════════════════════════════════
    GUNLUK ISLER - TAKVIMLI GOREV TAKIBI  (giris panosu, sag ust hucre)
@@ -13358,6 +13436,7 @@ function giaSahaUrunler(){
 }
 // birim turu (metre / adet) - kalem ile urun birimi uyusmazsa uyari
 function giaBirimTur(s){
+  const bk=birimKey(s); if(bk==='adet') return 'ad'; if(bk==='metre') return 'm';
   const t=String(s||'').toLowerCase();
   if(/шт|pcs|ad\.|adet/.test(t)) return 'ad';
   if(/(^|[^a-zа-я])(m|м)([^a-zа-я0-9]|$)/.test(t)) return 'm';
@@ -15050,7 +15129,7 @@ function exportBorclarExcel(){
   if(!list.length){ toast("Borc yok","err"); return; }
   const rows=[["Borc Belge No","Tarih","Bina","Borc Alinan Firma","Spek No","Malzeme","Borc","Geri Verilen","Kalan","Birim","Durum"]];
   list.forEach(({o})=>borcGeriGruplari(o).forEach(g=>rows.push([o.no,fmtDate(o.date),o.bina||'',orderCompany(o),g.code||'',g.ad||'',
-    g.alinan,Math.min(g.iade,g.alinan),g.kalan,g.unit||'',g.kalan>0?(g.iade>0?'Kismen geri verildi':'Acik'):'Kapandi'])));
+    g.alinan,Math.min(g.iade,g.alinan),g.kalan,birimAd(g.unit),g.kalan>0?(g.iade>0?'Kismen geri verildi':'Acik'):'Kapandi'])));
   const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:16},{wch:12},{wch:10},{wch:22},{wch:16},{wch:42},{wch:9},{wch:12},{wch:9},{wch:8},{wch:18}];
   XLSX.utils.book_append_sheet(wb,ws,"Borclar"); XLSX.writeFile(wb,`Borclar_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel indirildi");
@@ -15105,7 +15184,7 @@ function exportAllOrdersExcel(){
   if(!list.length){toast("Siparis yok","err");return;}
   const etk=ordEtiketCozucu();
   const rows=[["Siparis No","Tarih","Bina","Sirket","Sartname","Spek No","Malzeme","Miktar","Birim","Etiket"]];
-  list.forEach(o=>{ (o.lines||[]).forEach(l=>{ rows.push([o.no,fmtDate(o.date),o.bina||'',orderCompany(o),l.grup||o.grup||'',l.code||'',l.ad||'',Number(l.qty)||0,l.unit||'',etk(l).join(', ')]); }); });
+  list.forEach(o=>{ (o.lines||[]).forEach(l=>{ rows.push([o.no,fmtDate(o.date),o.bina||'',orderCompany(o),l.grup||o.grup||'',l.code||'',l.ad||'',Number(l.qty)||0,birimAd(l.unit),etk(l).join(', ')]); }); });
   const wb=XLSX.utils.book_new(); const ws=XLSX.utils.aoa_to_sheet(rows);
   ws['!cols']=[{wch:14},{wch:12},{wch:10},{wch:20},{wch:22},{wch:16},{wch:42},{wch:10},{wch:8},{wch:22}];
   XLSX.utils.book_append_sheet(wb,ws,"Siparisler"); XLSX.writeFile(wb,`Siparisler_${ORDBINA||'tum'}_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel indirildi");
@@ -15143,15 +15222,15 @@ function exportOrdersOzelExcel(){
   if(!satirlar.length){toast("Filtreye uyan satir yok","err");return;}
   // 1) Satirlar: her siparis satiri ayri
   const r1=[["Siparis No","Tarih","Bina","Sirket","Sartname","Spek No","Malzeme","Miktar","Birim","Etiket"]];
-  satirlar.forEach(({o,l})=>r1.push([o.no,fmtDate(o.date),o.bina||'',orderCompany(o),l.grup||o.grup||'',l.code||'',l.ad||'',Number(l.qty)||0,l.unit||'',etk(l).join(', ')]));
+  satirlar.forEach(({o,l})=>r1.push([o.no,fmtDate(o.date),o.bina||'',orderCompany(o),l.grup||o.grup||'',l.code||'',l.ad||'',Number(l.qty)||0,birimAd(l.unit),etk(l).join(', ')]));
   // 2) Malzeme Ozeti: ayni urun (stok kodu kimlik, kodsuzda ad - matKey) + birim tek satirda toplanir
   const grp=new Map();
-  satirlar.forEach(({o,l})=>{ const k=matKey(l.code,l.ad)+'|'+_kimlikTemiz(l.unit);
+  satirlar.forEach(({o,l})=>{ const k=matKey(l.code,l.ad)+'|'+birimKey(l.unit);
     let g=grp.get(k); if(!g){ g={code:l.code||'',ad:l.ad||'',unit:l.unit||'',qty:0,nolar:new Set(),etiket:etk(l)}; grp.set(k,g); }
     g.qty+=Number(l.qty)||0; g.nolar.add(o.no||'(no yok)'); });
   const r2=[["Spek No","Malzeme","Birim","Toplam Miktar","Siparis Sayisi","Siparisler","Etiket"]];
   [...grp.values()].sort((a,b)=>String(a.ad).localeCompare(String(b.ad),'tr'))
-    .forEach(g=>r2.push([g.code,g.ad,g.unit,g.qty,g.nolar.size,[...g.nolar].join(', '),g.etiket.join(', ')]));
+    .forEach(g=>r2.push([g.code,g.ad,birimAd(g.unit),g.qty,g.nolar.size,[...g.nolar].join(', '),g.etiket.join(', ')]));
   // 3) Filtre: dosyanin hangi suzgecle alindigi (sonradan bakana iz)
   const r3=[["Filtre","Deger"],...ordFiltreOzeti()];
   if(r3.length===1) r3.push(['(filtre yok)','tum siparis satirlari']);
@@ -15580,8 +15659,8 @@ function tmutVeri(comp){
     const {mt,key}=cozUrun(l);
     let g=urun.get(key);
     if(!g){ g={key,matId:(mt&&mt.id)||'',code:(mt&&mt.code)||l.code||'',ad:(mt&&mt.name)||l.ad||l.name||'',
-      unit:(mt&&mt.unit)||l.unit||'',alinan:0,iade:0,belge:new Set(),binalar:new Set(),ilk:0,son:0,hareket:[]}; urun.set(key,g); }
-    g[alan]+=q; if(!g.unit&&l.unit) g.unit=l.unit;
+      unit:birimKey((mt&&mt.unit)||l.unit||''),alinan:0,iade:0,belge:new Set(),binalar:new Set(),ilk:0,son:0,hareket:[]}; urun.set(key,g); }
+    g[alan]+=q; if(!g.unit&&l.unit) g.unit=birimKey(l.unit);
     if(o.bina) g.binalar.add(o.bina);
     if(alan==='alinan'){ g.belge.add(o.id); if(!g.ilk||h.tarih<g.ilk) g.ilk=h.tarih; if(h.tarih>g.son) g.son=h.tarih; }
     g.hareket.push(h);
@@ -15663,7 +15742,7 @@ function tmutHareketHtml(u){
       <td>${h.tip==='iade'?'<span class="ord-iade">IADE</span>':'Teslim'}</td>
       <td class="t-meta">${esc(h.bina||'-')}</td>
       <td class="t-meta">${esc(h.sart||'-')}</td>
-      <td class="t-qty r"${h.qty<0?' style="color:var(--amber)"':''}>${tmutMik(h.qty)} <span class="t-meta">${esc(u.unit||'')}</span></td>
+      <td class="t-qty r"${h.qty<0?' style="color:var(--amber)"':''}>${tmutMik(h.qty)} <span class="t-meta">${esc(birimAd(u.unit)||'')}</span></td>
       <td>${tmutEvrak(h)}</td></tr>`).join('')}</tbody></table>`;
 }
 function tmutFirmaOzetiHtml(){
@@ -15736,7 +15815,7 @@ function renderTeslimatMutabakat(tabs){
   if(v.pdfsiz.length) notlar.push(`<button class="tmut-not" onclick="setTmutF('gor','belge')" title="${esc(v.pdfsiz.map(b=>b.no).join(', '))}">${fmtNum(v.pdfsiz.length)} belgede PDF yok</button>`);
   if(v.eksiNet) notlar.push(`<span class="tmut-not uyar" title="Donem basindan once teslim alinan malin iadesi bu doneme dusmus">${fmtNum(v.eksiNet)} urunde donem ici iade, donem ici teslimi asiyor</span>`);
   if(v.sonraki) notlar.push(`<span class="tmut-not" title="Mutabakat tarihinden sonraki belgeler bu dokume dahil degil">${fmtNum(v.sonraki)} belge ${esc(tmutGun(tmutBitis()))} sonrasinda - dahil degil</span>`);
-  const birimTxt=v.birimler.slice(0,4).map(b=>`<b>${fmtNum(b.net)}</b> ${esc(b.unit||'birimsiz')}`).join(' · ')+(v.birimler.length>4?` <span class="t-meta">+${v.birimler.length-4} birim</span>`:'');
+  const birimTxt=v.birimler.slice(0,4).map(b=>`<b>${fmtNum(b.net)}</b> ${esc(birimAd(b.unit)||'birimsiz')}`).join(' · ')+(v.birimler.length>4?` <span class="t-meta">+${v.birimler.length-4} birim</span>`:'');
   const sumline=`<div class="ord-sumline"><b>${fmtNum(v.urunler.length)}</b> urun · <b>${fmtNum(v.alimBelge)}</b> teslim belgesi${v.iadeBelge?` · <b>${fmtNum(v.iadeBelge)}</b> iade fisi`:''} · <b>${fmtNum(v.kalem)}</b> kalem${birimTxt?' — net teslim '+birimTxt:''}${kapsamVar?' <span class="t-meta">(suzgecli kapsam: '+esc(tmutKapsamMetni())+')</span>':''}</div>`;
   let tablo;
   if(TMUT.gor==='belge'){
@@ -15760,7 +15839,7 @@ function renderTeslimatMutabakat(tabs){
           <td class="t-meta">${i+1}</td>
           <td class="t-meta tmut-kod">${markIsaret(u.code||'-',TMUT.kod)}</td>
           <td><div class="tmut-ad">${markIsaret(u.ad||'-',TMUT.ad)}</div>${u.binalar.length?`<div class="t-meta" style="font-size:11px">${esc(u.binalar.join(', '))}</div>`:''}</td>
-          <td class="t-meta">${esc(u.unit||'-')}</td>
+          <td class="t-meta">${esc(birimAd(u.unit)||'-')}</td>
           <td class="t-qty r">${fmtNum(u.alinan)}</td>
           <td class="t-qty r" style="color:${u.iade>0?'var(--amber)':'var(--dim)'}">${u.iade>0?'−'+fmtNum(u.iade):'-'}</td>
           <td class="t-qty r tmut-net${u.net<-1e-9?' eksi':''}">${fmtNum(u.net)}</td>
@@ -15768,7 +15847,7 @@ function renderTeslimatMutabakat(tabs){
           <td class="t-meta">${u.son?fmtDate(u.son):'-'}</td>
           <td class="tmut-cev">${icoChevron()}</td></tr>${acik?`<tr class="tmut-alt"><td></td><td colspan="9">${tmutHareketHtml(u)}</td></tr>`:''}`;
       }).join('');
-    const foot=bos?'':`<tfoot>${v.birimler.map(b=>`<tr><td></td><td colspan="2">TOPLAM</td><td class="t-meta">${esc(b.unit||'-')}</td>
+    const foot=bos?'':`<tfoot>${v.birimler.map(b=>`<tr><td></td><td colspan="2">TOPLAM</td><td class="t-meta">${esc(birimAd(b.unit)||'-')}</td>
       <td class="t-qty r">${fmtNum(b.alinan)}</td><td class="t-qty r">${b.iade?'−'+fmtNum(b.iade):'-'}</td><td class="t-qty r tmut-net">${fmtNum(b.net)}</td><td colspan="3"></td></tr>`).join('')}</tfoot>`;
     tablo=`<div class="tablewrap"><table class="tmut-tbl"><thead><tr><th>#</th><th>Stok Kodu</th><th>Malzeme</th><th>Birim</th><th class="r">Teslim Alinan</th><th class="r">Iade</th><th class="r">Net Teslim</th><th class="r">Belge</th><th>Son Teslim</th><th></th></tr></thead><tbody>${rows}</tbody>${foot}</table></div>`;
   }
@@ -15810,9 +15889,9 @@ function tmutBelgeHtml(v){
     <div>${tmutVergi(c)?'V.D. / Vergi No: '+esc(tmutVergi(c)):'<span class="ph">V.D. / Vergi No: ......................</span>'}</div>
     ${c&&(c.tel||c.email)?`<div>${esc([c.tel,c.email].filter(Boolean).join(' · '))}</div>`:''}</div>`;
   const urunRows=v.urunler.map((u,i)=>`<tr><td class="c">${i+1}</td><td class="k">${esc(u.code||'-')}</td><td>${esc(u.ad||'-')}</td>
-    <td class="c">${esc(u.unit||'')}</td><td class="r">${fmtNum(u.alinan)}</td><td class="r">${u.iade?fmtNum(u.iade):'-'}</td>
+    <td class="c">${esc(birimAd(u.unit)||'')}</td><td class="r">${fmtNum(u.alinan)}</td><td class="r">${u.iade?fmtNum(u.iade):'-'}</td>
     <td class="r b">${fmtNum(u.net)}</td><td class="c">${fmtNum(u.belge)}</td></tr>`).join('');
-  const topRows=v.birimler.map(b=>`<tr class="tot"><td colspan="3">TOPLAM</td><td class="c">${esc(b.unit||'-')}</td><td class="r">${fmtNum(b.alinan)}</td>
+  const topRows=v.birimler.map(b=>`<tr class="tot"><td colspan="3">TOPLAM</td><td class="c">${esc(birimAd(b.unit)||'-')}</td><td class="r">${fmtNum(b.alinan)}</td>
     <td class="r">${b.iade?fmtNum(b.iade):'-'}</td><td class="r">${fmtNum(b.net)}</td><td></td></tr>`).join('');
   const belgeRows=v.belgeler.map((b,i)=>`<tr><td class="c">${i+1}</td><td class="c">${fmtDate(b.tarih)}</td>
     <td class="k">${esc(b.no||'-')}${b.tip==='iade'?` <i>(${esc(b.o.no||'')})</i>`:''}</td><td class="c">${b.tip==='iade'?'İADE':'TESLİM'}</td>
@@ -16061,9 +16140,9 @@ async function tmutExcel(dil){
     [B('Oluşturma'),fmtDate(Date.now())+(tmutOlusturan()?' · '+tmutOlusturan():'')],[],
     ['Sıra','Stok Kodu','Malzeme Adı','Birim','Teslim Alınan','İade','Net Teslim','Belge Sayısı','İlk Teslim','Son Teslim'].map(B)];
   const H1=r1.length-1;
-  v.urunler.forEach((u,i)=>r1.push([i+1,u.code||'',u.ad||'',u.unit||'',u.alinan,u.iade,u.net,u.belge,u.ilk?seri(u.ilk):'',u.son?seri(u.son):'']));
+  v.urunler.forEach((u,i)=>r1.push([i+1,u.code||'',u.ad||'',birimAd(u.unit),u.alinan,u.iade,u.net,u.belge,u.ilk?seri(u.ilk):'',u.son?seri(u.son):'']));
   const T1=r1.length;
-  v.birimler.forEach(b=>r1.push([tmutCevir('TOPLAM',dil,' / '),'','',b.unit||'',b.alinan,b.iade,b.net]));
+  v.birimler.forEach(b=>r1.push([tmutCevir('TOPLAM',dil,' / '),'','',birimAd(b.unit),b.alinan,b.iade,b.net]));
   const S1=r1.length+1;
   // sonuc satiri uzun: her dil kendi satirinda (yan yana secilse bile)
   const sonuc=[...new Set(dil.sira.map(k=>tmutDilTek('MUTABAKAT SONUCU:',k)+'   ☐ '+tmutDilTek('Mutabıkız',k)+'      ☐ '+tmutDilTek('Mutabık değiliz (açıklama: ...............................................)',k)))].join('\n');
@@ -16099,7 +16178,7 @@ async function tmutExcel(dil){
 
   // 3) HAREKETLER: her satir bir teslim/iade satiri, iade EKSI miktarla - toplami net teslimi verir
   const har=[];
-  v.urunler.forEach(u=>u.hareket.forEach(h=>har.push([seri(h.tarih),h.no||'',h.tip==='iade'?'İADE':'TESLİM',h.bina||'',h.sart||'',u.code||'',u.ad||'',h.qty,u.unit||''])));
+  v.urunler.forEach(u=>u.hareket.forEach(h=>har.push([seri(h.tarih),h.no||'',h.tip==='iade'?'İADE':'TESLİM',h.bina||'',h.sart||'',u.code||'',u.ad||'',h.qty,birimAd(u.unit)])));
   har.sort((a,b)=>a[0]-b[0]);   // Array.sort kararlidir: ayni gunun satirlari urun sirasinda kalir
   const r3=[['Tarih','Belge No','Tür','Bina','Şartname','Stok Kodu','Malzeme Adı','Miktar','Birim'].map(B),...har];
   const ws3=X.utils.aoa_to_sheet(r3);
@@ -16121,7 +16200,7 @@ async function tmutExcel(dil){
       if(h.tip==='alim'&&h.no&&!g.sip.includes(h.no)) g.sip.push(h.no); });
     [...m.values()].sort((a,b)=>(!a.sart)-(!b.sart)||a.sart.localeCompare(b.sart,'tr',{numeric:true}))
       .forEach(g=>{ const sl=g.sartlar.sort((a,b)=>a.localeCompare(b,'tr',{numeric:true}));
-        r0.push([u.ad||'',u.code||'',u.unit||'',g.mik,sl.join('\n')||'-',g.sip.join('\n')]); sat0.push(Math.max(1,g.sip.length,sl.length)); });
+        r0.push([u.ad||'',u.code||'',birimAd(u.unit),g.mik,sl.join('\n')||'-',g.sip.join('\n')]); sat0.push(Math.max(1,g.sip.length,sl.length)); });
   });
   const ws0=X.utils.aoa_to_sheet(r0);
   ws0['!cols']=[{wch:48},{wch:18},{wch:9},{wch:14},{wch:30},{wch:22}];
@@ -16639,7 +16718,7 @@ function matSiraRozet(m){
   if(mod==='cokKul'||mod==='azKul'){ const n=matKullanimIdx().kalem.get(m.id)||0;
     return olcut('var(--blue)',fmtNum(n)+' kalem','Bu urun sartnamelerde '+n+' kalemde geciyor. Kutuphanenin tamamindan sayilir - filtre ya da arama bu sayiyi degistirmez.'); }
   if(mod==='cokSip'||mod==='azSip'){ const q=matSiparisIdx().mik.get(m.id)||0;
-    return olcut('var(--green)',fmtNum(q)+' '+esc(m.unit||''),'Siparislerde bu urunden alinan toplam miktar - iadeler dusuldu, alternatifle alinanlar faturada yazan urune sayildi (Ozel Indirme kitabindaki "Net Alim" ile ayni hesap).',true); }
+    return olcut('var(--green)',fmtNum(q)+' '+esc(birimAd(m.unit)||''),'Siparislerde bu urunden alinan toplam miktar - iadeler dusuldu, alternatifle alinanlar faturada yazan urune sayildi (Ozel Indirme kitabindaki "Net Alim" ile ayni hesap).',true); }
   if(mod==='cokSipK'){ const x=matSiparisIdx().bel.get(m.id), n=x?x.size:0;
     return olcut('var(--green)',fmtNum(n)+' siparis','Bu urunun gectigi farkli siparis belgesi sayisi - birimlerden bagimsiz "ne siklikta aliniyor" olcutu.'); }
   if(mod==='yeni'||mod==='eski') return m.createdAt?notr(esc(fmtDate(m.createdAt)),'Kutuphaneye eklenme tarihi'):'';
@@ -16707,7 +16786,7 @@ function matMatchesF(m){
     if(MATF.cat==='Kategorisiz'){ if(cs.length) return false; }
     else if(!cs.includes(MATF.cat)) return false; }
   if(MATF.brand && !matBrandParts(m.brand).some(b=>norm(b)===norm(MATF.brand))) return false;
-  if(MATF.unit && norm(m.unit||'')!==norm(MATF.unit)) return false;
+  if(MATF.unit && birimKey(m.unit)!==birimKey(MATF.unit)) return false;
   if(MATF.tag && !(m.tags||[]).includes(MATF.tag)) return false;
   if(MATF.img==='var' && !m.img) return false;
   if(MATF.img==='yok' && m.img) return false;
@@ -16775,7 +16854,7 @@ function openMergeModal(){
       <div class="mc-row"><span>Standart No</span><b>${esc(m.standart||'-')}</b></div>
       <div class="mc-row"><span>Marka</span><b>${esc(m.brand||'-')}</b></div>
       <div class="mc-row"><span>Agirlik</span><b>${m.weight!=null?fmtNum(m.weight)+' kg':'-'}</b></div>
-      <div class="mc-row"><span>Birim</span><b>${esc(m.unit||'-')}</b></div>
+      <div class="mc-row"><span>Birim</span><b>${esc(birimAd(m.unit)||'-')}</b></div>
       <div class="mc-row"><span>Kullanim</span><b>${usage} spek'te</b></div>
       ${(()=>{ const g=vaAileOf('proje',m); return g?`<div class="mc-row"><span>Varyant</span><b title="${esc(g.ad)} ailesi">${esc(vaDegerYazi(g,m)||'-')}</b></div>`:''; })()}
     </div>`;
@@ -16903,7 +16982,7 @@ function renderMaterialLib(){
   const cats=Object.keys(catCounts).sort((a,b)=>a.localeCompare(b,'tr'));
   const allTags=allMaterialTags();
   const brands=[...new Set((DB.proje.materials||[]).filter(m=>!m.is_deleted).flatMap(m=>matBrandParts(m.brand)))].sort((a,b)=>a.localeCompare(b,'tr'));
-  const units=[...new Set((DB.proje.materials||[]).filter(m=>!m.is_deleted).map(m=>(m.unit||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
+  const units=[...new Map((DB.proje.materials||[]).filter(m=>!m.is_deleted&&String(m.unit||'').trim()).map(m=>[birimKey(m.unit),birimAd(m.unit)])).entries()].sort((a,b)=>a[1].localeCompare(b[1],'tr')); // [anahtar, etiket]
   const anyF=matAnyF();
   // BIRIM secenekleri: aktif tasarinin birimleri + urunlerde gecen etiketler (baska tasarinin birimi de olabilir)
   const birCounts={}; let birsizCount=0;
@@ -16915,7 +16994,7 @@ function renderMaterialLib(){
     <div class="ord-f"><label>Birim</label><select onchange="setMatBirimF(this.value)" title="Urunun GIRILDIGI birim. Kutuphane tum birimlerde ortaktir; bu suzgec yalnizca listeyi daraltir"><option value="__tum" ${bf===''?'selected':''}>Tum birimler</option>${birIds.map(b=>`<option value="${esc(b)}" ${bf===b?'selected':''}>${esc(birimAdiBul(b))} (${birCounts[b]||0})${b===window.AKTIF_BIRIM?' - aktif':''}</option>`).join('')}${birsizCount?`<option value="__yok" ${bf==='__yok'?'selected':''}>Etiketsiz (${birsizCount})</option>`:''}</select></div>
     <div class="ord-f"><label>Kategori</label><select onchange="setMatF('cat',this.value)"><option value="">Tumu</option>${cats.map(c=>`<option value="${esc(c)}" ${MATF.cat===c?'selected':''}>${esc(c)} (${catCounts[c]||0})</option>`).join('')}${uncatCount?`<option value="Kategorisiz" ${MATF.cat==='Kategorisiz'?'selected':''}>Kategorisiz (${uncatCount})</option>`:''}</select></div>
     <div class="ord-f"><label>Marka</label><select onchange="setMatF('brand',this.value)"><option value="">Tumu</option>${brands.map(b=>`<option value="${esc(b)}" ${MATF.brand===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div>
-    <div class="ord-f"><label>Birim</label><select onchange="setMatF('unit',this.value)"><option value="">Tumu</option>${units.map(u=>`<option value="${esc(u)}" ${MATF.unit===u?'selected':''}>${esc(u)}</option>`).join('')}</select></div>
+    <div class="ord-f"><label>Birim</label><select onchange="setMatF('unit',this.value)"><option value="">Tumu</option>${units.map(([k,ad])=>`<option value="${esc(k)}" ${MATF.unit===k?'selected':''}>${esc(ad)}</option>`).join('')}</select></div>
     ${allTags.length?`<div class="ord-f"><label>Etiket</label><select onchange="setMatF('tag',this.value)"><option value="">Tumu</option>${allTags.map(t=>`<option value="${esc(t)}" ${MATF.tag===t?'selected':''}>${esc(t)}</option>`).join('')}</select></div>`:''}
     <div class="ord-f"><label>Fotograf</label><select onchange="setMatF('img',this.value)"><option value="">Tumu</option><option value="var" ${MATF.img==='var'?'selected':''}>Foto ekli</option><option value="yok" ${MATF.img==='yok'?'selected':''}>Foto eksik</option></select></div>
     <div class="ord-f"><label>Kullanim</label><select onchange="setMatUsageFilter(this.value)"><option value="all" ${_matUsageFilter==='all'?'selected':''}>Tumu</option><option value="used" ${_matUsageFilter==='used'?'selected':''}>Kullanilan</option><option value="unused" ${_matUsageFilter==='unused'?'selected':''}>Kullanilmayan</option><option value="multi" ${_matUsageFilter==='multi'?'selected':''}>Ortak kullanim</option><option value="alt" ${_matUsageFilter==='alt'?'selected':''}>Alternatif olarak kullanilan</option></select></div>
@@ -16995,7 +17074,7 @@ function renderMaterialLib(){
           if(!allCats.length) return bir||'-';
           return `<div class="brand-tags">${bir}${allCats.map(c=>{const cc=catColor(c);return `<span class="cat-tag" style="background:${cc}22;color:${cc}">${markIsaret(c,SEARCH)}</span>`;}).join('')}</div>`;
         })()}</td>
-        <td class="t-meta">${esc(m.unit||'-')}</td>
+        <td class="t-meta">${esc(birimAd(m.unit)||'-')}</td>
         <td onclick="event.stopPropagation()"><div class="row-actions">
           <button class="mini-btn" title="Duzenle" onclick="openMaterialModal('${m.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>
           <button class="mini-btn del" title="Sil" onclick="delMaterial('${m.id}')">${icoTrash()}</button>
@@ -17599,7 +17678,7 @@ function matLibAletFiltered(){
     if(MATF.cat && (x.grup||'')!==MATF.cat) return false;
     if(MATF.brand && norm(x.marka||'')!==norm(MATF.brand)) return false;
     if(MATF.renk && (x.renk||'')!==MATF.renk) return false;
-    if(MATF.unit && (x.birim||'')!==MATF.unit) return false;
+    if(MATF.unit && birimKey(x.birim)!==birimKey(MATF.unit)) return false;
     if(MATF.img==='var' && !x.img) return false;
     if(MATF.img==='yok' && x.img) return false;
     return true;
@@ -17736,7 +17815,7 @@ function openMaterialModal(id,keepReturn){
       <p class="t-meta" style="font-size:10.5px;margin-top:7px;line-height:1.5">Es kodlar aramada ve Excel eslestirmede ana kod gibi calisir; hepsi BU urune sayilir. Beden / olcu / renk gibi AYRI urunleri birbirine baglamak icin kutuphane listesindeki <b>VARYANT</b> dugmesini (Varyant Ailesi) kullanin - her biri kendi kodu ve stoguyla kalir.</p>
     </div>
     <div class="frow two"><div><label>Standart Numarasi</label><input id="mt_standart" value="${m?esc(m.standart||''):''}" placeholder="orn. TS EN 61386"></div><div><label>Agirlik (kg)  <span class="t-meta">(birim agirlik)</span></label><input id="mt_weight" type="number" step="any" min="0" value="${m&&m.weight!=null?m.weight:''}" placeholder="0"></div></div>
-    <div class="frow"><label>Birim</label><input id="mt_unit" value="${m?esc(m.unit||''):''}" placeholder="metre / adet"></div>
+    <div class="frow"><label>Birim</label>${birimSecHtml('mt_unit',m?m.unit:'')}</div>
     <div class="frow"><label>Kategori  <span class="t-meta">(varsayilan bolum - malzeme baska bolumlerin sartnamelerinde de kullanilabilir)</span></label>
       <select id="mt_cat"><option value="" ${!selCat?'selected':''}>- kategorisiz (varsayilan yok) -</option>${cats.map(c=>`<option ${selCat===c?'selected':''}>${esc(c)}</option>`).join('')}<option value="__new">+ Yeni kategori...</option></select>
       <input id="mt_newcat" class="hidden" style="margin-top:7px" placeholder="Yeni kategori">
@@ -17894,7 +17973,7 @@ async function saveMaterial(id){ if(!guard('editMaterial'))return;
   const code=document.getElementById('mt_code').value.trim();
   const barkod=document.getElementById('mt_barkod').value.trim();
   const brand=document.getElementById('mt_brand').value.trim();
-  const unit=document.getElementById('mt_unit').value.trim();
+  const unit=birimSecOku('mt_unit'); // sozluk anahtari
   const note=document.getElementById('mt_note').value.trim();
   const note2=document.getElementById('mt_note2').value.trim();
   const standart=document.getElementById('mt_standart').value.trim();
@@ -18573,7 +18652,7 @@ function topmExcelDosya(e){
       const r=_topmBosSatir();
       r.name=name; r.code=code; r.barkod=al(iBrk);
       r.brand=al(iBrand)?matBrandParts(al(iBrand).replace(/\s*,\s*/g,'\n')):[];
-      r.standart=al(iStd); r.weight=_topmSayiHucre(al(iWgt)); r.unit=al(iUnit);
+      r.standart=al(iStd); r.weight=_topmSayiHucre(al(iWgt)); r.unit=birimKey(al(iUnit));
       r.cat=al(iCat); r.tags=parseTagsCell(al(iTags)); r.proje=al(iProje); r.piyasa=parsePiyasaCell(al(iPiyasa)); r.note=al(iNote); r.note2=al(iNote2);
       // base64 gomulu resim hucreye sigmaz; yalnizca gercek adresler alinir
       const im=al(iImg), im2=al(iImg2);
@@ -18840,7 +18919,7 @@ function topmTopluSecenek(alan){
   if(alan==='cat') return topmKategoriler().map(b).join('');
   if(alan==='brandAdd'||alan==='brandSet') return markaSirali().map(x=>b(x.ad)).join('');
   if(alan==='tagAdd'||alan==='tagDel') return allMaterialTags().map(b).join('');
-  if(alan==='unit') return [...new Set((DB.proje.materials||[]).map(x=>String(x.unit||'').trim()).filter(Boolean))].sort((a,c)=>a.localeCompare(c,'tr')).map(b).join('');
+  if(alan==='unit') return birimSozluk().map(x=>`<option value="${esc(x.k)}">${esc(birimUcDil(x))}</option>`).join('');
   return '';
 }
 function topmTopluAlanDegis(sel){
@@ -19003,7 +19082,7 @@ function topmCardHtml(i){
       <div><label>Agirlik (kg) <span class="t-meta">(birim agirlik)</span></label><input type="number" step="any" min="0" value="${esc(r.weight)}" placeholder="0" oninput="topmIn(${i},'weight',this.value)"></div>
     </div>
     <div class="frow two">
-      <div><label>Birim</label><input value="${esc(r.unit)}" placeholder="metre / adet" oninput="topmIn(${i},'unit',this.value)"></div>
+      <div><label>Birim</label>${birimSecHtml('topm_unit_'+i,r.unit,`oninput="topmIn(${i},'unit',this.value)"`)}</div>
       <div><label>Kategori <span class="t-meta">(varsayilan bolum)</span></label>
         <select onchange="topmIn(${i},'cat',this.value)"><option value="">- kategorisiz (varsayilan yok) -</option>${catEk}${catlar.map(c=>`<option ${norm(r.cat)===norm(c)?'selected':''}>${esc(c)}</option>`).join('')}</select>
         ${duz&&dm&&!dm.cat&&(r.useCats||[]).length?`<p class="topm-ipucu">${r.catSart
@@ -19590,7 +19669,7 @@ function _topgEkSayfalariUygula(wb,kutular){
         const bak=_topgBakiyeHucre(al(iBak));
         if(bak.bakiye!=='' && Number(bak.bakiye)!==0) stokSayi++;
         if(bak.parca && !String(r.parca||'').trim()) r.parca=bak.parca;
-        const brm=al(iBrm); if(brm && !String(r.unit||'').trim()) r.unit=brm;
+        const brm=al(iBrm); if(brm && !String(r.unit||'').trim()) r.unit=birimKey(brm);
       }
     }
   }
@@ -19655,7 +19734,7 @@ function topgExcelDosya(e){
       const grupHam=al(iGrup).split('\n').map(t=>t.trim()).filter(Boolean);
       r.grup=(grupHam.find(t=>!kiril(t))||grupHam[0]||'');
       r.kod=_topgYerTutucu(al(iKod)); r.marka=_topgYerTutucu(al(iMrk));
-      r.unit=al(iUnit); r.barkod=_topgYerTutucu(al(iBrk));
+      r.unit=birimKey(al(iUnit)); r.barkod=_topgYerTutucu(al(iBrk));
       r.renk=_topgYerTutucu(al(iRenk)); r.cins=_topgYerTutucu(al(iCins));
       r.standart=_topgYerTutucu(al(iStd)); r.weight=_topgSayiHucre(al(iWgt));
       r.tags=_topgYerTutucu(al(iTags)); r.altCodes=_topgYerTutucu(al(iAlt));
@@ -19773,7 +19852,7 @@ function _topgSatirCoz(r,i,gorulen){
   const simdi=Date.now();
   return {uyari:[r.not,...uyarilar].filter(Boolean).join(' · '),
     mal:{id:uid(),ad,adRu:String(r.adRu||'').trim(),kod,grup:String(r.grup||'').trim(),marka:String(r.marka||'').trim(),
-    unit:String(r.unit||'').trim()||'ADET',renk:String(r.renk||'').trim(),cins:String(r.cins||'').trim(),barkod,
+    unit:String(r.unit||'').trim()||'adet',renk:String(r.renk||'').trim(),cins:String(r.cins||'').trim(),barkod,
     standart:String(r.standart||'').trim(),weight:wRaw!==''?Number(wRaw):null,
     tags:parseTagsCell(r.tags),altCodes:parseTagsCell(r.altCodes),note:String(r.note||'').trim(),note2:String(r.note2||'').trim(),
     tek:(Array.isArray(r.tek)?r.tek:[]).filter(t=>t&&(String(t.k||'').trim()||String(t.v||'').trim())),
@@ -19859,7 +19938,7 @@ function topgCardHtml(i){
       </div>
     </div>
     <div class="frow two">
-      <div><label>Birim</label><input value="${esc(r.unit)}" placeholder="ADET" oninput="topgIn(${i},'unit',this.value)"></div>
+      <div><label>Birim</label>${birimSecHtml('topg_unit_'+i,r.unit,`oninput="topgIn(${i},'unit',this.value)"`)}</div>
       <div><label>Barkod</label><input value="${esc(r.barkod)}" placeholder="orn. 8698523950838" oninput="topgIn(${i},'barkod',this.value)"></div>
     </div>
     <div class="frow two">
@@ -19949,7 +20028,7 @@ function exportMaterialLib(){
     // base64/veri linkleri (manuel yuklenen fotograflar) hucreye sigmayacagi icin disa aktarilmaz - sadece gercek URL'ler
     const imgUrl=(m.img&&/^https?:\/\//i.test(m.img))?m.img:'';
     const imgUrl2=(m.img2&&/^https?:\/\//i.test(m.img2))?m.img2:'';
-    rows.push([m.name,m.standart||'',m.code||'',m.barkod||'',m.brand||'',m.weight!=null?m.weight:'',m.note||'',m.note2||'',formatTagsCell(m.tags),imgUrl,imgUrl2,m.unit||'',m.cat||'',m.proje||'',formatTagsCell(m.altCodes),formatPiyasaCell(matPiyasa(m)),
+    rows.push([m.name,m.standart||'',m.code||'',m.barkod||'',m.brand||'',m.weight!=null?m.weight:'',m.note||'',m.note2||'',formatTagsCell(m.tags),imgUrl,imgUrl2,birimAd(m.unit),m.cat||'',m.proje||'',formatTagsCell(m.altCodes),formatPiyasaCell(matPiyasa(m)),
       vaExcelAd('proje',m),vaExcelDeger('proje',m),
       ortakBolumler,usage.length,specs.join(', '),m.createdAt?fmtDate(m.createdAt):'',m.updatedAt?fmtDate(m.updatedAt):'']);
   });
@@ -20019,7 +20098,7 @@ function matOzelKapsam(){
   if(SEARCH) p.push('arama "'+SEARCH+'"');
   if(MATF.cat) p.push('kategori '+MATF.cat);
   if(MATF.brand) p.push('marka '+MATF.brand);
-  if(MATF.unit) p.push('birim '+MATF.unit);
+  if(MATF.unit) p.push('birim '+birimAd(MATF.unit));
   if(MATF.tag) p.push('etiket '+MATF.tag);
   if(MATF.img) p.push(MATF.img==='var'?'fotografli':'fotografsiz');
   if(_matUsageFilter!=='all') p.push(MAT_KULLANIM_ETIKET[_matUsageFilter]||_matUsageFilter);
@@ -20143,7 +20222,7 @@ function matOzelKitapKur(kap,veri,sec){
           {v:o.no||'',b:kod},{v:k.tur==='iade'?(k.ia.no||''):'',b:kod},trh(k.t,z),
           {v:o.bina||'',b:ts},{v:orderCompany(o)||'',b:td},{v:l.grup||o.grup||'',b:td},
           {v:k.tur==='iade'?'':(parca.length>1?`${k.li+1} (${pi+1}/${parca.length})`:String(k.li+1)),b:ts},
-          {v:l.code||'',b:kod},{v:ciktiAd(l),b:td},mik(k.tur==='iade'?-p.qty:p.qty,z),{v:l.unit||'',b:ts},
+          {v:l.code||'',b:kod},{v:ciktiAd(l),b:td},mik(k.tur==='iade'?-p.qty:p.qty,z),{v:birimAd(l.unit),b:ts},
           {v:alt,b:sar},{v:at?'Atama':'Normal',b:ts},
           {v:at?(o.kaynakBina||''):'',b:ts},{v:at?(o.kaynakSart||''):'',b:td},{v:at?atamaNedenLabel(o.atamaNeden):'',b:td},
           {v:(p.ted&&p.ted.bina)||'',b:ts},{v:(p.ted&&p.ted.sart)||'',b:td},{v:k.tur==='iade'?'':(o.tedarikNot||''),b:sar},
@@ -20177,7 +20256,7 @@ function matOzelKitapKur(kap,veri,sec){
         {v:fatCompany(f)||'',b:td},{v:FAT_KAYIT_DURUM[dur].ad,b:B.kayit[dur]},
         {v:etiket(FAT_SENARYO,f.senaryo),b:td},{v:etiket(FAT_TIPI,f.faturaTipi),b:td},
         {v:f.irsaliyeNo||'',b:kod},trh(f.irsaliyeTarihi,z),{v:f.ettn||'',b:kod},{v:ri+1,b:ts},
-        {v:r.code||'',b:kod},{v:r.ad||'',b:td},mik(h.qty,z),{v:r.unit||'',b:ts},
+        {v:r.code||'',b:kod},{v:r.ad||'',b:td},mik(h.qty,z),{v:birimAd(r.unit),b:ts},
         {v:h.fiyat||'',b:z?B.parZ:B.par},{v:h.iskO||'',b:yuz},{v:h.iskonto?Number(h.iskonto.toFixed(2)):'',b:z?B.parZ:B.par},
         para(h.matrah,z),{v:h.kdvO||0,b:yuz},para(h.kdv,z),{v:h.diger?Number(h.diger.toFixed(2)):'',b:z?B.parZ:B.par},
         {v:Number(h.toplam.toFixed(2)),b:z?B.parBZ:B.parB},{v:f.paraBirimi||'TRY',b:ts},{v:f.kur||'',b:ts},
@@ -20223,7 +20302,7 @@ function matOzelKitapKur(kap,veri,sec){
         {v:s.ozelNo||'',b:kod},{v:s.cat||'',b:td},tgt?mik(tgt,z):{v:'',b:ts},specRevize(s)?mik(specRevize(s),z):{v:'',b:ts},mik(got,z),
         {v:tgt?Number(Math.max(0,Math.min(100,got/tgt*100)).toFixed(1)):'',b:yuz},mik(mont,z),
         {v:tgt?Number(Math.min(100,mont/tgt*100).toFixed(1)):'',b:yuz},
-        {v:ex?'YUZDEYE DAHIL DEGIL':(s.openQty&&!tgt)?'ACIK KALEM':'',b:ex?B.uyari:td},{v:s.unit||'',b:ts}]);
+        {v:ex?'YUZDEYE DAHIL DEGIL':(s.openQty&&!tgt)?'ACIK KALEM':'',b:ex?B.uyari:td},{v:birimAd(s.unit),b:ts}]);
       if(!ilkSr.has(m.id)) ilkSr.set(m.id,n);
     });
   });
@@ -20274,7 +20353,7 @@ function matOzelKitapKur(kap,veri,sec){
           c.acik?{v:'ACIK',b:B.uyari}:(c.hedef?kal(c.hedef-c.alinan,z):{v:'',b:ts}));
       });
       sMx.satir([{v:m.code||'',b:kod},{v:ciktiAd(m),b:td},
-        {v:m.unit||(x.usage[0]&&x.usage[0].unit)||'',b:ts},{v:mm.size,b:ts},...hucre,
+        {v:birimAd(m.unit||(x.usage[0]&&x.usage[0].unit)||''),b:ts},{v:mm.size,b:ts},...hucre,
         tH?mik(tH,z):{v:tAcik?'ACIK':'',b:tAcik?B.uyari:ts}, mik(tA,z),
         tAcik?{v:'ACIK',b:B.uyari}:(tH?kal(tH-tA,z):{v:'',b:ts})]);
     });
@@ -20314,7 +20393,7 @@ function matOzelKitapKur(kap,veri,sec){
     const sip=x.alim.reduce((s,a)=>s+(Number(a.l.qty)||0),0);
     const alt=x.yerine.reduce((s,a)=>s+(Number(a.l.qty)||0),0);
     const iade=x.iade.reduce((s,a)=>s+(Number(a.r.qty)||0),0);
-    const unit=m.unit||(x.usage[0]&&x.usage[0].unit)||'';
+    const unit=birimAd(m.unit||(x.usage[0]&&x.usage[0].unit)||'');
     // fatura: urun durumu defterden; tutar TASLAK HARIC satirlardan (taslak hicbir hesaba girmez)
     const u=fatVar?genel.get('mat:'+m.id):null;
     const kesin=x.fat.filter(a=>!fatTaslakMi(a.f));
@@ -23551,7 +23630,7 @@ function flowNodeHtml(n){
       </div>`;
     }
     if(n.type==='ozel'){
-      const sp=n.sp, koz=katAtaKodlar(sp), du=flowDurum(sp), br=(sp.unit||'').split('/')[0].trim();
+      const sp=n.sp, koz=katAtaKodlar(sp), du=flowDurum(sp), br=birimAd(sp.unit);
       const lbl=koz.length?koz[0]:(sp.poz?'Poz '+sp.poz:(sp.code||sp.name||'—'));
       const hed=du.hedef?'/'+fmtNum(du.hedef):'';
       const ipucu=[esc(sp.name||''), koz.length?'Ozel No: '+esc(koz.join(', ')):'',
@@ -24921,7 +25000,7 @@ function exportKirilimExcel(bina){
     const k=y.kay[l.id]||'';
     return [l.level==='kat'?'KAT HAVUZU':l.level==='oda'?'ODAYA':l.level==='katdisi'?'KAT DISI':'DUGUME',KAY[k]||k]; };
   const kalemSatir=(z,sr,bag,s,yer)=>[z.kat,z.aks,z.fragment,z.oda,z.odaAd,flowSrtBolum(sr),sr.code,sr.name&&sr.name!==sr.code?sr.name:'',bag,
-    s?katAtaKodlar(s).join(', '):'',s?(s.poz||''):'',s?(s.name||''):'',s?(s.code||''):'',s?(Number(s.target)||0):'',s?String(s.unit||'').split('/')[0].trim():'',yer[0]||'',yer[1]||''];
+    s?katAtaKodlar(s).join(', '):'',s?(s.poz||''):'',s?(s.name||''):'',s?(s.code||''):'',s?(Number(s.target)||0):'',s?birimAd(s.unit):'',yer[0]||'',yer[1]||''];
   // agac + kat disi yerler (sanal dugumler agacta yok; kalemleri burada yazilmasa 'YERI YOK'a da dusmez, kaybolurdu)
   [...lokFlat(bina).map(f=>f.lok),...binaOzelLoklar(bina)].forEach(l=>{
     const z=zincir(l), kat=l.level==='kat';
@@ -25369,7 +25448,7 @@ function downloadBulkTemplate(dolu){
     const X=flowIdariIdx(mevcut);
     X.srts.slice().sort((a,b)=>String(a.section||'').localeCompare(String(b.section||''),'tr')||String(a.code||'').localeCompare(String(b.code||''),'tr')).forEach(sr=>{
       X.kalem.get(sr.id).slice().sort((a,b)=>String(flowOzelEtiket(a)).localeCompare(String(flowOzelEtiket(b)),'tr',{numeric:true})).forEach(s=>{
-        const hedef=Number(s.target)||'', br=String(s.unit||'').split('/')[0].trim();
+        const hedef=Number(s.target)||'', br=birimAd(s.unit);
         const satir=(kat,oda,adet)=>[s.ozelNo||'',s.poz||'',s.name||'',s.code||'',adet,br,kat,oda,sr.section||'',sr.code];
         // ADET bilgi amaclidir (mevcut kalemde degismez): metraj girilmis yerde o yerin metraji, yoksa kalem hedefi
         const adetOf=id=>{ const t=(s.lokTargets||[]).find(t=>t.lokId===id); return t?(Number(t.target)||hedef):hedef; };
@@ -26771,7 +26850,7 @@ function renderKatPanel(){
           const mp=specMontajProgress(sp);
           return `<button class="katp-sp" onclick="closeModal();_KATP=null;openSpecDetail('${sp.id}')" title="Kalem detayini ac">
             <span class="katp-sp-name">${esc(sp.name)}</span>${ozelHtml}
-            <span class="katp-sp-num" title="Montaj / Hedef">${fmtNum(mp.installed)}/${fmtNum(sp.target)} ${esc((sp.unit||'').split('/')[0].trim())}</span>
+            <span class="katp-sp-num" title="Montaj / Hedef">${fmtNum(mp.installed)}/${fmtNum(sp.target)} ${esc(birimAd(sp.unit))}</span>
           </button>`; }).join('');
         return `<div class="katp-grp"><div class="katp-grp-h">${esc(g)}<span class="t-meta">${list.length} kalem</span></div>${sps}</div>`;
       }).join('');
@@ -27978,7 +28057,7 @@ async function okyGeriAl(id){
 function groupByMaterial(items){
   const map={};
   items.forEach(it=>{
-    const k=(it.name.trim().toLowerCase())+'|'+(it.unit||'')+'|'+(it.cat||'');
+    const k=(it.name.trim().toLowerCase())+'|'+birimKey(it.unit)+'|'+(it.cat||'');
     if(!map[k]) map[k]={name:it.name,unit:it.unit,cat:it.cat,total:0,giren:0,cikan:0,iade:0,entries:[]};
     const q=Number(it.qty)||0;
     if(it.type==='out'){ map[k].cikan+=q; map[k].total-=q; }
@@ -28123,7 +28202,7 @@ function renderLibrary(){
       <td><span class="grp-tag">${esc(x.grup||'-')}</span></td>
       <td class="t-meta">${esc(x.marka||'-')}</td>
       <td class="t-meta">${dot}${esc(x.renk||'-')}${x.cins?`<div class="t-cins">${esc(x.cins)}</div>`:''}</td>
-      <td><span class="bal ${cls}">${fmtNum(b)}</span> <span class="t-meta">${esc(x.unit||'')}</span>${Number(x.parca)>0?`<div class="t-cins">paket ici ${fmtNum(x.parca)}</div>`:''}</td>
+      <td><span class="bal ${cls}">${fmtNum(b)}</span> <span class="t-meta">${esc(birimAd(x.unit)||'')}</span>${Number(x.parca)>0?`<div class="t-cins">paket ici ${fmtNum(x.parca)}</div>`:''}</td>
       <td class="t-meta">${esc(x.barkod||'-')}</td>
       <td><div class="row-actions">
         ${canCreate('gecici')||canUpdate('gecici')?`<button class="mini-btn out" title="Sahaya Sevk / Cikar - stok GIRISI yalnizca Siparis / Irsaliye ile yapilir" onclick='libMove("${x.id}","out")'>${icoArr('up')}</button>`:''}
@@ -28219,7 +28298,7 @@ function renderMoves(){
     rows+=`<tr><td class="t-meta">${fmtDate(h.m.date)}</td>
       <td><div class="t-name">${esc(h.ad)}</div><div class="t-code">${esc(h.kod||'-')}</div></td>
       <td><span class="cat-tag" style="background:${giris?'var(--green)':'var(--red)'}22;color:${giris?'var(--green)':'var(--red)'}">${giris?'GIRIS':'CIKIS'}</span></td>
-      <td class="t-qty" style="color:${giris?'var(--green)':'var(--red)'}">${giris?'+':'-'}${fmtNum(q)} <span class="t-meta" style="font-weight:400">${esc(h.unit)}</span></td>
+      <td class="t-qty" style="color:${giris?'var(--green)':'var(--red)'}">${giris?'+':'-'}${fmtNum(q)} <span class="t-meta" style="font-weight:400">${esc(birimAd(h.unit))}</span></td>
       <td class="t-meta">${h.belge?esc(h.belge):'-'}</td></tr>`;
   });
   const belgeler=gmvBelgeler();
@@ -28501,8 +28580,8 @@ function buildSpecAtamaRefsHtml(specId){
         <span class="alt-status" style="background:color-mix(in srgb,var(--blue) 16%,transparent);color:var(--blue);border:1px solid color-mix(in srgb,var(--blue) 40%,transparent)">Atama</span>
         ${yerine?`<span class="alt-status" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)55" title="Bu urun o kalemin yerine alindi - alim o kalemin ilerlemesine sayiliyor">yerine</span>`:''}
       </div>
-      <div class="alt-meta">${yerine?'Yerine gectigi kalem':'Karsilik kalem'}: ${esc(s.name||s.code||'?')}${s.unit?' · '+esc(s.unit):''}</div>
-      <div class="alt-meta" style="margin-top:3px">O binadaki alim: <b>${fmtNum(alim)}</b> ${esc(s.unit||'')}</div>
+      <div class="alt-meta">${yerine?'Yerine gectigi kalem':'Karsilik kalem'}: ${esc(s.name||s.code||'?')}${s.unit?' · '+esc(birimAd(s.unit)):''}</div>
+      <div class="alt-meta" style="margin-top:3px">O binadaki alim: <b>${fmtNum(alim)}</b> ${esc(birimAd(s.unit)||'')}</div>
       ${s.refAt?`<div style="font-size:10px;color:var(--dim);margin-top:4px">${fmtDate(s.refAt)}${s.refBy?' · '+esc(s.refBy):''}</div>`:''}
     </div>
   </div>`).join('');
@@ -28643,7 +28722,7 @@ function offSpecItems(){
     if(it.specId && specIds.has(it.specId)) return; // gecerli spek'e bagli
     const key=(it.cat||'')+'|'+it.name.trim().toLowerCase();
     if(specKeys.has(key)) return; // ad+kategori spek'te var
-    const k=key+'|'+(it.unit||'');
+    const k=key+'|'+birimKey(it.unit);
     if(!map[k]) map[k]={name:it.name,cat:it.cat||'',unit:it.unit||'',total:0,binas:new Set()};
     map[k].total+=Number(it.qty)||0; if(it.bina)map[k].binas.add(it.bina);
   });
@@ -28653,12 +28732,12 @@ function offSpecItems(){
 function offSpecGroupItemIds(name,cat,unit){
   const specIds=new Set(DB.proje.specs.map(s=>s.id));
   const specKeys=new Set(DB.proje.specs.map(s=>(s.cat||'')+'|'+s.name.trim().toLowerCase()));
-  const targetKey=(cat||'')+'|'+(name||'').trim().toLowerCase()+'|'+(unit||'');
+  const targetKey=(cat||'')+'|'+(name||'').trim().toLowerCase()+'|'+birimKey(unit);
   return DB.proje.items.filter(it=>{
     if(it.specId && specIds.has(it.specId)) return false;
     const key=(it.cat||'')+'|'+it.name.trim().toLowerCase();
     if(specKeys.has(key)) return false;
-    return key+'|'+(it.unit||'')===targetKey;
+    return key+'|'+birimKey(it.unit)===targetKey;
   }).map(it=>it.id);
 }
 async function delOffSpecGroup(name,cat,unit){
@@ -29115,7 +29194,7 @@ function _odaMetrajRowHtml(s,lokId,pending){
   return `<tr data-somrow="${esc(skey)}">
     <td style="max-width:340px"><div style="font-weight:600;font-size:12.5px;line-height:1.3">${esc(gorAd(s))}${gorEksikRozet(s)}</div>${gorAltHtml(s)}
       <div style="font-size:10.5px;color:var(--mute);font-family:var(--mono);margin-top:2px">${[s.poz?'Poz '+s.poz:'',katAtaKodlar(s).join(' '),s.code].filter(Boolean).map(esc).join(' · ')}</div></td>
-    <td class="t-meta" style="white-space:nowrap">${esc(s.unit||'-')}</td>
+    <td class="t-meta" style="white-space:nowrap">${esc(birimAd(s.unit)||'-')}</td>
     <td class="t-meta" style="text-align:right;font-family:var(--mono);white-space:nowrap">${hasDist?fmtNum(others):`<span title="Bu kalemde dagilim yok - genel hedef">${fmtNum(s.target)}*</span>`}</td>
     <td style="text-align:right"><input type="number" step="any" min="0" placeholder="—" value="${pv!==''&&pv!=null?esc(pv):''}" data-spec="${s.id}" class="som-inp"></td>
   </tr>`;
@@ -29448,7 +29527,7 @@ function matKunyeParcalari(m,onc){
     <div class="matd-yerine">${yerineList.map(x=>`<div class="matd-row"${x.mat?` onclick="${onc}closeModal();openMatDetail('${x.mat.id}')" title="Bu urunun kunyesini ac"`:''}>
       <span class="cat-tag" style="background:var(--amber)22;color:var(--amber);flex-shrink:0">ALTERNATIF</span>
       <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px">${esc(x.ad)}</span>
-      <b style="margin-left:auto;white-space:nowrap;font-family:var(--mono);font-size:12px">${fmtNum(x.qty)} <span class="t-meta">${esc(unit)}</span></b>
+      <b style="margin-left:auto;white-space:nowrap;font-family:var(--mono);font-size:12px">${fmtNum(x.qty)} <span class="t-meta">${esc(birimAd(unit))}</span></b>
     </div>`).join('')}</div>`:'';
   /* ALTERNATIF SIPARIS: bu urunun YERINE alternatif urunle alinan miktar. Kendi adina
      faturasi yoktur (o miktar alinan urunun kunyesinde durur) ama BU URUNUN IHTIYACI
@@ -29467,7 +29546,7 @@ function matKunyeParcalari(m,onc){
     m.brand?`<span class="matd-chip">${esc(m.brand)}</span>`:'',
     m.standart?`<span class="matd-chip dim" title="Standart">${esc(m.standart)}</span>`:'',
     m.weight!=null?`<span class="matd-chip dim">${fmtNum(m.weight)} kg</span>`:'',
-    unit?`<span class="matd-chip dim">${esc(unit)}</span>`:'',
+    unit?`<span class="matd-chip dim">${esc(birimAd(unit))}</span>`:'',
     // ALTERNATIF damgasi kutuphane listesindekiyle ayni olcut - kunyede de bir bakista gorunur
     altUse.length?`<span class="matd-chip" style="color:var(--amber);border-color:var(--amber)66" title="Bu urun ${altUse.length} kalemin alternatifi olarak kayitli - ayrinti asagida">ALTERNATIF${altUse.length>1?` (${altUse.length})`:''}</span>`:'',
     ...((m.tags||[]).map(t=>{const c=tagColor(t);return `<span class="matd-chip" style="color:${c};border-color:${c}55">${esc(t)}</span>`;}))
@@ -29511,7 +29590,7 @@ function matKunyeParcalari(m,onc){
         ${s.ozelNo?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber);font-family:var(--mono);flex-shrink:0" title="Özel No">${esc(s.ozelNo)}</span>`:''}
         <span class="cat-tag" style="background:${cc}22;color:${cc};flex-shrink:0">${esc(s.cat)}</span>
         ${ex?`<span class="cat-tag" style="background:var(--dim)33;color:var(--mute);flex-shrink:0" title="Bu kalem sartname kartinda ilerleme yuzdesinden cikarilmis - bolum toplamina katilmaz">DAHIL DEGIL</span>`:''}
-        <span class="t-meta" style="margin-left:auto;white-space:nowrap;flex-shrink:0">Hedef <b style="color:var(--ink);font-family:var(--mono)">${open&&!tgt?'belirsiz':tgt?fmtNum(tgt):'-'}</b> ${esc(s.unit||'')}</span>
+        <span class="t-meta" style="margin-left:auto;white-space:nowrap;flex-shrink:0">Hedef <b style="color:var(--ink);font-family:var(--mono)">${open&&!tgt?'belirsiz':tgt?fmtNum(tgt):'-'}</b> ${esc(birimAd(s.unit)||'')}</span>
       </div>
       <div class="matd-sp-prog">${prog('Siparis',got,sipPct,cc)}${prog('Montaj',mont,montPct,'var(--amber)')}</div>
     </div>`;
@@ -29535,7 +29614,7 @@ function matKunyeParcalari(m,onc){
       <span class="mono" style="font-size:11px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.no||'-')}</span>
       <span class="bina-tag" style="background:${bc}22;color:${bc};flex-shrink:0">${esc(o.bina)}</span>
       ${orderCompany(o)?`<span class="t-meta" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(orderCompany(o))}">${esc(orderCompanyKisa(o))}</span>`:''}
-      <b style="margin-left:auto;white-space:nowrap;font-family:var(--mono);font-size:12px">${fmtNum(qty)} <span class="t-meta">${esc(unit)}</span></b>
+      <b style="margin-left:auto;white-space:nowrap;font-family:var(--mono);font-size:12px">${fmtNum(qty)} <span class="t-meta">${esc(birimAd(unit))}</span></b>
     </div>`;
   }).join('')+(ords.length>30?`<p class="matd-empty">+ ${ords.length-30} eski siparis daha</p>`:''):`<p class="matd-empty">Bu urun icin siparis kaydi yok.</p>`;
   /* FATURA SATIRLARI: siparis satirlarinin siparis detayini actigi gibi, bunlar da
@@ -29550,7 +29629,7 @@ function matKunyeParcalari(m,onc){
       ${tur==='nihai'?`<span class="fat-rozet tam" title="Muhasebeye giden nihai fatura - onayli sartname kagidindan kesildi">NIHAI</span>${nhfRozet(f)}`:fatKayitRozeti(f)}
       ${bagli?`<span class="fat-rozet yok" title="Nihai fatura ${esc(bagli.no||'')} ile bagli ham belge - parasi nihai faturayla sayiliyor, burada SAYILMAZ">&rarr; ${esc(bagli.no||'')} · sayilmaz</span>`:''}
       ${firma?`<span class="t-meta" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(firma)}</span>`:''}
-      <b style="margin-left:auto;white-space:nowrap;font-family:var(--mono);font-size:12px">${fmtNum(qty)} <span class="t-meta">${esc(unit)}</span></b>
+      <b style="margin-left:auto;white-space:nowrap;font-family:var(--mono);font-size:12px">${fmtNum(qty)} <span class="t-meta">${esc(birimAd(unit))}</span></b>
     </div>`;
   }).join('')+(_fatK.length>30?`<p class="matd-empty">+ ${_fatK.length-30} eski fatura daha</p>`:''):`<p class="matd-empty">Bu urun hicbir fatura kaydinda gecmiyor - alinan malin parasi henuz faturaya baglanmamis.</p>`;
   const rapRows=raps.length?raps.slice(0,30).map(e=>{
@@ -29564,9 +29643,9 @@ function matKunyeParcalari(m,onc){
     </div>`;
   }).join('')+(raps.length>30?`<p class="matd-empty">+ ${raps.length-30} eski kayit daha</p>`:''):`<p class="matd-empty">Bu urun icin montaj (saha raporu) kaydi yok.</p>`;
   const stats=`<div class="matd-stats ${_fatD?'alt6':'alt5'}">
-        <div title="Bu urunun KENDI adina, kendi kodu/adiyla faturalandigi miktar"><b>${fmtNum(totOrd)}</b><span>Siparis ${esc(unit)}</span></div>
+        <div title="Bu urunun KENDI adina, kendi kodu/adiyla faturalandigi miktar"><b>${fmtNum(totOrd)}</b><span>Siparis ${esc(birimAd(unit))}</span></div>
         <div title="${altOrd>0?'Bu urunun YERINE alternatif urunle alinan miktar. Faturada baska urun yazar (miktar o urunun kunyesinde sayilir) ama bu urunun ihtiyaci bu miktarla karsilanmistir - asagida hangi urunle karsilandigi gorunur.':'Bu urunun yerine alternatif urunle yapilmis alim yok - ihtiyaci kendi adina karsilanmis.'}"><b style="color:${altOrd>0?'var(--amber)':'var(--dim)'}">${fmtNum(altOrd)}</b><span>Alternatif Siparis</span></div>
-        <div title="Saha raporlarina islenmis montaj toplami"><b>${fmtNum(totRap)}</b><span>Montaj ${esc(unit)}</span></div>
+        <div title="Saha raporlarina islenmis montaj toplami"><b>${fmtNum(totRap)}</b><span>Montaj ${esc(birimAd(unit))}</span></div>
         <div title="Siparis + alternatif siparis - montaj"><b style="color:${kalan<0?'var(--red)':kalan>0?'var(--ink)':'var(--green)'}">${fmtNum(kalan)}</b><span>Kalan ${kalan<0?'(fazla montaj!)':''}</span></div>
         ${_fatD?`<div class="tikla" onclick="${onc}matDetailGoFatura('','${esc(m.code||m.name||'')}')" title="${_fatD.durum==='fazla'
           ?`DIKKAT: alinandan ${fmtNum(_fatD.fat-_fatD.net)} FAZLA faturalanmis - ayni mal ikinci kez faturalanmis olabilir. Tiklayin: mutabakatta bu urunun satiri acilir.`
@@ -29588,7 +29667,7 @@ function matKunyeParcalari(m,onc){
      Yuzdeden bilerek cikarilmis (acik olmayan) kalem hicbir sayiya girmez - notta sayisi yazar. */
   const hakKart=(()=>{
     if(!(hakH>0||hakAcikN)) return '';
-    const u=unit?` <span class="t-meta">${esc(unit)}</span>`:'';
+    const u=unit?` <span class="t-meta">${esc(birimAd(unit))}</span>`:'';
     // hedefli kalem yoksa sonlu bir sayi da yoktur - hucrede yalnizca ACIK yazar
     const acik=hakAcikN?` <span class="matd-hak-acik">+ ACIK</span>`:'', yalnizAcik='<span class="matd-hak-acik">ACIK</span>';
     const kal=Math.round((hakH-hakGot)*1e6)/1e6, alinan=hakGot+hakAcikGot;
@@ -29610,11 +29689,11 @@ function matKunyeParcalari(m,onc){
       ${notlar.length?`<div class="matd-hak-not">${notlar.join(' · ')}</div>`:''}
     </div>`;
   })();
-  const specSec=`<div class="matd-sec">Sartnameler <span>${usage.length}</span>${spTT>0?`<i title="Hedefi olan ve yuzdeden cikarilmamis kalemlerin toplami: siparis ${fmtNum(spGot)} / montaj ${fmtNum(spMont)} / hedef ${fmtNum(spTT)} ${esc(unit)}">Siparis %${Math.round(Math.min(100,Math.max(0,spGot/spTT*100)))} · Montaj %${Math.round(Math.min(100,spMont/spTT*100))}</i>`:''}</div>${hakKart}${specRows}`;
+  const specSec=`<div class="matd-sec">Sartnameler <span>${usage.length}</span>${spTT>0?`<i title="Hedefi olan ve yuzdeden cikarilmamis kalemlerin toplami: siparis ${fmtNum(spGot)} / montaj ${fmtNum(spMont)} / hedef ${fmtNum(spTT)} ${esc(birimAd(unit))}">Siparis %${Math.round(Math.min(100,Math.max(0,spGot/spTT*100)))} · Montaj %${Math.round(Math.min(100,spMont/spTT*100))}</i>`:''}</div>${hakKart}${specRows}`;
   const altSec=altUse.length?`<div class="matd-sec">Alternatif Olarak Kullanildigi Kalemler <span>${altUse.length}</span><i>bu urun asagidaki kalemlerin yerine onerildi / kullaniliyor</i></div>${altRows}`:'';
-  const ordSec=`<div class="matd-sec">Siparisler <span>${ords.length}</span>${totOrd?`<i>${fmtNum(totOrd)} ${esc(unit)}</i>`:''}</div>${ordRows}`;
-  const fatSec=_fatD?`<div class="matd-sec" title="Bu urunun gectigi fatura kayitlari. TASLAK faturalar da listelenir ama faturalanan miktara sayilmaz - kesinlesene kadar hicbir hesaba girmezler.">Faturalar <span>${_fatK.length}</span>${_fatD.fat?`<i>${fmtNum(_fatD.fat)} ${esc(unit)} faturalanmis</i>`:''}</div>${fatRows}`:'';
-  const rapSec=`<div class="matd-sec">Saha Raporlari - Montaj <span>${raps.length}</span>${totRap?`<i>${fmtNum(totRap)} ${esc(unit)}</i>`:''}</div>${rapRows}`;
+  const ordSec=`<div class="matd-sec">Siparisler <span>${ords.length}</span>${totOrd?`<i>${fmtNum(totOrd)} ${esc(birimAd(unit))}</i>`:''}</div>${ordRows}`;
+  const fatSec=_fatD?`<div class="matd-sec" title="Bu urunun gectigi fatura kayitlari. TASLAK faturalar da listelenir ama faturalanan miktara sayilmaz - kesinlesene kadar hicbir hesaba girmezler.">Faturalar <span>${_fatK.length}</span>${_fatD.fat?`<i>${fmtNum(_fatD.fat)} ${esc(birimAd(unit))} faturalanmis</i>`:''}</div>${fatRows}`:'';
+  const rapSec=`<div class="matd-sec">Saha Raporlari - Montaj <span>${raps.length}</span>${totRap?`<i>${fmtNum(totRap)} ${esc(birimAd(unit))}</i>`:''}</div>${rapRows}`;
   return {usage,unit,img,chips,not,not2,stats,ozelSection,specSec,altSec,yerineSection,ordSec,fatSec,rapSec,
     rapN:raps.length,totRap,rapRows};   // detay sayfasi montaji kendi acilir basligiyla cizer
 }
@@ -29873,6 +29952,115 @@ function pamAcKapa(v){
   toast(PAM.acik?('Piyasa adi modu acik ('+PAM.dil+')'):'Piyasa adi modu kapandi');
 }
 function pamDil(d){ PAM.dil=String(d||'TR').toUpperCase(); pamKaydet(); pamOnbellekSifirla(); pamPillCiz(); render(); }
+/* ══════════════════════════════════════════════════════════════════════════
+   BIRIM SOZLUGU (30 Eki) - "шт. / pcs", "шт./pc", "Ad. / шт." gibi 22 farkli yazimin
+   yerine TEK ANAHTAR (adet, metre, kg...) ve uc dilde etiket (TR / RU / EN).
+   KAYIT: formdan/toplu sayfadan yazilan urunun unit alanina ANAHTAR gider ('adet').
+   Eski kayitlar OLDUGU GIBI DURUR (toplu veri yazimi yapilmadi): okurken birimKey()
+   es yazimdan anahtara cevirir, birimAd() secili dilde etiketi basar. Sozlukte olmayan
+   bir yazim bozulmaz - oldugu gibi gosterilir, Araclar > Birim Sozlugu'nde "sozlukte yok"
+   listesine duser ve oradan bir anahtara es yazim olarak baglanir.
+   GOSTERIM DILI = Piyasa adi menusundeki Dil / ulke secimi (PAM.dil). Mod kapaliyken de
+   gecerlidir (varsayilan TR); Excel/PDF ciktilari da ayni dili yazar. Kutuphane kunye
+   Excel'i geri yuklenirken etiket birimKey ile anahtara doner.
+   KIMLIK: birimle gruplayan yerler (Teslimat Mutabakati, ambar bakiyesi, sartname disi
+   alimlar, birim suzgeci) ANAHTARI karsilastirir - "шт./pcs" ile "шт. / pcs" artik tek satir.
+   AYAR: app_settings 'birim_sozlugu' (tasari geneli ORTAK - lib/birim.js ORTAK_AYARLAR);
+   sunucu kopyasi lib/birimSozluk.js (Saha Linki). Varsayilan liste asagida; kullanici
+   listesi onu TUMUYLE degistirir (birlesmez).
+   Kiril benzeri harfler (с, р, о...) Latin'e katlanir: "pсs" (Kiril с ile) de pcs sayilir.
+   ══════════════════════════════════════════════════════════════════════════ */
+const BRM_AYAR='birim_sozlugu';
+const BRM_DILLER=['TR','RU','EN'];
+const BRM_VARSAYILAN=[
+  {k:'adet', TR:'ad.',  RU:'шт.',   EN:'pcs.', es:['adet','ad','adt','pc','pcs','piece','pieces','ea','each','шт','штука','штук']},
+  {k:'metre',TR:'m',    RU:'м',     EN:'m',    es:['mt','metre','meter','метр','м','пм','п.м','п/м','мп','mtul']},
+  {k:'kg',   TR:'kg',   RU:'кг',    EN:'kg',   es:['kilogram','кг']},
+  {k:'m2',   TR:'m²',   RU:'м²',    EN:'m²',   es:['m2','м2','metrekare','sqm','кв.м']},
+  {k:'m3',   TR:'m³',   RU:'м³',    EN:'m³',   es:['m3','м3','metrekup','cbm','куб.м']},
+  {k:'litre',TR:'lt',   RU:'л',     EN:'l',    es:['litre','liter','л']},
+  {k:'takim',TR:'tk.',  RU:'компл.',EN:'set',  es:['takim','set','kit','tk','компл','комплект','комп']},
+  {k:'paket',TR:'pk.',  RU:'уп.',   EN:'pack', es:['paket','pk','pkt','pack','уп','упак','упаковка']},
+  {k:'kutu', TR:'kutu', RU:'кор.',  EN:'box',  es:['box','кор','коробка']},
+  {k:'rulo', TR:'rulo', RU:'рул.',  EN:'roll', es:['roll','рул','рулон']},
+  {k:'cift', TR:'çift', RU:'пар.',  EN:'pair', es:['cift','pair','пар','пара']},
+  {k:'ton',  TR:'ton',  RU:'т',     EN:'t',    es:['тн']},
+];
+const _BRM_KIRIL={'а':'a','е':'e','о':'o','р':'p','с':'c','у':'y','х':'x'};
+function _brmNorm(s){ return norm(s).replace(/²/g,'2').replace(/³/g,'3').replace(/[аеорсух]/g,c=>_BRM_KIRIL[c]).replace(/[.\s]/g,''); }
+function birimSozluk(){ const a=(typeof DB!=='undefined'&&DB&&DB.meta)?DB.meta[BRM_AYAR]:null; return (Array.isArray(a)&&a.length)?a:BRM_VARSAYILAN; }
+let _brmIdx=null; // {src:liste, m:Map(normYazim -> tanim)} - liste referansi degisince yeniden kurulur
+function _brmIndeks(){
+  const liste=birimSozluk(); if(_brmIdx&&_brmIdx.src===liste) return _brmIdx.m;
+  const m=new Map();
+  liste.forEach(t=>{ [t.k,...BRM_DILLER.map(d=>t[d]),...(t.es||[])].forEach(x=>{ const n=_brmNorm(x); if(n&&!m.has(n)) m.set(n,t); }); });
+  _brmIdx={src:liste,m}; return m;
+}
+function birimSozlukSifirla(){ _brmIdx=null; }
+// yazimdan sozluk satiri: once tam metin, sonra "/" ile ayrilmis parcalar ("шт. / pcs" -> adet)
+function birimTanim(s){
+  const t=String(s==null?'':s).trim(); if(!t) return null; const idx=_brmIndeks();
+  const n=_brmNorm(t); if(idx.has(n)) return idx.get(n);
+  for(const p of t.split('/')){ const q=_brmNorm(p); if(q&&idx.has(q)) return idx.get(q); }
+  return null;
+}
+// kimlik anahtari: sozlukteki anahtar, yoksa sadelestirilmis yazim (bos -> '')
+function birimKey(s){ const t=birimTanim(s); return t?t.k:String(s==null?'':s).replace(/\s+/g,' ').trim(); }
+function birimDil(){ return (typeof PAM!=='undefined'&&PAM&&PAM.dil)?String(PAM.dil).toUpperCase():'TR'; }
+// gosterim etiketi: secili dil, yoksa TR > RU > EN > anahtar; sozlukte yoksa yazim oldugu gibi
+function birimAd(s,dil){
+  const t=birimTanim(s); if(!t) return String(s==null?'':s).replace(/\s+/g,' ').trim();
+  const d=String(dil||birimDil()).toUpperCase(); return t[d]||t.TR||t.RU||t.EN||t.k;
+}
+function birimUcDil(t){ return [...new Set(BRM_DILLER.map(d=>t[d]).filter(Boolean))].join(' · '); }
+// ipucu metni: uc dil yan yana ("ad. · шт. · pcs."), sozlukte yoksa yazim
+function birimTam(s){ const t=birimTanim(s); return t?birimUcDil(t):String(s==null?'':s).trim(); }
+/* Form secicisi: sozluk satirlari (deger = anahtar) + sozlukte olmayan mevcut yazim
+   (oldugu gibi, isaretli) + "Yeni birim..." (sozluge ekler, secili yapar). attrs ile
+   verilen oninput toplu sayfalarda satira yazar; "__yeni" secimi hemen eski degere
+   dondurulur ki satira sizmasin. */
+function birimSecHtml(id,deger,attrs){
+  const t=birimTanim(deger), ham=String(deger==null?'':deger).trim(), sec=t?t.k:ham;
+  const ops=birimSozluk().map(x=>`<option value="${esc(x.k)}"${t&&t.k===x.k?' selected':''}>${esc(birimUcDil(x))}</option>`).join('');
+  const yab=(ham&&!t)?`<option value="${esc(ham)}" selected>${esc(ham)} (sozlukte yok)</option>`:'';
+  return `<select id="${esc(id)}" data-son="${esc(sec)}" ${attrs||''} onchange="birimSecDegis(this)"><option value=""${!ham?' selected':''}>- birim -</option>${ops}${yab}<option value="__yeni">+ Yeni birim...</option></select>`;
+}
+function birimSecDegis(s){ if(s.value==='__yeni') birimYeniAc(s); else s.dataset.son=s.value; }
+function birimSecOku(id){ const el=document.getElementById(id); const v=el?String(el.value||'').trim():''; return v==='__yeni'?'':birimKey(v); }
+function birimYeniAc(sel){
+  const son=sel.dataset.son||''; sel.value=son; sel.dispatchEvent(new Event('input',{bubbles:true}));
+  if(!canEdit('proje')){ toast('Sozluge birim eklemek icin yetkiniz yok','err'); return; }
+  const html=`<div class="modal-bg" id="brmYeniModal" style="z-index:1300" onclick="if(event.target===this)brmYeniKapat()"><div class="modal" style="max-width:500px"><div class="modal-head"><h3>Yeni Birim</h3><button class="mini-btn" onclick="brmYeniKapat()">x</button></div>
+    <div class="modal-body">
+      <p class="t-meta" style="margin:0 0 10px;line-height:1.5">Uc dilde yazimi girin. Birim sozluge eklenir ve her ekranda Piyasa adi menusunde secili dile gore gosterilir. Sozluk tum kullanicilar icin ortaktir.</p>
+      <div class="frow two"><div><label>Turkce (TR) *</label><input id="brmY_TR" placeholder="orn. rulo"></div><div><label>Anahtar <span class="t-meta">(bos birakilirsa TR'den)</span></label><input id="brmY_k" class="mono" placeholder="orn. rulo"></div></div>
+      <div class="frow two"><div><label>Rusca (RU)</label><input id="brmY_RU" placeholder="orn. рул."></div><div><label>Ingilizce (EN)</label><input id="brmY_EN" placeholder="orn. roll"></div></div>
+      <div class="frow"><label>Es yazimlar <span class="t-meta">(virgulle - Excel'de rastlanan diger yazimlar)</span></label><input id="brmY_es" placeholder="orn. рулон, roll."></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="brmYeniKapat()">Iptal</button><button class="btn btn-add" onclick="brmYeniKaydet('${esc(sel.id)}')">Ekle</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  const t=document.getElementById('brmY_TR'); if(t) t.focus();
+}
+function brmYeniKapat(){ const m=document.getElementById('brmYeniModal'); if(m) m.remove(); }
+function brmAnahtarUret(s){ return norm(s).replace(/[²]/g,'2').replace(/[³]/g,'3').replace(/[^a-z0-9а-яё]+/g,''); }
+function _brmEsAyir(s){ return [...new Set(String(s||'').split(/[,;\n]/).map(x=>x.trim()).filter(Boolean))]; }
+async function brmYeniKaydet(selId){
+  const gv=id=>String((document.getElementById(id)||{}).value||'').trim();
+  const t={k:gv('brmY_k')||brmAnahtarUret(gv('brmY_TR')),TR:gv('brmY_TR'),RU:gv('brmY_RU'),EN:gv('brmY_EN'),es:_brmEsAyir(gv('brmY_es'))};
+  if(!t.TR){ toast('Turkce yazim zorunlu','err'); return; }
+  if(!t.k){ toast('Anahtar uretilemedi - elle yazin','err'); return; }
+  const catisan=[t.k,t.TR,t.RU,t.EN,...t.es].map(x=>[x,birimTanim(x)]).find(x=>x[1]);
+  if(catisan){ toast('"'+catisan[0]+'" zaten sozlukte: '+birimUcDil(catisan[1]),'err'); return; }
+  const liste=[...JSON.parse(JSON.stringify(birimSozluk())),t];
+  try{ await sbSetSetting(BRM_AYAR,liste); }catch(e){ toast('Kaydedilemedi: '+((e&&e.message)||e),'err'); return; }
+  if(!DB.meta) DB.meta={}; DB.meta[BRM_AYAR]=liste; birimSozlukSifirla(); _BRM=null;
+  logAction('define','Birim sozlugune eklendi: '+t.k+' ('+birimUcDil(t)+')');
+  brmYeniKapat(); toast('Birim eklendi: '+birimUcDil(t));
+  const sel=selId?document.getElementById(selId):null;
+  if(sel){ const o=document.createElement('option'); o.value=t.k; o.textContent=birimUcDil(t);
+    const yeni=[...sel.options].find(x=>x.value==='__yeni'); sel.insertBefore(o,yeni||null);
+    sel.value=t.k; sel.dataset.son=t.k; sel.dispatchEvent(new Event('input',{bubbles:true})); }
+}
 function pamCikti(v){ PAM.cikti=!!v; PAM.soruldu=true; pamKaydet(); pamMenuCiz(); pamPillCiz();
   toast(PAM.cikti?'Ciktilar da piyasa adiyla':'Ciktilar resmi adla'); }
 pamYukle();   // tercih taraficidadir: sayfa acilir acilmaz okunur, sunucuya sorulmaz
@@ -30933,7 +31121,7 @@ function _openMatDetailPage(matId){
     ['Piyasa Adlari', matPiyasa(m).map(p=>esc(piyasaEtiket(p))+(p.aile?' <i class="va-pa-etk" title="Varyant ailesinden: aile adi + eksen degerleri - eksenle birlikte degisir">aile</i>':'')).join('<br>')],
     ['Marka', markaHtml?`<span class="mdp-qmarka">${markaHtml}</span>`:''],
     ['Standart No', esc(m.standart||'')],
-    ['Birim', esc(m.unit||'')],
+    ['Birim', esc(birimAd(m.unit)||'')],
     ['Birim Agirlik', m.weight!=null?esc(fmtNum(m.weight)+' kg'):''],
     ['Kategori', esc([...new Set([m.cat,...oz.usage.map(s=>s.cat)].filter(Boolean))].join(', '))],
     ['Proje', esc(m.proje||'')]
@@ -30968,7 +31156,7 @@ function _openMatDetailPage(matId){
       <div class="mdp-ozet">${oz.stats}${oz.specSec}${oz.yerineSection}${oz.ordSec}${oz.fatSec}</div>
       <div class="mdp-montaj${_mdpMontajAcik?' on':''}">
         <button type="button" class="matd-sec mdp-montaj-head" onclick="mdpMontajToggle(this)" aria-expanded="${_mdpMontajAcik?'true':'false'}" title="Montaj kayitlarini ${_mdpMontajAcik?'gizlemek':'gostermek'} icin tiklayin">
-          <b class="mdp-montaj-ok">${icoChevron()}</b>Saha Raporlari - Montaj <span>${oz.rapN}</span>${oz.totRap?`<i>${fmtNum(oz.totRap)} ${esc(oz.unit)}</i>`:''}
+          <b class="mdp-montaj-ok">${icoChevron()}</b>Saha Raporlari - Montaj <span>${oz.rapN}</span>${oz.totRap?`<i>${fmtNum(oz.totRap)} ${esc(birimAd(oz.unit))}</i>`:''}
         </button>
         <div class="mdp-montaj-body" ${_mdpMontajAcik?'':'hidden'}>${oz.rapRows}</div>
       </div>
@@ -31634,7 +31822,7 @@ const openEvet=['evet','e','var','acik','yes','y','true','x','1'].includes(norm(
         // yukleme hedefleri sifirlamasin diye).
         if(openSet&&openEvet){ existing.openQty=true; existing.exclude=true; existing.target=0; }
         else if(Number(existing.target)>0){
-          report.errors.push(`${existing.code||existing.name}: Excel'de miktar bos/0 - mevcut hedef (${fmtNum(existing.target)} ${existing.unit||''}) korundu ("Acik Kalem" sutununa EVET yazarsaniz acik kaleme cevrilir)`);
+          report.errors.push(`${existing.code||existing.name}: Excel'de miktar bos/0 - mevcut hedef (${fmtNum(existing.target)} ${birimAd(existing.unit)}) korundu ("Acik Kalem" sutununa EVET yazarsaniz acik kaleme cevrilir)`);
         } else { existing.openQty=true; existing.exclude=true; existing.target=0; }
       }
       // acik kalem (openQty) korunur: Excel'de hedef girildiyse acik kalem normale doner
@@ -31807,7 +31995,7 @@ function dedupeGroupHtml(g,gi){
     const durum=isKeep?'KALACAK':(r?'KORUNUR':'SILINECEK');
     return `<div class="dedupe-row ${isKeep?'keep':(r?'lock':'')}" onclick="dedupePickKeep(${gi},'${s.id}')">
       <span class="merge-tag ${isKeep?'':(r?'lock':'rm')}"${r&&!isKeep?' title="Bagli kayit - hicbir kosulda silinmez"':''}>${durum}</span>
-      <span class="dedupe-row-meta">${s.poz?'Poz '+esc(s.poz)+' · ':''}${s.ozelNo?'Ozel '+esc(s.ozelNo)+' · ':''}Hedef ${fmtNum(s.target)} ${esc(s.unit||'')}${ts?' · '+fmtDT(ts):''}${r?` · <b style="color:var(--amber)">${esc(specRefLabel(r))}</b>`:''}</span>
+      <span class="dedupe-row-meta">${s.poz?'Poz '+esc(s.poz)+' · ':''}${s.ozelNo?'Ozel '+esc(s.ozelNo)+' · ':''}Hedef ${fmtNum(s.target)} ${esc(birimAd(s.unit)||'')}${ts?' · '+fmtDT(ts):''}${r?` · <b style="color:var(--amber)">${esc(specRefLabel(r))}</b>`:''}</span>
     </div>`;
   }).join('');
   return `<div class="dedupe-group">
@@ -32107,7 +32295,7 @@ async function applySyncPlan(){
       // "Acik Kalem: EVET" acik niyettir - mevcut hedef de sifirlanir. Yalniz miktar 0/bos
       // tahminiyle gelindiyse mevcut gercek hedef silinmez ("belli degil" != "sifir adet").
       if(data.acikAcik){ existing.openQty=true; existing.exclude=true; existing.target=0; }
-      else if(Number(existing.target)>0) rep.errors.push(`${existing.code||existing.name}: Excel'de miktar bos/0 - mevcut hedef (${fmtNum(existing.target)} ${existing.unit||''}) korundu ("Acik Kalem" sutununa EVET yazarsaniz acik kaleme cevrilir)`);
+      else if(Number(existing.target)>0) rep.errors.push(`${existing.code||existing.name}: Excel'de miktar bos/0 - mevcut hedef (${fmtNum(existing.target)} ${birimAd(existing.unit)}) korundu ("Acik Kalem" sutununa EVET yazarsaniz acik kaleme cevrilir)`);
       else { existing.openQty=true; existing.exclude=true; existing.target=0; }
     }
     else { existing.target=Math.max(0,data.tgt+specRevize(existing)); existing.exclude=data.exclude; }
@@ -32429,7 +32617,7 @@ function exportSpecGorunumExcel(){
       const altN=specAlts(sp.id).length;
       rows.push([k, sp.cat||'', sp.bina||'', sp.poz||'', ozel, ozelPayOzet(ozelPaylari(sp)), sp.name||'', sp.code||'', sp.standart||'', sp.brand||'',
         specEtiketleri(sp).join(', '), sp.kat||'',
-        sp.unit||'', acik?'':hedef, got, acik?'':Math.max(0,hedef-got), acik?'':Number(pct.toFixed(1)),
+        birimAd(sp.unit), acik?'':hedef, got, acik?'':Math.max(0,hedef-got), acik?'':Number(pct.toFixed(1)),
         installed, hedef>0?Number(mpct.toFixed(1)):'', SPEC_DURUM_AD[specAlimDurum(sp)],
         acik?'Acik kalem (miktar belirsiz)':(sp.exclude?'Ilerlemeye dahil degil':''),
         altN||'', sp.note||'']);
@@ -32494,20 +32682,20 @@ function renderSpec(){
       if(SPECVIEW==='list'){
         return `<div class="prog-row spec-clickable${open?' spec-open':ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')">${thumb}
           <div class="prog-row-main"><div class="prog-row-name" title="${esc(sp.name)}">${esc(gorAd(sp))}${altBadge}${specNotBadge(sp)}</div><div class="prog-cat">${catBadges}</div></div>
-          <div class="prog-row-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(sp.unit||'')}</b></span><span>Hedef: <b>${open?'belirsiz':fmtNum(sp.target)+' '+esc(sp.unit||'')}</b>${open?'':specRevizeRozet(sp)}</span><span>Kalan: <b style="color:${open?'var(--mute)':done?'var(--green)':'var(--amber)'}">${open?'—':done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(sp.unit||'')}</b></span></div>
+          <div class="prog-row-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(birimAd(sp.unit)||'')}</b></span><span>Hedef: <b>${open?'belirsiz':fmtNum(sp.target)+' '+esc(birimAd(sp.unit)||'')}</b>${open?'':specRevizeRozet(sp)}</span><span>Kalan: <b style="color:${open?'var(--mute)':done?'var(--green)':'var(--amber)'}">${open?'—':done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(birimAd(sp.unit)||'')}</b></span></div>
           <div class="prog-row-bar"><div class="prog-row-bar-top"><span>Alim</span><b style="color:${ex?'var(--mute)':done?'var(--green)':c2}">${open?'—':pct.toFixed(0)+'%'}</b></div><div class="bar"><i style="width:${pct}%;background:${ex?'var(--dim)':done?'var(--green)':c2}"></i></div></div>
           ${Number(sp.target)>0?`<div class="prog-row-bar"><div class="prog-row-bar-top"><span>Montaj</span><b style="color:${montajDone?'var(--green)':'var(--amber)'}">${montajPct.toFixed(0)}%</b></div><div class="bar"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div></div>`
-            :open?`<div class="prog-row-bar"><div class="prog-row-bar-top"><span>Montaj</span><b style="color:var(--blue)">${fmtNum(montajGot)} ${esc(sp.unit||'')}</b></div></div>`:'<div class="prog-row-bar"></div>'}
+            :open?`<div class="prog-row-bar"><div class="prog-row-bar-top"><span>Montaj</span><b style="color:var(--blue)">${fmtNum(montajGot)} ${esc(birimAd(sp.unit)||'')}</b></div></div>`:'<div class="prog-row-bar"></div>'}
           ${actions}</div>`;
       }
       return `<div class="prog-card spec-clickable${open?' spec-open':ex?' spec-excluded':''}" onclick="openSpecDetail('${sp.id}')"><div class="prog-head"><div style="display:flex;gap:11px;align-items:flex-start;flex:1;min-width:0">${thumb}<div style="min-width:0"><div class="prog-name">${esc(sp.name)}${altBadge}${specNotBadge(sp)}</div>
         <div class="prog-cat">${catBadges}</div></div></div>
         <div class="prog-pct" style="color:${ex?'var(--mute)':done?'var(--green)':c2}">${open?'—':pct.toFixed(0)+'%'}</div></div>
         <div class="bar"><i style="width:${pct}%;background:${ex?'var(--dim)':done?'var(--green)':c2}"></i></div>
-        <div class="prog-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(sp.unit||'')}</b></span><span>Hedef: <b>${open?'belirsiz':fmtNum(sp.target)+' '+esc(sp.unit||'')}</b>${open?'':specRevizeRozet(sp)}</span></div>
-        <div class="prog-nums" style="margin-top:3px"><span>Kalan: <b style="color:${open?'var(--mute)':done?'var(--green)':'var(--amber)'}">${open?'—':done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(sp.unit||'')}</b></span></div>
-        ${Number(sp.target)>0?`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:7px;white-space:nowrap"><span style="font-size:11px;color:var(--mute);flex:0 0 auto">Montaj</span><span style="font-size:11px;font-weight:600;color:${montajDone?'var(--green)':'var(--amber)'};overflow:hidden;text-overflow:ellipsis">${fmtNum(montajGot)} ${esc(sp.unit||'')} <span style="font-weight:400;color:var(--mute)">· ${montajPct.toFixed(0)}%</span></span></div><div class="bar" style="height:4px;margin-top:3px"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div>`
-          :open?`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:7px;white-space:nowrap"><span style="font-size:11px;color:var(--mute);flex:0 0 auto">Montaj</span><span style="font-size:11px;font-weight:600;color:var(--blue)">${fmtNum(montajGot)} ${esc(sp.unit||'')}</span></div>`:''}
+        <div class="prog-nums"><span>Alinan: <b>${fmtNum(got)} ${esc(birimAd(sp.unit)||'')}</b></span><span>Hedef: <b>${open?'belirsiz':fmtNum(sp.target)+' '+esc(birimAd(sp.unit)||'')}</b>${open?'':specRevizeRozet(sp)}</span></div>
+        <div class="prog-nums" style="margin-top:3px"><span>Kalan: <b style="color:${open?'var(--mute)':done?'var(--green)':'var(--amber)'}">${open?'—':done?'Tamamlandi':fmtNum(sp.target-got)+' '+esc(birimAd(sp.unit)||'')}</b></span></div>
+        ${Number(sp.target)>0?`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:7px;white-space:nowrap"><span style="font-size:11px;color:var(--mute);flex:0 0 auto">Montaj</span><span style="font-size:11px;font-weight:600;color:${montajDone?'var(--green)':'var(--amber)'};overflow:hidden;text-overflow:ellipsis">${fmtNum(montajGot)} ${esc(birimAd(sp.unit)||'')} <span style="font-weight:400;color:var(--mute)">· ${montajPct.toFixed(0)}%</span></span></div><div class="bar" style="height:4px;margin-top:3px"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div>`
+          :open?`<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:7px;white-space:nowrap"><span style="font-size:11px;color:var(--mute);flex:0 0 auto">Montaj</span><span style="font-size:11px;font-weight:600;color:var(--blue)">${fmtNum(montajGot)} ${esc(birimAd(sp.unit)||'')}</span></div>`:''}
         ${actions}</div>`;
       };
     let cards='';
@@ -32538,17 +32726,17 @@ function renderSpec(){
   if(off.length){
     let offCards='';
     off.forEach(o=>{ const binaTags=o.binas.map(b=>`<span class="bina-tag" style="background:${buildingColor(b)}22;color:${buildingColor(b)};border:1px solid ${buildingColor(b)}55">${esc(b)}</span>`).join('');
-      const offActions=`<div class="prog-actions"><button class="btn btn-ghost" style="flex:1;padding:7px" onclick="specFromOff(this.dataset.n,this.dataset.c,this.dataset.u)" data-n="${esc(o.name)}" data-c="${esc(o.cat||'')}" data-u="${esc(o.unit||'')}">${icoPlus()} Sartnameye Donustur</button>${canDelete('proje')?`<button class="mini-btn del" title="Sartname disi alim kayitlarini sil" onclick="delOffSpecGroup(this.dataset.n,this.dataset.c,this.dataset.u)" data-n="${esc(o.name)}" data-c="${esc(o.cat||'')}" data-u="${esc(o.unit||'')}">${icoTrash()}</button>`:''}</div>`;
+      const offActions=`<div class="prog-actions"><button class="btn btn-ghost" style="flex:1;padding:7px" onclick="specFromOff(this.dataset.n,this.dataset.c,this.dataset.u)" data-n="${esc(o.name)}" data-c="${esc(o.cat||'')}" data-u="${esc(birimAd(o.unit)||'')}">${icoPlus()} Sartnameye Donustur</button>${canDelete('proje')?`<button class="mini-btn del" title="Sartname disi alim kayitlarini sil" onclick="delOffSpecGroup(this.dataset.n,this.dataset.c,this.dataset.u)" data-n="${esc(o.name)}" data-c="${esc(o.cat||'')}" data-u="${esc(birimAd(o.unit)||'')}">${icoTrash()}</button>`:''}</div>`;
       if(SPECVIEW==='list'){
         offCards+=`<div class="prog-row offspec">
           <div class="prog-row-main"><div class="prog-row-name" title="${esc(o.name)}">${esc(o.name)}</div><div class="prog-cat"><span class="cat-tag" style="background:${catColor(o.cat)}22;color:${catColor(o.cat)}">${esc(o.cat||'-')}</span> <span class="cat-tag" style="background:var(--red)22;color:var(--red)">SPEK DISI</span> ${binaTags}</div></div>
-          <div class="prog-row-nums" style="flex:1"><span>Alinan: <b>${fmtNum(o.total)} ${esc(o.unit||'')}</b></span><span style="color:var(--red)">Hedef yok</span></div>
+          <div class="prog-row-nums" style="flex:1"><span>Alinan: <b>${fmtNum(o.total)} ${esc(birimAd(o.unit)||'')}</b></span><span style="color:var(--red)">Hedef yok</span></div>
           ${offActions}</div>`;
       } else {
       offCards+=`<div class="prog-card offspec"><div class="prog-head"><div><div class="prog-name">${esc(o.name)}</div>
         <div class="prog-cat"><span class="cat-tag" style="background:${catColor(o.cat)}22;color:${catColor(o.cat)}">${esc(o.cat||'-')}</span> <span class="cat-tag" style="background:var(--red)22;color:var(--red)">SPEK DISI</span></div></div></div>
         <div style="margin:4px 0 8px">${binaTags}</div>
-        <div class="prog-nums"><span>Alinan: <b>${fmtNum(o.total)} ${esc(o.unit||'')}</b></span><span style="color:var(--red)">Hedef yok</span></div>
+        <div class="prog-nums"><span>Alinan: <b>${fmtNum(o.total)} ${esc(birimAd(o.unit)||'')}</b></span><span style="color:var(--red)">Hedef yok</span></div>
         ${offActions}</div>`;
       } });
     offHtml=`<div style="margin-top:22px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="width:11px;height:11px;border-radius:3px;background:var(--red);display:inline-block"></span><b style="font-size:14px">Sartname Disi Alimlar</b><span class="t-meta">${off.length} kalem · hedef belirlenmemis</span></div><div class="${SPECVIEW==='list'?'prog-list':'prog-grid'}">${offCards}</div></div>`;
@@ -32572,15 +32760,15 @@ function renderSpec(){
         if(SPECVIEW==='list'){
           mcards+=`<div class="prog-row merged-card">${thumb}
             <div class="prog-row-main"><div class="prog-row-name" title="${esc(m.name)}">${esc(gorAd(m))}</div><div class="prog-cat"><span class="cat-tag" style="background:${c2}22;color:${c2}">${esc(m.cat)}</span>${m.code?` <span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(m.code)}</span>`:''} <span class="merged-badge">${m.items.length} spek'te</span> ${grupTags}</div></div>
-            <div class="prog-row-nums"><span>Alinan: <b>${fmtNum(m.got)} ${esc(m.unit||'')}</b></span><span>Hedef: <b>${fmtNum(m.target)} ${esc(m.unit||'')}</b></span><span>Kalan: <b style="color:${done?'var(--green)':'var(--amber)'}">${done?'Tamamlandi':fmtNum(m.target-m.got)+' '+esc(m.unit||'')}</b></span></div>
+            <div class="prog-row-nums"><span>Alinan: <b>${fmtNum(m.got)} ${esc(birimAd(m.unit)||'')}</b></span><span>Hedef: <b>${fmtNum(m.target)} ${esc(birimAd(m.unit)||'')}</b></span><span>Kalan: <b style="color:${done?'var(--green)':'var(--amber)'}">${done?'Tamamlandi':fmtNum(m.target-m.got)+' '+esc(birimAd(m.unit)||'')}</b></span></div>
             <div class="prog-row-bar"><div class="prog-row-bar-top"><span>Alim</span><b style="color:${done?'var(--green)':c2}">${pct.toFixed(0)}%</b></div><div class="bar"><i style="width:${pct}%;background:${done?'var(--green)':c2}"></i></div></div></div>`;
         } else {
         mcards+=`<div class="prog-card merged-card"><div class="prog-head"><div style="display:flex;gap:11px;align-items:flex-start;flex:1;min-width:0">${thumb}<div style="min-width:0"><div class="prog-name">${esc(m.name)}</div>
           <div class="prog-cat"><span class="cat-tag" style="background:${c2}22;color:${c2}">${esc(m.cat)}</span>${m.code?` <span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono)">${esc(m.code)}</span>`:''} <span class="merged-badge">${m.items.length} spek'te</span></div></div></div>
           <div class="prog-pct" style="color:${done?'var(--green)':c2}">${pct.toFixed(0)}%</div></div>
           <div class="bar"><i style="width:${pct}%;background:${done?'var(--green)':c2}"></i></div>
-          <div class="prog-nums"><span>Toplam Alinan: <b>${fmtNum(m.got)} ${esc(m.unit||'')}</b></span><span>Toplam Hedef: <b>${fmtNum(m.target)} ${esc(m.unit||'')}</b></span></div>
-          <div class="prog-nums" style="margin-top:3px"><span>Kalan: <b style="color:${done?'var(--green)':'var(--amber)'}">${done?'Tamamlandi':fmtNum(m.target-m.got)+' '+esc(m.unit||'')}</b></span></div>
+          <div class="prog-nums"><span>Toplam Alinan: <b>${fmtNum(m.got)} ${esc(birimAd(m.unit)||'')}</b></span><span>Toplam Hedef: <b>${fmtNum(m.target)} ${esc(birimAd(m.unit)||'')}</b></span></div>
+          <div class="prog-nums" style="margin-top:3px"><span>Kalan: <b style="color:${done?'var(--green)':'var(--amber)'}">${done?'Tamamlandi':fmtNum(m.target-m.got)+' '+esc(birimAd(m.unit)||'')}</b></span></div>
           <div class="merged-grups">${grupTags}</div></div>`;
         }
       });
@@ -32714,9 +32902,9 @@ function orderHistoryHtml(o){
   }
   const sat=(h)=>[
     ...(h.bas||[]).map(t=>`<div class="ih-line"><span class="ih-tag bas">BILGI</span>${esc(t)}</div>`),
-    ...(h.eklenen||[]).map(x=>`<div class="ih-line"><span class="ih-tag ek">EKLENDI</span><span class="ih-ad">${esc(gorAd(x))}</span><b>${fmtNum(x.qty)}</b> ${esc(x.unit||'')}</div>`),
-    ...(h.degisen||[]).map(x=>`<div class="ih-line"><span class="ih-tag dg">MIKTAR</span><span class="ih-ad">${esc(gorAd(x))}</span><b>${fmtNum(x.eski)} → ${fmtNum(x.yeni)}</b> ${esc(x.unit||'')}</div>`),
-    ...(h.cikan||[]).map(x=>`<div class="ih-line"><span class="ih-tag ck">CIKARILDI</span><span class="ih-ad">${esc(gorAd(x))}</span><b>${fmtNum(x.qty)}</b> ${esc(x.unit||'')}</div>`),
+    ...(h.eklenen||[]).map(x=>`<div class="ih-line"><span class="ih-tag ek">EKLENDI</span><span class="ih-ad">${esc(gorAd(x))}</span><b>${fmtNum(x.qty)}</b> ${esc(birimAd(x.unit)||'')}</div>`),
+    ...(h.degisen||[]).map(x=>`<div class="ih-line"><span class="ih-tag dg">MIKTAR</span><span class="ih-ad">${esc(gorAd(x))}</span><b>${fmtNum(x.eski)} → ${fmtNum(x.yeni)}</b> ${esc(birimAd(x.unit)||'')}</div>`),
+    ...(h.cikan||[]).map(x=>`<div class="ih-line"><span class="ih-tag ck">CIKARILDI</span><span class="ih-ad">${esc(gorAd(x))}</span><b>${fmtNum(x.qty)}</b> ${esc(birimAd(x.unit)||'')}</div>`),
   ].join('')||`<div class="ih-line"><span class="ih-tag bas">BILGI</span>Urun degisikligi yok (yalniz belge/satir duzeni guncellendi).</div>`;
   return `<div class="inv-hist"><div class="inv-hist-h">DUZENLEME GECMISI <span>${gec.length}</span></div>
     ${gec.map(h=>`<div class="inv-hist-row">
@@ -32779,7 +32967,7 @@ function orderInvoiceHtml(o,genis){
     // TEDARIK KIRILIMI varsa her kaynak KENDI MIKTARIYLA ayri rozet olur: tek rozet
     // basilsaydi 100 birimin tamami tek kaynaktan gelmis gibi gorunurdu.
     const tedPay=tedarikPaylari(l);
-    const tedRozet=(etiket,mik)=>`<span class="cat-tag" style="background:color-mix(in srgb,var(--blue) 12%,transparent);color:var(--blue);border:1px dashed color-mix(in srgb,var(--blue) 40%,transparent);margin-right:4px" title="Bu miktar fiilen bu binanin hazir sartnamesinden tedarik edildi - o binanin sayilari etkilenmez">TEDARIK &larr; ${esc(etiket)}${mik!=null?` · <b>${fmtNum(mik)}</b> ${esc(l.unit||'')}`:''}</span>`;
+    const tedRozet=(etiket,mik)=>`<span class="cat-tag" style="background:color-mix(in srgb,var(--blue) 12%,transparent);color:var(--blue);border:1px dashed color-mix(in srgb,var(--blue) 40%,transparent);margin-right:4px" title="Bu miktar fiilen bu binanin hazir sartnamesinden tedarik edildi - o binanin sayilari etkilenmez">TEDARIK &larr; ${esc(etiket)}${mik!=null?` · <b>${fmtNum(mik)}</b> ${esc(birimAd(l.unit)||'')}`:''}</span>`;
     const tedNote=tedPay.length
       ?`<div style="margin-top:2px">${tedPay.map(p=>tedRozet(tedarikEtiket(p)||'kaynak belirtilmemis',Number(p.qty)||0)).join('')}</div>`
       :(l.tedarikBina?`<div style="margin-top:2px">${tedRozet(tedarikEtiket({bina:l.tedarikBina,sart:l.tedarikSart}),null)}</div>`:'');
@@ -32795,7 +32983,7 @@ function orderInvoiceHtml(o,genis){
       return `<span class="cat-tag inv-oz-tag${yok?' plan-yok':''}" title="${yok?'Bu kod sartname kaleminin ozel kod planinda yok. ':''}Bu miktar bu yerlesim koduna gitti - yalnizca kunye, hicbir dusum yapilmaz">${esc(p.kod||'kod yok')} · <b>${fmtNum(Number(p.qty)||0)}</b></span>`; };
     const ozKalan=ozPay.slice(INV_OZ_ON);
     const ozNote=ozPay.length?`<div class="inv-oz" style="margin-top:2px">
-      <div>${ozPay.slice(0,INV_OZ_ON).map(ozChip).join('')}${ozKalan.length?`<button type="button" class="inv-oz-more" onclick="invOzToggle(this)" data-ac="+${ozKalan.length} kod daha" data-kapa="daha az goster" title="Kalan ${ozKalan.length} ozel kod - toplam ${ozPay.length} kod · ${fmtNum(ozelPayToplam(ozPay))} ${esc(l.unit||'birim')}">+${ozKalan.length} kod daha</button>`:''}</div>
+      <div>${ozPay.slice(0,INV_OZ_ON).map(ozChip).join('')}${ozKalan.length?`<button type="button" class="inv-oz-more" onclick="invOzToggle(this)" data-ac="+${ozKalan.length} kod daha" data-kapa="daha az goster" title="Kalan ${ozKalan.length} ozel kod - toplam ${ozPay.length} kod · ${fmtNum(ozelPayToplam(ozPay))} ${esc(birimAd(l.unit)||'birim')}">+${ozKalan.length} kod daha</button>`:''}</div>
       ${ozKalan.length?`<div class="inv-oz-rest" hidden>${ozKalan.map(ozChip).join('')}</div>`:''}
     </div>`:'';
     // URUN GORSELI spek no ile malzeme adi ARASINDA durur: uzun cift dilli adlar okunmadan
@@ -32806,10 +32994,10 @@ function orderInvoiceHtml(o,genis){
     const _lk=iadeUrunKey(l);
     const iadeMik=_iadeSeen.has(_lk)?0:orderLineIadeMik(o,l);
     if(iadeMik>0) _iadeSeen.add(_lk);
-    const iadeNote=iadeMik>0?`<div style="margin-top:2px"><span class="cat-tag inv-iade-tag" title="Bu urunden toplam ${fmtNum(iadeMik)} ${esc(l.unit||'')} iade edildi - alim sayilarindan dusuldu">IADE &rarr; <b>${fmtNum(iadeMik)}</b> ${esc(l.unit||'')}</span></div>`:'';
+    const iadeNote=iadeMik>0?`<div style="margin-top:2px"><span class="cat-tag inv-iade-tag" title="Bu urunden toplam ${fmtNum(iadeMik)} ${esc(birimAd(l.unit)||'')} iade edildi - alim sayilarindan dusuldu">IADE &rarr; <b>${fmtNum(iadeMik)}</b> ${esc(birimAd(l.unit)||'')}</span></div>`:'';
     const bg=(_bgMap&&!_borcSeen.has(_lk))?_bgMap.get(_lk):null;
     if(bg) _borcSeen.add(_lk);
-    const borcNote=(bg&&bg.iade>0)?`<div style="margin-top:2px"><span class="cat-tag inv-borc-tag${bg.kalan>0?'':' kapandi'}" title="Bu urunden ${fmtNum(Math.min(bg.iade,bg.alinan))} ${esc(l.unit||'')} geri verildi - yalnizca borcun kalanini dusurur, stok degismez">GERI VERILEN <b>${fmtNum(Math.min(bg.iade,bg.alinan))}</b> · KALAN <b>${fmtNum(bg.kalan)}</b> ${esc(l.unit||'')}</span></div>`:'';
+    const borcNote=(bg&&bg.iade>0)?`<div style="margin-top:2px"><span class="cat-tag inv-borc-tag${bg.kalan>0?'':' kapandi'}" title="Bu urunden ${fmtNum(Math.min(bg.iade,bg.alinan))} ${esc(birimAd(l.unit)||'')} geri verildi - yalnizca borcun kalanini dusurur, stok degismez">GERI VERILEN <b>${fmtNum(Math.min(bg.iade,bg.alinan))}</b> · KALAN <b>${fmtNum(bg.kalan)}</b> ${esc(birimAd(l.unit)||'')}</span></div>`:'';
     const imgs=orderLineImgs(l);
     const imgCell=imgs.length
       ?`<img class="inv-thumb" src="${esc(imgs[0])}" alt="${esc(l.ad||'')}" loading="lazy" onclick="lightbox(${lbCall(imgs)})" title="${esc(l.ad||'')}${imgs.length>1?' ('+imgs.length+' fotograf)':''} - buyutmek icin tiklayin" onerror="this.outerHTML=phThumb('inv-thumb-ph')">`
@@ -32820,7 +33008,7 @@ function orderInvoiceHtml(o,genis){
     <td class="inv-img">${imgCell}</td>
     <td>${esc(gorAd(l))}${gorAltHtml(l,'font-size:10px;margin-top:1px')}${ozel}${atamaNote}${tedNote}${ozNote}${altNote}${iadeNote}${borcNote}</td>
     <td class="num" style="font-weight:700">${fmtNum(l.qty)}</td>
-    <td style="color:var(--mute)">${esc(l.unit||'')}</td></tr>`; });
+    <td style="color:var(--mute)">${esc(birimAd(l.unit)||'')}</td></tr>`; });
   const qty=o.lines.reduce((x,l)=>x+(Number(l.qty)||0),0);
   return `<div class="invoice${genis?' inv-page':''}">
         <div class="inv-top">
@@ -33167,7 +33355,7 @@ function iadeModalIc(){
       <td class="num" style="font-weight:700">${fmtNum(g.kalan)}</td>
       <td><input type="number" step="any" min="0" max="${g.kalan}" class="num" ${kapali?'disabled':''}
         value="${v!=null&&v!==''?esc(String(v)):''}" placeholder="0" oninput="iadeSetQty(${i},this)"></td>
-      <td class="t-meta">${esc(g.unit||'')}</td></tr>`;
+      <td class="t-meta">${esc(birimAd(g.unit)||'')}</td></tr>`;
   }).join('');
   return `<div class="modal-head"><h3>Iade Olustur</h3><button class="mini-btn" onclick="iadeKapat()">x</button></div>
     <div class="modal-body">
@@ -33212,7 +33400,7 @@ async function iadeKaydet(){
   for(const g of gr){
     const q=Number(st.qty[g.key])||0; if(!(q>0)) continue;
     // TAVAN YENIDEN OLCULUR: modal acikken baska bir sekmede iade girilmis olabilir
-    if(q>g.kalan+1e-9){ toast(`"${g.ad||g.code}" icin en fazla ${fmtNum(g.kalan)} ${g.unit||''} iade edilebilir`,'err'); return; }
+    if(q>g.kalan+1e-9){ toast(`"${g.ad||g.code}" icin en fazla ${fmtNum(g.kalan)} ${birimAd(g.unit)} iade edilebilir`,'err'); return; }
     satirlar.push({key:g.key,itemId:uid(),specId:g.specId,altId:g.altId,refSpecId:g.refSpecId,
       grup:g.grup,code:g.code,ad:g.ad,unit:g.unit,lokId:g.lokId,qty:q});
   }
@@ -33258,7 +33446,7 @@ function orderIadeHtml(o){
   const v=orderIadeler(o); if(!v.length) return '';
   const top=orderIadeToplam(o);
   const fis=v.slice().sort((a,b)=>(b.tarih||0)-(a.tarih||0)).map(ia=>{
-    const rz=iadeSatirlari(ia).map(r=>`<span class="cat-tag inv-iade-tag" title="${esc(r.code||'')} · bu miktar alimdan dusuldu">${esc(r.ad||r.code||'?')} · <b>${fmtNum(Number(r.qty)||0)}</b> ${esc(r.unit||'')}</span>`).join('');
+    const rz=iadeSatirlari(ia).map(r=>`<span class="cat-tag inv-iade-tag" title="${esc(r.code||'')} · bu miktar alimdan dusuldu">${esc(r.ad||r.code||'?')} · <b>${fmtNum(Number(r.qty)||0)}</b> ${esc(birimAd(r.unit)||'')}</span>`).join('');
     return `<div class="inv-iade-row">
       <div class="inv-iade-h"><b>${esc(ia.no||'IADE')}</b>
         <span>${fmtDate(ia.tarih)}${ia.olusturan?' · '+esc(kisiAd(ia.olusturan)):''}</span>
@@ -33339,7 +33527,7 @@ function borcGeriHtml(o){
   const v=borcGeriVermeler(o); if(!borcMu(o)||!v.length) return '';
   const z=borcOzet(o);
   const fis=v.slice().sort((a,b)=>(b.tarih||0)-(a.tarih||0)).map(gv=>{
-    const rz=iadeSatirlari(gv).map(r=>`<span class="cat-tag inv-iade-tag" title="${esc(r.code||'')} · geri verildi - stok degismez">${esc(r.ad||r.code||'?')} · <b>${fmtNum(Number(r.qty)||0)}</b> ${esc(r.unit||'')}</span>`).join('');
+    const rz=iadeSatirlari(gv).map(r=>`<span class="cat-tag inv-iade-tag" title="${esc(r.code||'')} · geri verildi - stok degismez">${esc(r.ad||r.code||'?')} · <b>${fmtNum(Number(r.qty)||0)}</b> ${esc(birimAd(r.unit)||'')}</span>`).join('');
     return `<div class="inv-iade-row">
       <div class="inv-iade-h"><b>${esc(gv.no||'GV')}</b>
         <span>${fmtDate(gv.tarih)}${gv.olusturan?' · '+esc(kisiAd(gv.olusturan)):''}</span>
@@ -33429,7 +33617,7 @@ function borcGvModalIc(){
       <td class="num" style="font-weight:700">${fmtNum(g.kalan)}</td>
       <td><input type="number" step="any" min="0" max="${g.kalan}" class="num" ${kapali?'disabled':''}
         value="${v!=null&&v!==''?esc(String(v)):''}" placeholder="0" oninput="borcGvSetQty(${i},this)"></td>
-      <td class="t-meta">${esc(g.unit||'')}</td></tr>`;
+      <td class="t-meta">${esc(birimAd(g.unit)||'')}</td></tr>`;
   }).join('');
   return `<div class="modal-head"><h3>Geri Ver</h3><button class="mini-btn" onclick="borcGvKapat()">x</button></div>
     <div class="modal-body">
@@ -33474,7 +33662,7 @@ async function borcGvKaydet(){
   for(const g of borcGeriGruplari(o)){
     const q=Number(st.qty[g.key])||0; if(!(q>0)) continue;
     // TAVAN YENIDEN OLCULUR: pencere acikken baska sekmede geri verme girilmis olabilir
-    if(q>g.kalan+1e-9){ toast(`"${g.ad||g.code}" icin en fazla ${fmtNum(g.kalan)} ${g.unit||''} geri verilebilir`,'err'); return; }
+    if(q>g.kalan+1e-9){ toast(`"${g.ad||g.code}" icin en fazla ${fmtNum(g.kalan)} ${birimAd(g.unit)} geri verilebilir`,'err'); return; }
     satirlar.push({key:g.key,specId:g.specId,altId:g.altId,grup:g.grup,code:g.code,ad:g.ad,unit:g.unit,lokId:g.lokId,qty:q});
   }
   if(!satirlar.length){ toast('En az bir urune geri verilen miktar girin','err'); return; }
@@ -33658,7 +33846,7 @@ function exportOrdersExcel(){
       parca.forEach((p,pi)=>{
         rows.push([o.no,fmtDate(o.date),o.bina||'',orderCompany(o),o.grup||'',
           parca.length>1?`${li+1} (${pi+1}/${parca.length})`:String(li+1),
-          l.code||'',l.ad,p.qty,l.unit||'',
+          l.code||'',l.ad,p.qty,birimAd(l.unit),
           at?'Atama':'Normal', at?(o.kaynakBina||''):'', at?(o.kaynakSart||''):'', at?atamaNedenLabel(o.atamaNeden):'',
           p.ted.bina||'', p.ted.sart||'', o.tedarikNot||'', p.kod,
           p.kod?((p.lokId?lokPath(p.lokId):ozelKodKatAdi(o.bina,p.kod))||''):'']);
@@ -33703,11 +33891,11 @@ function renderProjeLog(){
       rows+=`<tr><td>${thumb}</td><td class="t-name">${esc(g.name)} ${catTag} ${codeTag}<div style="margin-top:4px">${binaTags}</div></td>
         <td class="t-qty" style="color:var(--green)">+${fmtNum(g.giren)}${g.iade>0?`<div style="color:var(--amber);font-size:10.5px;font-weight:600" title="Tedarikciye iade edilen miktar - mevcuttan dusuldu">-${fmtNum(g.iade)} iade</div>`:''}</td>
         <td class="t-qty" style="color:${g.cikan>0?'var(--red)':'var(--mute)'}">${g.cikan>0?'-'+fmtNum(g.cikan):'0'}</td>
-        <td class="t-qty"><b class="bal ${netCls}">${fmtNum(net)}</b> <span style="color:var(--mute);font-weight:400">${esc(g.unit||'')}</span></td>
+        <td class="t-qty"><b class="bal ${netCls}">${fmtNum(net)}</b> <span style="color:var(--mute);font-weight:400">${esc(birimAd(g.unit)||'')}</span></td>
         <td class="t-meta">${dates.slice(0,2).join(', ')}${dates.length>2?` +${dates.length-2}`:''}</td>
         <td><div class="row-actions">
-        ${canCreate('gecici')||canUpdate('gecici')?`<button class="mini-btn out" title="Sahaya Sevk / Cikar" onclick="openProjeOut(this.dataset.n,this.dataset.u,this.dataset.c)" data-n="${esc(g.name)}" data-u="${esc(g.unit||'')}" data-c="${esc(g.cat||'')}">${icoArr('up')}</button>`:''}
-        ${canEdit('proje')?`<button class="mini-btn" title="Gecmis & Duzenle" onclick="showProjeHistory(this.dataset.n,this.dataset.u,this.dataset.c)" data-n="${esc(g.name)}" data-u="${esc(g.unit||'')}" data-c="${esc(g.cat||'')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></button>`:''}
+        ${canCreate('gecici')||canUpdate('gecici')?`<button class="mini-btn out" title="Sahaya Sevk / Cikar" onclick="openProjeOut(this.dataset.n,this.dataset.u,this.dataset.c)" data-n="${esc(g.name)}" data-u="${esc(birimAd(g.unit)||'')}" data-c="${esc(g.cat||'')}">${icoArr('up')}</button>`:''}
+        ${canEdit('proje')?`<button class="mini-btn" title="Gecmis & Duzenle" onclick="showProjeHistory(this.dataset.n,this.dataset.u,this.dataset.c)" data-n="${esc(g.name)}" data-u="${esc(birimAd(g.unit)||'')}" data-c="${esc(g.cat||'')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></button>`:''}
         </div></td></tr>`;
     });
     return `<div class="stats">${statRow([['Malzeme Cesidi',groups.length,items.length+' hareket','var(--blue)'],['Net Miktar',fmtNum(groups.reduce((s,g)=>s+g.total,0)),'giren - cikan','var(--amber)'],['Resimli',withImg,'fotografli','var(--green)'],['PDF',withPdf,'ekli belge','var(--red)']])}</div>
@@ -33741,7 +33929,7 @@ function renderProjeLog(){
           <div class="log-name">${esc(e.name)}</div>
           <div class="log-meta">${e.code?`<span class="log-code">${esc(e.code)}</span>`:''}${e.bina?`<span class="bina-tag" style="background:${col}22;color:${col};border:1px solid ${col}55">${esc(e.bina)}</span>`:''}${e.order?`<span class="log-ord">${esc(e.order)}</span>`:''}</div>
         </div>
-        <div class="log-qty" style="color:${renk}" title="${iade?'Tedarikciye iade - alim sayilarindan dusuldu':(out?'Sahaya sevk':'Alim / fatura girisi')}">${eksi?'-':'+'}${fmtNum(Math.abs(Number(e.qty)||0))} <span style="color:var(--mute);font-weight:400;font-size:11px">${esc(e.unit||'')}</span></div>
+        <div class="log-qty" style="color:${renk}" title="${iade?'Tedarikciye iade - alim sayilarindan dusuldu':(out?'Sahaya sevk':'Alim / fatura girisi')}">${eksi?'-':'+'}${fmtNum(Math.abs(Number(e.qty)||0))} <span style="color:var(--mute);font-weight:400;font-size:11px">${esc(birimAd(e.unit)||'')}</span></div>
         <div class="log-date">${fmtDate(e.date)}</div>
       </div>`;
     });
@@ -34096,7 +34284,7 @@ async function saveProjeItem(){
 function openProjeOut(name,unit,cat){
   if(!canCreate('gecici')&&!canUpdate('gecici')) return;
   unit=unit||''; cat=cat||'';
-  const ents=DB.proje.items.filter(it=>it.name===name&&(it.unit||'')===unit&&(it.cat||'')===cat);
+  const ents=DB.proje.items.filter(it=>it.name===name&&birimKey(it.unit)===birimKey(unit)&&(it.cat||'')===cat);
   const giren=ents.filter(e=>e.type!=='out').reduce((s,e)=>s+(Number(e.qty)||0),0);
   const cikan=ents.filter(e=>e.type==='out').reduce((s,e)=>s+(Number(e.qty)||0),0);
   const mevcut=giren-cikan;
@@ -34104,7 +34292,7 @@ function openProjeOut(name,unit,cat){
   window._outCtx={name,unit,cat,code,specId};
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal"><div class="modal-head"><h3>Sahaya Sevk / Cikar</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow"><label>Malzeme</label><input value="${esc(name)}" disabled style="opacity:.7"></div>
-    <div class="frow" style="display:flex;gap:10px"><div style="flex:1"><label>Mevcut</label><input value="${fmtNum(mevcut)} ${esc(unit)}" disabled style="opacity:.7;color:var(--green)"></div></div>
+    <div class="frow" style="display:flex;gap:10px"><div style="flex:1"><label>Mevcut</label><input value="${fmtNum(mevcut)} ${esc(birimAd(unit))}" disabled style="opacity:.7;color:var(--green)"></div></div>
     <div class="frow"><label>Cikis Miktari * <span class="t-meta">(sahaya sevk / iade)</span></label><input id="out_qty" type="number" step="any" placeholder="0" max="${mevcut}"></div>
     <div class="frow two"><div><label>Nereye / Bina</label><select id="out_bina">${binaOptsFor(PBINA).map(b=>`<option>${esc(b)}</option>`).join('')}</select></div><div><label>Tarih</label><input id="out_date" type="date"></div></div>
     <div class="frow"><label>Aciklama / Sevk No</label><input id="out_note" placeholder="orn. saha ekibine teslim, irsaliye no"></div>
@@ -34122,17 +34310,17 @@ async function saveProjeOut(){
   await sbInsertProjeItem(outItem);
   DB.proje.items.push(outItem);
   logAction('stock','Cikis/sevk: '+fmtNum(qty)+' '+ctx.unit+' - '+ctx.name+' -> '+document.getElementById('out_bina').value);
-  closeModal(); render(); toast(`${fmtNum(qty)} ${ctx.unit} cikis kaydedildi`);
+  closeModal(); render(); toast(`${fmtNum(qty)} ${birimAd(ctx.unit)} cikis kaydedildi`);
 }
 function showProjeHistory(name,unit,cat){
   const admin=canEdit('proje');
   unit=unit||''; cat=cat||'';
-  const entries=DB.proje.items.filter(it=>it.name===name&&(it.unit||'')===unit&&(it.cat||'')===cat).sort((a,b)=>b.date-a.date);
+  const entries=DB.proje.items.filter(it=>it.name===name&&birimKey(it.unit)===birimKey(unit)&&(it.cat||'')===cat).sort((a,b)=>b.date-a.date);
   const total=entries.reduce((s,e)=>s+(e.type==='out'?-(Number(e.qty)||0):(Number(e.qty)||0)),0);
   // IADE ucuncu tur: miktari zaten negatif kaydedilir, isaret turden okunur (yoksa "+-20")
   let rows=''; entries.forEach(e=>{ const out=e.type==='out', iade=e.type==='iade';
-    const eksi=out||iade, renk=iade?'var(--amber)':(out?'var(--red)':'var(--green)'); const bt=e.bina?`<span class="bina-tag" style="background:${buildingColor(e.bina)}22;color:${buildingColor(e.bina)};border:1px solid ${buildingColor(e.bina)}55">${esc(e.bina)}</span>`:''; const tip=iade?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber)" title="Tedarikciye iade - alim sayilarindan dusuldu">IADE</span>`:(out?`<span class="cat-tag" style="background:var(--red)22;color:var(--red)">CIKIS</span>`:`<span class="cat-tag" style="background:var(--green)22;color:var(--green)">GIRIS</span>`); rows+=`<div class="hist-row"><span class="hist-date">${fmtDate(e.date)}</span><span style="width:60px">${tip}</span><span style="width:60px">${bt}</span><span class="t-qty" style="width:90px;color:${renk}">${eksi?'-':'+'}${fmtNum(Math.abs(Number(e.qty)||0))} ${esc(e.unit||'')}</span><span class="hist-ord">${e.order?esc(e.order):'-'}</span><span style="display:flex;gap:6px">${itemPdf(e)?`<button class="pdf-pill" onclick='openProjePdf("${e.id}")'>PDF</button>`:''}${e.img?`<button class="mini-btn" onclick="lightbox('${e.img}')">${phIcoSm()}</button>`:''}${admin?`<button class="mini-btn" title="Duzenle" onclick='openProjeItemEdit("${e.id}")'><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="mini-btn del" onclick='delProjeItem("${e.id}")'>${icoTrash()}</button>`:''}</span></div>`; });
-  const html=`<div class="modal-bg drawer-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal wide drawer"><div class="modal-head"><h3>${esc(name)} ${cat?`<span class="cat-tag" style="background:${catColor(cat)}22;color:${catColor(cat)}">${esc(cat)}</span>`:''}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body"><div class="stat" style="margin-bottom:16px"><div class="strip" style="background:var(--amber)"></div><div class="lbl">Toplam Mevcut</div><div class="val">${fmtNum(total)} <span style="font-size:15px;color:var(--mute)">${esc(unit||'')}</span></div><div class="sub">${entries.length} ayri alim</div></div><div style="font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:8px">Alim Gecmisi</div>${rows}</div></div></div>`;
+    const eksi=out||iade, renk=iade?'var(--amber)':(out?'var(--red)':'var(--green)'); const bt=e.bina?`<span class="bina-tag" style="background:${buildingColor(e.bina)}22;color:${buildingColor(e.bina)};border:1px solid ${buildingColor(e.bina)}55">${esc(e.bina)}</span>`:''; const tip=iade?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber)" title="Tedarikciye iade - alim sayilarindan dusuldu">IADE</span>`:(out?`<span class="cat-tag" style="background:var(--red)22;color:var(--red)">CIKIS</span>`:`<span class="cat-tag" style="background:var(--green)22;color:var(--green)">GIRIS</span>`); rows+=`<div class="hist-row"><span class="hist-date">${fmtDate(e.date)}</span><span style="width:60px">${tip}</span><span style="width:60px">${bt}</span><span class="t-qty" style="width:90px;color:${renk}">${eksi?'-':'+'}${fmtNum(Math.abs(Number(e.qty)||0))} ${esc(birimAd(e.unit)||'')}</span><span class="hist-ord">${e.order?esc(e.order):'-'}</span><span style="display:flex;gap:6px">${itemPdf(e)?`<button class="pdf-pill" onclick='openProjePdf("${e.id}")'>PDF</button>`:''}${e.img?`<button class="mini-btn" onclick="lightbox('${e.img}')">${phIcoSm()}</button>`:''}${admin?`<button class="mini-btn" title="Duzenle" onclick='openProjeItemEdit("${e.id}")'><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="mini-btn del" onclick='delProjeItem("${e.id}")'>${icoTrash()}</button>`:''}</span></div>`; });
+  const html=`<div class="modal-bg drawer-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal wide drawer"><div class="modal-head"><h3>${esc(name)} ${cat?`<span class="cat-tag" style="background:${catColor(cat)}22;color:${catColor(cat)}">${esc(cat)}</span>`:''}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body"><div class="stat" style="margin-bottom:16px"><div class="strip" style="background:var(--amber)"></div><div class="lbl">Toplam Mevcut</div><div class="val">${fmtNum(total)} <span style="font-size:15px;color:var(--mute)">${esc(birimAd(unit)||'')}</span></div><div class="sub">${entries.length} ayri alim</div></div><div style="font-size:11px;color:var(--mute);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:8px">Alim Gecmisi</div>${rows}</div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
 }
 function phIcoSm(){return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="9" cy="9" r="2"/></svg>';}
@@ -34145,7 +34333,7 @@ function openProjeItemEdit(id){
   const binas=binaOptsFor(it.bina);
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal"><div class="modal-head"><h3>Alim Kaydi Duzenle</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="frow"><label>Malzeme</label><input value="${esc(it.name)}" disabled style="opacity:.7"></div>
-    <div class="frow two"><div><label>Miktar *</label><input id="ei_qty" type="number" step="any" value="${esc(it.qty)}"></div><div><label>Birim</label><input id="ei_unit" value="${esc(it.unit||'')}"></div></div>
+    <div class="frow two"><div><label>Miktar *</label><input id="ei_qty" type="number" step="any" value="${esc(it.qty)}"></div><div><label>Birim</label><input id="ei_unit" value="${esc(birimAd(it.unit)||'')}"></div></div>
     <div class="frow two"><div><label>Bina</label><select id="ei_bina">${binas.map(b=>`<option ${it.bina===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div><div><label>Alim Tarihi</label><input id="ei_date" type="date" value="${new Date(it.date||Date.now()).toISOString().slice(0,10)}"></div></div>
     <div class="frow"><label>Siparis No</label><input id="ei_order" value="${esc(it.order||'')}"></div>
     <div class="frow"><label>Not</label><textarea id="ei_note">${esc(it.note||'')}</textarea></div>
@@ -34243,7 +34431,7 @@ function _specFormFields(v){
       <div class="spec-rev-satir"><input id="s_revize" inputmode="decimal" autocomplete="off" placeholder="orn. +1 / -2" value="${esc(v.revize?(v.revize>0?'+':'')+String(v.revize):'')}" ${v.open?'disabled':''} oninput="specRevizeOzet()">
       <input id="s_revizeNot" autocomplete="off" placeholder="revize notu (orn. Rev.B - projede 3 kod var)" value="${esc(v.revizeNot||'')}" ${v.open?'disabled':''}></div>
       <p id="s_revOzet" class="spec-rev-ozet"></p></div>`},
-    {k:'unit',t:'Birim',h:'(kutuphanedeki malzemeden otomatik gelir)',html:`<input id="s_unit" value="${esc(v.unit||'')}" placeholder="malzeme secince otomatik" ${roUnit?'readonly class="ro-auto" title="Birim kutuphanedeki malzemeden gelir - degistirmek icin kutuphanede duzenleyin"':''}>`},
+    {k:'unit',t:'Birim',h:'(kutuphanedeki malzemeden otomatik gelir)',html:`<input id="s_unit" value="${esc(birimAd(v.unit)||'')}" placeholder="malzeme secince otomatik" ${roUnit?'readonly class="ro-auto" title="Birim kutuphanedeki malzemeden gelir - degistirmek icin kutuphanede duzenleyin"':''}>`},
     /* SARTNAME NOTU: kalemin KENDI aciklamasi - kutuphanedeki malzemeye degil bu satira yazilir.
        Ayni malzeme baska sartnamede/pozda bambaska bir notla gecebilir (montaj detayi, revizyon,
        yerlesim aciklamasi); Malzeme Kutuphanesindeki urun notu ortak ve degismez kalir. */
@@ -34477,7 +34665,7 @@ function specfRowHtml(i){
     <td class="c-ozel"><input value="${esc(r.ozelNo)}" placeholder="varsa" oninput="specfIn(${i},'ozelNo',this.value)" onkeydown="specfKey(event,${i})">
       <button class="specfg-ozbtn ${(r.ozelPay||[]).length?'has':''}" ${hasLok?'disabled title="Parca dagilimi var - ozel kod kirilimiyla birlikte olmaz"':'title="Ozel kod kirilimi: kalem birden cok yerlesim koduna gidiyorsa kodlar + miktarlar"'} onclick="specfOzAc(${i})">${(r.ozelPay||[]).length?`${r.ozelPay.length} kod · ${fmtNum(ozelPayToplam(r.ozelPay))}`:'+ Kod kirilimi'}</button></td>
     <td class="c-hedef"><input type="number" step="any" min="0" value="${hasLok?lokSum:esc(r.target)}" placeholder="0" ${r.open?'disabled':''} ${hasLok?'readonly style="opacity:.6" title="Dagilim girildi - hedef toplamdan gelir"':''} oninput="specfIn(${i},'target',this.value)" onkeydown="specfKey(event,${i})"></td>
-    <td class="c-birim"><input value="${esc(r.unit)}" placeholder="birim" ${roUnit?'readonly class="ro-auto" title="Birim kutuphanedeki malzemeden gelir - degistirmek icin kutuphanede duzenleyin"':''} oninput="specfIn(${i},'unit',this.value)"></td>
+    <td class="c-birim"><input value="${esc(birimAd(r.unit))}" placeholder="birim" ${roUnit?'readonly class="ro-auto" title="Birim kutuphanedeki malzemeden gelir - degistirmek icin kutuphanede duzenleyin"':''} oninput="specfIn(${i},'unit',this.value)"></td>
     <td class="c-not"><textarea rows="2" placeholder="bu kaleme ozel not" title="Sartname notu - bu kaleme ozeldir, kutuphanedeki urun notunu degistirmez" oninput="specfIn(${i},'note',this.value)">${esc(r.note)}</textarea></td>
     <td class="c-acik"><input type="checkbox" ${r.open?'checked':''} title="Miktar henuz belli degil (acik kalem)" onchange="specfOpenTgl(${i},this.checked)"></td>
     ${parcali?`<td class="c-lok"><button class="specfg-lokbtn ${hasLok?'has':''}" ${r.open||(r.ozelPay||[]).length?'disabled':''} ${(r.ozelPay||[]).length?'title="Ozel kod kirilimi var - parca dagilimiyla birlikte olmaz"':''} onclick="specfLokOpen(${i})">${hasLok?`${r.lokRows.length} parca · ${fmtNum(lokSum)}`:'+ Dagilim'}</button></td>`:''}
@@ -34530,7 +34718,7 @@ function renderSpecFormPage(){
   const codeLbl=f.ctx.code==='__all'?'Tum Sartnameler':f.ctx.code;
   const savedHtml=(!f.id&&f.saved.length)?`<div class="specf-saved"><div class="specf-saved-h">Bu oturumda kaydedilenler (${f.saved.length})</div>${f.saved.map(id=>{
       const s=DB.proje.specs.find(x=>x.id===id&&!x.is_deleted); if(!s)return '';
-      return `<div class="specf-saved-row"><b style="flex:1;min-width:0">${esc(gorAd(s))}</b><span class="m">${[s.poz?'Poz '+s.poz:'',s.code].filter(Boolean).map(esc).join(' · ')}</span><span class="m">${s.openQty?'acik kalem':fmtNum(s.target)+' '+esc(s.unit||'')}</span><button class="mini-btn" title="Duzenle (modal acilir)" onclick="openSpecModal('${s.id}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button></div>`;
+      return `<div class="specf-saved-row"><b style="flex:1;min-width:0">${esc(gorAd(s))}</b><span class="m">${[s.poz?'Poz '+s.poz:'',s.code].filter(Boolean).map(esc).join(' · ')}</span><span class="m">${s.openQty?'acik kalem':fmtNum(s.target)+' '+esc(birimAd(s.unit)||'')}</span><button class="mini-btn" title="Duzenle (modal acilir)" onclick="openSpecModal('${s.id}')"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button></div>`;
     }).join('')}</div>`:'';
   return `<div class="kata-page specf-page">
     <div class="sel-bc">
@@ -35090,7 +35278,7 @@ function sokRender(){
       <span class="nok-no">${k+1}</span>
       <input class="nok-kod" type="text" placeholder="00UYB14EM0001" value="${esc(p.kod||'')}" oninput="sokSet(${k},'kod',this.value)" title="${esc(ozelBilgiOzet(b))}">
       <input class="nok-qty" type="number" step="any" min="0" placeholder="0" value="${esc(p.qty||'')}" oninput="sokSet(${k},'qty',this.value)">
-      <span class="nok-unit">${esc(f.unit||'')}</span>
+      <span class="nok-unit">${esc(birimAd(f.unit)||'')}</span>
       <span class="nok-kat ${sokKatSinif(p)}" id="sokKat${k}" title="${esc(sokKatIpucu(p))}">${esc(sokKatEtiket(p))}</span>
       ${f.spId?sokAlimRozet(p.kod,p.qty).replace('<span class="nok-alim',`<span id="sokAlim${k}" class="nok-alim`):''}
       <button class="mini-btn del" onclick="sokSil(${k})" title="Bu kodu cikar">${icoTrash()}</button></div>
@@ -35102,7 +35290,7 @@ function sokRender(){
     <div class="nxb-src">
       <div class="nxb-src-h">SARTNAME KALEMI</div>
       <div class="nxb-name">${esc(f.baslik||'(malzeme secilmedi)')}</div>
-      <div class="nxb-sub">${esc(f.alt||'')} — ${f.hedef==null?'hedef bos / acik kalem':fmtNum(f.hedef)+' '+esc(f.unit||'')}</div>
+      <div class="nxb-sub">${esc(f.alt||'')} — ${f.hedef==null?'hedef bos / acik kalem':fmtNum(f.hedef)+' '+esc(birimAd(f.unit)||'')}</div>
     </div>
     <p class="t-meta" style="margin:10px 0 0;line-height:1.5">Kalemin hedefinin hangi <b>yerlesim (ozel) kodlarina</b> gidecegi. Siparisteki kirilimla eslesir: her kodun alimi burada, planda olmayan alimlar kalem detayinda gorunur.
       Yalnizca kunyedir - hedef, alim ve montaj degismez. Toplam hedefi asamaz; eksik kalan "koda baglanmamis" sayilir.</p>
@@ -35583,7 +35771,7 @@ function openSpecDetail(id){
       const lokTag=e.lokId?`<div style="margin-top:3px"><span class="cat-tag" style="background:var(--blue)18;color:var(--blue);border:1px solid var(--blue)44" title="Alimin bagli oldugu lokasyon">${esc(lokPath(e.lokId)||'?')}</span></div>`:'';
       // IADE satiri negatif miktarlidir; etiketsiz birakilsaydi eksi isaretli bir alim gibi okunurdu
       const iadeTag=e.type==='iade'?`<div style="margin-top:3px"><span class="cat-tag" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)55" title="Tedarikciye iade - bu miktar alimdan dusuldu">IADE</span></div>`:'';
-      alimRows+=`<tr><td>${fmtDate(e.date)}</td><td>${bt}</td><td style="text-align:right;font-weight:700;color:${e.type==='iade'?'var(--amber)':'inherit'}">${fmtNum(e.qty)} <span style="color:var(--mute);font-weight:400">${esc(e.unit||'')}</span></td><td style="font-family:var(--mono);font-size:12px">${esc(e.order||'-')}${altTag}${lokTag}${iadeTag}</td></tr>`; });
+      alimRows+=`<tr><td>${fmtDate(e.date)}</td><td>${bt}</td><td style="text-align:right;font-weight:700;color:${e.type==='iade'?'var(--amber)':'inherit'}">${fmtNum(e.qty)} <span style="color:var(--mute);font-weight:400">${esc(birimAd(e.unit)||'')}</span></td><td style="font-family:var(--mono);font-size:12px">${esc(e.order||'-')}${altTag}${lokTag}${iadeTag}</td></tr>`; });
   } else {
     alimRows=`<tr><td colspan="4" style="text-align:center;color:var(--mute);padding:16px">Henuz bu spesifikasyona alim girilmemis</td></tr>`;
   }
@@ -35606,24 +35794,24 @@ function openSpecDetail(id){
           </div>
           <div class="spec-detail-grup">${icoDoc()} ${esc(specGroupKey(sp))}</div>
           ${sp.note?`<div class="spec-note-box"><div class="spec-note-h">${icoNot()} SARTNAME NOTU</div><div class="spec-note-tx">${esc(sp.note)}</div></div>`:''}
-          ${specRevize(sp)?`<div class="spec-rev-box"><b>REVIZE DEGISIMI</b> · sartname ${fmtNum(specSartHedef(sp))} ${specRevize(sp)>0?'+':'-'} ${fmtNum(Math.abs(specRevize(sp)))} = gecerli hedef <b>${fmtNum(sp.target)} ${esc(sp.unit||'')}</b>${sp.revizeNot?` · ${esc(sp.revizeNot)}`:''}</div>`:''}
+          ${specRevize(sp)?`<div class="spec-rev-box"><b>REVIZE DEGISIMI</b> · sartname ${fmtNum(specSartHedef(sp))} ${specRevize(sp)>0?'+':'-'} ${fmtNum(Math.abs(specRevize(sp)))} = gecerli hedef <b>${fmtNum(sp.target)} ${esc(birimAd(sp.unit)||'')}</b>${sp.revizeNot?` · ${esc(sp.revizeNot)}`:''}</div>`:''}
           ${open?`<div class="ex-notice" style="border-color:var(--blue)44;color:var(--blue)">Acik kalem - miktar henuz belli degil. Alimlar sinirsiz girilir, kalem ilerleme yuzdesine karismaz; miktar netlesince Duzenle'den hedef girin.</div>`:sp.exclude?`<div class="ex-notice">${icoExclude()} Bu kalem ilerleme yuzdesine dahil edilmiyor (onay bekliyor)</div>`:''}
           ${open?'':`<div class="spec-detail-pct" style="color:${done?'var(--green)':c2}">${pct.toFixed(1)}%<span style="font-size:13px;color:var(--mute);font-weight:400"> tamamlandi</span></div>
           <div class="bar" style="height:10px"><i style="width:${pct}%;background:${done?'var(--green)':c2}"></i></div>`}
           <div class="spec-detail-stats">
-            <div class="sd-stat"><div class="sd-lbl">Hedef</div><div class="sd-val">${open?'belirsiz':fmtNum(sp.target)+' '}<span>${open?'':esc(sp.unit||'')}</span></div></div>
-            <div class="sd-stat"><div class="sd-lbl">Alinan</div><div class="sd-val" style="color:${c2}">${fmtNum(got)} <span>${esc(sp.unit||'')}</span></div></div>
-            ${open?`<div class="sd-stat"><div class="sd-lbl">Montaj</div><div class="sd-val" style="color:var(--blue)">${fmtNum(montajGot)} <span>${esc(sp.unit||'')}</span></div></div>`
-              :`<div class="sd-stat"><div class="sd-lbl">Kalan</div><div class="sd-val" style="color:${done?'var(--green)':'var(--amber)'}">${done?'Bitti':fmtNum(kalan)} <span>${done?'':esc(sp.unit||'')}</span></div></div>`}
+            <div class="sd-stat"><div class="sd-lbl">Hedef</div><div class="sd-val">${open?'belirsiz':fmtNum(sp.target)+' '}<span>${open?'':esc(birimAd(sp.unit)||'')}</span></div></div>
+            <div class="sd-stat"><div class="sd-lbl">Alinan</div><div class="sd-val" style="color:${c2}">${fmtNum(got)} <span>${esc(birimAd(sp.unit)||'')}</span></div></div>
+            ${open?`<div class="sd-stat"><div class="sd-lbl">Montaj</div><div class="sd-val" style="color:var(--blue)">${fmtNum(montajGot)} <span>${esc(birimAd(sp.unit)||'')}</span></div></div>`
+              :`<div class="sd-stat"><div class="sd-lbl">Kalan</div><div class="sd-val" style="color:${done?'var(--green)':'var(--amber)'}">${done?'Bitti':fmtNum(kalan)} <span>${done?'':esc(birimAd(sp.unit)||'')}</span></div></div>`}
           </div>
           ${Number(sp.target)>0?`<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
             <div style="font-size:11px;color:var(--mute);font-family:var(--mono);letter-spacing:.5px;margin-bottom:6px">MONTAJ ILERLEMESİ</div>
             <div class="spec-detail-pct" style="color:${montajDone?'var(--green)':'var(--amber)'}">${montajPct.toFixed(1)}%<span style="font-size:13px;color:var(--mute);font-weight:400"> montaj tamamlandi</span></div>
             <div class="bar" style="height:10px"><i style="width:${montajPct}%;background:${montajDone?'var(--green)':'var(--amber)'}"></i></div>
             <div class="spec-detail-stats" style="margin-top:8px">
-              <div class="sd-stat"><div class="sd-lbl">Hedef</div><div class="sd-val">${fmtNum(sp.target)} <span>${esc(sp.unit||'')}</span></div></div>
-              <div class="sd-stat"><div class="sd-lbl">Montaj</div><div class="sd-val" style="color:${montajDone?'var(--green)':'var(--amber)'}">${fmtNum(montajGot)} <span>${esc(sp.unit||'')}</span></div></div>
-              <div class="sd-stat"><div class="sd-lbl">Kalan</div><div class="sd-val" style="color:${montajDone?'var(--green)':'var(--amber)'}">${montajDone?'Bitti':fmtNum(Math.max(0,Number(sp.target)-montajGot))} <span>${montajDone?'':esc(sp.unit||'')}</span></div></div>
+              <div class="sd-stat"><div class="sd-lbl">Hedef</div><div class="sd-val">${fmtNum(sp.target)} <span>${esc(birimAd(sp.unit)||'')}</span></div></div>
+              <div class="sd-stat"><div class="sd-lbl">Montaj</div><div class="sd-val" style="color:${montajDone?'var(--green)':'var(--amber)'}">${fmtNum(montajGot)} <span>${esc(birimAd(sp.unit)||'')}</span></div></div>
+              <div class="sd-stat"><div class="sd-lbl">Kalan</div><div class="sd-val" style="color:${montajDone?'var(--green)':'var(--amber)'}">${montajDone?'Bitti':fmtNum(Math.max(0,Number(sp.target)-montajGot))} <span>${montajDone?'':esc(birimAd(sp.unit)||'')}</span></div></div>
             </div>
             ${(()=>{ // montajin ne kadari ALTERNATIF urunlerle yapildi (ana kaleme sayilir, kaynagi gorunur olsun)
               const byAlt=new Map();
@@ -35632,7 +35820,7 @@ function openSpecDetail(id){
               if(!byAlt.size) return '';
               const parts=[...byAlt.entries()].map(([aid,q])=>{ const a=(DB.proje.alternatives||[]).find(x=>x.id===aid);
                 return `${esc(a?(altLive(a).name||a.name||'?'):'silinmis alternatif')}: <b>${fmtNum(q)}</b>`; });
-              return `<div style="margin-top:8px;font-size:11.5px;color:var(--amber);line-height:1.6">Bu montajin bir kismi <b>alternatif urunle</b> yapildi &mdash; ${parts.join(' · ')} ${esc(sp.unit||'')}</div>`;
+              return `<div style="margin-top:8px;font-size:11.5px;color:var(--amber);line-height:1.6">Bu montajin bir kismi <b>alternatif urunle</b> yapildi &mdash; ${parts.join(' · ')} ${esc(birimAd(sp.unit)||'')}</div>`;
             })()}
           </div>`:''}
         </div>
@@ -35642,9 +35830,9 @@ function openSpecDetail(id){
         <table class="invoice-table"><thead><tr><th>Lokasyon</th><th style="text-align:right">Hedef</th><th style="text-align:right">Alinan</th><th style="text-align:right">Montaj</th><th style="text-align:right">Montaj %</th></tr></thead><tbody>
         ${lokRows.map(r=>{ const p=r.target>0?Math.min(100,r.mon/r.target*100):null; const pd=p!=null&&p>=100;
           return `<tr><td style="${r.genel?'color:var(--mute);font-style:italic':''}">${esc(r.path)}</td>
-            <td style="text-align:right;font-family:var(--mono)">${r.target?fmtNum(r.target)+' '+esc(sp.unit||''):'-'}</td>
-            <td style="text-align:right;font-family:var(--mono)">${r.got?fmtNum(r.got)+' '+esc(sp.unit||''):'-'}</td>
-            <td style="text-align:right;font-family:var(--mono)">${r.mon?fmtNum(r.mon)+' '+esc(sp.unit||''):'-'}</td>
+            <td style="text-align:right;font-family:var(--mono)">${r.target?fmtNum(r.target)+' '+esc(birimAd(sp.unit)||''):'-'}</td>
+            <td style="text-align:right;font-family:var(--mono)">${r.got?fmtNum(r.got)+' '+esc(birimAd(sp.unit)||''):'-'}</td>
+            <td style="text-align:right;font-family:var(--mono)">${r.mon?fmtNum(r.mon)+' '+esc(birimAd(sp.unit)||''):'-'}</td>
             <td style="text-align:right;font-family:var(--mono);font-weight:700;color:${p==null?'var(--mute)':pd?'var(--green)':'var(--amber)'}">${p==null?'-':p.toFixed(0)+'%'}</td></tr>`; }).join('')}</tbody></table>`; })()}
       ${specOzelDetayHtml(sp)}
       <div class="spec-detail-section">Alim Gecmisi <span class="t-meta">(${alimlar.length} kayit)</span></div>
@@ -35674,7 +35862,7 @@ function openLibModal(id){ if(!canEdit('gecici')) return; modalImg=null; const x
     <div class="frow"><label>Malzeme Adi *</label><input id="l_ad" value="${x?esc(x.ad):''}" placeholder="orn. 5X32A ERKEK FIS 380V"></div>
     <div class="frow two"><div><label>Stok Kodu</label><input id="l_kod" value="${x?esc(x.kod||''):''}"></div><div><label>Grup</label><input id="l_grup" list="grpList" value="${x?esc(x.grup||''):''}" placeholder="SIGORTA / KABLO..."><datalist id="grpList">${grps.map(g=>`<option value="${esc(g)}">`).join('')}</datalist></div></div>
     <div class="frow"><label>Marka  <span class="t-meta">(ortak marka listesinden)</span></label>${markaAlaniHtml('l_marka',x?x.marka:'',false)}</div>
-    <div class="frow two"><div><label>Birim</label><input id="l_unit" value="${x?esc(x.unit||'ADET'):'ADET'}"></div><div><label>Barkod</label><input id="l_barkod" value="${x?esc(x.barkod||''):''}"></div></div>
+    <div class="frow two"><div><label>Birim</label><input id="l_unit" value="${x?esc(birimAd(x.unit)||'ADET'):'ADET'}"></div><div><label>Barkod</label><input id="l_barkod" value="${x?esc(x.barkod||''):''}"></div></div>
     <!-- ORTAK KUNYE ALANLARI: proje malzeme formuyla ayni dort alan (bkz. KUNYE_SUTUN) -
          ayni urun iki kutuphanede de ayni kunyeyle dursun diye. -->
     <div class="frow two">
@@ -35774,7 +35962,7 @@ function libMove(id,type){ const x=DB.gecici.lib.find(i=>i.id===id); if(!x)retur
   if(type==='in'){ toast('Stok girisi yalnizca Siparis / Irsaliye ile yapilir','err'); return; }
   const mevcut=geciciBakiye(id);
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal"><div class="modal-head"><h3>Sahaya Sevk / Stok Cikisi</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
-    <div style="margin-bottom:14px"><div class="t-name">${esc(x.ad)}</div><div class="t-code">${esc(x.kod||'')} - Mevcut: <b style="color:var(--ink)">${fmtNum(mevcut)} ${esc(x.unit||'')}</b></div></div>
+    <div style="margin-bottom:14px"><div class="t-name">${esc(x.ad)}</div><div class="t-code">${esc(x.kod||'')} - Mevcut: <b style="color:var(--ink)">${fmtNum(mevcut)} ${esc(birimAd(x.unit)||'')}</b></div></div>
     <div class="frow two"><div><label>Miktar *</label><input id="mv_qty" type="number" step="any" placeholder="0" autofocus></div><div><label>Tarih</label><input id="mv_date" type="date"></div></div>
     <div class="frow"><label>Aciklama / Cikis Yeri</label><input id="mv_ord" placeholder="orn. A Blok sahasi"></div>
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-order" onclick="doMove('${id}','out')">Stok Dus</button></div></div></div>`;
@@ -35800,12 +35988,12 @@ function libDetail(id){ const x=DB.gecici.lib.find(i=>i.id===id); if(!x)return;
   const admin=canEdit('gecici');
   const moves=DB.gecici.moves.filter(m=>m.libId===id).sort((a,b)=>b.date-a.date);
   let rows=''; if(moves.length===0) rows='<div class="t-meta" style="padding:10px 0">Hareket kaydi yok.</div>';
-  moves.forEach(m=>{ rows+=`<div class="hist-row"><span class="hist-date">${fmtDate(m.date)}</span><span class="hist-type ${m.type}">${m.type==='in'?'+ GIRIS':'- CIKIS'}</span><span class="t-qty" style="width:80px">${fmtNum(m.qty)} ${esc(x.unit||'')}</span><span class="hist-ord">${esc(m.order||'-')}</span></div>`; });
+  moves.forEach(m=>{ rows+=`<div class="hist-row"><span class="hist-date">${fmtDate(m.date)}</span><span class="hist-type ${m.type}">${m.type==='in'?'+ GIRIS':'- CIKIS'}</span><span class="t-qty" style="width:80px">${fmtNum(m.qty)} ${esc(birimAd(x.unit)||'')}</span><span class="hist-ord">${esc(m.order||'-')}</span></div>`; });
   const html=`<div class="modal-bg drawer-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal wide drawer"><div class="modal-head"><h3>${esc(x.ad)} <span class="grp-tag">${esc(x.grup||'-')}</span></h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     ${x.adRu?`<div class="t-name-ru" style="margin:-6px 0 12px">${esc(x.adRu)}</div>`:''}
     <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
       ${x.img?`<img src="${x.img}" style="width:90px;height:90px;border-radius:10px;object-fit:contain;background:#fff;border:1px solid var(--line);cursor:pointer" onclick="lightbox(${lbCall([x.img,x.img2])})">`:''}
-      <div class="stat" style="flex:1;min-width:140px"><div class="strip" style="background:var(--grid)"></div><div class="lbl">Guncel Bakiye <span style="text-transform:none;font-weight:400">(${moves.length} hareketten)</span></div><div class="val">${fmtNum(geciciBakiye(id))} <span style="font-size:14px;color:var(--mute)">${esc(x.unit||'')}</span></div><div class="sub">${[x.kod,x.barkod,x.cins,Number(x.parca)>0?('paket ici '+fmtNum(x.parca)):''].filter(Boolean).map(esc).join(' - ')}</div></div>
+      <div class="stat" style="flex:1;min-width:140px"><div class="strip" style="background:var(--grid)"></div><div class="lbl">Guncel Bakiye <span style="text-transform:none;font-weight:400">(${moves.length} hareketten)</span></div><div class="val">${fmtNum(geciciBakiye(id))} <span style="font-size:14px;color:var(--mute)">${esc(birimAd(x.unit)||'')}</span></div><div class="sub">${[x.kod,x.barkod,x.cins,Number(x.parca)>0?('paket ici '+fmtNum(x.parca)):''].filter(Boolean).map(esc).join(' - ')}</div></div>
     </div>
     ${(()=>{ const s=vaSeciciHtml('gecici',x,'gecici'); return s?`<div style="margin:-4px 0 16px">${s}</div>`:''; })()}
     <div style="display:flex;gap:8px;margin-bottom:16px">
@@ -35969,7 +36157,7 @@ function renderOrderLines(){ const c=document.getElementById('olines'); if(!c)re
     return `<div class="oline">
       <div class="ac-wrap"><input id="ol_ad_${i}" placeholder="Malzeme adi (ara...)" value="${esc(l.ad)}" autocomplete="off" onfocus="acGecici(${i})"></div>
       <input type="number" step="any" placeholder="Miktar" value="${esc(l.qty)}" oninput="updLine(${i},'qty',this.value)">
-      <input placeholder="Birim" value="${esc(l.unit)}" oninput="updLine(${i},'unit',this.value)">
+      <input placeholder="Birim" value="${esc(birimAd(l.unit))}" oninput="updLine(${i},'unit',this.value)">
       <button class="mini-btn del" onclick="rmOrderLine(${i})">${icoTrash()}</button>
       ${info}</div>`;
   }).join('');
@@ -36067,7 +36255,7 @@ function irsDetayHtml(o){
     +(r.not?bas('Aciklama')+`<div class="t-meta" style="white-space:pre-wrap">${esc(r.not)}</div>`:'');
 }
 function orderDetail(id){ const o=DB.gecici.orders.find(x=>x.id===id); if(!o)return;
-  let rows=o.lines.map(l=>`<div class="hist-row"><span class="hist-ord" style="flex:2">${esc(gorAd(l))}</span><span class="t-qty" style="width:90px">${fmtNum(l.qty)} ${esc(l.unit||'')}</span></div>`).join('');
+  let rows=o.lines.map(l=>`<div class="hist-row"><span class="hist-ord" style="flex:2">${esc(gorAd(l))}</span><span class="t-qty" style="width:90px">${fmtNum(l.qty)} ${esc(birimAd(l.unit)||'')}</span></div>`).join('');
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal wide"><div class="modal-head"><h3 style="color:var(--violet)">${esc(o.no)}</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div class="t-meta" style="margin-bottom:14px">${fmtDate(o.date)} ${o.tedarikci?' - '+esc(o.tedarikci):''}</div>
     ${irsDetayHtml(o)}
@@ -36100,11 +36288,11 @@ function exportProjeExcel(){
   const items=DB.proje.items; if(items.length===0){toast("Veri yok","err");return;}
   const groups=groupByMaterial(items); const wb=XLSX.utils.book_new();
   const sum=[["Malzeme","Kategori","Bina(lar)","Birim","Giren","Cikan","Mevcut","Hareket","Tarihler","Siparis No'lari"]];
-  groups.forEach(g=>{ const binas=[...new Set(g.entries.map(e=>e.bina).filter(Boolean))]; sum.push([g.name,g.cat||'',binas.join(', '),g.unit||'',g.giren,g.cikan,g.total,g.entries.length,[...new Set(g.entries.map(e=>fmtDate(e.date)))].join(', '),[...new Set(g.entries.map(e=>e.order).filter(Boolean))].join(', ')]); });
+  groups.forEach(g=>{ const binas=[...new Set(g.entries.map(e=>e.bina).filter(Boolean))]; sum.push([g.name,g.cat||'',binas.join(', '),birimAd(g.unit),g.giren,g.cikan,g.total,g.entries.length,[...new Set(g.entries.map(e=>fmtDate(e.date)))].join(', '),[...new Set(g.entries.map(e=>e.order).filter(Boolean))].join(', ')]); });
   const ws1=XLSX.utils.aoa_to_sheet(sum); ws1['!cols']=[{wch:34},{wch:14},{wch:18},{wch:10},{wch:10},{wch:10},{wch:10},{wch:9},{wch:30},{wch:24}];
   XLSX.utils.book_append_sheet(wb,ws1,"Ozet");
   const det=[["Tarih","Tip","Bina","Malzeme","Kategori","Miktar","Birim","Siparis/Sevk No","Not","Foto","PDF"]];
-  items.slice().sort((a,b)=>b.date-a.date).forEach(it=>det.push([fmtDate(it.date),it.type==='out'?'CIKIS':(it.type==='iade'?'IADE':'GIRIS'),it.bina||'',it.name,it.cat||'',(it.type==='out'?-1:1)*Number(it.qty),it.unit||'',it.order||'',it.note||'',it.img?'Var':'-',(itemPdf(it)||{}).name||'-']));
+  items.slice().sort((a,b)=>b.date-a.date).forEach(it=>det.push([fmtDate(it.date),it.type==='out'?'CIKIS':(it.type==='iade'?'IADE':'GIRIS'),it.bina||'',it.name,it.cat||'',(it.type==='out'?-1:1)*Number(it.qty),birimAd(it.unit),it.order||'',it.note||'',it.img?'Var':'-',(itemPdf(it)||{}).name||'-']));
   const ws2=XLSX.utils.aoa_to_sheet(det); ws2['!cols']=[{wch:12},{wch:8},{wch:10},{wch:34},{wch:14},{wch:10},{wch:8},{wch:18},{wch:26},{wch:7},{wch:18}];
   XLSX.utils.book_append_sheet(wb,ws2,"Tum Hareketler");
   XLSX.writeFile(wb,`Proje_Malzeme_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel raporu indirildi");
@@ -36127,7 +36315,7 @@ function exportLibExcel(){
   sirali.forEach(x=>head.push([
     x.ad||'', x.standart||'', x.kod||'', x.barkod||'', x.marka||'',
     x.weight!=null&&x.weight!==''?x.weight:'', x.note||'', x.note2||'', formatTagsCell(x.tags),
-    lnk(x.img), lnk(x.img2), x.unit||'', x.grup||'', formatTagsCell(x.altCodes),
+    lnk(x.img), lnk(x.img2), birimAd(x.unit), x.grup||'', formatTagsCell(x.altCodes),
     vaExcelAd('gecici',x), vaExcelDeger('gecici',x),
     x.createdAt?fmtDate(x.createdAt):'', x.updatedAt?fmtDate(x.updatedAt):'']));
   const ws=XLSX.utils.aoa_to_sheet(head);
@@ -36141,7 +36329,7 @@ function exportLibExcel(){
   // AMBAR STOK sekmesi - kutuphane kunyesi degil, depodaki miktar
   const stokRows=[TOPG_STOK_BASLIK.slice()];
   const bakH=geciciBakiyeHaritasi();
-  sirali.forEach(x=>stokRows.push([x.kod||'',x.ad||'',x.unit||'',gBak(bakH,x)]));
+  sirali.forEach(x=>stokRows.push([x.kod||'',x.ad||'',birimAd(x.unit),gBak(bakH,x)]));
   const wsSt=XLSX.utils.aoa_to_sheet(stokRows); wsSt['!cols']=TOPG_STOK_GENIS.slice();
   XLSX.utils.book_append_sheet(wb,wsSt,"Ambar Stok");
   // hareketler sayfasi
@@ -39861,7 +40049,7 @@ function rLineHtml(bk,bi,l,li,bina,parcali,skb){
     const pct=Math.min(100,(tot/pr.target)*100);
     const done=pct>=100;
     const fmtN=n=>n%1?n.toFixed(2):String(n);
-    const lbl=`${fmtN(tot)} / ${pr.target} ${pr.unit} (%${Math.round(pct)})`;
+    const lbl=`${fmtN(tot)} / ${pr.target} ${birimAd(pr.unit)} (%${Math.round(pct)})`;
     barHtml=`<div class="rl-progress">
       <div class="rl-progress-head">
         <span id="rl_prog_ttl_${bi}_${li}" style="color:${done?'var(--green)':'var(--mute)'};font-weight:600">${done?'✓ Tamamlandi':'Montaj ilerleme'}</span>
@@ -39905,7 +40093,7 @@ function rLineHtml(bk,bi,l,li,bina,parcali,skb){
       <input type="number" step="any" placeholder="Miktar" value="${esc(l.miktar)}" oninput="rUpdLine(${bi},${li},'miktar',this.value)">
       ${libUnit
         ?`<input class="ro-auto" value="${esc(libUnit)}" readonly title="Birim Malzeme Kutuphanesindeki urunden otomatik gelir - degistirmek icin kutuphanede duzenleyin">`
-        :`<input placeholder="Birim" value="${esc(l.unit||'')}" oninput="rUpdLine(${bi},${li},'unit',this.value)" title="Kutuphanede birim tanimli degil - elle girin">`}
+        :`<input placeholder="Birim" value="${esc(birimAd(l.unit)||'')}" oninput="rUpdLine(${bi},${li},'unit',this.value)" title="Kutuphanede birim tanimli degil - elle girin">`}
       ${ozelChip}${codeChip}
     </div>
     ${skSatirUyari(bk,l,bina)}${info}${barHtml}</div>`;
@@ -40480,7 +40668,7 @@ function _rUpdProgBar(bi,li){
   if(fill){ fill.style.width=pct+'%'; fill.style.background=col; }
   const fmtN=n=>n%1?n.toFixed(2):String(n);
   const lbl=document.getElementById('rl_prog_lbl_'+bi+'_'+li);
-  if(lbl){ lbl.textContent=`${fmtN(tot)} / ${pr.target} ${pr.unit} (%${Math.round(pct)})`; lbl.style.color=done?'var(--green)':'var(--mute)'; }
+  if(lbl){ lbl.textContent=`${fmtN(tot)} / ${pr.target} ${birimAd(pr.unit)} (%${Math.round(pct)})`; lbl.style.color=done?'var(--green)':'var(--mute)'; }
   const ttl=document.getElementById('rl_prog_ttl_'+bi+'_'+li);
   if(ttl){ ttl.textContent=done?'✓ Tamamlandi':'Montaj ilerleme'; ttl.style.color=done?'var(--green)':'var(--mute)'; }
 }
@@ -41207,7 +41395,7 @@ function rimpAltWarn(r){
   if(a.status==='reddedildi') return 'Bu alternatif REDDEDILDI - dogruysa onaylayin, degilse dogru kalemi secin';
   if(a.status==='oneri') return 'Alternatif henuz ONERI asamasinda - onaylanmadan montaj kaydi girilecek';
   const sp=rimpSpecOf(r.specId); const la=altLive(a);
-  if(sp&&sp.unit&&la.unit&&norm(sp.unit)!==norm(la.unit)) return `Birim farkli: alternatif ${la.unit}, ana kalem ${sp.unit} - miktar ana kalemin montajina eklenir`;
+  if(sp&&sp.unit&&la.unit&&birimKey(sp.unit)!==birimKey(la.unit)) return `Birim farkli: alternatif ${birimAd(la.unit)}, ana kalem ${birimAd(sp.unit)} - miktar ana kalemin montajina eklenir`;
   return '';
 }
 function closeRaporImport(){ PRIMP=false; _RIMP=null; render(); }
@@ -42246,7 +42434,7 @@ function renderPLines(){ const c=document.getElementById('polines'); if(!c)retur
     const picked=l.specId&&l.ad;
     const grpTag=picked&&l.grup?`<span class="cat-tag" style="background:var(--dim)33;color:var(--text);font-family:var(--mono);font-size:9px;margin-left:6px">${esc(l.grup)}</span>`:'';
     const ozelTag=picked?specOzelBadge(l.specId,';font-size:9px;margin-left:6px'):'';
-    const info=picked?`<div class="lib-match match-found">${esc(l.code)} · ${esc(l.cat)}${l.unit?' · '+esc(l.unit):''}${ozelTag}${grpTag}</div>`:`<div class="lib-match match-new">${esc(PCAT)} bolumundeki tum sartnamelerden urun secin</div>`;
+    const info=picked?`<div class="lib-match match-found">${esc(l.code)} · ${esc(l.cat)}${l.unit?' · '+esc(birimAd(l.unit)):''}${ozelTag}${grpTag}</div>`:`<div class="lib-match match-new">${esc(PCAT)} bolumundeki tum sartnamelerden urun secin</div>`;
     return `<div class="oline" style="grid-template-columns:1fr 80px 34px">
       <div class="ac-wrap"><input id="pl_ad_${i}" placeholder="Ozel no, spek no veya ad ara..." value="${esc(picked?(l.code+' \u2014 '+l.ad):'')}" autocomplete="off" readonly onmousedown="this.removeAttribute('readonly')" ontouchstart="this.removeAttribute('readonly')" onclick="acProje(${i})" style="cursor:pointer"></div>
       <input type="number" step="any" placeholder="Miktar" value="${esc(l.qty)}" oninput="updPLine(${i},'qty',this.value)">
@@ -43168,7 +43356,7 @@ function nordTedarikRender(){
       <input class="ntd-sart" list="ntdPaySart${k}" value="${esc(p.sart||'')}" placeholder="Sartname (opsiyonel)" autocomplete="off" oninput="nordTedarikPaySet(${k},'sart',this.value)">
       <datalist id="ntdPaySart${k}">${nordTedarikSartOnerileri(p.bina||'')}</datalist>
       <input type="number" step="any" min="0" placeholder="0" value="${esc(p.qty||'')}" oninput="nordTedarikPaySet(${k},'qty',this.value)">
-      <span class="ntd-pay-unit">${esc(l.unit||'')}</span>
+      <span class="ntd-pay-unit">${esc(birimAd(l.unit)||'')}</span>
       <button type="button" class="nord-yerine-x" onclick="nordTedarikPayDel(${k})" title="Bu kaynagi kaldir">&times;</button>
     </div>`; }).join('');
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaDis(nordTedarikClose)"><div class="modal${bol?' wide':''}"><div class="modal-head">
@@ -43187,7 +43375,7 @@ function nordTedarikRender(){
     </div>
     ${bol?`
     <label style="display:flex;align-items:center;gap:7px;margin-bottom:8px">Kaynaklar ve miktarlari
-      <span class="ibi ibi-sol" tabindex="0">i<span>Satirin <b>${satirMik>0?fmtNum(satirMik):'-'}</b> ${esc(l.unit||'birim')} miktari asagidaki kaynaklara paylastirilir; toplam satir miktarina <b>esit</b> olmalidir.<br><br>
+      <span class="ibi ibi-sol" tabindex="0">i<span>Satirin <b>${satirMik>0?fmtNum(satirMik):'-'}</b> ${esc(birimAd(l.unit)||'birim')} miktari asagidaki kaynaklara paylastirilir; toplam satir miktarina <b>esit</b> olmalidir.<br><br>
         <b>1. kaynak kendi sartnamesiyle hazir gelir.</b> Kendi sartnamesinden gelen kismi da yazin ki raporda etiketsiz kalmasin.<br><br>
         Kaynak gercekten bilinmiyorsa bina kutusunu bos birakabilirsiniz.</span></span></label>
     <div class="nxb-list nat-list">${payRows}</div>
@@ -43571,11 +43759,11 @@ function nordYerineList(basaSar){
     if(s.poz) parts.push('poz '+aramaIsaret(s.poz,kel));
     if(s.code) parts.push(aramaIsaret(s.code,kel));
     parts.push(aramaIsaret(c.grup,kel));
-    if(s.unit) parts.push(esc(s.unit));
+    if(s.unit) parts.push(esc(birimAd(s.unit)));
     parts.push(s.openQty?'acik kalem':(Number(s.target)>0?'hedef '+fmtNum(s.target):''));
     const got=f.alim.get(s.id)||0; if(got) parts.push('alim '+fmtNum(got));
     const birimFark=(src.unit&&s.unit&&srcBir!==aramaNorm(s.unit))
-      ?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber);flex-shrink:0" title="Birim farkli - miktar oldugu gibi bu kaleme sayilir">${esc(s.unit)} &ne; ${esc(src.unit)}</span>`:'';
+      ?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber);flex-shrink:0" title="Birim farkli - miktar oldugu gibi bu kaleme sayilir">${esc(birimAd(s.unit))} &ne; ${esc(birimAd(src.unit))}</span>`:'';
     const benzR=c.benz>=700
       ?`<span class="cat-tag" style="background:color-mix(in srgb,var(--amber) 18%,transparent);color:var(--amber);flex-shrink:0" title="Alinan urunle ayni kod/ad - buyuk ihtimalle aradiginiz kalem">AYNI URUN</span>`
       :(c.benz>=200?`<span class="cat-tag" style="background:color-mix(in srgb,var(--mute) 20%,transparent);color:var(--mute);flex-shrink:0" title="Alinan urunun adiyla ortak kelimeler tasiyor">BENZER</span>`:'');
@@ -43621,8 +43809,8 @@ function nordYerinePick(i,specId){
   l.yerineSpecId=y.id; l.cat=y.cat||''; l.grup=specGroupKey(y);
   nordYerineClose(); nordRenderLines();
   const src=(DB.proje.specs||[]).find(s=>s.id===l.srcSpecId);
-  if(src && src.unit && y.unit && norm(src.unit)!==norm(y.unit))
-    toast(`Birim farkli: alinan ${src.unit}, yerine gectigi kalem ${y.unit} - miktar oldugu gibi o kaleme sayilir`,'err');
+  if(src && src.unit && y.unit && birimKey(src.unit)!==birimKey(y.unit))
+    toast(`Birim farkli: alinan ${birimAd(src.unit)}, yerine gectigi kalem ${birimAd(y.unit)} - miktar oldugu gibi o kaleme sayilir`,'err');
   else toast(`"${y.name||y.code}" kaleminin yerine baglandi - alim o kaleme sayilacak`);
 }
 /* Kabuk BIR KEZ cizilir; arama sonuclari yalnizca #nyr_list icine yazilir. Eskiden her
@@ -43760,7 +43948,7 @@ function nordAtamaPickRender(){
            acip kapatmasin. preventDefault KULLANILMAZ - imleci kutuya koymayi engellerdi. -->
       <input class="nat-qty" type="number" step="any" min="0" placeholder="miktar" value="${esc(f.sel[s.id]||'')}" ${on?'':'disabled'}
         oninput="nordAtamaPickQty('${s.id}',this.value)" onclick="event.stopPropagation()">
-      <span class="nat-unit">${esc(s.unit||'')}</span>
+      <span class="nat-unit">${esc(birimAd(s.unit)||'')}</span>
     </label>`;
   }).join('')||`<p class="matd-empty" style="margin:10px 0">${q?'Aramaya uyan kalem yok.':'Kaynak sartnamede kalem yok.'}</p>`;
   const html=`<div class="modal-bg" data-guard="off" onclick="if(event.target===this)modalKazaDis(nordAtamaPickClose)"><div class="modal wide"><div class="modal-head">
@@ -43949,7 +44137,7 @@ function nordDagitRender(){
       <div class="ndg-kod">${koz.length?esc(koz.join(' · ')):'<span style="color:var(--mute)">ozel kod yok</span>'}${alt?`<span>${alt}</span>`:''}</div>
       <div class="ndg-kalan" title="Hedef ${acik?'belirsiz':fmtNum(sp.target)} · Alinan ${fmtNum(nordDagitAlinan(sp))}">${kalanTxt}</div>
       <input type="number" step="any" min="0" placeholder="0" value="${esc(q)}" oninput="nordDagitQty('${sp.id}',this.value,this)">
-      <span class="ndg-unit">${esc(sp.unit||'')}</span>
+      <span class="ndg-unit">${esc(birimAd(sp.unit)||'')}</span>
     </div>`;
   }).join('')||`<p class="matd-empty" style="margin:10px 0">Kalem bulunamadi.</p>`;
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaDis(nordDagitClose)"><div class="modal wide"><div class="modal-head">
@@ -43957,7 +44145,7 @@ function nordDagitRender(){
     <div class="nxb-src">
       <div class="nxb-src-h">OZEL KODSUZ ALIM</div>
       <div class="nxb-name">${esc(l.ad||ilk.name||'?')}</div>
-      <div class="nxb-sub">${esc([l.code||ilk.code||'',specGroupKey(ilk),NORD.bina].filter(Boolean).join(' · '))} — ${list.length} kalem · toplam kalan ${fmtNum(toplamKalan)} ${esc(ilk.unit||'')}</div>
+      <div class="nxb-sub">${esc([l.code||ilk.code||'',specGroupKey(ilk),NORD.bina].filter(Boolean).join(' · '))} — ${list.length} kalem · toplam kalan ${fmtNum(toplamKalan)} ${esc(birimAd(ilk.unit)||'')}</div>
     </div>
     <p class="t-meta" style="margin:12px 0 10px;line-height:1.65">Faturada ozel kod yazmadigi icin miktar kalemlere burada paylastirilir.
       <b>Kalemler ve ozel kodlar oldugu gibi kalir</b> - hicbiri birlestirilmez ya da silinmez; yalnizca bu siparis satiri
@@ -43965,7 +44153,7 @@ function nordDagitRender(){
     <div class="frow" style="margin-bottom:0"><label>Faturadaki toplam miktar</label>
       <div style="display:flex;gap:8px;align-items:center">
         <input type="number" step="any" min="0" style="max-width:150px;margin:0" value="${esc(f.toplam||'')}" oninput="nordDagitToplam(this.value)" placeholder="0">
-        <span class="t-meta" style="font-family:var(--mono)">${esc(ilk.unit||'')}</span>
+        <span class="t-meta" style="font-family:var(--mono)">${esc(birimAd(ilk.unit)||'')}</span>
         <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordDagitOto()" title="Sartname sirasinda ilerleyip her kaleme kalani kadar yazar">Otomatik Doldur</button>
         <button class="btn btn-ghost" style="padding:7px 13px" onclick="nordDagitTemizle()">Temizle</button>
       </div></div>
@@ -44366,7 +44554,7 @@ function nordOzelRender(){
       <span class="nok-no">${k+1}</span>
       <input class="nok-kod" type="text" placeholder="00UYB16EM0258" value="${esc(p.kod||'')}" oninput="nordOzelSet(${k},'kod',this.value)">
       <input class="nok-qty" type="number" step="any" min="0" placeholder="0" value="${esc(p.qty||'')}" oninput="nordOzelSet(${k},'qty',this.value)">
-      <span class="nok-unit">${esc(l.unit||'')}</span>
+      <span class="nok-unit">${esc(birimAd(l.unit)||'')}</span>
       <span class="nok-kat ${nokKatSinif(p.kod)}" id="nokKat${k}" title="${esc(nokKatIpucu(p.kod))}">${esc(nokKatEtiket(p.kod))}</span>
       ${f.plan&&f.plan.size?nokPlanRozet(p.kod,p.qty,k):''}
       <button class="mini-btn del" onclick="nordOzelDel(${k})" title="Bu kodu cikar">${icoTrash()}</button>
@@ -44380,7 +44568,7 @@ function nordOzelRender(){
     <div class="nxb-src">
       <div class="nxb-src-h">FATURA SATIRI</div>
       <div class="nxb-name">${esc(l.ad||'?')}</div>
-      <div class="nxb-sub">${esc([l.code||'',l.grup||NORD.sart||'',NORD.bina||''].filter(Boolean).join(' · '))} — ${fmtNum(Number(l.qty)||0)} ${esc(l.unit||'')}</div>
+      <div class="nxb-sub">${esc([l.code||'',l.grup||NORD.sart||'',NORD.bina||''].filter(Boolean).join(' · '))} — ${fmtNum(Number(l.qty)||0)} ${esc(birimAd(l.unit)||'')}</div>
     </div>
     <div class="kata-intro nok-bilgi" id="nokBilgi"${_nokBilgi?'':' hidden'}>Alinan miktarin hangi <b>yerlesim (ozel) koduna</b> gittigi burada yazilir - katlari farkli olabilir.
       Kodlar <b>yalnizca kunyedir</b>: satir tek kalir, tek hareket kaydi uretir; hicbir kalemin hedef, alim ve montaj sayisi degismez.
@@ -44884,7 +45072,7 @@ function nordLinesHtml(){
     const srcSp=l.srcSpecId?DB.proje.specs.find(s=>s.id===l.srcSpecId):null;
     const birimFark=(ySp&&srcSp&&srcSp.unit&&ySp.unit&&norm(srcSp.unit)!==norm(ySp.unit));
     const hedefBadge=(l.srcSpecId&&!l.specId)?(ySp
-      ?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)55" title="Bu urun o kalemin yerine aliniyor - alim ve montaj o kalemin ilerlemesine sayilir${birimFark?'\nBIRIM FARKLI: '+esc(srcSp.unit)+' -> '+esc(ySp.unit):''}">YERINE &rarr; ${esc(ySp.name||ySp.code||'?')}${birimFark?' ⚠':''}</span>`
+      ?`<span class="cat-tag" style="background:var(--amber)22;color:var(--amber);border:1px solid var(--amber)55" title="Bu urun o kalemin yerine aliniyor - alim ve montaj o kalemin ilerlemesine sayilir${birimFark?'\nBIRIM FARKLI: '+esc(birimAd(srcSp.unit))+' -> '+esc(birimAd(ySp.unit)):''}">YERINE &rarr; ${esc(ySp.name||ySp.code||'?')}${birimFark?' ⚠':''}</span>`
       :`<span class="cat-tag" style="background:color-mix(in srgb,var(--green) 16%,transparent);color:var(--green);border:1px solid color-mix(in srgb,var(--green) 40%,transparent)" title="Bir kalemin yerine gecmiyor - kaydedince ${esc(NORD.sart||'hedef sartname')} altinda acik kalem olarak acilacak">YENI KALEM</span>`):'';
     // sartname/bolum/durum artik ayri sutun degil: urun hucresinin altinda kucuk etiketler
     const tags=ok?`<div class="nord-tags">
@@ -44946,7 +45134,7 @@ function nordLinesHtml(){
       <span class="nord-grip" title="Surukleyerek sirayi degistir" onmousedown="nordDragArm(this)" onmouseup="nordDragDisarm(this)">${icoGrip()}</span>
       <span class="nord-idx t-meta">${i+1}</span>
       <div class="nord-prod-col">${prodCell}${yerineSel}${dagitSel}${ctlStrip}</div>
-      <div class="nord-qty-col"><input type="number" step="any" min="0" placeholder="0" value="${esc(l.qty)}" oninput="nordUpd(${i},'qty',this.value)">${ok&&l.unit?`<span class="nord-unit">${esc(l.unit)}</span>`:''}</div>
+      <div class="nord-qty-col"><input type="number" step="any" min="0" placeholder="0" value="${esc(l.qty)}" oninput="nordUpd(${i},'qty',this.value)">${ok&&l.unit?`<span class="nord-unit">${esc(birimAd(l.unit))}</span>`:''}</div>
       <div class="nord-act">
         ${ok?`<button class="mini-btn${degis?' on':''}" onmousedown="event.preventDefault()" onclick="${degis?'nordDegisIptal()':`nordDegis(${i})`}" title="${degis?'Vazgec':'Urunu degistir - satir yerinde kalir, miktar/lokasyon/tedarik/ozel kod korunur'}">${icoPencilSm()}</button>`:''}
         <button class="mini-btn del" onclick="nordRm(${i})" title="Satiri sil">${icoTrash()}</button>
@@ -45254,7 +45442,7 @@ async function saveNewOrder(){
     const yok=fisSat.find(r=>!lines.some(l=>iadeUrunKey(l)===r.key));
     if(yok){ toast(`"${yok.ad||yok.code}" icin geri verme fisi var - urun borctan cikarilamaz (once fisi silin)`,'err'); return; }
     const asan=borcGeriGruplari(order).find(g=>g.iade>g.alinan+1e-9);
-    if(asan){ toast(`"${asan.ad||asan.code}" icin ${fmtNum(asan.iade)} ${asan.unit||''} geri verildi - borc miktari bunun altina inemez (once geri verme fisini silin)`,'err'); return; }
+    if(asan){ toast(`"${asan.ad||asan.code}" icin ${fmtNum(asan.iade)} ${birimAd(asan.unit)} geri verildi - borc miktari bunun altina inemez (once geri verme fisini silin)`,'err'); return; }
   }
   if(editId){
     // DUZENLEME: siparise bagli eski stok girisleri komple yenilenir, siparis kaydi guncellenir.
@@ -48101,14 +48289,8 @@ function _ihtXmHedef(r,varsayilan){
   o.kat=o.katlar.map(k=>k.kat).join(', ');
   return o;
 }
-// birim esitligi: "м / m" ile "m", "шт" ile "adet" ayni birimdir - farkliysa miktar yanlis olcekte olabilir
-const XM_BIRIM=[['adet','ad','adt','pcs','pc','piece','pieces','ea','each','шт','штука','штук'],['m','mt','metre','meter','м','пм','п.м','mtul'],
-  ['kg','кг','kilogram'],['m2','м2','metrekare','sqm'],['m3','м3','metrekup'],['lt','l','litre','liter','л'],['takim','set','kit','tk','компл','комплект'],
-  ['paket','pk','pkt','pack','уп','упак','упаковка'],['kutu','box','кор','коробка'],['rulo','roll','рул','рулон'],['cift','pair','пар','пара'],['ton','t','тн','т']];
-function _xmBirimKey(b){
-  const s=norm(b).replace(/²/g,'2').replace(/³/g,'3').replace(/[.\s]/g,'');
-  const g=XM_BIRIM.find(g=>g.some(x=>x.replace(/[.\s]/g,'')===s)); return g?g[0]:s;
-}
+// birim esitligi: sozluk anahtarina gore - "м / m" ile "m", "шт" ile "adet" ayni birimdir (bkz. birimKey / Birim Sozlugu)
+function _xmBirimKey(b){ return birimKey(b); }
 function _xmBirimAyni(a,b){
   const pa=String(a).split('/').map(_xmBirimKey).filter(Boolean), pb=String(b).split('/').map(_xmBirimKey).filter(Boolean);
   return !pa.length||!pb.length||pa.some(x=>pb.includes(x));
@@ -53168,7 +53350,7 @@ function renderKagitDetay(){
       <td><div style="font-size:12.5px">${esc(r.ad||'-')}</div><div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(r.code||'')}</div>${
         ay?`<div class="kgt-alimsiz-not"><span class="fat-rozet hic">ALIM YOK</span> bu firmadan alinmamis urun kagida yazilmis</div>`:''}${
         fatSatirPaylari(r).length?`<div class="t-meta" style="font-size:11px;font-family:var(--mono);color:var(--green)" title="Yerlesim kodu kirilimi">${esc(fatSatirPaylari(r).map(x=>x.kod+': '+fmtNum(fatSayi(x.qty))).join(' · '))}</div>`:''}</td>
-      <td class="t-meta">${esc(r.unit||'')}</td>
+      <td class="t-meta">${esc(birimAd(r.unit)||'')}</td>
       <td class="num">${fmtNum(yz)}</td>
       <td class="num" style="font-weight:700;color:${on>0?'var(--green)':'var(--dim)'}">${on>0?fmtNum(on):'-'}${
         az?`<div style="color:var(--amber);font-size:10.5px;font-weight:600">${fmtNum(yz-on)} onaylanmadi</div>`
@@ -53365,7 +53547,7 @@ function renderKagitForm(){
     return `<tr class="${!u.alimVar?'kgt-alimsiz':(bitti&&p<0?'kgt-bitti':'')}">
       <td class="tl-no" id="kgtNo${i}" title="Kagittaki satir sirasi - urunu doldurdugunuz sira">${p>=0?p+1:''}</td>
       <td class="kgt-urun"><div style="font-size:12.5px">${markIsaret(u.ad||'-',st.fq)}</div>
-        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${markIsaret(u.code||'-',st.fq)}${u.unit?' · '+esc(u.unit):''}${
+        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${markIsaret(u.code||'-',st.fq)}${u.unit?' · '+esc(birimAd(u.unit)):''}${
           u.binalar.length?' · '+markIsaret(u.binalar.join(', '),st.fq):''}${
           u.bolumler.length?' · <span style="color:var(--blue)">'+markIsaret(u.bolumler.join(', '),st.fq)+'</span>':''}</div>
         ${u.ozelKodlar&&u.ozelKodlar.length?`<div class="t-meta" style="font-size:11px;font-family:var(--mono)">${fatOzelKodOzet(u,0,st.fq)}</div>`:''}
@@ -54041,7 +54223,7 @@ function nhfKarsilastirHtml(n,hamlar){
       ${beyanVar?'<th class="num">Ham Belgede <span>tedarikcinin yazdigi</span></th>':''}<th class="num">Fark</th>
     </tr></thead><tbody>${k.rows.map(r=>`<tr class="${Math.abs(r.fark)>FAT_EPS?'kgt-asim':''}">
       <td><div style="font-size:12.5px">${esc(r.ad||'-')}</div><div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(r.code||'')}</div></td>
-      <td class="t-meta">${esc(r.unit||'')}</td>
+      <td class="t-meta">${esc(birimAd(r.unit)||'')}</td>
       <td class="num">${fmtNum(r.nihai)}</td><td class="num">${fmtNum(r.ham)}</td>
       ${beyanVar?`<td class="num">${r.beyanVar?fmtNum(r.beyan):'-'}</td>`:''}
       <td class="num" style="font-weight:700;color:${Math.abs(r.fark)<=FAT_EPS?'var(--green)':(r.fark>0?'var(--red)':'var(--amber)')}">${
@@ -54074,7 +54256,7 @@ function nhfExcel(){
   list.forEach(f=>{
     nhfSatirlari(f).forEach((r,i)=>{ const h=fatSatirHesap({qty:r.qty,fiyat:r.fiyat,kdvOrani:r.kdvOrani});
       aoa.push([NHF_DURUM[nhfDurumu(f)].ad, f.no||'', fmtDate(f.tarih), fatCompany(f)||'', r.kagitNo||'', r.sozlesmeNo||'', r.sartname||'', i+1,
-        r.code||'', r.ad||'', r.unit||'', fatSayi(r.qty), r.fiyat==null?'':fatSayi(r.fiyat), r.kagitFiyat==null?'':fatSayi(r.kagitFiyat),
+        r.code||'', r.ad||'', birimAd(r.unit), fatSayi(r.qty), r.fiyat==null?'':fatSayi(r.fiyat), r.kagitFiyat==null?'':fatSayi(r.kagitFiyat),
         nhfFiyatFarkli(r)?Number(((r.fiyat==null?0:fatSayi(r.fiyat))-fatSayi(r.kagitFiyat)).toFixed(4)):'',
         r.kdvOrani==null?'':fatSayi(r.kdvOrani), Number(h.matrah.toFixed(2)), Number(h.kdv.toFixed(2)), Number(h.toplam.toFixed(2)),
         f.paraBirimi||'TRY', f.kur||'', f.beyanTutar||'', f.kilitBy?kisiAd(f.kilitBy):'', f.kilitTs?fmtDate(f.kilitTs):'', f.not||'']); });
@@ -54759,7 +54941,7 @@ function renderNihaiDetay(){
       <td style="font-family:var(--mono);font-size:11.5px"><b>${esc(r.kagitNo||'-')}</b>${r.sozlesmeNo?`<div class="t-meta" style="font-size:10.5px">${esc(r.sozlesmeNo)}</div>`:''}</td>
       <td style="font-family:var(--mono);font-size:11.5px">${esc(r.sartname||'-')}</td>
       <td><div style="font-size:12.5px">${esc(r.ad||'-')}</div><div class="t-meta" style="font-size:11px;font-family:var(--mono)">${esc(r.code||'')}</div></td>
-      <td class="t-meta">${esc(r.unit||'')}</td>
+      <td class="t-meta">${esc(birimAd(r.unit)||'')}</td>
       <td class="num">${fmtNum(r.qty)}</td>
       <td class="num">${r.fiyat!=null?esc(fatPara(r.fiyat,'')):'-'}${fr?`<div style="color:var(--amber);font-size:10.5px;font-weight:600" title="Sartname kagidindaki onayli fiyat">kagit ${r.kagitFiyat!=null?esc(fatPara(r.kagitFiyat,'')):'-'}</div>`:''}</td>
       <td class="num">${r.kdvOrani!=null?'%'+fmtNum(r.kdvOrani):'-'}</td>
@@ -54882,7 +55064,7 @@ function renderNihaiForm(){
     satirlar+=`<tr class="${bitti&&p<0?'kgt-bitti':''}">
       <td class="tl-no" id="nhfNo${i}" title="Faturadaki satir sirasi">${p>=0?p+1:''}</td>
       <td class="kgt-urun"><div style="font-size:12.5px">${markIsaret(u.ad||'-',st.fq)}</div>
-        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${markIsaret(u.code||'-',st.fq)}${u.unit?' · '+esc(u.unit):''}${
+        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${markIsaret(u.code||'-',st.fq)}${u.unit?' · '+esc(birimAd(u.unit)):''}${
           u.kagitSira?' · kagit satiri '+u.kagitSira:''}</div>
         ${(araQ&&!eslesir(u))?`<div class="fat-arama-disi">aramaya uymuyor · faturaya girildigi icin listede</div>`:''}</td>
       <td style="font-family:var(--mono);font-size:11px">${markIsaret(u.sartname||'-',st.fq)}</td>
@@ -55695,7 +55877,7 @@ function fatAlinmamisSatir(u,baglam,q,ai){
   const d=FAT_ALINMAMIS_DURUM[u.durum]||FAT_ALINMAMIS_DURUM.hic;
   const beyanli=ai!=null&&ai>=0;
   const bv=beyanli?((_FAT&&_FAT.bq)||{})[u.key]:undefined;
-  const net=`net <b>${fmtNum(u.net)}</b>${u.unit?' '+esc(u.unit):''}`;
+  const net=`net <b>${fmtNum(u.net)}</b>${u.unit?' '+esc(birimAd(u.unit)):''}`;
   const fr=u.alinanFirmalar.slice(0,3).map(esc).join(', ')+(u.alinanFirmalar.length>3?` +${u.alinanFirmalar.length-3}`:'');
   const acik=u.durum==='hic'?'Hicbir sipariste alim kaydi yok. Faturalanabilecek miktar: <b>0</b>'
     :u.durum==='firmasiz'?`Yalnizca firmasi girilmemis siparislerde alinmis (${net})`
@@ -55703,7 +55885,7 @@ function fatAlinmamisSatir(u,baglam,q,ai){
     :`Alindigi firma: <b>${fr}</b> (${net}). Faturaya yazmak icin once firmayi secin`;
   return `<div class="fat-alin-satir ${u.durum}${beyanli?' beyanli':''}">
     <div class="ad">${u.matId&&baglam!=='form'?`<button class="fat-link" style="font-weight:600;font-size:12.5px" onclick="openMatDetail('${esc(u.matId)}')" title="Malzeme kunyesini ac">${markIsaret(u.ad||u.code||'-',q)}</button>`:markIsaret(u.ad||u.code||'-',q)}
-      <div class="t-meta">${markIsaret(u.code||'-',q)}${u.unit?' · '+esc(u.unit):''}${u.binalar.length?' · '+markIsaret(u.binalar.join(', '),q):''}${
+      <div class="t-meta">${markIsaret(u.code||'-',q)}${u.unit?' · '+esc(birimAd(u.unit)):''}${u.binalar.length?' · '+markIsaret(u.binalar.join(', '),q):''}${
         u.bolumler.length?' · <span style="color:var(--blue)">'+markIsaret(u.bolumler.join(', '),q)+'</span>':''}${
         u.sartnameler.length?' · '+markIsaret(u.sartnameler.slice(0,2).join(', '),q)+(u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''):''}</div>
       ${u.ozelKodlar.length?`<div class="t-meta">${fatOzelKodOzet(u,0,q)}</div>`:''}</div>
@@ -55910,7 +56092,7 @@ function fatDisBeyanBolumu(){
     const h=fatFarkHesapla(null,bv,0);
     return `<div class="fat-alin-satir hic beyanli">
       <div class="ad">${esc(s.ad||s.code||'(urun)')}
-        <div class="t-meta">${esc(s.code||'-')}${s.unit?' · '+esc(s.unit):''}</div></div>
+        <div class="t-meta">${esc(s.code||'-')}${s.unit?' · '+esc(birimAd(s.unit)):''}</div></div>
       <div class="durum"><span class="fat-rozet hic" title="Bu firmadan bu urun icin alim kaydi yok - kabul edilen miktar 0">BU FİRMADAN ALIM YOK</span>
         <small>Kabul edilen <b>0</b> · <span class="fat-fark-rozet ${h.durum.replace(/ /g,'-')}" style="display:inline;text-align:left">${esc(fatFarkRozetMetni(h))}</span></small></div>
       <div class="fat-alin-beyan"><label>Faturada yazan</label>
@@ -55992,7 +56174,7 @@ function fatFarkPanelHtml(hepsi,farkli,kunye,pdfId){
   const satirlar=(farkli.length?farkli:hepsi).map(x=>`<div class="fk-sat ${x.durum.replace(/ /g,'-')}">
     <div class="ust">${x.sira?`<span class="sn" title="Faturadaki satir numarasi">#${x.sira}</span>`:''}<b>${esc(x.ad||'-')}</b>${x.code?`<span class="kod">${esc(x.code)}</span>`:''}
       <span class="rz">${esc(fatFarkEtiket(x))}</span></div>
-    <div class="sy"><span>Faturada yazan <b>${say(x.beyan)}</b>${x.unit?' '+esc(x.unit):''}</span>
+    <div class="sy"><span>Faturada yazan <b>${say(x.beyan)}</b>${x.unit?' '+esc(birimAd(x.unit)):''}</span>
       <span>Bu faturaya girilen <b>${say(x.sistem)}</b></span>
       <span>Faturalanabilir kalan <b>${say(x.kalan)}</b></span>
       <span class="fk">Fark <b>${x.fark>0?'+':''}${say(x.fark)}</b></span>
@@ -56228,7 +56410,7 @@ function renderFaturaForm(){
     return `<tr class="${bitti?'bitti':''}">
       <td class="tl-no">${i+1}</td>
       <td><div style="font-size:12.5px">${markIsaret(u.ad||'-',st.fq)}</div>
-        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${markIsaret(u.code||'-',st.fq)}${u.unit?' · '+esc(u.unit):''}${u.binalar.length?' · '+markIsaret(u.binalar.join(', '),st.fq):''}${
+        <div class="t-meta" style="font-size:11px;font-family:var(--mono)">${markIsaret(u.code||'-',st.fq)}${u.unit?' · '+esc(birimAd(u.unit)):''}${u.binalar.length?' · '+markIsaret(u.binalar.join(', '),st.fq):''}${
           u.bolumler.length?' · <span style="color:var(--blue)">'+markIsaret(u.bolumler.join(', '),st.fq)+'</span>':''}${
           u.sartnameler.length?' · '+markIsaret(u.sartnameler.slice(0,2).join(', '),st.fq)+(u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''):''}</div>
         ${u.ozelKodlar&&u.ozelKodlar.length?`<div class="t-meta" style="font-size:11px;font-family:var(--mono)">${fatOzelKodOzet(u,0,st.fq)}</div>`:''}
@@ -56671,7 +56853,7 @@ function fatOzelRender(ilk){
       <input class="nok-qty" type="number" step="any" min="0" placeholder="0" value="${esc(q)}"
         ${bitti?'disabled':''} oninput="fatOzelSet('${k}',this)"
         title="${bitti?'Bu yerlesimin tamami faturalanmis':'En fazla '+fmtNum(Math.max(0,sat.kalan))}">
-      <span class="nok-unit">${esc(f.unit||'')}</span>
+      <span class="nok-unit">${esc(birimAd(f.unit)||'')}</span>
     </div>`;
   }).join('');
   const html=`<div class="modal-bg" onclick="if(event.target===this)fatOzelClose()"><div class="modal wide">
@@ -56681,14 +56863,14 @@ function fatOzelRender(ilk){
     <div class="nxb-src">
       <div class="nxb-src-h">${esc(f.baslik||'FATURA SATIRI')}</div>
       <div class="nxb-name">${esc(f.ad||'?')}</div>
-      <div class="nxb-sub">${fmtNum(f.hedef)} ${esc(f.unit||'')} — ${esc(f.altMetin||'bu miktarin hangi yerlesim kodlari icin odendigini isaretleyin')}</div>
+      <div class="nxb-sub">${fmtNum(f.hedef)} ${esc(birimAd(f.unit)||'')} — ${esc(f.altMetin||'bu miktarin hangi yerlesim kodlari icin odendigini isaretleyin')}</div>
     </div>
     <div class="kata-intro" style="margin:12px 0 0">Kodlar <b>alim kayitlarindan</b> gelir - elle yazilmaz.
       Her kodun yaninda o yerlesimin <b>alinani</b>, ${f.fatAciklama||'daha once <b>faturalanani</b>'} ve <b>kalani</b> durur;
       kalani biten kod ustu cizili gelir, cunku o yerlesimin parasi zaten odenmistir.
       Kirilim <b>zorunlu degildir</b> - urun tavani degismez, bu yalnizca "hangisi icin odedim" sorusunu kayda gecirir.
       ${f.kodsuz>FAT_EPS?`<br><b style="color:var(--amber)">Not:</b> bu urunun alimlarindan
-        <b>${fmtNum(f.kodsuz)}</b> ${esc(f.unit||'birim')} hicbir yerlesim koduna bagli degil
+        <b>${fmtNum(f.kodsuz)}</b> ${esc(birimAd(f.unit)||'birim')} hicbir yerlesim koduna bagli degil
         (kaleminde ozel no yok). O kisim asagidaki listede YER ALMAZ - satirin tamamini
         dagitamayabilirsiniz, bu normaldir.`:''}
       ${f.dagitilmamis>FAT_EPS?`<br><b style="color:var(--amber)">Not:</b> bu urunde daha once
@@ -57339,7 +57521,7 @@ function renderFaturaMutabakat(){
       <td class="t-meta">${markIsaret(u.binalar.join(', ')||'-',FATV.q)}</td>
       <td class="t-meta">${markIsaret(u.bolumler.join(', ')||'-',FATV.q)}${u.sartnameler.length?`<div style="font-size:10.5px">${markIsaret(u.sartnameler.slice(0,2).join(', '),FATV.q)}${u.sartnameler.length>2?' +'+(u.sartnameler.length-2):''}</div>`:''}</td>
       <td class="t-meta">${markIsaret(u.firmalar.join(', ')||'-',FATV.q)}</td>
-      <td class="t-qty">${fmtNum(u.alinan)}${u.unit?` <span style="color:var(--mute)">${esc(u.unit)}</span>`:''}</td>
+      <td class="t-qty">${fmtNum(u.alinan)}${u.unit?` <span style="color:var(--mute)">${esc(birimAd(u.unit))}</span>`:''}</td>
       <td class="t-qty" style="color:${u.iade>0?'var(--amber)':'var(--dim)'}">${u.iade>0?fmtNum(u.iade):'-'}</td>
       <td class="t-qty">${fmtNum(u.net)}</td>
       <td class="t-qty" style="color:${u.durum==='fazla'?'var(--red)':(u.fat>0?'var(--ink)':'var(--dim)')}"
@@ -57406,7 +57588,7 @@ function exportMutabakatXlsx(){
     "alinan","iade","net_alinan","faturalanan","onayli_kagitta","kalan","durum"]];
   liste.forEach(u=>{
     const dur={fazla:'FAZLA',tam:'TAM',kismi:'KISMI',yok:'FATURASIZ'}[u.durum]||'';
-    aoa.push([u.code||'', u.ad||'', u.unit||'', (u.ozelKodlar||[]).join(', '), u.binalar.join(', '),
+    aoa.push([u.code||'', u.ad||'', birimAd(u.unit), (u.ozelKodlar||[]).join(', '), u.binalar.join(', '),
       (u.bolumler||[]).join(', '), (u.sartnameler||[]).join(', '), u.firmalar.join(', '),
       u.alinan||0, u.iade||0, u.net||0, u.fat||0, u.kagitOnay||0, Number((u.kalan||0).toFixed(4)), dur]);
   });
@@ -57436,7 +57618,7 @@ function exportFaturaXlsx(){
     const kuyruk=[f.beyanTutar||'', Number(top.toplam.toFixed(2)), f.not||'', kisiAd(f.olusturan)];
     if(!sat.length){ aoa.push(bas.concat(['','','','',0,'',0,0,0,0,0,0,0,''],kuyruk)); return; }
     sat.forEach((r,i)=>{ const h=fatSatirHesap(r);
-      aoa.push(bas.concat([i+1, r.code||'', r.ad||'', r.unit||'',
+      aoa.push(bas.concat([i+1, r.code||'', r.ad||'', birimAd(r.unit),
         h.qty, h.fiyat||'', h.iskO||0, Number(h.iskonto.toFixed(2)), Number(h.matrah.toFixed(2)),
         h.kdvO||0, Number(h.kdv.toFixed(2)), Number(h.diger.toFixed(2)), Number(h.toplam.toFixed(2)),
         fatSatirPaylari(r).map(x=>x.kod+':'+x.qty).join(' ')],kuyruk));
@@ -57929,7 +58111,7 @@ function fatKitapKur(dil){
     const belgeler=(faturaGecen.get(u.key)||[]).slice().sort(fatSirala);
     const n=sMut.satir([
       {v:L.durum[u.durum]||'',b:B.durum[u.durum]||td},
-      {v:u.code||'',b:kod}, {v:u.ad||'',b:td}, {v:u.unit||'',b:z?B.tdSZ:B.tdS},
+      {v:u.code||'',b:kod}, {v:u.ad||'',b:td}, {v:birimAd(u.unit),b:z?B.tdSZ:B.tdS},
       {v:(u.firmalar||[]).join(' · '),b:sar}, {v:(u.binalar||[]).join(' · '),b:sar},
       {v:u.alinan||0,b:B.mikSec(u.alinan,z)}, {v:u.iade||0,b:B.mikSec(u.iade,z)},
       {v:u.net||0,b:B.mikSec(u.net,z)}, {v:u.fat||0,b:B.mikSec(u.fat,z)},
@@ -58000,7 +58182,7 @@ function fatKitapKur(dil){
       const n=s.satir([
         {v:i+1,b:ts}, {v:r.code||'',b:kod},
         {v:r.ad||'',b:urunSatir.has(String(r.key||''))?(z?B.linkHZ:B.linkH):td},
-        {v:r.unit||'',b:ts}, {v:h.qty,b:B.mikSec(h.qty,z)}, {v:h.fiyat||'',b:par},
+        {v:birimAd(r.unit),b:ts}, {v:h.qty,b:B.mikSec(h.qty,z)}, {v:h.fiyat||'',b:par},
         {v:h.iskO||'',b:yuz}, {v:h.iskonto?Number(h.iskonto.toFixed(2)):'',b:par},
         {v:Number(h.matrah.toFixed(2)),b:par}, {v:h.kdvO||0,b:yuz},
         {v:Number(h.kdv.toFixed(2)),b:par}, {v:Number(h.toplam.toFixed(2)),b:z?B.parBZ:B.parB},
@@ -58106,7 +58288,7 @@ function fatKitapKur(dil){
         {v:f.no||L.numarasiz,b:kod},
         {v:xlsxTarihSeri(f.tarih),b:z?B.trhZ:B.trh},
         {v:fatCompany(f)||L.firmaYok,b:td},
-        {v:x.code||'',b:kod}, {v:x.ad||'',b:td}, {v:x.unit||'',b:ts},
+        {v:x.code||'',b:kod}, {v:x.ad||'',b:td}, {v:birimAd(x.unit),b:ts},
         {v:x.beyan,b:B.mikSec(x.beyan,z)}, {v:x.sistem,b:B.mikSec(x.sistem,z)},
         {v:Number(x.fark.toFixed(4)),b:x.durum==='denk'?B.mikSec(x.fark,z):B.fark},
         {v:x.alinan,b:B.mikSec(x.alinan,z)}, {v:x.iade,b:B.mikSec(x.iade,z)},
@@ -58518,7 +58700,7 @@ function fatFarkPdfHtml(f,dil){
         <td class="sy" style="font-weight:400;color:var(--fn)">${x.sira||i+1}</td>
         <td class="kod">${esc(x.code||'-')}</td>
         <td class="ad">${esc(x.ad||'-')}</td>
-        <td class="kod">${esc(x.unit||'-')}</td>
+        <td class="kod">${esc(birimAd(x.unit)||'-')}</td>
         <td class="sy">${say(x.beyan)}</td>
         <td class="sy">${say(x.sistem)}</td>
         <td class="frk ${fatFarkPdfSinif(x)}">${x.fark>0?'+':''}${say(x.fark)}</td>
@@ -58544,7 +58726,7 @@ function fatFarkPdfHtml(f,dil){
 
   const bloklar=farkli.map((x,i)=>{
     const k=kanit.get(x.key)||{alimlar:[],iadeler:[],faturalar:[]};
-    const br=x.unit?`<i>${esc(x.unit)}</i>`:'';
+    const br=x.unit?`<i>${esc(birimAd(x.unit))}</i>`:'';
     const alimSat=k.alimlar.map(a=>`<tr><td class="kod">${esc(a.no||'-')}</td><td>${esc(a.tarih?fmtDate(a.tarih):'-')}</td>
       <td>${esc(a.bina||'-')}</td><td class="kod">${esc(a.sartname||'-')}</td>
       <td class="kod">${esc(a.kodlar.join(' · ')||'-')}</td>
@@ -58580,7 +58762,7 @@ function fatFarkPdfHtml(f,dil){
           :hs(H.alinan,say(x.alinan))+(x.iade>0?hs(H.iade,'− '+say(x.iade))+hs(H.net,say(x.net),'ara'):'')+hs(H.onceki,'− '+say(x.onceki))}
         ${hs(H.kalan,say(x.kalan),'snc')}
         ${hs(H.beyan,say(x.beyan))}
-        ${x.fark>0?`<div class="fzl ${ds}"><span>${esc(H.fark)}</span><b>+${say(x.fark)}${x.unit?' '+esc(x.unit):''}</b>${
+        ${x.fark>0?`<div class="fzl ${ds}"><span>${esc(H.fark)}</span><b>+${say(x.fark)}${x.unit?' '+esc(birimAd(x.unit)):''}</b>${
           tutar(x)?`<em>${esc(H.fazlaTutar)}: ${esc(para(tutar(x))+' '+pb)}</em>`:''}</div>`:''}
       </div></div>`;
   }).join('');
