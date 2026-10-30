@@ -512,7 +512,7 @@ export default async function handler(req, res) {
         }
 
         await denetimYaz(org, { user: claims.username, role: claims.role, action: 'org', tasari: id,
-          detail: `Tasari olusturuldu: ${isim} (${id}) - konum ${konum.ulke}, piyasa dili ${konum.dil}` })
+          detail: `Tasari olusturuldu: ${isim} (${id}) - konum ${konum.il ? konum.il + ', ' : ''}${konum.ulke}, piyasa dili ${konum.dil}` })
 
         res.status(201).json({ tasari: { id, ad: isim, konum, aktif: true }, birim: { ...ilkBirim, aktif: true } })
       } catch (e) {
@@ -542,7 +542,7 @@ export default async function handler(req, res) {
           .from('tasarilar').update({ data: { ...(t.data || {}), konum } }).eq('org_id', org).eq('id', tasari)
         if (uErr) throw uErr
         await denetimYaz(org, { user: claims.username, role: claims.role, action: 'org', tasari,
-          detail: `Tasari konumu degisti (${tasariSatiri(t).ad}): ${eski ? eski.ulke + '/' + eski.dil : 'girilmemis'} -> ${konum.ulke}/${konum.dil}` })
+          detail: `Tasari konumu degisti (${tasariSatiri(t).ad}): ${eski ? (eski.il ? eski.il + ' ' : '') + eski.ulke + '/' + eski.dil : 'girilmemis'} -> ${konum.il ? konum.il + ' ' : ''}${konum.ulke}/${konum.dil}` })
         res.status(200).json({ tasari, konum })
       } catch (e) {
         console.error('tasari konum basarisiz', e)
