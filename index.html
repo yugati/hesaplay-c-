@@ -747,6 +747,7 @@ header{display:flex;align-items:center;gap:12px;padding:0 20px;height:56px;backg
    gorundugu her an belli olmali - modun acik oldugu fark edilmeden kalmasin */
 @media(max-width:1500px){.pam-pill span{display:inline}}
 .pam-pill.on{border-color:var(--amber);color:var(--amber);background:color-mix(in srgb,var(--amber) 12%,transparent)}
+.pam-pill.resmi{border-color:var(--line2,var(--line));color:var(--ink)}
 /* MARKER MODU dugmesi - piyasa adi pill'i ile ayni kalip, farkli renk:
    ikisi ayni anda acik olabiliyor, hangisinin acik oldugu renkten anlasilsin. */
 /* Dugme IKI parcadir: govde tek tikla ac/kapa (modun asil isi bir tik uzakta
@@ -30040,12 +30041,15 @@ function parsePiyasaCell(s){
    Secim KULLANICIYA OZELDIR (localStorage, tema tercihi gibi): ayni veriye bakan
    baska kullanicinin ekrani degismez.
    PAM.cikti: Excel/PDF ciktilarinin da modu izleyip izlemeyecegi - modu ilk
-   acista sorulur, sonra ayni menuden degistirilir. */
+   acista sorulur, sonra ayni menuden degistirilir.
+   PAM.resmi (30 Eki): ekrandaki RESMI AD hangi dilde - '' tam ad ("RU / EN"), 'RU' ya da
+   'EN' yalniz o parca (bkz. matResmi; parcasi olmayan urunde tam ad). Kullaniciya ozel,
+   yalniz cizim katmani: kayit, kimlik ve Excel ice aktarma yine tam adi okur. */
 const PAM_ANAHTAR='piyasaAdModu';
-let PAM={acik:false,dil:'TR',cikti:false,soruldu:false};
+let PAM={acik:false,dil:'TR',cikti:false,soruldu:false,resmi:''};
 function pamYukle(){
   try{ const x=JSON.parse(localStorage.getItem(PAM_ANAHTAR)||'null');
-    if(x&&typeof x==='object') PAM={acik:!!x.acik,dil:String(x.dil||'TR').toUpperCase(),cikti:!!x.cikti,soruldu:!!x.soruldu};
+    if(x&&typeof x==='object') PAM={acik:!!x.acik,dil:String(x.dil||'TR').toUpperCase(),cikti:!!x.cikti,soruldu:!!x.soruldu,resmi:String(x.resmi||'').toUpperCase()};
   }catch(e){}
 }
 function pamKaydet(){ try{ localStorage.setItem(PAM_ANAHTAR,JSON.stringify(PAM)); }catch(e){} }
@@ -30075,7 +30079,22 @@ function _pamMalzeme(o){
   const kod=o.code!=null?o.code:o.kod, ad=o.name!=null?o.name:o.ad;
   return anah.get(matKey(kod||'',ad||''))||null;
 }
-function pamResmiAd(o){ const v=o&&(o.name!=null?o.name:o.ad); return String(v==null?'':v); }
+function pamTamAd(o){ const v=o&&(o.name!=null?o.name:o.ad); return String(v==null?'':v); }
+// ekranda gorulecek resmi ad: PAM.resmi secili dilse urunun o dildeki parcasi, yoksa / bulunamazsa tam ad
+function pamResmiDil(){ const d=PAM.resmi; return (d&&resmiDiller().includes(d))?d:''; }
+function pamResmiAd(o){
+  const tam=pamTamAd(o), d=pamResmiDil(); if(!d) return tam;
+  const m=_pamMalzeme(o); if(!m) return tam;
+  const p=matResmi(m).find(x=>x.d===d);
+  return p?p.ad:tam;
+}
+// alt satira gelecek DIGER dil parcalari (secili dil varken): "Frame anchor HRD-C 10x80"
+function pamResmiDiger(o){
+  const d=pamResmiDil(); if(!d) return [];
+  const m=_pamMalzeme(o); if(!m) return [];
+  const l=matResmi(m); if(!l.some(x=>x.d===d)) return [];
+  return l.filter(x=>x.d!==d).map(x=>x.ad);
+}
 // secili dildeki piyasa adi; o dil yoksa kayittaki ilk satir (bos donebilir)
 function pamPiyasaAdi(o){
   const m=_pamMalzeme(o); if(!m) return '';
@@ -30092,7 +30111,8 @@ function gorEksik(o){ return !!(PAM.acik&&!pamPiyasaAdi(o)); }
 function gorAlt(o){
   if(PAM.acik) return pamPiyasaAdi(o)?pamResmiAd(o):'';
   const m=_pamMalzeme(o); const l=m?matPiyasa(m):[];
-  return l.map(piyasaEtiket).join(' \u00b7 ');
+  // secili resmi dil varken once adin DIGER dil parcasi, sonra piyasa adlari
+  return [...pamResmiDiger(o),...l.map(piyasaEtiket)].join(' \u00b7 ');
 }
 // baslik yaninda kucuk isaret: modun acik oldugunu ve bu urunde ad bulunmadigini soyler
 function gorEksikRozet(o){
@@ -30102,11 +30122,12 @@ function gorEksikRozet(o){
 // q verilirse marker modu isaretlemesi uygulanir (kutuphane listesi)
 function gorAltHtml(o,stil,q){
   const a=gorAlt(o); if(!a) return '';
-  return '<div class="t-meta pam-alt" style="'+(stil||'font-size:10.5px;margin-top:2px')+'" title="'+(PAM.acik?'Kutuphanedeki resmi ad':'Piyasa adlari')+'">'+markIsaret(a,q)+'</div>';
+  return '<div class="t-meta pam-alt" style="'+(stil||'font-size:10.5px;margin-top:2px')+'" title="'+(PAM.acik?'Kutuphanedeki resmi ad':(pamResmiDil()?'Resmi adin diger dili ve piyasa adlari':'Piyasa adlari'))+'">'+markIsaret(a,q)+'</div>';
 }
 /* CIKTILAR: yalnizca PAM.cikti acikken modu izler. Kullanici 'Hayir' dediyse
    Excel/PDF her zaman resmi adi yazar - dosya belge niteligindedir. */
-function ciktiAd(o){ return (PAM.acik&&PAM.cikti)?gorAd(o):pamResmiAd(o); }
+// ciktilar: 'ekrandaki ad' secildiyse ekranla ayni (piyasa adi / secili resmi dil), yoksa TAM resmi ad
+function ciktiAd(o){ return PAM.cikti?gorAd(o):pamTamAd(o); }
 
 /* ══════════════════════════════════════════════════════════════════════════
    TASARI KONUMU (30 Eki) - "piyasa", projenin YAPILDIGI YERDIR.
@@ -30274,22 +30295,32 @@ function pamPillCiz(){
   const b=document.getElementById('pamBtn'); if(!b) return;
   b.classList.toggle('on',!!PAM.acik);
   const e=document.getElementById('pamPillAd');
-  if(e) e.textContent=PAM.acik?('Piyasa \u00b7 '+PAM.dil):'Piyasa adi';
+  const rd=pamResmiDil();
+  b.classList.toggle('resmi',!PAM.acik&&!!rd);
+  if(e) e.textContent=PAM.acik?('Piyasa \u00b7 '+PAM.dil):(rd?('Resmi \u00b7 '+rd):'Piyasa adi');
   // ulke rozeti: projenin nerede oldugu baslikta her an gorunur (tasari konumu)
   const k=tasariKonum(), u=document.getElementById('pamPillUlke');
   if(u){ u.hidden=!k; u.textContent=k?k.ulke:''; }
   b.title=(PAM.acik
     ? 'Piyasa adi modu ACIK ('+PAM.dil+') - baslikta piyasa adi, altinda resmi ad. Kapatmak icin tiklayin.'
-    : 'Piyasa adi modu kapali - urunler kutuphanedeki resmi adiyla gorunuyor')
+    : (rd?'Resmi ad yalniz '+rd+' dilinde gorunuyor - diger dil alt satirda. Degistirmek icin tiklayin.':'Piyasa adi modu kapali - urunler kutuphanedeki resmi adiyla gorunuyor'))
     +(k?'\nTasari konumu: '+konumYerAd(k)+' - piyasa dili '+k.dil:'\nTasari konumu girilmemis');
   const m=document.getElementById('pamMenu'); if(m&&m.classList.contains('open')) pamMenuCiz();
 }
 function pamMenuCiz(){
   const m=document.getElementById('pamMenu'); if(!m) return;
   const diller=piyasaDilOnerileri();
-  const soru=(PAM.acik&&!PAM.soruldu)?`<div class="pam-soru"><b>Ciktilar da piyasa adiyla mi?</b>
+  const soru=((PAM.acik||pamResmiDil())&&!PAM.soruldu)?`<div class="pam-soru"><b>Ciktilar da ekrandaki adla mi?</b>
       <span>Indirilen Excel/PDF dosyalarinda Malzeme Ismi sutunu.</span>
-      <div class="pam-soru-btn"><button class="theme-opt" onclick="pamCikti(false)">Hayir - resmi ad</button><button class="theme-opt" onclick="pamCikti(true)">Evet - piyasa adi</button></div></div>`:'';
+      <div class="pam-soru-btn"><button class="theme-opt" onclick="pamCikti(false)">Hayir - tam resmi ad</button><button class="theme-opt" onclick="pamCikti(true)">Evet - ekrandaki ad</button></div></div>`:'';
+  /* RESMI AD (ekranda): tasarinin resmi ad dilleri birden fazlaysa (RU + EN) tam ad ya da yalniz bir
+     dil secilir. Kullaniciya ozel; kayit ve kimlik degismez (bkz. pamResmiAd). */
+  const rdl=resmiDiller(), rd=pamResmiDil();
+  const resmiBlok=rdl.length>1?`<div class="pam-baslik">Resmi ad (ekranda)</div>
+    <button class="theme-opt${rd?'':' on'}" onclick="pamResmi('')">Tam - ${esc(rdl.join(' / '))}</button>
+    ${rdl.map(d=>`<button class="theme-opt${rd===d?' on':''}" onclick="pamResmi('${esc(d)}')">Yalniz ${esc(d)}</button>`).join('')}
+    <div class="pam-not">Secili dilde parcasi girilmemis urun tam adiyla gorunur; diger dil alt satira iner.</div>
+    <div class="org-ayrac"></div>`:'';
   /* DIL / ULKE: tasari konumu varsa SALT OKUNUR karttir (ulke rozeti + ad + piyasa dili);
      yonetici "Degistir" ile konum penceresini acar. Konum yoksa eski cipler + uyari. */
   const k=tasariKonum();
@@ -30303,12 +30334,12 @@ function pamMenuCiz(){
     <button class="theme-opt${PAM.acik?'':' on'}" onclick="pamAcKapa(false)">Kapali - resmi ad</button>
     <button class="theme-opt${PAM.acik?' on':''}" onclick="pamAcKapa(true)">Acik - piyasa adi</button>
     <div class="org-ayrac"></div>
-    ${dilBlok}
+    ${resmiBlok}${dilBlok}
     <div class="org-ayrac"></div>
     <div class="pam-baslik">Ciktilar (Excel / PDF)</div>
-    <button class="theme-opt${PAM.cikti?'':' on'}" onclick="pamCikti(false)">Resmi ad</button>
-    <button class="theme-opt${PAM.cikti?' on':''}" onclick="pamCikti(true)">Piyasa adi</button>
-    <div class="pam-not">Kutuphane kunye Excel'i her zaman resmi adla iner - o dosya geri yuklenebildigi icin ad kimliktir.</div>
+    <button class="theme-opt${PAM.cikti?'':' on'}" onclick="pamCikti(false)">Tam resmi ad</button>
+    <button class="theme-opt${PAM.cikti?' on':''}" onclick="pamCikti(true)">Ekrandaki ad</button>
+    <div class="pam-not">"Ekrandaki ad": piyasa adi modu ya da secili resmi dil ne gosteriyorsa Excel/PDF de onu yazar. Kutuphane kunye Excel'i her zaman tam resmi adla iner - o dosya geri yuklenebildigi icin ad kimliktir.</div>
     ${soru}`;
 }
 function pamMenuAc(e){
@@ -30317,6 +30348,13 @@ function pamMenuAc(e){
   const acik=m.classList.contains('open');
   document.querySelectorAll('.theme-menu.open,.org-menu.open').forEach(x=>x.classList.remove('open'));
   if(!acik){ pamMenuCiz(); m.classList.add('open'); }
+}
+function pamResmi(d){
+  d=String(d||'').toUpperCase(); if(d&&!resmiDiller().includes(d)) return;
+  PAM.resmi=d;
+  if(d&&!PAM.soruldu) PAM.cikti=false;          // ciktilar sorulana kadar tam resmi adda kalir
+  pamKaydet(); pamOnbellekSifirla(); pamPillCiz(); render();
+  toast(d?('Resmi ad ekranda yalniz '+d):'Resmi ad tam ('+resmiDiller().join(' / ')+')');
 }
 function pamAcKapa(v){
   PAM.acik=!!v;
@@ -30440,7 +30478,7 @@ async function brmYeniKaydet(selId){
     sel.value=t.k; sel.dataset.son=t.k; sel.dispatchEvent(new Event('input',{bubbles:true})); }
 }
 function pamCikti(v){ PAM.cikti=!!v; PAM.soruldu=true; pamKaydet(); pamMenuCiz(); pamPillCiz();
-  toast(PAM.cikti?'Ciktilar da piyasa adiyla':'Ciktilar resmi adla'); }
+  toast(PAM.cikti?'Ciktilar da ekrandaki adla':'Ciktilar tam resmi adla'); }
 pamYukle();   // tercih taraficidadir: sayfa acilir acilmaz okunur, sunucuya sorulmaz
 function matVaryant(m){
   const v=m&&m.varyant;
