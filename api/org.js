@@ -16,7 +16,7 @@ import { denetimYaz } from '../lib/denetim.js'
 // POST /api/org  { op:'sil', org, onay }     -> { ok, ...ozet }              (yalnizca super, GERI ALINAMAZ)
 // POST /api/org  { op:'tasariGecis', tasari, birim? } -> { token, tasari, ad, birim, ttl } (HERKES)
 // POST /api/org  { op:'tasariYeni', id, ad, konum:{ulke,dil} } -> { tasari, birim } (yalnizca admin)
-// POST /api/org  { op:'tasariKonum', konum:{ulke,dil,il,resmiDil} } -> { tasari, konum }   (yalnizca admin, AKTIF tasari)
+// POST /api/org  { op:'tasariKonum', konum:{ulke,dil,il,isveren,resmiDil} } -> { tasari, konum }   (yalnizca admin, AKTIF tasari)
 // POST /api/org  { op:'birimGecis', birim }  -> { token, birim, ad, ttl }    (erisimi olan herkes)
 // POST /api/org  { op:'birimYeni', id, ad }  -> { birim }                    (yalnizca admin)
 //
@@ -542,7 +542,7 @@ export default async function handler(req, res) {
           .from('tasarilar').update({ data: { ...(t.data || {}), konum } }).eq('org_id', org).eq('id', tasari)
         if (uErr) throw uErr
         await denetimYaz(org, { user: claims.username, role: claims.role, action: 'org', tasari,
-          detail: `Tasari konumu degisti (${tasariSatiri(t).ad}): ${eski ? (eski.il ? eski.il + ' ' : '') + eski.ulke + '/' + eski.dil + ' resmi ' + eski.resmiDil.join('+') : 'girilmemis'} -> ${konum.il ? konum.il + ' ' : ''}${konum.ulke}/${konum.dil} resmi ${konum.resmiDil.join('+')}` })
+          detail: `Tasari konumu degisti (${tasariSatiri(t).ad}): ${eski ? (eski.il ? eski.il + ' ' : '') + eski.ulke + '/' + eski.dil + ' isveren ' + (eski.isveren || '-') + ' resmi ' + eski.resmiDil.join('+') : 'girilmemis'} -> ${konum.il ? konum.il + ' ' : ''}${konum.ulke}/${konum.dil} isveren ${konum.isveren || '-'} resmi ${konum.resmiDil.join('+')}` })
         res.status(200).json({ tasari, konum })
       } catch (e) {
         console.error('tasari konum basarisiz', e)

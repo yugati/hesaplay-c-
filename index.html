@@ -748,6 +748,8 @@ header{display:flex;align-items:center;gap:12px;padding:0 20px;height:56px;backg
 @media(max-width:1500px){.pam-pill span{display:inline}}
 .pam-pill.on{border-color:var(--amber);color:var(--amber);background:color-mix(in srgb,var(--amber) 12%,transparent)}
 .pam-pill.resmi{border-color:var(--line2,var(--line));color:var(--ink)}
+/* Tasari Konumu / Yeni Tasari: isverenden onerilen resmi ad dili cipleri - select ile ayni boyda bir kutu */
+.konum-resmi-cips{min-height:38px;align-items:center;padding:4px 8px;border:1px solid var(--line);border-radius:9px;background:var(--bg)}
 /* MARKER MODU dugmesi - piyasa adi pill'i ile ayni kalip, farkli renk:
    ikisi ayni anda acik olabiliyor, hangisinin acik oldugu renkten anlasilsin. */
 /* Dugme IKI parcadir: govde tek tikla ac/kapa (modun asil isi bir tik uzakta
@@ -7267,9 +7269,8 @@ function tasariYeniAc(){
         <div id="tas_il_wrap"><label>Il / sehir *</label>${konumIlAlanHtml('tas','TR','')}</div>
         <div><label>Piyasa dili</label><select id="tas_dil">${konumDilSecenekHtml('TR')}</select></div>
       </div>
-      <div class="frow"><label>Resmi ad dilleri <span class="t-meta">(isverenin sartname dili - kunyede her dil icin ayri ad kutusu; Malzeme Ismi bu sirayla " / " ile birlesir)</span></label>
-        <input id="tas_resmi" value="RU, EN" placeholder="orn. RU, EN" maxlength="24"></div>
-      <p class="t-meta" style="margin:0 0 8px">Konum, projenin <b>yapildigi ulke ve ildir</b>: piyasa adi dili ve birim etiketleri (ad. / шт. / pcs) ondan turer, tum kullanicilar icin gecerlidir. Sonradan yalnizca yonetici degistirir.</p>
+      ${konumResmiAlanHtml('tas','TR','TR',konumResmiDilOner('TR','TR'))}
+      <p class="t-meta" style="margin:0 0 8px">Konum, projenin <b>yapildigi ulke ve ildir</b>: piyasa adi dili ve birim etiketleri (ad. / шт. / pcs) ondan turer. <b>Isverenin ulkesi</b> resmi ad dillerini belirler (yabanci isverende EN de eklenir): kunyede her dil icin ayri ad kutusu acilir. Tum kullanicilar icin gecerlidir; sonradan yalnizca yonetici degistirir.</p>
       <p class="t-meta" style="margin:0">Yeni tasari <b>kutuphaneyi hazir bulur</b>: malzeme kunyesi, sirketler, alet kunyesi ve marka listesi organizasyon genelinde ortaktir. Yalnizca <b>is verisi</b> bos baslar: sartname, siparis, bina, bolum, rapor, saha, tutanak ve fatura. Tasari, su an icinde bulundugunuz <b>${esc(birimAdiGoster())}</b> birimiyle acilir; diger birimler sonra Calisma Alani'ndan eklenir.</p>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="tasariYeniKaydet()">Olustur</button></div></div></div>`;
@@ -7283,7 +7284,7 @@ async function tasariYeniKaydet(){
   if(!ad){ toast('Tasari adi gerekli','err'); return; }
   if(!/^[a-z0-9][a-z0-9_-]{1,30}$/.test(id)){ toast('Kimlik kucuk harf/rakam ile baslamali, en az 2 karakter olmali','err'); return; }
   const konum=konumFormOku('tas');
-  if(!konum){ toast('Tasarinin ulkesi, ili ve piyasa dili gerekli','err'); return; }
+  if(!konum){ toast('Tasarinin ulkesi, ili, isveren ulkesi ve piyasa dili gerekli','err'); return; }
   try{
     const r=await sbTasariYeni(id,ad,konum);
     closeModal();
@@ -30167,7 +30168,8 @@ function konumTemizIst(x){
   const ulke=String(x.ulke||'').trim().toUpperCase(), dil=String(x.dil||'').trim().toUpperCase();
   if(!/^[A-Z]{2,3}$/.test(ulke)||!/^[A-Z]{2,4}$/.test(dil)) return null;
   const il=String(x.il==null?'':x.il).replace(/\s+/g,' ').trim().slice(0,60);
-  return {ulke,dil,il,resmiDil:resmiDilTemizIst(x.resmiDil)};
+  const isveren=String(x.isveren==null?'':x.isveren).trim().toUpperCase();
+  return {ulke,dil,il,isveren:/^[A-Z]{2,3}$/.test(isveren)?isveren:'',resmiDil:resmiDilTemizIst(x.resmiDil)};
 }
 /* RESMI AD DILLERI (30 Eki): isverenin sartname dili - kunye formunda her dil icin ayri
    "resmi ad" kutusu, kayitli Malzeme Ismi bu parcalardan bu sirayla " / " ile kurulur
@@ -30183,6 +30185,53 @@ function resmiDilTemizIst(list){
   return out.length?out:RESMI_DIL_VARSAYILAN.slice();
 }
 function resmiDiller(){ const k=tasariKonum(); return (k&&k.resmiDil&&k.resmiDil.length)?k.resmiDil.slice():RESMI_DIL_VARSAYILAN.slice(); }
+/* ISVEREN ULKESI -> RESMI AD DILLERI (30 Eki, kullanici: "ulke secimi ile yaptir, yazi ile degil").
+   Kural: isverenin dili; isveren projenin ulkesinden FARKLIYSA ve dili EN degilse EN de eklenir
+   (Akkuyu: proje TR, isveren RU -> RU + EN; Turkiye'de Turk isveren -> TR; Rusya'da Rus -> RU;
+   Hindistan'da Hint isveren -> EN). Cipler sonucu gosterir, tiklanarak eklenir / cikarilir (en az bir
+   dil kalir); gizli <p>_resmi kutusu "RU, EN" degerini tasir, konumFormOku onu okur. */
+function konumResmiDilOner(ulke, isveren){
+  const u=konumUlke(isveren), d=u?u.dil:'EN';
+  return (isveren&&ulke&&isveren!==ulke&&d!=='EN')?[d,'EN']:[d];
+}
+function konumResmiCipsHtml(p, secili){
+  const s=resmiDilTemizIst(secili), adaylar=[...new Set([...s,'RU','EN','TR'])];
+  return adaylar.map(d=>`<button type="button" class="pam-dil-btn${s.includes(d)?' on':''}" title="${s.includes(d)?'Bu dili kaldir':'Bu dili ekle'}" onclick="konumResmiCipTikla('${p}','${esc(d)}')">${esc(d)}</button>`).join('');
+}
+function konumResmiYaz(p, list){
+  const l=resmiDilTemizIst(list);
+  const g=document.getElementById(p+'_resmi'); if(g) g.value=l.join(', ');
+  const c=document.getElementById(p+'_resmi_cips'); if(c) c.innerHTML=konumResmiCipsHtml(p,l);
+}
+function konumResmiCipTikla(p,d){
+  const g=document.getElementById(p+'_resmi'); if(!g) return;
+  let l=resmiDilTemizIst(g.value);
+  if(l.includes(d)){ if(l.length<2){ toast('En az bir resmi ad dili kalmali','warn'); return; } l=l.filter(x=>x!==d); }
+  else l=[...l,d];
+  konumResmiYaz(p,l);
+}
+// isveren ya da proje ulkesi degisince diller yeniden onerilir (elle eklenen cip sifirlanir)
+function konumResmiTazele(p){
+  const i=document.getElementById(p+'_isveren'); if(!i) return;
+  konumResmiYaz(p,konumResmiDilOner((document.getElementById(p+'_ulke')||{}).value,i.value));
+}
+// eski konumda (isveren kaydi yok) secili gelecek isveren: ilk resmi ad dilini konusan BASKA ulke, yoksa projenin ulkesi
+function konumIsverenTahmin(k){
+  if(!k) return 'TR';
+  if(k.isveren) return k.isveren;
+  const d=(k.resmiDil||[])[0], u=KONUM_ULKELER.find(x=>x.dil===d&&x.k!==k.ulke);
+  return u?u.k:k.ulke;
+}
+function konumResmiOzet(k){
+  return (k&&k.isveren?'isveren '+konumUlkeAd({ulke:k.isveren})+' · ':'')+'resmi ad '+(((k&&k.resmiDil)||RESMI_DIL_VARSAYILAN).join(' + '));
+}
+function konumResmiAlanHtml(p, ulke, isveren, resmiDil){
+  const l=resmiDilTemizIst(resmiDil);
+  return `<div class="frow" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label>Isveren ulkesi *</label><select id="${p}_isveren" onchange="konumResmiTazele('${p}')">${konumUlkeSecenekHtml(isveren)}</select></div>
+        <div><label>Resmi ad dilleri</label><div class="pam-dil konum-resmi-cips" id="${p}_resmi_cips">${konumResmiCipsHtml(p,l)}</div><input id="${p}_resmi" type="hidden" value="${esc(l.join(', '))}"></div>
+      </div>`;
+}
 function tasariKonum(){ return window.AKTIF_TASARI_KONUM||null; }
 function konumUlkeAd(k){ if(!k) return ''; const u=konumUlke(k.ulke); return u?u.ad:k.ulke; }
 // "Mersin, Türkiye" - il yoksa yalniz ulke
@@ -30204,6 +30253,7 @@ function konumUlkeDegisti(p){
   konumDilOner(p+'_ulke',p+'_dil');
   const w=document.getElementById(p+'_il_wrap'); if(w) w.innerHTML=konumIlAlanHtml(p,u.value,'');
   const r=document.getElementById(p+'_rozet'); if(r) r.textContent=u.value;
+  konumResmiTazele(p);
 }
 // PAM.dil'i tasari konumundan kurar; konum yoksa tarayicidaki secim (pamYukle) kalir
 function pamKonumUygula(){
@@ -30236,11 +30286,11 @@ function konumDilOner(ulkeId, dilId){
   if(![...d.options].some(o=>o.value===u.dil)) d.insertAdjacentHTML('beforeend',`<option value="${esc(u.dil)}">${esc(u.dil)}</option>`);
   d.value=u.dil;
 }
-// p on ekiyle ulke + dil + il okunur; il BOS ise null (formlar ili zorunlu tutar)
+// p on ekiyle ulke + dil + il + isveren + resmi ad dilleri okunur; il ya da isveren BOS ise null
 function konumFormOku(p){
   const k=konumTemizIst({ulke:(document.getElementById(p+'_ulke')||{}).value, dil:(document.getElementById(p+'_dil')||{}).value, il:(document.getElementById(p+'_il')||{}).value,
-    resmiDil:(document.getElementById(p+'_resmi')||{}).value});
-  return (k&&k.il)?k:null;
+    isveren:(document.getElementById(p+'_isveren')||{}).value, resmiDil:(document.getElementById(p+'_resmi')||{}).value});
+  return (k&&k.il&&k.isveren)?k:null;
 }
 /* Konum penceresi - yalnizca yonetici. o.ilk: acilista sorulan hal ("Sonra" ile bu
    sekme icin ertelenir; konum girilene kadar her yeni sekmede yeniden sorulur). */
@@ -30248,20 +30298,19 @@ function tasariKonumAc(o){
   o=o||{};
   if(!isAdmin()){ toast('Tasari konumunu yalnizca yonetici degistirebilir','err'); return; }
   document.querySelectorAll('.theme-menu.open').forEach(x=>x.classList.remove('open'));
-  const k=tasariKonum(), ulke=k?k.ulke:'TR', dil=k?k.dil:(konumUlke('TR').dil);
+  const k=tasariKonum(), ulke=k?k.ulke:'TR', dil=k?k.dil:(konumUlke('TR').dil), isv=k?konumIsverenTahmin(k):ulke;
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:460px">
     <div class="modal-head"><h3>Tasari Konumu</h3><button class="mini-btn" onclick="tasariKonumKapat(${o.ilk?'true':'false'})">x</button></div>
     <div class="modal-body">
-      <div class="tk-ozet"><span class="pam-ulke" id="tk_rozet">${esc(ulke)}</span><div><b>${esc(tasariAdiGoster())}</b><span>${k?'Konum: '+esc(konumYerAd(k))+' · piyasa dili '+esc(k.dil)+' · resmi ad '+esc(((k.resmiDil)||RESMI_DIL_VARSAYILAN).join(' + ')):'Konum henuz girilmemis'}</span></div></div>
-      ${o.ilk?`<p class="t-meta" style="margin:0 0 10px"><b>Bu tasarinin konumu girilmemis.</b> Projenin yapildigi ulkeyi secin; piyasa adi dili ve birim etiketleri (ad. / шт. / pcs) buna gore olusur.</p>`:''}
+      <div class="tk-ozet"><span class="pam-ulke" id="tk_rozet">${esc(ulke)}</span><div><b>${esc(tasariAdiGoster())}</b><span>${k?'Konum: '+esc(konumYerAd(k))+' · piyasa dili '+esc(k.dil)+' · '+esc(konumResmiOzet(k)):'Konum henuz girilmemis'}</span></div></div>
+      ${o.ilk?`<p class="t-meta" style="margin:0 0 10px"><b>Bu tasarinin konumu girilmemis.</b> Projenin yapildigi ulkeyi ve isverenin ulkesini secin; piyasa adi dili, birim etiketleri (ad. / шт. / pcs) ve resmi ad dilleri buna gore olusur.</p>`:''}
       <div class="frow" style="display:grid;grid-template-columns:1fr 1fr 90px;gap:10px">
         <div><label>Ulke *</label><select id="tk_ulke" onchange="konumUlkeDegisti('tk')">${konumUlkeSecenekHtml(ulke)}</select></div>
         <div id="tk_il_wrap"><label>Il / sehir *</label>${konumIlAlanHtml('tk',ulke,k?k.il:'')}</div>
         <div><label>Piyasa dili</label><select id="tk_dil">${konumDilSecenekHtml(dil)}</select></div>
       </div>
-      <div class="frow"><label>Resmi ad dilleri <span class="t-meta">(isverenin sartname dili - kunyede her dil icin ayri ad kutusu; Malzeme Ismi bu sirayla " / " ile birlesir)</span></label>
-        <input id="tk_resmi" value="${esc(((k&&k.resmiDil)||RESMI_DIL_VARSAYILAN).join(', '))}" placeholder="orn. RU, EN" maxlength="24"></div>
-      <p class="t-meta" style="margin:0">Tum kullanicilar icin gecerlidir: piyasa adi modundaki dil ve birim etiketleri bu konumdan turer; kullanici basina dil secimi yoktur. Degisiklik denetim kaydina yazilir.</p>
+      ${konumResmiAlanHtml('tk',ulke,isv,k?k.resmiDil:konumResmiDilOner(ulke,isv))}
+      <p class="t-meta" style="margin:0">Tum kullanicilar icin gecerlidir: piyasa adi modundaki dil ve birim etiketleri bu konumdan turer; <b>resmi ad dilleri</b> isverenin ulkesinden onerilir (yabanci isverende EN de eklenir), kunyede her dil icin ayri ad kutusu acilir ve Malzeme Ismi bu sirayla " / " ile birlesir. Kullanici basina dil secimi yoktur. Degisiklik denetim kaydina yazilir.</p>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="tasariKonumKapat(${o.ilk?'true':'false'})">${o.ilk?'Sonra':'Iptal'}</button><button class="btn btn-add" onclick="tasariKonumKaydet()">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
@@ -30273,7 +30322,7 @@ function tasariKonumKapat(ertele){
 }
 async function tasariKonumKaydet(){
   const konum=konumFormOku('tk');
-  if(!konum){ toast('Ulke, il ve piyasa dili gerekli','err'); return; }
+  if(!konum){ toast('Ulke, il, isveren ulkesi ve piyasa dili gerekli','err'); return; }
   try{
     const r=await sbTasariKonum(konum);
     closeModal();
@@ -30326,7 +30375,7 @@ function pamMenuCiz(){
   const k=tasariKonum();
   const dilBlok=k
     ? `<div class="pam-baslik">Piyasa dili · tasari konumu</div>
-    <div class="pam-konum"><span class="pam-ulke">${esc(k.ulke)}</span><div><b>${esc(konumYerAd(k))}</b><span>${esc(tasariAdiGoster())} · piyasa dili <b>${esc(k.dil)}</b> · resmi ad <b>${esc((k.resmiDil||RESMI_DIL_VARSAYILAN).join(' + '))}</b></span></div>${isAdmin()?`<button class="pam-dil-btn" onclick="tasariKonumAc()">Degistir</button>`:''}</div>`
+    <div class="pam-konum"><span class="pam-ulke">${esc(k.ulke)}</span><div><b>${esc(konumYerAd(k))}</b><span>${esc(tasariAdiGoster())} · piyasa dili <b>${esc(k.dil)}</b>${k.isveren?' · isveren <b>'+esc(konumUlkeAd({ulke:k.isveren}))+'</b>':''} · resmi ad <b>${esc((k.resmiDil||RESMI_DIL_VARSAYILAN).join(' + '))}</b></span></div>${isAdmin()?`<button class="pam-dil-btn" onclick="tasariKonumAc()">Degistir</button>`:''}</div>`
     : `<div class="pam-baslik">Dil / ulke</div>
     <div class="pam-dil">${diller.map(d=>`<button class="pam-dil-btn${d===PAM.dil?' on':''}" onclick="pamDil('${esc(d)}')">${esc(d)}</button>`).join('')}</div>
     <div class="pam-not pam-uyari">Tasari konumu girilmemis - dil simdilik bu tarayicida secili. ${isAdmin()?'<a onclick="tasariKonumAc()">Konumu belirle</a>':'Yonetici konumu belirleyince piyasa dili oradan gelir.'}</div>`;
