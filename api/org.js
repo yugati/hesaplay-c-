@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { requireAuth, signSession, SESSION_TTL_DEFAULT, SESSION_TTL_REMEMBER } from '../lib/auth.js'
 import { aktifOrg, orgIdGecerli, VARSAYILAN_ORG } from '../lib/org.js'
-import { tasariIdGecerli, tasariCoz, TASIYAN_AYARLAR } from '../lib/tasari.js'
+import { tasariIdGecerli, tasariCoz, TASIYAN_AYARLAR, konumTemizle, tasariKonumu } from '../lib/tasari.js'
 import { birimIdGecerli, birimCoz, birimErisebilir, birimSatiri, ORTAK_BIRIM, VARSAYILAN_BIRIM } from '../lib/birim.js'
 import { denetimYaz } from '../lib/denetim.js'
 
@@ -15,7 +15,8 @@ import { denetimYaz } from '../lib/denetim.js'
 // POST /api/org  { op:'silOnizle', org }     -> { org, ad, tablolar, tasari, dosya } (yalnizca super)
 // POST /api/org  { op:'sil', org, onay }     -> { ok, ...ozet }              (yalnizca super, GERI ALINAMAZ)
 // POST /api/org  { op:'tasariGecis', tasari, birim? } -> { token, tasari, ad, birim, ttl } (HERKES)
-// POST /api/org  { op:'tasariYeni', id, ad } -> { tasari, birim }            (yalnizca admin)
+// POST /api/org  { op:'tasariYeni', id, ad, konum:{ulke,dil} } -> { tasari, birim } (yalnizca admin)
+// POST /api/org  { op:'tasariKonum', konum:{ulke,dil} } -> { tasari, konum }   (yalnizca admin, AKTIF tasari)
 // POST /api/org  { op:'birimGecis', birim }  -> { token, birim, ad, ttl }    (erisimi olan herkes)
 // POST /api/org  { op:'birimYeni', id, ad }  -> { birim }                    (yalnizca admin)
 //
@@ -180,8 +181,9 @@ async function kapsamOzeti(orgIdleri) {
 function orgSatiri(r) {
   return { id: r.id, ad: (r.data && r.data.ad) || r.id, aktif: r.aktif !== false }
 }
-// tasarilar tablosu organizations ile ayni desende (id + data{ad}) - ayni okuyucu.
-const tasariSatiri = orgSatiri
+// tasarilar tablosu organizations ile ayni desende (id + data{ad}); ek olarak KONUM
+// (ulke + piyasa dili) tasinir - istemci piyasa adi dilini buradan turetir (lib/tasari.js).
+const tasariSatiri = r => ({ ...orgSatiri(r), konum: tasariKonumu(r) })
 
 /* Yeni tasari / organizasyonun ILK BIRIMI: acan kisinin o anki birimi (kimlik +
    ad). Satir bulunamazsa (eski token, silinmis birim) VARSAYILAN_BIRIM'in adi
@@ -313,7 +315,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'POST') {
     const { op } = req.body || {}
-    const GECERLI = ['gecis', 'yeni', 'silOnizle', 'sil', 'tasariGecis', 'tasariYeni', 'birimGecis', 'birimYeni']
+    const GECERLI = ['gecis', 'yeni', 'silOnizle', 'sil', 'tasariGecis', 'tasariYeni', 'tasariKonum', 'birimGecis', 'birimYeni']
     if (!GECERLI.includes(op)) { res.status(400).json({ error: 'Bilinmeyen islem' }); return }
 
     /* YETKI KAPISI ISLEME GORE AYRILIR - hepsi super istemez:
@@ -328,6 +330,10 @@ export default async function handler(req, res) {
     }
     if (op === 'tasariYeni' && claims.role !== 'admin') {
       res.status(403).json({ error: 'Yeni tasari acmak icin yonetici olmalisiniz' }); return
+    }
+    // Konum tasarinin kalici bir ozelligidir (piyasa dili ondan turer) - yeni tasari acmakla ayni yetki
+    if (op === 'tasariKonum' && claims.role !== 'admin') {
+      res.status(403).json({ error: 'Tasari konumunu yalnizca yonetici degistirebilir' }); return
     }
     if (op === 'birimYeni' && claims.role !== 'admin') {
       res.status(403).json({ error: 'Yeni birim acmak icin yonetici olmalisiniz' }); return
@@ -433,7 +439,7 @@ export default async function handler(req, res) {
         const hedefBirim = await birimCoz(org, t.id, birimIdGecerli(istenenBirim) ? istenenBirim : null, user)
         res.status(200).json({
           token: signSession(user, ttl, org, t.id, hedefBirim),
-          tasari: t.id, ad: tasariSatiri(t).ad, birim: hedefBirim, ttl,
+          tasari: t.id, ad: tasariSatiri(t).ad, konum: tasariKonumu(t), birim: hedefBirim, ttl,
         })
       } catch (e) {
         console.error('tasari gecis basarisiz', e)
@@ -453,10 +459,14 @@ export default async function handler(req, res) {
       if (!tasariIdGecerli(id)) {
         res.status(400).json({ error: 'Kimlik yalnizca kucuk harf, rakam ve tire icerebilir (ornek: sinop-ngs)' }); return
       }
+      /* KONUM ZORUNLU: tasari acilirken projenin ulkesi ve piyasa dili girilir
+         (bkz. lib/tasari.js konum bolumu). Sonradan yalnizca op:'tasariKonum'. */
+      const konum = konumTemizle((req.body || {}).konum)
+      if (!konum) { res.status(400).json({ error: 'Tasari konumu gerekli (ulke + piyasa dili)' }); return }
 
       try {
         const { error } = await supabaseAdmin
-          .from('tasarilar').insert([{ org_id: org, id, data: { ad: isim } }])
+          .from('tasarilar').insert([{ org_id: org, id, data: { ad: isim, konum } }])
         if (error) {
           if (error.code === '23505') { res.status(409).json({ error: 'Bu kimlikte bir tasari zaten var' }); return }
           throw error
@@ -501,9 +511,41 @@ export default async function handler(req, res) {
           console.warn('tasari: ayar kopyalanamadi:', e && e.message)
         }
 
-        res.status(201).json({ tasari: { id, ad: isim, aktif: true }, birim: { ...ilkBirim, aktif: true } })
+        await denetimYaz(org, { user: claims.username, role: claims.role, action: 'org', tasari: id,
+          detail: `Tasari olusturuldu: ${isim} (${id}) - konum ${konum.ulke}, piyasa dili ${konum.dil}` })
+
+        res.status(201).json({ tasari: { id, ad: isim, konum, aktif: true }, birim: { ...ilkBirim, aktif: true } })
       } catch (e) {
         console.error('tasari yeni basarisiz', e)
+        res.status(500).json({ error: 'Sunucu hatasi' })
+      }
+      return
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+       TASARI KONUMU - yalnizca yonetici, AKTIF tasariya yazar (istemci tasari
+       kimligi gonderemez; hangi tasarida oldugu tokenden okunur). data'nin
+       diger alanlari (ad) korunur. Istemci yaniti aninda uygular: piyasa adi
+       dili ve birim etiketleri sayfa yenilenmeden degisir.
+       ───────────────────────────────────────────────────────────────────── */
+    if (op === 'tasariKonum') {
+      const konum = konumTemizle((req.body || {}).konum)
+      if (!konum) { res.status(400).json({ error: 'Gecersiz konum: ulke ve piyasa dili gerekli' }); return }
+      try {
+        const tasari = await tasariCoz(org, claims.tas, null)
+        const { data: t, error: tErr } = await supabaseAdmin
+          .from('tasarilar').select('id, data, aktif').eq('org_id', org).eq('id', tasari).maybeSingle()
+        if (tErr) throw tErr
+        if (!t || t.aktif === false) { res.status(404).json({ error: 'Tasari bulunamadi' }); return }
+        const eski = tasariKonumu(t)
+        const { error: uErr } = await supabaseAdmin
+          .from('tasarilar').update({ data: { ...(t.data || {}), konum } }).eq('org_id', org).eq('id', tasari)
+        if (uErr) throw uErr
+        await denetimYaz(org, { user: claims.username, role: claims.role, action: 'org', tasari,
+          detail: `Tasari konumu degisti (${tasariSatiri(t).ad}): ${eski ? eski.ulke + '/' + eski.dil : 'girilmemis'} -> ${konum.ulke}/${konum.dil}` })
+        res.status(200).json({ tasari, konum })
+      } catch (e) {
+        console.error('tasari konum basarisiz', e)
         res.status(500).json({ error: 'Sunucu hatasi' })
       }
       return
@@ -686,9 +728,12 @@ export default async function handler(req, res) {
       // ... ve o tasarinin birimi (istenen gecerliyse o, degilse erisilebilen ilk birim)
       const istenenBirim = (req.body || {}).birim
       const hedefBirim = await birimCoz(o.id, hedefTasari, birimIdGecerli(istenenBirim) ? istenenBirim : null, user)
+      // hedef tasarinin konumu da doner: yenilenen sayfa piyasa dilini veri inmeden bilsin
+      const { data: hedefT } = await supabaseAdmin
+        .from('tasarilar').select('data').eq('org_id', o.id).eq('id', hedefTasari).maybeSingle()
       res.status(200).json({
         token: signSession(user, ttl, o.id, hedefTasari, hedefBirim),
-        org: o.id, ad: orgSatiri(o).ad, tasari: hedefTasari, birim: hedefBirim, ttl,
+        org: o.id, ad: orgSatiri(o).ad, tasari: hedefTasari, konum: tasariKonumu(hedefT), birim: hedefBirim, ttl,
       })
     } catch (e) {
       console.error('org gecis basarisiz', e)

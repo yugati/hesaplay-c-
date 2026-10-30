@@ -4,7 +4,7 @@ import { verifyPassword, hashPassword, isHashed } from '../lib/password.js'
 import { girisKilitli, hataliDeneme, basariliGiris, istekIp } from '../lib/girisKoruma.js'
 import { denetimYaz } from '../lib/denetim.js'
 import { VARSAYILAN_ORG } from '../lib/org.js'
-import { VARSAYILAN_TASARI } from '../lib/tasari.js'
+import { VARSAYILAN_TASARI, tasariKonumOku } from '../lib/tasari.js'
 import { birimCoz } from '../lib/birim.js'
 
 // Kilit mesaji: kalan sureyi insan diliyle yazar
@@ -101,6 +101,9 @@ export default async function handler(req, res) {
      birimCoz erisebildigi gecerli bir birim secer (bkz. lib/birim.js). */
   const birim = await birimCoz(safeUser.org_id || VARSAYILAN_ORG, safeUser.tasari_id || VARSAYILAN_TASARI, safeUser.birim_id, safeUser)
   const token = signSession(safeUser, ttlMs, null, null, birim)
+  // Tasari konumu (ulke + piyasa dili) giriste birlikte iner: istemci piyasa adi
+  // dilini veri yuklenmeden once kurar (bkz. lib/tasari.js konum bolumu).
+  const konum = await tasariKonumOku(safeUser.org_id || VARSAYILAN_ORG, safeUser.tasari_id || VARSAYILAN_TASARI)
   /* GIRIS KAYDI ARTIK SUNUCUDA. Eskiden index.html afterLogin icinde, veri
      yuklendikten SONRA atiliyordu: yukleme hata verirse ya da istemci logAction'i
      atlarsa giris hic kaydedilmiyordu. Buradan yazilinca "kim ne zaman girdi"
@@ -109,5 +112,5 @@ export default async function handler(req, res) {
     user: safeUser.username, role: safeUser.role, action: 'login', ip,
     detail: 'Giris yapildi' + (rememberMe ? ' (beni hatirla)' : ''),
   })
-  res.status(200).json({ user: safeUser, org: safeUser.org_id || VARSAYILAN_ORG, birim, token })
+  res.status(200).json({ user: safeUser, org: safeUser.org_id || VARSAYILAN_ORG, birim, konum, token })
 }

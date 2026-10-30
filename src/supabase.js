@@ -51,14 +51,15 @@ async function authFetch(path, opts = {}) {
 // (sifre yeniden dogrulama akislari) bu alani yok sayar.
 export async function sbLoginUser(username, password, rememberMe) {
   try {
-    const { user, token, birim } = await authFetch('/api/login', {
+    const { user, token, birim, konum } = await authFetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username, password, rememberMe: !!rememberMe }),
     })
     // __birim: sunucunun COZDUGU aktif birim - kullanici satirindaki birim_id
     // erisimi kapatilmis olabilir, token hangisiyle imzalandiysa o dogrudur
-    return { ...user, __token: token, __birim: birim }
+    // __konum: aktif tasarinin konumu (ulke + piyasa dili) - piyasa adi dili buradan kurulur
+    return { ...user, __token: token, __birim: birim, __konum: konum || null }
   } catch (e) {
     if (e.status === 401) return null
     throw e
@@ -107,8 +108,8 @@ export async function sbGetUserByUsername() {
     // sessizce varsayilan projesine geri atilirdi.
     // __birim: AKTIF birim (disiplin) - ayni gerekcenin bir kat asagisi; yonetici
     // erisimi kapattiysa sunucu burada erisebildigi ilk birime dusurur.
-    const { user, token, ttl, org, tasari, birim } = await authFetch('/api/me')
-    return user ? { ...user, __token: token, __ttl: ttl, __org: org, __tasari: tasari, __birim: birim } : null
+    const { user, token, ttl, org, tasari, birim, konum } = await authFetch('/api/me')
+    return user ? { ...user, __token: token, __ttl: ttl, __org: org, __tasari: tasari, __birim: birim, __konum: konum || null } : null
   } catch (e) {
     // Token gecersiz/suresi dolmus ya da kullanici silinmis: gercekten
     // cikis yaptirilmali. Diger tum hatalar (ag, 5xx) yukari firlatilir ki
@@ -345,11 +346,21 @@ export async function sbBirimYeni(id, ad) {
 }
 
 // { tasari:{id, ad, aktif} } - yalnizca yonetici (role==='admin')
-export async function sbTasariYeni(id, ad) {
+// konum:{ulke,dil} ZORUNLU - tasari projenin ulkesiyle acilir, piyasa dili ondan turer
+export async function sbTasariYeni(id, ad, konum) {
   return authFetch('/api/org', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ op: 'tasariYeni', id, ad }),
+    body: JSON.stringify({ op: 'tasariYeni', id, ad, konum }),
+  })
+}
+
+// { tasari, konum:{ulke,dil} } - yalnizca yonetici; AKTIF tasarinin konumunu degistirir
+export async function sbTasariKonum(konum) {
+  return authFetch('/api/org', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ op: 'tasariKonum', konum }),
   })
 }
 

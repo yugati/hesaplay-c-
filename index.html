@@ -841,6 +841,25 @@ html[data-mkr-kalin="0"] mark.mkr{font-weight:inherit}
   color:var(--dim);border:1px dashed var(--line);border-radius:5px;padding:1px 5px;vertical-align:middle}
 .pam-alt{white-space:normal;word-break:break-word}
 .pam-not{font-size:10px;line-height:1.4;color:var(--dim);white-space:normal;padding:4px 8px 2px}
+/* TASARI KONUMU: baslik pilinde ulke rozeti + menude konum karti. Rozet harf kodudur (TR),
+   bayrak emojisi degil - Windows bayraklari cizmez, kod her yerde ayni gorunur. */
+.pam-ulke{display:inline-flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9.5px;font-weight:800;letter-spacing:.45px;padding:1px 5px;border-radius:5px;border:1px solid currentColor;line-height:1.45;opacity:.85;margin-left:2px}
+.pam-ulke[hidden]{display:none}
+.pam-menu:has(.pam-konum){min-width:272px}  /* konum karti: rozet + ulke/tasari + Degistir tek satirda */
+.pam-konum{display:flex;align-items:center;gap:9px;padding:5px 8px 7px}
+.pam-konum>.pam-ulke{font-size:11px;padding:4px 7px;color:var(--amber);opacity:1;margin:0;flex:0 0 auto}
+.pam-konum>div{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.pam-konum b{font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pam-konum span{font-size:10.5px;color:var(--mute);white-space:normal;line-height:1.35}
+.pam-konum .pam-dil-btn{flex:0 0 auto}
+.pam-uyari{color:var(--amber)}
+.pam-uyari a{color:var(--amber);text-decoration:underline;cursor:pointer}
+.kps-ulke{display:inline-block;vertical-align:1px;margin-left:6px;font-family:var(--mono);font-size:9px;font-weight:800;letter-spacing:.45px;padding:1px 5px;border-radius:5px;border:1px solid var(--line);color:var(--mute);line-height:1.5}
+.kps-tas-kart.on .kps-ulke{border-color:color-mix(in srgb,var(--marka) 55%,transparent);color:var(--marka)}
+.tk-ozet{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);margin-bottom:12px}
+.tk-ozet .pam-ulke{font-size:12px;padding:5px 8px;color:var(--amber);opacity:1;margin:0}
+.tk-ozet b{display:block;font-size:13px;color:var(--ink)}
+.tk-ozet span{display:block;font-size:11px;color:var(--mute);margin-top:1px}
 
 /* -- Ctrl+K komut paleti -- */
 .cmdk-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);z-index:250;
@@ -6312,7 +6331,7 @@ main:has(>.iht-form-wrap){max-width:none}
     <div class="theme-wrap" id="pamWrap">
       <button class="gsearch-pill pam-pill" id="pamBtn" onclick="pamMenuAc(event)">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V5a1 1 0 011-1h14a1 1 0 011 1v2M9 20h6M12 4v16"/></svg>
-        <span id="pamPillAd">Piyasa adi</span>
+        <span id="pamPillAd">Piyasa adi</span><span class="pam-ulke" id="pamPillUlke" hidden title="Tasari konumu"></span>
       </button>
       <div class="theme-menu pam-menu" id="pamMenu"></div>
     </div>
@@ -7209,12 +7228,15 @@ async function birimYeniKaydet(){
    localStorage'a girmeli, cunku sayfa yenilendiginde veri YUKLENMEDEN once
    bilinmeli (onbellek anahtari ona bagli). Bilinmezse o acilista onbellek
    isabetsiz kalir - yanlis veri degil, yalnizca bir kez fazladan indirme. */
-function tasariOturumYaz(tasari, ad){
+function tasariOturumYaz(tasari, ad, konum){
   if(tasari) window.AKTIF_TASARI=tasari;
   if(ad) window.AKTIF_TASARI_AD=ad;
+  // konum: undefined = dokunma; null/obje = sunucunun bildirdigi tasari konumu (ulke + piyasa dili).
+  // Oturuma da yazilir ki yenilenen sayfa piyasa dilini veri inmeden bilsin (bkz. pamKonumUygula).
+  if(konum!==undefined){ window.AKTIF_TASARI_KONUM=konumTemizIst(konum); pamKonumUygula(); }
   try{
     const s=JSON.parse(localStorage.getItem('authSession')||'null');
-    if(s){ s.tasari=window.AKTIF_TASARI||''; s.tasariAd=window.AKTIF_TASARI_AD||'';
+    if(s){ s.tasari=window.AKTIF_TASARI||''; s.tasariAd=window.AKTIF_TASARI_AD||''; s.tasariKonum=window.AKTIF_TASARI_KONUM||null;
            if(window.AUTH_TOKEN) s.token=window.AUTH_TOKEN;
            localStorage.setItem('authSession', JSON.stringify(s)); }
   }catch(e){}
@@ -7232,6 +7254,11 @@ function tasariYeniAc(){
         <input id="tas_ad" placeholder="orn. SINOP NGS" oninput="const k=document.getElementById('tas_id'); if(!k.dataset.elle) k.value=orgKimlikOner(this.value)"></div>
       <div class="frow"><label>Kimlik * <span class="t-meta">(kucuk harf, rakam ve tire - sonradan degistirilemez)</span></label>
         <input id="tas_id" placeholder="orn. sinop-ngs" oninput="this.dataset.elle='1'"></div>
+      <div class="frow" style="display:grid;grid-template-columns:1fr 150px;gap:10px">
+        <div><label>Konum (ulke) *</label><select id="tas_ulke" onchange="konumDilOner('tas_ulke','tas_dil')">${konumUlkeSecenekHtml('TR')}</select></div>
+        <div><label>Piyasa dili</label><select id="tas_dil">${konumDilSecenekHtml('TR')}</select></div>
+      </div>
+      <p class="t-meta" style="margin:0 0 8px">Konum, projenin <b>yapildigi ulkedir</b>: piyasa adi dili ve birim etiketleri (ad. / шт. / pcs) ondan turer, tum kullanicilar icin gecerlidir. Sonradan yalnizca yonetici degistirir.</p>
       <p class="t-meta" style="margin:0">Yeni tasari <b>kutuphaneyi hazir bulur</b>: malzeme kunyesi, sirketler, alet kunyesi ve marka listesi organizasyon genelinde ortaktir. Yalnizca <b>is verisi</b> bos baslar: sartname, siparis, bina, bolum, rapor, saha, tutanak ve fatura. Tasari, su an icinde bulundugunuz <b>${esc(birimAdiGoster())}</b> birimiyle acilir; diger birimler sonra Calisma Alani'ndan eklenir.</p>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="tasariYeniKaydet()">Olustur</button></div></div></div>`;
@@ -7244,8 +7271,10 @@ async function tasariYeniKaydet(){
   const id=(document.getElementById('tas_id').value||'').trim();
   if(!ad){ toast('Tasari adi gerekli','err'); return; }
   if(!/^[a-z0-9][a-z0-9_-]{1,30}$/.test(id)){ toast('Kimlik kucuk harf/rakam ile baslamali, en az 2 karakter olmali','err'); return; }
+  const konum=konumFormOku('tas_ulke','tas_dil');
+  if(!konum){ toast('Tasarinin konumu (ulke) ve piyasa dili gerekli','err'); return; }
   try{
-    const r=await sbTasariYeni(id,ad);
+    const r=await sbTasariYeni(id,ad,konum);
     closeModal();
     toast('"'+ad+'" tasarisi olusturuldu');
     _ORGLAR=null;
@@ -7377,7 +7406,7 @@ async function kapsamAc(ev){
     KPS.veri=v; _ORGLAR=v;
     // Sunucunun soyledigi aktif org/tasari DOGRU olandir - gosterim ondan tazelenir
     if(v&&v.aktif){ const a=(v.orgs||[]).find(o=>o.id===v.aktif); orgOturumYaz(v.aktif, a?a.ad:null); }
-    if(v&&v.aktifTasari){ const t=(v.tasarilar||[]).find(x=>x.id===v.aktifTasari); tasariOturumYaz(v.aktifTasari, t?t.ad:null); }
+    if(v&&v.aktifTasari){ const t=(v.tasarilar||[]).find(x=>x.id===v.aktifTasari); tasariOturumYaz(v.aktifTasari, t?t.ad:null, t?(t.konum||null):undefined); }
     if(v&&v.aktifBirim){ const b=(v.birimler||[]).find(x=>x.id===v.aktifBirim); birimOturumYaz(v.aktifBirim, b?b.ad:null); }
     _BIRIMLER=(v&&v.birimler)||[];   // Kullanicilar ekrani ve kutuphane suzgeci de bu listeyi kullanir
     applyUserChrome();
@@ -7495,7 +7524,7 @@ function kapsamCiz(opt){
     return `<div class="kps-tas" data-tas="${esc(anahtar)}">
       <button class="kps-kart kps-tas-kart${on?' on':''}${s?' sec':''}" style="--i:${iTas++}" data-tas="${esc(anahtar)}" aria-pressed="${s}" title="${esc(t.ad||t.id)} (${esc(t.id)}) - birimlerini göster" onclick="kapsamTasSec('${esc(o.id)}','${esc(t.id)}')"${on?' aria-current="true"':''}>
         <span class="kps-halka" aria-hidden="true"></span>
-        <span class="kps-metin"><b>${esc(t.ad||t.id)}</b><span class="kps-sayac">${kpsSayacIc(anahtar)}</span></span>
+        <span class="kps-metin"><b>${esc(t.ad||t.id)}${t.konum?`<span class="kps-ulke" title="Konum: ${esc(konumUlkeAd(t.konum))} · piyasa dili ${esc(t.konum.dil)}">${esc(t.konum.ulke)}</span>`:''}</b><span class="kps-sayac">${kpsSayacIc(anahtar)}</span></span>
         ${on?'<span class="kps-etiket">AKTİF</span>':`<span class="kps-git" aria-hidden="true">${KPS_OK}</span>`}
       </button>
     </div>`;
@@ -7748,7 +7777,7 @@ async function kapsamGec(o,t,b){
     const hedefBir=r.birim||(b&&b.id)||'';
     const birAd=(b&&hedefBir===b.id)?b.ad:((((tNode.birimler)||[]).find(x=>x.id===hedefBir)||{}).ad||'');
     if(baskaOrg){ window.AKTIF_ORG_AD=''; orgOturumYaz(r.org||o.id, r.ad||o.ad); }
-    if(baskaTas){ window.AKTIF_TASARI_AD=''; tasariOturumYaz(hedefTas, baskaOrg?tasAd:(r.ad||tasAd)); }
+    if(baskaTas){ window.AKTIF_TASARI_AD=''; tasariOturumYaz(hedefTas, baskaOrg?tasAd:(r.ad||tasAd), r.konum||null); }
     window.AKTIF_BIRIM_AD=''; birimOturumYaz(hedefBir, (!baskaOrg&&!baskaTas)?(r.ad||birAd):birAd);
     // Gezinti durumu onceki kapsama ait (bina/sartname secimleri) - tasinmamali
     try{ sessionStorage.removeItem('navState'); }catch(e){}
@@ -8099,7 +8128,9 @@ async function afterLogin(user, token, remember, opts){
      kullanici satirindaki birim_id erisimi kapatilmis olabilir, token hangi
      birimle imzalandiysa veri de o birimden iner. */
   window.AKTIF_BIRIM=user.__birim||user.birim_id||'elektrik'; window.AKTIF_BIRIM_AD='';
-  delete user.__birim;
+  // Tasari konumu (ulke + piyasa dili) da giriste gelir - piyasa adi dili veri inmeden kurulur
+  window.AKTIF_TASARI_KONUM=konumTemizIst(user.__konum); pamKonumUygula();
+  delete user.__birim; delete user.__konum;
   CURRENT_USER=user; window.CURRENT_USER=user;
   // kimlik dogrulandi, sira veri yuklemede: dugmede de o an inen tablonun adi yazilir
   if(btn) btn.innerHTML=icoBekle()+' Veriler yükleniyor...';
@@ -8118,14 +8149,14 @@ async function afterLogin(user, token, remember, opts){
   // "Beni Hatirla" isaretliyse oturum 30 gun, degilse 1 saat yasar; ttl oturumla
   // birlikte saklanir ki sayfa yenilemede uzatma ayni sureyle yapilsin
   const ttl=remember?SESSION_TTL_REMEMBER:SESSION_TTL_DEFAULT;
-  localStorage.setItem('authSession', JSON.stringify({user:user, token:token, expiresAt:Date.now()+ttl, ttl:ttl, org:window.AKTIF_ORG||'', orgAd:'', tasari:window.AKTIF_TASARI||'', tasariAd:'', birim:window.AKTIF_BIRIM||'', birimAd:''}));
+  localStorage.setItem('authSession', JSON.stringify({user:user, token:token, expiresAt:Date.now()+ttl, ttl:ttl, org:window.AKTIF_ORG||'', orgAd:'', tasari:window.AKTIF_TASARI||'', tasariAd:'', tasariKonum:window.AKTIF_TASARI_KONUM||null, birim:window.AKTIF_BIRIM||'', birimAd:''}));
   baslatOturumTazeleme(ttl); // token periyodik yenilensin - veri islemleri ona bagli
   if(screenEl){
     screenEl.classList.add('fade-out');
     setTimeout(()=>{ screenEl.classList.add('hidden'); screenEl.classList.remove('fade-out'); },420);
   }
   showAppFade();
-  startClock(); applyUserChrome(); render();
+  startClock(); applyUserChrome(); render(); tasariKonumKontrol();
   /* KISI DIZINI ARKADAN GELIR - acilisi BEKLETMEZ. Yalnizca gosterim icin
      ("olusturan kisi" adlari); geldiginde ekran bir kez tazelenir. Await
      edilseydi her acilisa gereksiz bir tur eklenirdi. */
@@ -8215,7 +8246,9 @@ function oturumTazeleUygula(fresh, ttl){
   const yeniTasari=fresh.__tasari;
   // __birim: sunucunun bildirdigi AKTIF birim - erisimi kapatildiysa sunucu dusurmustur
   const yeniBirim=fresh.__birim;
-  const u={...fresh}; delete u.__token; delete u.__ttl; delete u.__org; delete u.__tasari; delete u.__birim;
+  // __konum: aktif tasarinin konumu - yonetici baska yerden degistirdiyse burada herkese yansir
+  const yeniKonum=fresh.__konum;
+  const u={...fresh}; delete u.__token; delete u.__ttl; delete u.__org; delete u.__tasari; delete u.__birim; delete u.__konum;
   /* Karsilastirma ONCEKI KULLANICIYA degil, verinin INDIGI kapsama (YUKLU_SCOPE)
      karsi yapilir. Onceki kullaniciya bakilsaydi bant yalnizca degisimin oldugu
      tazelemede cikar, kullanici yenilemeden bir tur daha gecince kaybolurdu -
@@ -8238,7 +8271,9 @@ function oturumTazeleUygula(fresh, ttl){
     window.AKTIF_BIRIM=yeniBirim; window.AKTIF_BIRIM_AD='';
     try{ toast('Aktif birim degisti - ekrani yenileyin','warn'); }catch(e){}
   }
-  try{ localStorage.setItem('authSession', JSON.stringify({user:u, token:window.AUTH_TOKEN, expiresAt:Date.now()+(yeniTtl||3600000), ttl:yeniTtl, org:window.AKTIF_ORG||'', orgAd:window.AKTIF_ORG_AD||'', tasari:window.AKTIF_TASARI||'', tasariAd:window.AKTIF_TASARI_AD||'', birim:window.AKTIF_BIRIM||'', birimAd:window.AKTIF_BIRIM_AD||''})); }catch(e){}
+  // Konum yalnizca tasari AYNI kaldiysa uygulanir; tasari degistiyse yenileme zaten isteniyor
+  if(yeniKonum!==undefined&&!(yeniTasari&&yeniTasari!==window.AKTIF_TASARI)) tasariKonumUygula(yeniKonum,{ciz:true});
+  try{ localStorage.setItem('authSession', JSON.stringify({user:u, token:window.AUTH_TOKEN, expiresAt:Date.now()+(yeniTtl||3600000), ttl:yeniTtl, org:window.AKTIF_ORG||'', orgAd:window.AKTIF_ORG_AD||'', tasari:window.AKTIF_TASARI||'', tasariAd:window.AKTIF_TASARI_AD||'', tasariKonum:window.AKTIF_TASARI_KONUM||null, birim:window.AKTIF_BIRIM||'', birimAd:window.AKTIF_BIRIM_AD||''})); }catch(e){}
   applyUserChrome();
   /* Taze kullanici artik localStorage'da: sayfa yenilendiginde loadDB DOGRU
      kapsamla calisir. Tek yenileme yeter - eskiden ilk yenileme yalnizca
@@ -8353,7 +8388,7 @@ document.addEventListener('DOMContentLoaded', async function(){
     },230);
   }
   function showLogin(){ document.documentElement.classList.remove('booting'); lg.classList.remove('hidden'); warmLoginApi(); }
-  function saveSession(u,ttl,token){ ttl=ttl||SESSION_TTL_DEFAULT; localStorage.setItem('authSession', JSON.stringify({user:u, token:token, expiresAt:Date.now()+ttl, ttl:ttl, org:window.AKTIF_ORG||'', orgAd:window.AKTIF_ORG_AD||'', tasari:window.AKTIF_TASARI||'', tasariAd:window.AKTIF_TASARI_AD||'', birim:window.AKTIF_BIRIM||'', birimAd:window.AKTIF_BIRIM_AD||''})); }
+  function saveSession(u,ttl,token){ ttl=ttl||SESSION_TTL_DEFAULT; localStorage.setItem('authSession', JSON.stringify({user:u, token:token, expiresAt:Date.now()+ttl, ttl:ttl, org:window.AKTIF_ORG||'', orgAd:window.AKTIF_ORG_AD||'', tasari:window.AKTIF_TASARI||'', tasariAd:window.AKTIF_TASARI_AD||'', tasariKonum:window.AKTIF_TASARI_KONUM||null, birim:window.AKTIF_BIRIM||'', birimAd:window.AKTIF_BIRIM_AD||''})); }
   try {
     const sess=JSON.parse(raw);
     // token yoksa eski (guvenlik guncellemesinden onceki) oturumdur - artik
@@ -8373,6 +8408,8 @@ document.addEventListener('DOMContentLoaded', async function(){
        tasari katmanindan onceki tum veri oraya tasindi (migration_tasari_1.sql). */
     window.AKTIF_TASARI=sess.tasari||(sess.user&&sess.user.tasari_id)||'akkuyu-ngs';
     window.AKTIF_TASARI_AD=sess.tasariAd||'';
+    // Tasari konumu da oturumdan: piyasa adi dili ilk cizimden once belli olur (tazeleme sonra duzeltir)
+    window.AKTIF_TASARI_KONUM=konumTemizIst(sess.tasariKonum); pamKonumUygula();
     /* Aktif birim de ayni yoldan. Birim katmanindan onceki oturumlarda alan yok;
        kullanicinin varsayilan birimine, o da yoksa Elektrik'e duser - birim
        katmanindan onceki tum veri oraya tasindi (migration_birim_1.sql). */
@@ -8433,7 +8470,7 @@ document.addEventListener('DOMContentLoaded', async function(){
     applyLandingPanels();
     hideLoading();
     showAppFade();
-    startClock(); applyUserChrome(); render();
+    startClock(); applyUserChrome(); render(); tasariKonumKontrol();
   /* KISI DIZINI ARKADAN GELIR - acilisi BEKLETMEZ. Yalnizca gosterim icin
      ("olusturan kisi" adlari); geldiginde ekran bir kez tazelenir. Await
      edilseydi her acilisa gereksiz bir tur eklenirdi. */
@@ -29931,15 +29968,136 @@ function gorAltHtml(o,stil,q){
    Excel/PDF her zaman resmi adi yazar - dosya belge niteligindedir. */
 function ciktiAd(o){ return (PAM.acik&&PAM.cikti)?gorAd(o):pamResmiAd(o); }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   TASARI KONUMU (30 Eki) - "piyasa", projenin YAPILDIGI YERDIR.
+   Piyasa adi dili (PAM.dil) ve Birim Sozlugu etiketi (ad. / шт. / pcs) kullanici
+   tercihi degil, TASARININ ozelligidir: Turkiye'deki santiyede herkes TR adlarla,
+   Rusya'dakinde RU adlarla calisir. Konum tasari ACILIRKEN girilir (Yeni Tasari
+   penceresi, sunucu zorunlu tutar), sonradan YALNIZCA YONETICI degistirir
+   (tasariKonumAc -> op:'tasariKonum'). Sunucuda tasarilar.data.konum={ulke,dil}.
+   ISTEMCIDE: window.AKTIF_TASARI_KONUM; oturumla (authSession.tasariKonum) saklanir
+   ki yenilenen sayfa dili veri inmeden bilsin; giris / tazeleme / tasari gecisi /
+   kapsam listesi yanitlari onu tazeler. Konum YOKSA (konum katmanindan eski tasari)
+   eski davranis surer: dil bu tarayicida secilir (pam-dil cipleri) ve yoneticiye
+   acilista bir kez sorulur (tasariKonumKontrol).
+   ULKE KODU harf rozetiyle gosterilir (TR) - bayrak emojisi Windows'ta cizilmez. */
+const KONUM_ULKELER=[
+  {k:'TR',ad:'Türkiye',dil:'TR'},
+  {k:'RU',ad:'Rusya',dil:'RU'},
+  {k:'KZ',ad:'Kazakistan',dil:'RU'},
+  {k:'UZ',ad:'Özbekistan',dil:'RU'},
+  {k:'BY',ad:'Belarus',dil:'RU'},
+  {k:'TM',ad:'Türkmenistan',dil:'RU'},
+  {k:'AZ',ad:'Azerbaycan',dil:'TR'},
+  {k:'EG',ad:'Mısır',dil:'EN'},
+  {k:'BD',ad:'Bangladeş',dil:'EN'},
+  {k:'HU',ad:'Macaristan',dil:'EN'},
+  {k:'IN',ad:'Hindistan',dil:'EN'},
+  {k:'DE',ad:'Almanya',dil:'EN'},
+  {k:'XX',ad:'Diğer',dil:'EN'},
+];
+function konumUlke(k){ return KONUM_ULKELER.find(u=>u.k===k)||null; }
+// sunucudaki konumTemizle ile ayni kural: ulke 2-3, dil 2-4 buyuk harf; bozuksa null
+function konumTemizIst(x){
+  if(!x||typeof x!=='object') return null;
+  const ulke=String(x.ulke||'').trim().toUpperCase(), dil=String(x.dil||'').trim().toUpperCase();
+  if(!/^[A-Z]{2,3}$/.test(ulke)||!/^[A-Z]{2,4}$/.test(dil)) return null;
+  return {ulke,dil};
+}
+function tasariKonum(){ return window.AKTIF_TASARI_KONUM||null; }
+function konumUlkeAd(k){ if(!k) return ''; const u=konumUlke(k.ulke); return u?u.ad:k.ulke; }
+// PAM.dil'i tasari konumundan kurar; konum yoksa tarayicidaki secim (pamYukle) kalir
+function pamKonumUygula(){
+  const k=tasariKonum(); if(!k||!k.dil) return;
+  if(PAM.dil!==k.dil){ PAM.dil=k.dil; pamOnbellekSifirla(); }
+}
+/* Sunucudan gelen konumu uygular: bellek + oturum + piyasa dili. ciz:true ise dil
+   degismisse ekran yeniden cizilir (tazeleme / yonetici degistirdi). */
+function tasariKonumUygula(konum, o){
+  const yeni=konumTemizIst(konum), eskiDil=PAM.dil, eskiJson=JSON.stringify(window.AKTIF_TASARI_KONUM||null);
+  window.AKTIF_TASARI_KONUM=yeni;
+  try{ const s=JSON.parse(localStorage.getItem('authSession')||'null'); if(s){ s.tasariKonum=yeni; localStorage.setItem('authSession',JSON.stringify(s)); } }catch(e){}
+  pamKonumUygula();
+  if(o&&o.ciz){
+    pamPillCiz();
+    if((PAM.dil!==eskiDil||JSON.stringify(yeni)!==eskiJson)&&typeof DB!=='undefined'&&DB){ pamOnbellekSifirla(); render(); }
+  }
+}
+function konumUlkeSecenekHtml(sec){
+  return KONUM_ULKELER.map(u=>`<option value="${u.k}"${u.k===sec?' selected':''}>${esc(u.ad)} (${u.k})</option>`).join('');
+}
+function konumDilSecenekHtml(sec){
+  const l=piyasaDilOnerileri(); if(sec&&!l.includes(sec)) l.push(sec);
+  return l.map(d=>`<option value="${esc(d)}"${d===sec?' selected':''}>${esc(d)}</option>`).join('');
+}
+// ulke degisince o ulkenin piyasa dili onerilir (kullanici sonra degistirebilir)
+function konumDilOner(ulkeId, dilId){
+  const u=konumUlke((document.getElementById(ulkeId)||{}).value), d=document.getElementById(dilId);
+  if(!u||!d) return;
+  if(![...d.options].some(o=>o.value===u.dil)) d.insertAdjacentHTML('beforeend',`<option value="${esc(u.dil)}">${esc(u.dil)}</option>`);
+  d.value=u.dil;
+}
+function konumFormOku(ulkeId, dilId){
+  return konumTemizIst({ulke:(document.getElementById(ulkeId)||{}).value, dil:(document.getElementById(dilId)||{}).value});
+}
+/* Konum penceresi - yalnizca yonetici. o.ilk: acilista sorulan hal ("Sonra" ile bu
+   sekme icin ertelenir; konum girilene kadar her yeni sekmede yeniden sorulur). */
+function tasariKonumAc(o){
+  o=o||{};
+  if(!isAdmin()){ toast('Tasari konumunu yalnizca yonetici degistirebilir','err'); return; }
+  document.querySelectorAll('.theme-menu.open').forEach(x=>x.classList.remove('open'));
+  const k=tasariKonum(), ulke=k?k.ulke:'TR', dil=k?k.dil:(konumUlke('TR').dil);
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:460px">
+    <div class="modal-head"><h3>Tasari Konumu</h3><button class="mini-btn" onclick="tasariKonumKapat(${o.ilk?'true':'false'})">x</button></div>
+    <div class="modal-body">
+      <div class="tk-ozet"><span class="pam-ulke" id="tk_rozet">${esc(ulke)}</span><div><b>${esc(tasariAdiGoster())}</b><span>${k?'Konum: '+esc(konumUlkeAd(k))+' · piyasa dili '+esc(k.dil):'Konum henuz girilmemis'}</span></div></div>
+      ${o.ilk?`<p class="t-meta" style="margin:0 0 10px"><b>Bu tasarinin konumu girilmemis.</b> Projenin yapildigi ulkeyi secin; piyasa adi dili ve birim etiketleri (ad. / шт. / pcs) buna gore olusur.</p>`:''}
+      <div class="frow" style="display:grid;grid-template-columns:1fr 150px;gap:10px">
+        <div><label>Konum (ulke) *</label><select id="tk_ulke" onchange="konumDilOner('tk_ulke','tk_dil');const r=document.getElementById('tk_rozet');if(r)r.textContent=this.value">${konumUlkeSecenekHtml(ulke)}</select></div>
+        <div><label>Piyasa dili</label><select id="tk_dil">${konumDilSecenekHtml(dil)}</select></div>
+      </div>
+      <p class="t-meta" style="margin:0">Tum kullanicilar icin gecerlidir: piyasa adi modundaki dil ve birim etiketleri bu konumdan turer; kullanici basina dil secimi yoktur. Degisiklik denetim kaydina yazilir.</p>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="tasariKonumKapat(${o.ilk?'true':'false'})">${o.ilk?'Sonra':'Iptal'}</button><button class="btn btn-add" onclick="tasariKonumKaydet()">Kaydet</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function tasariKonumErtelemeAnahtari(){ return 'tasariKonumSoruldu:'+(window.AKTIF_ORG||'')+'/'+(window.AKTIF_TASARI||''); }
+function tasariKonumKapat(ertele){
+  if(ertele){ try{ sessionStorage.setItem(tasariKonumErtelemeAnahtari(),'1'); }catch(e){} }
+  closeModal();
+}
+async function tasariKonumKaydet(){
+  const konum=konumFormOku('tk_ulke','tk_dil');
+  if(!konum){ toast('Ulke ve piyasa dili gerekli','err'); return; }
+  try{
+    const r=await sbTasariKonum(konum);
+    closeModal();
+    _ORGLAR=null; KPS.veri=null;   // kapsam haritasi rozeti bir sonraki acilista tazelenir
+    tasariKonumUygula(r.konum||konum,{ciz:true});
+    toast('Tasari konumu: '+konumUlkeAd(tasariKonum())+' · piyasa dili '+tasariKonum().dil);
+  }catch(e){ toast(e.message||'Konum kaydedilemedi','err'); }
+}
+/* Acilista: yonetici + konumsuz tasari -> pencere. Sunucu yazamadigimiz eski tasarilar
+   (akkuyu-ngs) boylece ilk girişte konumunu alir; "Sonra" sekme boyunca susturur. */
+function tasariKonumKontrol(){
+  if(!isAdmin()||tasariKonum()) return;
+  try{ if(sessionStorage.getItem(tasariKonumErtelemeAnahtari())) return; }catch(e){}
+  setTimeout(()=>{ if(!tasariKonum()&&!document.querySelector('.modal-bg')) tasariKonumAc({ilk:true}); },700);
+}
+
 /* ---- baslikataki dugme ve menusu ---- */
 function pamPillCiz(){
   const b=document.getElementById('pamBtn'); if(!b) return;
   b.classList.toggle('on',!!PAM.acik);
   const e=document.getElementById('pamPillAd');
   if(e) e.textContent=PAM.acik?('Piyasa \u00b7 '+PAM.dil):'Piyasa adi';
-  b.title=PAM.acik
+  // ulke rozeti: projenin nerede oldugu baslikta her an gorunur (tasari konumu)
+  const k=tasariKonum(), u=document.getElementById('pamPillUlke');
+  if(u){ u.hidden=!k; u.textContent=k?k.ulke:''; }
+  b.title=(PAM.acik
     ? 'Piyasa adi modu ACIK ('+PAM.dil+') - baslikta piyasa adi, altinda resmi ad. Kapatmak icin tiklayin.'
-    : 'Piyasa adi modu kapali - urunler kutuphanedeki resmi adiyla gorunuyor';
+    : 'Piyasa adi modu kapali - urunler kutuphanedeki resmi adiyla gorunuyor')
+    +(k?'\nTasari konumu: '+konumUlkeAd(k)+' - piyasa dili '+k.dil:'\nTasari konumu girilmemis');
   const m=document.getElementById('pamMenu'); if(m&&m.classList.contains('open')) pamMenuCiz();
 }
 function pamMenuCiz(){
@@ -29948,12 +30106,20 @@ function pamMenuCiz(){
   const soru=(PAM.acik&&!PAM.soruldu)?`<div class="pam-soru"><b>Ciktilar da piyasa adiyla mi?</b>
       <span>Indirilen Excel/PDF dosyalarinda Malzeme Ismi sutunu.</span>
       <div class="pam-soru-btn"><button class="theme-opt" onclick="pamCikti(false)">Hayir - resmi ad</button><button class="theme-opt" onclick="pamCikti(true)">Evet - piyasa adi</button></div></div>`:'';
+  /* DIL / ULKE: tasari konumu varsa SALT OKUNUR karttir (ulke rozeti + ad + piyasa dili);
+     yonetici "Degistir" ile konum penceresini acar. Konum yoksa eski cipler + uyari. */
+  const k=tasariKonum();
+  const dilBlok=k
+    ? `<div class="pam-baslik">Piyasa dili · tasari konumu</div>
+    <div class="pam-konum"><span class="pam-ulke">${esc(k.ulke)}</span><div><b>${esc(konumUlkeAd(k))}</b><span>${esc(tasariAdiGoster())} · piyasa dili <b>${esc(k.dil)}</b></span></div>${isAdmin()?`<button class="pam-dil-btn" onclick="tasariKonumAc()">Degistir</button>`:''}</div>`
+    : `<div class="pam-baslik">Dil / ulke</div>
+    <div class="pam-dil">${diller.map(d=>`<button class="pam-dil-btn${d===PAM.dil?' on':''}" onclick="pamDil('${esc(d)}')">${esc(d)}</button>`).join('')}</div>
+    <div class="pam-not pam-uyari">Tasari konumu girilmemis - dil simdilik bu tarayicida secili. ${isAdmin()?'<a onclick="tasariKonumAc()">Konumu belirle</a>':'Yonetici konumu belirleyince piyasa dili oradan gelir.'}</div>`;
   m.innerHTML=`<div class="pam-baslik">Piyasa adi modu</div>
     <button class="theme-opt${PAM.acik?'':' on'}" onclick="pamAcKapa(false)">Kapali - resmi ad</button>
     <button class="theme-opt${PAM.acik?' on':''}" onclick="pamAcKapa(true)">Acik - piyasa adi</button>
     <div class="org-ayrac"></div>
-    <div class="pam-baslik">Dil / ulke</div>
-    <div class="pam-dil">${diller.map(d=>`<button class="pam-dil-btn${d===PAM.dil?' on':''}" onclick="pamDil('${esc(d)}')">${esc(d)}</button>`).join('')}</div>
+    ${dilBlok}
     <div class="org-ayrac"></div>
     <div class="pam-baslik">Ciktilar (Excel / PDF)</div>
     <button class="theme-opt${PAM.cikti?'':' on'}" onclick="pamCikti(false)">Resmi ad</button>
@@ -29975,7 +30141,11 @@ function pamAcKapa(v){
   pamKaydet(); pamOnbellekSifirla(); pamPillCiz(); render();
   toast(PAM.acik?('Piyasa adi modu acik ('+PAM.dil+')'):'Piyasa adi modu kapandi');
 }
-function pamDil(d){ PAM.dil=String(d||'TR').toUpperCase(); pamKaydet(); pamOnbellekSifirla(); pamPillCiz(); render(); }
+function pamDil(d){
+  // konum girilmis tasarida dil kullaniciya ait degildir (cipler zaten gorunmez)
+  if(tasariKonum()){ toast('Piyasa dili tasari konumundan gelir ('+tasariKonum().dil+')','warn'); return; }
+  PAM.dil=String(d||'TR').toUpperCase(); pamKaydet(); pamOnbellekSifirla(); pamPillCiz(); render();
+}
 /* ══════════════════════════════════════════════════════════════════════════
    BIRIM SOZLUGU (30 Eki) - "шт. / pcs", "шт./pc", "Ad. / шт." gibi 22 farkli yazimin
    yerine TEK ANAHTAR (adet, metre, kg...) ve uc dilde etiket (TR / RU / EN).

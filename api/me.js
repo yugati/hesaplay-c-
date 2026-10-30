@@ -1,7 +1,7 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { requireAuth, signSession, SESSION_TTL_DEFAULT, SESSION_TTL_REMEMBER } from '../lib/auth.js'
 import { VARSAYILAN_ORG, orgKullanilabilir } from '../lib/org.js'
-import { tasariCoz } from '../lib/tasari.js'
+import { tasariCoz, tasariKonumOku } from '../lib/tasari.js'
 import { birimCoz } from '../lib/birim.js'
 
 // Aktif oturumun kullanicisini tazeler (ör. baska bir admin yetkisini
@@ -63,8 +63,10 @@ export default async function handler(req, res) {
        istemci "Aktif birim degisti" der (index.html oturumTazeleUygula). */
     const aktifBir = await birimCoz(aktif, aktifTas, claims.bir, user)
 
+    // Konum da tazelenir: yonetici baska bir tarayicidan degistirdiyse 20 dk icinde herkese yansir
+    const konum = await tasariKonumOku(aktif, aktifTas)
     res.status(200).json({
-      user: safeUser, org: aktif, tasari: aktifTas, birim: aktifBir,
+      user: safeUser, org: aktif, tasari: aktifTas, konum, birim: aktifBir,
       token: signSession(user, ttl, aktif, aktifTas, aktifBir), ttl,
     })
   } catch (e) {
