@@ -2666,31 +2666,6 @@ body:has(.fwm-sheet-bg){overflow:hidden}
   transition:border-color var(--transition),background var(--transition),color var(--transition)}
 .rap-tool:hover{border-color:var(--dim);background:var(--hover)}
 .rap-tool svg{flex:none}
-/* MSZ Excel penceresi (aylik is plani sablonuna gerceklesen yazma) */
-.msz-kaynak{display:flex;flex-direction:column;gap:8px}
-.msz-dosya{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.msz-ok{font-size:12px;color:var(--green);font-weight:600}
-.msz-hata{font-size:12px;color:var(--red);background:color-mix(in srgb,var(--red) 10%,transparent);border:1px solid color-mix(in srgb,var(--red) 35%,transparent);border-radius:8px;padding:6px 10px}
-.msz-ozet{margin-top:12px;font-size:12.5px;color:var(--mute)}
-.msz-ozet b{color:var(--ink)}
-.msz-t-oneri{color:var(--amber);font-weight:600}
-.msz-t-kodyok{color:var(--red);font-weight:600}
-.msz-tbl-wrap{max-height:52vh;overflow:auto;margin-top:8px;border:1px solid var(--line);border-radius:10px}
-.msz-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
-.msz-tbl th{position:sticky;top:0;background:var(--panel);text-align:left;padding:7px 9px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);border-bottom:1px solid var(--line);z-index:1}
-.msz-tbl td{padding:6px 9px;border-bottom:1px solid var(--line);vertical-align:top}
-.msz-tbl td.msz-num{text-align:right;white-space:nowrap}
-.msz-tbl select{width:100%;max-width:520px;font-size:12px}
-.msz-tbl tr.msz-bolum td{background:var(--hover);font-weight:700;font-size:12px;padding:6px 9px}
-.msz-tbl tr.msz-bolum.bos td{color:var(--red)}
-.msz-tbl tr.msz-oneri td:first-child{box-shadow:inset 3px 0 0 var(--amber)}
-.msz-tbl tr.msz-kodyok td:first-child,.msz-tbl tr.msz-zayif td:first-child{box-shadow:inset 3px 0 0 var(--red)}
-.msz-tbl tr.msz-kayitli td:first-child{box-shadow:inset 3px 0 0 var(--blue)}
-.msz-alt{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:12px}
-.msz-mod{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
-.msz-ops{display:flex;gap:12px;align-items:center;min-height:36px;flex-wrap:wrap}
-.msz-ops .chk{display:flex;align-items:center;gap:6px;font-size:12.5px;white-space:nowrap}
-.msz-alt .chk{display:flex;align-items:center;gap:6px;font-size:12.5px}
 .rap-say{font-style:normal;font-family:var(--mono);font-size:11px;font-weight:700;padding:1px 6px;border-radius:20px;
   background:color-mix(in srgb,var(--amber) 20%,transparent);color:var(--amber)}
 .rap-tool.del{color:var(--red);border-color:color-mix(in srgb,var(--red) 35%,transparent)}
@@ -39205,7 +39180,7 @@ function renderRapor(){
       <span class="rap-tool-sep"></span>
       <button class="rap-tool" onclick="exportRaporExcel()" title="Sahadaki Günlük Plan şablonunun birebir biçimi: renkli başlıklar, birleşik adam sayısı, her gün ayrı sayfa. Ekrandaki bina/tarih süzgecine göre alınır.">${icoXlsDis()} Plan Excel</button>
       <button class="rap-tool" onclick="exportRaporListeExcel()" title="Düz liste: tüm kayıtlar tek sayfada, Şartname Kalemi ve Oluşturan sütunlarıyla (biçimsiz)">${icoXlsDis()} Liste Excel</button>
-      <button class="rap-tool" onclick="openMszModal()" title="Sahadaki aylık iş planı (МСЗ) Excel'ine seçilen tarih aralığının gerçekleşen miktarlarını yazar: satırlar proje kodu + kat + bölüm + iş adıyla eşleştirilir, dosya biçimi/formülleri ve TR-RU sayfası olduğu gibi kalır">${icoXlsDis()} MSZ Excel</button>
+      <button class="rap-tool" onclick="openMetrajModal()" title="Belirli tarih aralığının genel montaj metrajı: her iş kalemi bir satır, her gün bir sütun, sonda toplam; ikinci sayfada kalem özetleri">${icoXlsDis()} Metraj Excel</button>
       <button class="rap-tool" onclick="document.getElementById('rimpFile').click()" title="Günlük Plan formatındaki Excel'leri toplu yükle - satırlar şartname kalemleriyle otomatik eşleştirilir, kaydetmeden önce tek tek onaylarsınız">${icoXlsIc()} Excel'den Al</button>
       <input type="file" id="rimpFile" class="hidden" accept=".xlsx,.xls,.csv" multiple onchange="rimpPickFiles(event)">
       ${isAdmin()?`<button class="rap-tool del" onclick="openRaporSil()" title="Rapor kayıtlarını toplu sil: bina/ay seçilir, günler listelenir, yönetici şifresi istenir. Silinen kayıtların stok çıkış hareketleri de geri alınır.">${icoTrash()} Rapor Sil</button>`:''}
@@ -41596,468 +41571,144 @@ function exportRaporListeExcel(){
   const fn=RV.filterTarih&&RV.filterTarih!=='__son2'?`Daily_Report_${RV.filterTarih}.xlsx`:`Daily_Report_${new Date().toISOString().slice(0,10)}.xlsx`;
   XLSX.writeFile(wb,fn); toast("Liste Excel indirildi");
 }
-function fmtDateISO(s){ if(!s)return''; const d=new Date(s); if(isNaN(d))return s; return d.toLocaleDateString('tr-TR'); }
-
-/* ===================================================================
-   MSZ EXCEL - Aylik is plani (МСЗ / ПЛАН РАБОТ) sablonuna GERCEKLESEN yazma
-   Sahadan gelen aylik plan dosyasi (arsiv/msz ben.xlsx ornegi): her satir bir is kalemi
-   (RD proje kodu + kat + is turu + ad + birim), sagda gun gun PLAN ve ФАКТ bloklari,
-   ikinci sayfa TR-RU (formulle cevirir), ucuncu sayfa Sözlük (RU -> TR).
-   Burada dosya HIC yeniden kurulmaz: zip icindeki sayfa XML'inde yalniz ФАКТ hucrelerine
-   sayi yazilir, boylece bicim/formul/ceviri sayfasi oldugu gibi kalir (bkz. rPlanSonIsle
-   ile ayni yontem). Kayitlar PROJE KODUYLA satira baglanir; ayni kodda birden cok satir
-   varsa kot (kat), ad benzerligi (Is Kalemi TR sutunu + Sözlük cevirisi) ve birim
-   puanlanir. Kullanicinin elle duzelttigi eslesmeler tarayicida saklanir (mszEslesme)
-   ve bir sonraki ciktida kendiliginden uygulanir. Yazilan satirlar gizliyse acilir.
-   IKI ISLEM: (1) ФАКТ - secilen araligin gerceklesen miktarlari gun gun yazilir;
-   (2) ПЛАН - kaynak donemin (onceki ay) gerceklesen hizi hedef ayin calisma gunlerine
-   (Pazar haric) dagitilir, sablondaki kalan miktarla (Общий - Выполненные) sinirlanir.
-   Plan kaba bir tahmindir (rapor amacli) - birebir dogruluk hedeflenmez. */
-let _MSZ=null;
-const MSZ_AY_RU=['ЯНВАРЬ','ФЕВРАЛЬ','МАРТ','АПРЕЛЬ','МАЙ','ИЮНЬ','ИЮЛЬ','АВГУСТ','СЕНТЯБРЬ','ОКТЯБРЬ','НОЯБРЬ','ДЕКАБРЬ'];
-const MSZ_AY_TR=['OCAK','ŞUBAT','MART','NİSAN','MAYIS','HAZİRAN','TEMMUZ','AĞUSTOS','EYLÜL','EKİM','KASIM','ARALIK'];
-const MSZ_SABLON_URL='/sablon/msz-00UYB.xlsx';
-function mszIsoFromSeri(n){ const d=new Date(Date.UTC(1899,11,30)+Math.round(Number(n))*86400000); return d.toISOString().slice(0,10); }
-function mszGunFarki(a,b){ return Math.round((Date.parse(b+'T00:00:00Z')-Date.parse(a+'T00:00:00Z'))/86400000); }
-function mszAyIlk(iso){ return String(iso).slice(0,7)+'-01'; }
-function mszAySon(iso){ const p=String(iso).split('-').map(Number); const d=new Date(Date.UTC(p[0],p[1],0)); return d.toISOString().slice(0,10); }
-function mszXmlEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function mszReEsc(s){ return String(s).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
-// '±0.00' / '+4.20' / '-3,60' -> metre; sayi degilse null
-function mszKatM(s){ const t=String(s==null?'':s).replace(/\s/g,'').replace(/[±]/g,'').replace(',','.'); return /^[+-]?\d+(\.\d+)?$/.test(t)?Number(t):null; }
-// kayittaki kot mm girilir (3600) - metreye cevrilir; metre girilmisse (4.2) dokunulmaz
-function mszKayitKot(g){ let k=mszKatM(g.kot); if(k==null) return null; if(Math.abs(k)>=100) k=k/1000; return k; }
-function mszBirimN(u){
-  const t=rimpTx(u).replace(/\s+/g,' ');
-  const m={'sht':'adet','ad':'adet','adet':'adet','pcs':'adet','pc':'adet','ea':'adet','t':'ton','ton':'ton','styk':'ek','kaynak eki':'ek','ek':'ek','mt':'m','mtul':'m','m':'m','km':'km','m2':'m2','m3':'m3','dm3':'dm3','lt':'lt','l':'lt','kg':'kg','set':'takim','takim':'takim','kpl':'takim'};
-  return m[t]||t;
-}
-// kaydin BOLUMU: dogrudan cat, yoksa proje kodunun sartnamesindeki bolum (bkz. _rAdamBolum)
-function mszBolum(e){
-  if(e.cat) return String(e.cat).trim();
-  const pk=String(e.projeKodu||'').trim();
-  const sr=pk?((DB.proje&&DB.proje.sartnames)||[]).find(x=>x.code===pk&&(x.bina||'')===(e.bina||'')):null;
-  return sr&&sr.section?String(sr.section).trim():'';
-}
-function mszFirma(e){ const t=rimpTx((e.ekip||'')+' '+(e.firma||'')); return /\btsm\b/.test(t)?'tsm':'bykara'; }
-// ---- sablon cozumleme (XLSX ile deger okuma; yazma zip duzeyinde yapilir) ----
-function mszSablonCoz(buf){
-  const wb=XLSX.read(new Uint8Array(buf),{type:'array',cellFormula:false,cellDates:false,cellStyles:true});
-  const sheetName=wb.SheetNames.find(n=>/МСЗ|MSZ/i.test(n))||wb.SheetNames[0];
-  const ws=wb.Sheets[sheetName];
-  if(!ws||!ws['!ref']) throw new Error('Sayfa bos: '+sheetName);
-  const rng=XLSX.utils.decode_range(ws['!ref']);
-  const val=(r,c)=>{ const x=ws[XLSX.utils.encode_cell({r,c})]; return x?x.v:undefined; };
-  const txt=(r,c)=>{ const v=val(r,c); return v==null?'':String(v).trim(); };
-  let hr=-1;
-  for(let r=0;r<=Math.min(rng.e.r,40)&&hr<0;r++) for(let c=0;c<=Math.min(rng.e.c,10);c++){ if(/^здание$|^bina$/i.test(txt(r,c))){ hr=r; break; } }
-  if(hr<0) throw new Error('Baslik satiri bulunamadi ("Здание" sutunu yok)');
-  const cols={};
-  for(let c=0;c<=rng.e.c;c++){ const t=txt(hr,c).toLowerCase().replace(/\s+/g,' '); if(!t) continue;
-    if(cols.bina==null&&/^(здание|bina)/.test(t)) cols.bina=c;
-    else if(cols.grup==null&&/^(группа|iş grubu|is grubu)/.test(t)) cols.grup=c;
-    else if(cols.kat==null&&/^(этаж|kat)/.test(t)) cols.kat=c;
-    else if(cols.tur==null&&/^(вид работ|iş türü|is turu)/.test(t)) cols.tur=c;
-    else if(cols.ad==null&&/^(наименование|iş tanımı|is tanimi)/.test(t)) cols.ad=c;
-    else if(cols.acik==null&&/^(пояснение|açıklama|aciklama)/.test(t)) cols.acik=c;
-    else if(cols.kod==null&&/рд|проект|project|proje/.test(t)) cols.kod=c;
-    else if(cols.birim==null&&/^(ед\.|birim)/.test(t)) cols.birim=c;
-    else if(cols.toplam==null&&/^(общий объем|toplam iş)/.test(t)) cols.toplam=c;
-    else if(cols.yapilan==null&&/^(выполненные|tamamlanan iş)/.test(t)) cols.yapilan=c;
-    else if(cols.kalan==null&&/^(остаточный объ|kalan miktar)/.test(t)) cols.kalan=c;
-    else if(cols.firma==null&&/^(компания|firma)/.test(t)) cols.firma=c;
-    else if(cols.adTr==null&&/is kalemi tr/.test(t)) cols.adTr=c;
-    else if(cols.kisimTr==null&&/kisim tr/.test(t)) cols.kisimTr=c;
-    else if(cols.grupTr==null&&/grup tr/.test(t)) cols.grupTr=c; }
-  if(cols.kod==null) throw new Error('"РД Проект" (proje kodu) sutunu bulunamadi');
-  let planC=-1, faktC=-1;
-  for(let c=0;c<=rng.e.c;c++){ const t=txt(hr+1,c).toUpperCase(); if(t==='ПЛАН'||t==='PLAN') planC=c; else if(t==='ФАКТ'||t==='FAKT'||t==='GERÇEKLEŞEN') faktC=c; }
-  if(planC<0||faktC<0||faktC<=planC) throw new Error('ПЛАН / ФАКТ gun bloklari bulunamadi (baslik altindaki satir)');
-  const gunSayisi=faktC-planC;
-  const ilkSeri=Number(val(hr,planC));
-  if(!isFinite(ilkSeri)||ilkSeri<30000) throw new Error('Ilk gun tarihi okunamadi (ПЛАН blogunun ilk hucresi tarih olmali)');
-  const ilkIso=mszIsoFromSeri(ilkSeri);
-  const sozluk=new Map();
-  const sz=wb.SheetNames.find(n=>/sözlük|sozluk|словарь/i.test(n));
-  if(sz){ const w2=wb.Sheets[sz]; const r2=XLSX.utils.decode_range(w2['!ref']||'A1');
-    for(let r=0;r<=r2.e.r;r++){ const a=w2[XLSX.utils.encode_cell({r,c:0})], b=w2[XLSX.utils.encode_cell({r,c:1})]; if(a&&b&&a.v!=null&&b.v!=null) sozluk.set(String(a.v).trim(),String(b.v).trim()); } }
-  const rows=[]; let sablonBina='';
-  const hiddenRows=ws['!rows']||[];
-  if(cols.bina!=null) for(let r=hr+1;r<=Math.min(rng.e.r,hr+40)&&!sablonBina;r++) sablonBina=txt(r,cols.bina);
-  for(let r=hr+2;r<=rng.e.r;r++){
-    const kodTxt=txt(r,cols.kod);
-    if(!kodTxt) continue;
-    const kodlar=kodTxt.split(/[\n;,]+/).map(s=>norm(s.trim())).filter(Boolean);
-    const plan=[]; for(let i=0;i<gunSayisi;i++){ const v=val(r,planC+i); plan.push(typeof v==='number'?v:0); }
-    const g=c=>c==null?'':txt(r,c);
-    rows.push({ excelRow:r+1, kodTxt, kodlar, bina:g(cols.bina), grup:g(cols.grup), kat:g(cols.kat), tur:g(cols.tur), ad:g(cols.ad), acik:g(cols.acik),
-      birim:g(cols.birim), toplam:val(r,cols.toplam), yapilan:cols.yapilan!=null?val(r,cols.yapilan):undefined, kalanC:cols.kalan!=null?val(r,cols.kalan):undefined, firma:g(cols.firma), adTr:g(cols.adTr), kisimTr:g(cols.kisimTr), grupTr:g(cols.grupTr), plan,
-      hidden:!!(hiddenRows[r]&&hiddenRows[r].hidden) });
-  }
-  if(!rows.length) throw new Error('Proje kodlu satir bulunamadi');
-  // kat listesi (kat numarasi -> kot): binadaki kotlar kucukten buyuge
-  const katlar=[...new Set(rows.map(x=>mszKatM(x.kat)).filter(v=>v!=null))].sort((a,b)=>a-b);
-  const baslik=txt(hr-1,0)||txt(hr-1,1)||'';
-  return {sheetName, hr, cols, planC, faktC, gunSayisi, ilkIso, ilkSeri, rows, sozluk, katlar, baslik, sablonBina};
-}
-// satirin KALAN miktari: Общий - Выполненные (ikisi de sayiysa), yoksa Остаточный sutununun onbellek degeri
-function mszKalan(row){
-  const say=v=>(v!=null&&v!==''&&isFinite(Number(v)))?Number(v):null;
-  const i=say(row.toplam), j=say(row.yapilan);
-  if(i!=null) return j!=null?i-j:i;
-  return say(row.kalanC);
-}
-function mszGunEkle(iso,n){ return new Date(Date.parse(iso+'T00:00:00Z')+n*86400000).toISOString().slice(0,10); }
-function mszPazarMi(iso){ return new Date(iso+'T00:00:00Z').getUTCDay()===0; }
-// aralikta calisma gunu sayisi (Pazar haric secenegi)
-function mszIsGunleri(bas,bit,pazarYok){ let n=0; for(let d=bas;d<=bit;d=mszGunEkle(d,1)) if(!pazarYok||!mszPazarMi(d)) n++; return n; }
-// PLAN hesabi: kaynak donem hizi x hedef ay calisma gunu x carpan, kalanla sinirli
-function mszPlan(M,g){
-  const kaynakGun=mszIsGunleri(M.bas,M.bit,M.pazarYok)||1;
-  const hedefBas=M.hedefAy, hedefBit=mszAySon(M.hedefAy);
-  const hedefGun=mszIsGunleri(hedefBas,hedefBit,M.pazarYok)||1;
-  const hiz=g.toplam/kaynakGun;
-  let toplam=hiz*hedefGun*(Number(M.carpan)||1), sinirli=false;
-  const kalan=g.secim?mszKalan(g.secim):null;
-  if(M.kalanSinir&&kalan!=null&&kalan>=0&&toplam>kalan){ toplam=kalan; sinirli=true; }
-  return {kaynakGun,hedefGun,hiz,toplam,kalan,sinirli,gunluk:toplam/hedefGun};
-}
-function mszSatirImza(row){ return [row.kodTxt,row.kat,row.tur,row.ad,row.acik,row.birim,row.firma].join('|'); }
-function mszSatirEtiket(row){ return `${row.kat?row.kat+' · ':''}${row.tur?row.tur+' · ':''}${row.ad}${row.acik&&row.acik!==row.ad?' ('+row.acik+')':''} · ${row.birim}${row.firma?' · '+row.firma:''}`; }
-// ---- kayit gruplari: ayni kod + ad + kat/kot + birim + firma tek satira gider ----
-function mszGruplar(bina,bas,bit){
-  const list=rEntries().filter(e=>!e.isgucu&&e.tarih>=bas&&e.tarih<=bit&&(!bina||e.bina===bina)&&String(e.malzeme||'').trim());
-  const m=new Map();
-  list.forEach(e=>{
-    const firma=mszFirma(e), bolum=mszBolum(e);
-    const k=[norm(e.projeKodu||''),rimpTx(e.malzeme||''),String(e.kat==null?'':e.kat).trim(),String(e.kot==null?'':e.kot).trim(),mszBirimN(e.birim||''),firma,norm(bolum)].join('¦');
-    let g=m.get(k);
-    if(!g){ g={k,kod:String(e.projeKodu||'').trim(),ad:e.malzeme||'',kat:e.kat,kot:e.kot,birim:e.birim||'',firma,bolum,ekipler:new Set(),gunler:{},toplam:0,n:0,secim:null,durum:'yok',skor:0,adaylar:[]}; m.set(k,g); }
-    const q=Number(String(e.miktar==null?'':e.miktar).replace(',','.'))||0;
-    g.gunler[e.tarih]=(g.gunler[e.tarih]||0)+q; g.toplam+=q; g.n++; if(e.ekip) g.ekipler.add(e.ekip);
-  });
-  return [...m.values()].sort((a,b)=>a.kod.localeCompare(b.kod)||String(a.ad).localeCompare(String(b.ad),'tr'));
-}
-function mszAdSim(g,row,sozluk){
-  const ok=s=>s&&!/^=/.test(s);
-  const simE=Math.max(0,...[row.adTr,sozluk.get(row.ad),row.ad].filter(ok).map(s=>rimpIsgSim(g.ad,s)));
-  const simF=row.acik&&row.acik!==row.ad?Math.max(0,...[sozluk.get(row.acik),row.acik].filter(ok).map(s=>rimpIsgSim(g.ad,s))):0;
-  return {sim:Math.max(simE,simF),simE,simF};
-}
-// "montaj" ile "demontaj" (sokum) bigramda cok benzer cikar - biri sokum digeri degilse ayri is
-const _MSZ_SOKUM=/demont|(^| )sok(um|me|ul)|(^| )soku/;
-function mszZit(a,b){ return _MSZ_SOKUM.test(rimpTx(a))!==_MSZ_SOKUM.test(rimpTx(b)); }
-function mszBolumSim(bolum,row,sozluk){
-  const ok=s=>s&&!/^=/.test(s);
-  return Math.max(0,...[row.grupTr,row.kisimTr,row.tur,sozluk.get(row.tur),row.grup,sozluk.get(row.grup)].filter(ok).map(s=>rimpIsgSim(bolum,s)));
-}
-// sablon satirinin bolum basligi (RU + Sözlük TR): "Отделочные Работы / İnce İşler › Пол / Zemin"
-function mszBolumBaslik(row,sozluk){
-  const iki=s=>{ const tr=sozluk.get(s); return tr&&tr!==s?`${s} / ${tr}`:s; };
-  const grup=row.grup?iki(row.grup):'', tur=row.tur&&row.tur!==row.grup?iki(row.tur):'';
-  return [grup,tur].filter(Boolean).join(' › ')||'(bölümsüz)';
-}
-function mszBolumAnahtar(row){ return (row.grup||'')+'›'+(row.tur||''); }
-// secim listesi: satirlar bolum basliklarina (optgroup) gore
-function mszSecenekler(rows,secim,sozluk){
-  let html='', son=null;
-  rows.forEach(r=>{ const k=mszBolumAnahtar(r);
-    if(k!==son){ if(son!==null) html+='</optgroup>'; html+=`<optgroup label="${esc(mszBolumBaslik(r,sozluk))}">`; son=k; }
-    html+=`<option value="${r.excelRow}" ${secim&&secim.excelRow===r.excelRow?'selected':''}>[${r.excelRow}] ${esc(mszSatirEtiket(r))}</option>`; });
-  if(son!==null) html+='</optgroup>';
-  return html;
-}
-function mszSkor(g,row,t){
-  let s=0; const kot=mszKayitKot(g), rk=mszKatM(row.kat);
-  if(rk!=null){
-    if(kot!=null) s+=Math.abs(kot-rk)<0.06?3:-2;
-    else { const i=Number(String(g.kat==null?'':g.kat).trim()); if(String(g.kat||'').trim()!==''&&Number.isInteger(i)&&t.katlar[i]!=null) s+=Math.abs(t.katlar[i]-rk)<0.06?1.5:-1; }
-  }
-  const {sim,simE,simF}=mszAdSim(g,row,t.sozluk); s+=3*sim;
-  if(row.acik&&row.acik!==row.ad&&simE>simF) s-=0.3;          // ad yalniz E'ye uydu: acik (F) farkli olan varyant satir geride kalir
-  if(mszZit(g.ad,row.ad)||(row.acik&&mszZit(g.ad,row.acik))) s-=1.5;
-  // BOLUM: kaydin bolumu sablonun grup / kisim / is turu basliklariyla (TR sutunlari + Sözlük) karsilastirilir
-  if(g.bolum){ const bs=mszBolumSim(g.bolum,row,t.sozluk); if(bs>=0.5) s+=1.5*bs; }
-  if(g.birim&&row.birim) s+=mszBirimN(g.birim)===mszBirimN(row.birim)?1:-1.5;
-  if(row.firma) s+=g.firma===norm(row.firma)?0.7:-0.3;
-  if(row.plan.some(v=>v)) s+=0.3;
-  if(!row.hidden) s+=0.2;
-  return {s,sim,katOk:rk==null||kot==null?null:Math.abs(kot-rk)<0.06};
-}
-function mszKayitliEslesme(){ try{ return JSON.parse(localStorage.getItem('mszEslesme')||'{}'); }catch(e){ return {}; } }
-function mszEslesmeKaydet(k,imza){ const m=mszKayitliEslesme(); if(imza) m[k]=imza; else delete m[k]; try{ localStorage.setItem('mszEslesme',JSON.stringify(m)); }catch(e){} }
-// her grup icin aday satirlar (ayni proje kodu) ve en iyi secim
-function mszEslestir(M){
-  const t=M.t, kayitli=mszKayitliEslesme();
-  M.gruplar.forEach(g=>{
-    const kod=norm(g.kod);
-    g.adaylar=kod?t.rows.filter(r=>r.kodlar.includes(kod)):[];
-    const saved=kayitli[g.k];
-    if(saved){ const r=t.rows.find(x=>mszSatirImza(x)===saved); if(r){ g.secim=r; g.durum='kayitli'; g.skor=1; return; } }
-    if(!g.adaylar.length){ g.secim=null; g.durum='kodyok'; g.skor=0; return; }
-    const puan=g.adaylar.map(r=>({r,sc:mszSkor(g,r,t)})).sort((a,b)=>b.sc.s-a.sc.s);
-    const best=puan[0], ikinci=puan[1];
-    g.skor=best.sc.sim;
-    if(best.sc.sim<0.45&&g.adaylar.length>1){ g.secim=null; g.durum='zayif'; return; }   // ad tutmuyor: kullanici secer
-    g.secim=best.r;
-    const tek=g.adaylar.length===1;
-    const acikFark=!ikinci||best.sc.s-ikinci.sc.s>=0.5||(best.sc.sim>=0.99&&ikinci.sc.sim<0.99&&best.sc.s-ikinci.sc.s>=0.2);
-    g.durum=(tek||(best.sc.sim>=0.6&&best.sc.katOk!==false&&acikFark))?'auto':'oneri';
-  });
-}
-// ---- pencere ----
-function openMszModal(){
+/* METRAJ EXCEL - belirli tarih araliginin GENEL MONTAJ metraji: her is kalemi bir satir,
+   her gun bir sutun, sonda TOPLAM (SUM formulu). Isgucu (adam/gun) kayitlari metraj degildir,
+   disarida kalir. Satir anahtari: bina + proje kodu + kat + kot + is kalemi + birim.
+   Ikinci sayfa "Ozet": gun sutunsuz, kalem basina gun sayisi ve toplam. Stil xlsx-js-style. */
+let _MTJ=null;
+function openMetrajModal(){
   const binalar=[...new Set(rEntries().filter(e=>!e.isgucu).map(e=>e.bina).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
   const bugun=rISO(Date.now());
   let bas,bit;
-  if(RV.filterTarih&&RV.filterTarih!=='__son2'){ bas=bit=RV.filterTarih; } else { bas=mszAyIlk(bugun); bit=bugun; }
-  _MSZ={ad:'',buf:null,t:null,bina:RV.filterBina||'',bas,bit,gruplar:[],unhide:true,ayKaydir:true,binalar,hata:'',yukleniyor:false,
-    mod:'fakt',hedefAy:'',carpan:1,kalanSinir:true,pazarYok:true,eskiPlanSil:true};
-  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaDis(closeModal)"><div class="modal wide msz-modal">
-    <div class="modal-head"><h3>MSZ Excel · Aylık İş Planına Gerçekleşen Yazma</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
-    <div class="modal-body" id="msz-body"></div>
+  if(RV.filterTarih&&RV.filterTarih!=='__son2'){ bas=bit=RV.filterTarih; } else { bas=bugun.slice(0,7)+'-01'; bit=bugun; }
+  _MTJ={bina:RV.filterBina||'',bas,bit,binalar};
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaDis(closeModal)"><div class="modal">
+    <div class="modal-head"><h3>Metraj Excel · Genel Montaj</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    <div class="modal-body" id="mtj-body"></div>
   </div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
-  mszRender();
+  metrajRender();
 }
-function mszSet(k,v){ if(!_MSZ) return; _MSZ[k]=v; if(k==='bina'||k==='bas'||k==='bit') mszHesapla(); mszRender(); }
-// islem modu: ФАКТ (gerceklesen yaz) / ПЛАН (gelecek ayin planini cikar)
-function mszMod(m){
-  const M=_MSZ; if(!M) return; M.mod=m;
-  if(m==='plan'&&M.t){
-    if(!M.hedefAy) M.hedefAy=M.t.ilkIso;
-    // kaynak donem hedef ayin icindeyse bir onceki aya cekilir (gecen ayin hizi)
-    if(M.bas>=M.hedefAy){ const onc=mszGunEkle(M.hedefAy,-1); M.bas=mszAyIlk(onc); M.bit=onc; }
-    mszHesapla();
-  }
-  mszRender();
+function metrajSet(k,v){ if(!_MTJ) return; _MTJ[k]=v; if(_MTJ.bas>_MTJ.bit){ const x=_MTJ.bas; _MTJ.bas=_MTJ.bit; _MTJ.bit=x; } metrajRender(); }
+function metrajKayitlar(){
+  const M=_MTJ; if(!M) return [];
+  return rEntries().filter(e=>!e.isgucu&&e.tarih>=M.bas&&e.tarih<=M.bit&&(!M.bina||e.bina===M.bina)&&String(e.malzeme||'').trim());
 }
-function mszHedefAy(v){ const M=_MSZ; if(!M||!/^\d{4}-\d{2}$/.test(v)) return; M.hedefAy=v+'-01'; mszRender(); }
-function mszHesapla(){ const M=_MSZ; if(!M||!M.t) return; if(M.bas>M.bit){ const x=M.bas; M.bas=M.bit; M.bit=x; } M.gruplar=mszGruplar(M.bina,M.bas,M.bit); mszEslestir(M); }
-async function mszDosyaSec(inp){
-  const f=inp.files&&inp.files[0]; inp.value=''; if(!f) return;
-  try{ const buf=await f.arrayBuffer(); mszSablonYukle(buf,f.name); }catch(e){ _MSZ.hata='Dosya okunamadi: '+(e.message||e); mszRender(); }
-}
-async function mszVarsayilanYukle(){
-  const M=_MSZ; if(!M) return; M.yukleniyor=true; M.hata=''; mszRender();
-  try{ const r=await fetch(MSZ_SABLON_URL,{cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status); const buf=await r.arrayBuffer(); mszSablonYukle(buf,'msz-00UYB.xlsx'); }
-  catch(e){ M.yukleniyor=false; M.hata='Projedeki sablon alinamadi: '+(e.message||e); mszRender(); }
-}
-function mszSablonYukle(buf,ad){
-  const M=_MSZ; if(!M) return; M.yukleniyor=false; M.hata='';
-  try{ M.t=mszSablonCoz(buf); M.buf=buf; M.ad=ad; }
-  catch(e){ M.t=null; M.buf=null; M.hata='Sablon cozumlenemedi: '+(e.message||e); mszRender(); return; }
-  const t=M.t;
-  // bina: sablondaki bina koduyla eslesen kayit binasi (00UYB -> "00UYB ..." gibi)
-  if(!M.bina&&t.sablonBina){ const sb=norm(t.sablonBina); const b=M.binalar.find(x=>norm(x)===sb)||M.binalar.find(x=>norm(x).includes(sb)); if(b) M.bina=b; }
-  // tarih araligi sablon ayinin disindaysa sablon ayina cekilir
-  const aySon=mszAySon(t.ilkIso);
-  M.hedefAy=t.ilkIso;
-  if(M.mod==='plan'){ const onc=mszGunEkle(t.ilkIso,-1); M.bas=mszAyIlk(onc); M.bit=onc; }
-  else if(M.bit<t.ilkIso||M.bas>aySon){ M.bas=t.ilkIso; M.bit=aySon; }
-  mszHesapla(); mszRender();
-}
-function mszSecimDegis(i,v){
-  const M=_MSZ, g=M&&M.gruplar[i]; if(!g) return;
-  if(v==='__yok'){ g.secim=null; g.durum='atla'; mszEslesmeKaydet(g.k,''); }
-  else { const r=M.t.rows.find(x=>x.excelRow===Number(v)); if(!r) return; g.secim=r; g.durum='kayitli'; mszEslesmeKaydet(g.k,mszSatirImza(r)); }
-  mszRender();
-}
-function mszRender(){
-  const M=_MSZ, el=document.getElementById('msz-body'); if(!M||!el) return;
-  const t=M.t, plan=M.mod==='plan';
-  const binaOpts=`<option value="">Tüm binalar</option>`+M.binalar.map(b=>`<option value="${esc(b)}" ${M.bina===b?'selected':''}>${esc(b)}</option>`).join('');
-  const ustten=`<div class="msz-kaynak">
-      <div><b>1. Şablon</b> <span class="t-meta">Sahadaki aylık iş planı (МСЗ) Excel'i - dosya olduğu gibi korunur, yalnız ФАКТ hücreleri dolar</span></div>
-      <div class="msz-dosya">
-        <label class="rap-tool" style="cursor:pointer">${icoXlsIc()} Dosya seç <input type="file" accept=".xlsx" style="display:none" onchange="mszDosyaSec(this)"></label>
-        <button class="rap-tool" onclick="mszVarsayilanYukle()" ${M.yukleniyor?'disabled':''} title="Projeye konan sablon (arsiv/msz ben.xlsx kopyasi): ${esc(MSZ_SABLON_URL)}">${M.yukleniyor?'Yükleniyor…':'Projedeki şablon (00UYB)'}</button>
-        ${t?`<span class="msz-ok">✓ ${esc(M.ad)} · ${esc(t.sheetName)} · ${t.rows.length} satır · ay: ${esc(fmtDate(t.ilkIso))} – ${esc(fmtDate(mszAySon(t.ilkIso)))}</span>`:''}
-      </div>
-      ${M.hata?`<div class="msz-hata">${esc(M.hata)}</div>`:''}
+function metrajGunSayisi(bas,bit){ return Math.round((Date.parse(bit+'T00:00:00Z')-Date.parse(bas+'T00:00:00Z'))/86400000)+1; }
+function metrajRender(){
+  const M=_MTJ, el=document.getElementById('mtj-body'); if(!M||!el) return;
+  const list=metrajKayitlar();
+  const kalem=new Set(list.map(e=>[e.bina,e.projeKodu,e.kat,e.kot,e.malzeme,e.birim].join('¦')));
+  const gunler=new Set(list.map(e=>e.tarih));
+  const gun=metrajGunSayisi(M.bas,M.bit);
+  el.innerHTML=`
+    <p class="t-meta" style="margin-bottom:10px">Seçilen aralıktaki işlenmiş malzeme kayıtları: her iş kalemi bir satır, her gün bir sütun, sonda toplam metraj. Adam/gün (işgücü) kayıtları dahil edilmez.</p>
+    <div class="frow three">
+      <div><label>Bina</label><select onchange="metrajSet('bina',this.value)"><option value="">Tüm binalar</option>${M.binalar.map(b=>`<option value="${esc(b)}" ${M.bina===b?'selected':''}>${esc(b)}</option>`).join('')}</select></div>
+      <div><label>Başlangıç</label><input type="date" value="${esc(M.bas)}" onchange="metrajSet('bas',this.value)"></div>
+      <div><label>Bitiş</label><input type="date" value="${esc(M.bit)}" onchange="metrajSet('bit',this.value)"></div>
     </div>
-    <div class="msz-mod"><b>2. İşlem</b>
-      <div class="iht-seg rap-seg">
-        <button class="${plan?'':'on'}" onclick="mszMod('fakt')" title="Seçilen tarih aralığının gerçekleşen miktarları şablonun ФАКТ gün sütunlarına yazılır">ФАКТ · Gerçekleşeni yaz</button>
-        <button class="${plan?'on':''}" onclick="mszMod('plan')" title="Kaynak dönemin (örn. geçen ay) gerçekleşen hızından hedef ayın ПЛАН gün sütunları üretilir - kaba tahmin, rapor amaçlı">ПЛАН · Gelecek planı çıkar</button>
-      </div>
-    </div>
-    <div class="frow three" style="margin-top:10px">
-      <div><label>Bina</label><select onchange="mszSet('bina',this.value)">${binaOpts}</select></div>
-      <div><label>${plan?'Kaynak dönem başı':'Başlangıç'}</label><input type="date" value="${esc(M.bas)}" onchange="mszSet('bas',this.value)"></div>
-      <div><label>${plan?'Kaynak dönem sonu':'Bitiş'}</label><input type="date" value="${esc(M.bit)}" onchange="mszSet('bit',this.value)"></div>
-    </div>
-    ${plan?`<div class="frow three" style="margin-top:6px">
-      <div><label>Hedef ay</label><input type="month" value="${esc(String(M.hedefAy||'').slice(0,7))}" onchange="mszHedefAy(this.value)"></div>
-      <div><label>Hız çarpanı</label><input type="number" step="0.1" min="0" value="${esc(M.carpan)}" onchange="mszSet('carpan',Number(this.value)||1)" title="1 = kaynak dönemin hızı; 1.2 = %20 daha hızlı"></div>
-      <div><label>Dağılım</label><div class="msz-ops">
-        <label class="chk" title="Hedef ayda plan toplamı şablondaki kalan miktarı (Общий − Выполненные) geçmez"><input type="checkbox" ${M.kalanSinir?'checked':''} onchange="mszSet('kalanSinir',this.checked)"> Kalanla sınırla</label>
-        <label class="chk"><input type="checkbox" ${M.pazarYok?'checked':''} onchange="mszSet('pazarYok',this.checked)"> Pazar hariç</label>
-      </div></div>
-    </div>`:''}`;
-  if(!t){ el.innerHTML=ustten+`<p class="t-meta" style="margin-top:12px">Önce şablonu yükleyin. Ardından seçilen tarih aralığındaki saha kayıtları proje koduna göre şablon satırlarıyla eşleştirilir ve burada gösterilir.</p>`; return; }
-  const aySon=mszAySon(t.ilkIso), ayIlk=t.ilkIso;
-  const ayDisi=plan?0:M.gruplar.reduce((s,g)=>s+Object.keys(g.gunler).filter(d=>d<ayIlk||d>aySon).length,0);
-  const secAy=plan?(M.hedefAy!==ayIlk):(mszAyIlk(M.bas)!==ayIlk);
-  const hedefGun=plan?mszIsGunleri(M.hedefAy,mszAySon(M.hedefAy),M.pazarYok):0, kaynakGun=plan?mszIsGunleri(M.bas,M.bit,M.pazarYok):0;
-  const say={auto:0,oneri:0,kayitli:0,kodyok:0,atla:0,zayif:0}; M.gruplar.forEach(g=>say[g.durum]=(say[g.durum]||0)+1);
-  const yazilacak=M.gruplar.filter(g=>g.secim).length;
-  const durumAd={auto:'otomatik',oneri:'öneri - kontrol edin',kayitli:'elle seçildi',kodyok:'kod şablonda yok',atla:'yazılmayacak',zayif:'ad tutmadı - satır seçin'};
-  const satir=(g,i)=>{
-    const adaylar=g.adaylar.length?g.adaylar:t.rows;
-    const opts=`<option value="__yok" ${!g.secim?'selected':''}>— yazma —</option>`+mszSecenekler(adaylar,g.secim,t.sozluk);
-    const gunler=Object.keys(g.gunler).sort();
-    return `<tr class="msz-${g.durum}">
-      <td><b>${esc(g.ad)}</b><div class="t-meta">${esc(g.kod||'(proje kodu yok)')}${g.bolum?' · '+esc(g.bolum):''}${g.kat!=null&&g.kat!==''?' · kat '+esc(g.kat):''}${g.kot!=null&&g.kot!==''?' · kot '+esc(g.kot):''} · ${esc(g.birim||'-')}${g.ekipler.size?' · '+esc([...g.ekipler].map(shortEkip).join(', ')):''}</div></td>
-      <td class="msz-num"><b>${fmtNum(Math.round(g.toplam*1000)/1000)}</b><div class="t-meta">${gunler.length} gün · ${g.n} kayıt</div></td>
-      ${plan?(()=>{ if(!g.secim) return '<td class="msz-num t-meta">—</td>'; const pl=mszPlan(M,g);
-        return `<td class="msz-num"><b>${fmtNum(Math.round(pl.toplam*100)/100)}</b><div class="t-meta">${fmtNum(Math.round(pl.gunluk*100)/100)}/gün${pl.kalan!=null?' · kalan '+fmtNum(Math.round(pl.kalan*100)/100):''}${pl.sinirli?' · <span class="msz-t-oneri">kalanla sınırlı</span>':''}</div></td>`; })():''}
-      <td><select onchange="mszSecimDegis(${i},this.value)" title="${esc(g.adaylar.length?'Ayni proje kodlu sablon satirlari':'Bu proje kodu sablonda yok - tum satirlar listeleniyor')}">${opts}</select>
-        <div class="t-meta">${esc(durumAd[g.durum])}${g.durum==='auto'||g.durum==='oneri'||g.durum==='zayif'?` · ad benzerliği ${Math.round(g.skor*100)}% · ${g.adaylar.length} aday`:''}</div></td>
-    </tr>`;
-  };
-  el.innerHTML=ustten+`
-    <div class="msz-ozet">
-      <b>${M.gruplar.length}</b> kayıt grubu · <b>${yazilacak}</b> satıra ${plan?'ПЛАН':'ФАКТ'} yazılacak${plan?` · kaynak ${kaynakGun} iş günü → hedef ${esc(MSZ_AY_TR[Number(M.hedefAy.slice(5,7))-1])} ${M.hedefAy.slice(0,4)} ${hedefGun} iş günü`:''}
-      ${say.oneri?` · <span class="msz-t-oneri">${say.oneri} öneri</span>`:''}${say.zayif?` · <span class="msz-t-kodyok">${say.zayif} ad tutmadı</span>`:''}${say.kodyok?` · <span class="msz-t-kodyok">${say.kodyok} kodu şablonda yok</span>`:''}${say.kayitli?` · ${say.kayitli} elle seçilmiş`:''}
-      ${ayDisi?`<div class="msz-hata" style="margin-top:6px">${ayDisi} gün şablon ayının (${esc(fmtDate(ayIlk))} – ${esc(fmtDate(aySon))}) dışında - bu günler yazılmaz${secAy?'; "Ayı kaydır" açıksa şablon ayı seçilen aralığın ayına çekilir':''}.</div>`:''}
-    </div>
-    ${M.gruplar.length?`<div class="msz-tbl-wrap"><table class="msz-tbl"><thead><tr><th>Saha kaydı</th><th>${plan?'Kaynak dönem':'Miktar'}</th>${plan?'<th>Hedef ay planı</th>':''}<th>Şablon satırı (МСЗ)</th></tr></thead><tbody>${mszBolumluSatirlar(M,t,satir)}</tbody></table></div>`
-      :`<p class="t-meta" style="margin-top:10px">Bu bina ve tarih aralığında işlenmiş malzeme kaydı yok.</p>`}
-    <div class="msz-alt">
-      <label class="chk"><input type="checkbox" ${M.unhide?'checked':''} onchange="mszSet('unhide',this.checked)"> Yazılan satırlar gizliyse göster</label>
-      ${plan?`<label class="chk" title="Yazilan satirlarin hedef aydaki eski ПЛАН degerleri once silinir"><input type="checkbox" ${M.eskiPlanSil?'checked':''} onchange="mszSet('eskiPlanSil',this.checked)"> Satırın eski planını temizle</label>`:''}
-      <label class="chk" title="Sablon ayi hedef aydan farkliysa gun basliklari ve ay adi (RU/TR) hedef aya cekilir"><input type="checkbox" ${M.ayKaydir?'checked':''} onchange="mszSet('ayKaydir',this.checked)"> Ayı kaydır${secAy?` <b>(${esc(MSZ_AY_TR[Number((plan?M.hedefAy:M.bas).slice(5,7))-1])} ${(plan?M.hedefAy:M.bas).slice(0,4)})</b>`:''}</label>
-      <span style="flex:1"></span>
-      <button class="btn btn-add" onclick="mszIndir()" ${yazilacak?'':'disabled'}>${icoXlsDis()} Excel İndir</button>
+    <div class="t-meta" style="margin-top:10px">${gun} gün · <b>${list.length}</b> kayıt · <b>${kalem.size}</b> iş kalemi · <b>${gunler.size}</b> çalışılan gün${gun>120?' · <span style="color:var(--amber)">aralık uzun, gün sütunları çok olacak</span>':''}</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:14px">
+      <button class="btn btn-add" onclick="exportMetrajExcel()" ${list.length?'':'disabled'}>${icoXlsDis()} Excel İndir</button>
     </div>`;
 }
-// onizleme tablosu: secilen sablon satirinin BOLUMUNE gore basliklar (sablondaki sira), en sonda satirsizlar
-function mszBolumluSatirlar(M,t,satir){
-  const bolumler=new Map(); const bos=[];
-  M.gruplar.forEach((g,i)=>{ if(!g.secim){ bos.push(i); return; }
-    const k=mszBolumAnahtar(g.secim); let b=bolumler.get(k);
-    if(!b){ b={sira:g.secim.excelRow,baslik:mszBolumBaslik(g.secim,t.sozluk),idx:[]}; bolumler.set(k,b); }
-    b.sira=Math.min(b.sira,g.secim.excelRow); b.idx.push(i); });
-  let html='';
-  [...bolumler.values()].sort((a,b)=>a.sira-b.sira).forEach(b=>{
-    html+=`<tr class="msz-bolum"><td colspan="${M.mod==='plan'?4:3}">${esc(b.baslik)} <span class="t-meta">${b.idx.length}</span></td></tr>`;
-    b.idx.sort((x,y)=>M.gruplar[x].secim.excelRow-M.gruplar[y].secim.excelRow).forEach(i=>html+=satir(M.gruplar[i],i)); });
-  if(bos.length){ html+=`<tr class="msz-bolum bos"><td colspan="${M.mod==='plan'?4:3}">Şablon satırı seçilmemiş kayıtlar <span class="t-meta">${bos.length}</span></td></tr>`; bos.forEach(i=>html+=satir(M.gruplar[i],i)); }
-  return html;
-}
-// ---- yazma: zip icindeki sayfa XML'inde hucre degerleri ----
-function mszHucreYaz(rowXml,ref,colIdx,v){
-  const re=new RegExp('<c r="'+ref+'"([^>]*?)(?:/>|>[\\s\\S]*?</c>)');
-  const m=rowXml.match(re);
-  const vTxt=v==null?'':String(Math.round(v*1000)/1000);
-  if(m){ const s=(m[1].match(/\ss="(\d+)"/)||[])[1]; return rowXml.replace(re,v==null?`<c r="${ref}"${s?` s="${s}"`:''}/>`:`<c r="${ref}"${s?` s="${s}"`:''}><v>${vTxt}</v></c>`); }
-  if(v==null) return rowXml;   // temizlenecek hucre zaten yok
-  // hucre yok: sutun sirasina gore araya sokulur
-  const yeni=`<c r="${ref}"><v>${vTxt}</v></c>`;
-  const cre=/<c r="([A-Z]+)\d+"/g; let mm, pos=-1;
-  while((mm=cre.exec(rowXml))){ if(XLSX.utils.decode_col(mm[1])>colIdx){ pos=mm.index; break; } }
-  if(pos<0){ const e=rowXml.lastIndexOf('</row>'); return e<0?rowXml:rowXml.slice(0,e)+yeni+rowXml.slice(e); }
-  return rowXml.slice(0,pos)+yeni+rowXml.slice(pos);
-}
-function mszSatirXml(xml,rowNo,fn){
-  const bas=xml.indexOf(`<row r="${rowNo}"`); if(bas<0) return xml;
-  const tagEnd=xml.indexOf('>',bas);
-  let son;
-  if(xml[tagEnd-1]==='/'){ // bos satir <row .../> -> acik hale getirilir
-    const tag=xml.slice(bas,tagEnd-1)+'>'; xml=xml.slice(0,bas)+tag+'</row>'+xml.slice(tagEnd+1); son=bas+tag.length+6; }
-  else { son=xml.indexOf('</row>',bas); if(son<0) return xml; son+=6; }
-  return xml.slice(0,bas)+fn(xml.slice(bas,son))+xml.slice(son);
-}
-function mszPaylasilanDizgi(xml,fn){ return xml.replace(/<si>[\s\S]*?<\/si>/g,fn); }
-// yazma islemi saf veri uzerinde (test edilebilir): buf + sablon + {excelRow -> Map(col -> deger)} -> zip dizisi
-function mszDosyaUret(CFB,buf,t,yaz,opts){
-  const z=CFB.read(new Uint8Array(buf),{type:'array'});
-  const bul=p=>z.FullPaths.findIndex(x=>x.replace(/^\/+/,'').endsWith(p));
-  const oku=i=>new TextDecoder().decode(z.FileIndex[i].content);
-  const kaydet=(i,x)=>{ const b=new TextEncoder().encode(x); z.FileIndex[i].content=b; z.FileIndex[i].size=b.length; };
-  const wbI=bul('xl/workbook.xml'), relI=bul('xl/_rels/workbook.xml.rels');
-  if(wbI<0||relI<0) throw new Error('workbook.xml bulunamadi');
-  let wbX=oku(wbI); const relX=oku(relI);
-  const adEsc=mszReEsc(mszXmlEsc(t.sheetName));
-  const sm=wbX.match(new RegExp('<sheet [^>]*name="'+adEsc+'"[^>]*r:id="([^"]+)"'))||wbX.match(new RegExp('<sheet [^>]*r:id="([^"]+)"[^>]*name="'+adEsc+'"'));
-  if(!sm) throw new Error('Sayfa workbook.xml icinde bulunamadi: '+t.sheetName);
-  const rm=relX.match(new RegExp('<Relationship [^>]*Id="'+mszReEsc(sm[1])+'"[^>]*Target="([^"]+)"'))||relX.match(new RegExp('<Relationship [^>]*Target="([^"]+)"[^>]*Id="'+mszReEsc(sm[1])+'"'));
-  if(!rm) throw new Error('Sayfa iliskisi bulunamadi');
-  const hedef=rm[1].replace(/^\/+/,'').replace(/^(?!xl\/)/,'xl/');
-  const shI=bul(hedef); if(shI<0) throw new Error('Sayfa dosyasi bulunamadi: '+hedef);
-  let x=oku(shI);
-  yaz.forEach((cols,rowNo)=>{
-    x=mszSatirXml(x,rowNo,rx=>{
-      cols.forEach((v,c)=>{ rx=mszHucreYaz(rx,XLSX.utils.encode_col(c)+rowNo,c,v); });
-      if(opts.unhide) rx=rx.replace(/^(<row [^>]*?)\s+hidden="1"/,'$1');
-      return rx;
-    });
+async function exportMetrajExcel(){
+  const M=_MTJ; if(!M) return;
+  const list=metrajKayitlar();
+  if(!list.length){ toast('Bu aralikta kayit yok','err'); return; }
+  let X; try{ X=await window.xlsxStilYukle(); }catch(e){ toast('Excel bileseni yuklenemedi - baglantiyi kontrol edip tekrar deneyin','err'); return; }
+  const tr=(a,b)=>String(a||'').localeCompare(String(b||''),'tr',{numeric:true});
+  const sayi=v=>Number(String(v==null?'':v).trim().replace(',','.'))||0;
+  // gunler (aralikta hepsi)
+  const gunler=[]; for(let d=M.bas; d<=M.bit; d=new Date(Date.parse(d+'T00:00:00Z')+86400000).toISOString().slice(0,10)) gunler.push(d);
+  // satirlar
+  const m=new Map();
+  list.forEach(e=>{
+    const k=[e.bina||'',e.projeKodu||'',e.kat||'',e.kot||'',e.malzeme||'',e.birim||''].join('¦');
+    let r=m.get(k); if(!r){ r={bina:e.bina||'',kod:e.projeKodu||'',kat:e.kat||'',kot:e.kot||'',ad:e.malzeme||'',birim:e.birim||'',g:{},toplam:0,n:0}; m.set(k,r); }
+    const q=sayi(e.miktar); r.g[e.tarih]=(r.g[e.tarih]||0)+q; r.toplam+=q; r.n++;
   });
-  if(opts.ayIlk&&opts.ayIlk!==t.ilkIso){
-    const ayIlk=opts.ayIlk, hdr=t.hr+1, seri=(Date.UTC(+ayIlk.slice(0,4),+ayIlk.slice(5,7)-1,1)-Date.UTC(1899,11,30))/86400000;
-    x=mszSatirXml(x,hdr,rx=>{ rx=mszHucreYaz(rx,XLSX.utils.encode_col(t.planC)+hdr,t.planC,seri); return mszHucreYaz(rx,XLSX.utils.encode_col(t.faktC)+hdr,t.faktC,seri); });
-    // ay adi (RU/TR basliklar) ve onceki ay sonu tarihi (sutun basliklari) paylasilan dizgilerde
-    const ssI=bul('xl/sharedStrings.xml');
-    if(ssI>=0){
-      const ayNo=+ayIlk.slice(5,7)-1, yil=ayIlk.slice(0,4);
-      const eskiAyNo=+t.ilkIso.slice(5,7)-1, eskiYil=t.ilkIso.slice(0,4);
-      const onceki=iso=>{ const d=new Date(Date.UTC(+iso.slice(0,4),+iso.slice(5,7)-1,0)); return String(d.getUTCDate()).padStart(2,'0')+'.'+String(d.getUTCMonth()+1).padStart(2,'0')+'.'+d.getUTCFullYear(); };
-      const eskiTarih=onceki(t.ilkIso), yeniTarih=onceki(ayIlk);
-      let ss=oku(ssI);
-      ss=mszPaylasilanDizgi(ss,si=>si
-        .replace(new RegExp(MSZ_AY_RU[eskiAyNo]+'\\s+'+eskiYil,'g'),MSZ_AY_RU[ayNo]+' '+yil)
-        .replace(new RegExp(MSZ_AY_TR[eskiAyNo]+'\\s+'+eskiYil,'g'),MSZ_AY_TR[ayNo]+' '+yil)
-        .split(eskiTarih).join(yeniTarih));
-      kaydet(ssI,ss);
-    }
-  }
-  kaydet(shI,x);
-  // Excel acilista P/L/M/N ve TR-RU sayfasini yeniden hesaplasin
-  if(/<calcPr[^>]*\/>/.test(wbX)){ if(!/fullCalcOnLoad/.test(wbX)) wbX=wbX.replace(/<calcPr([^>]*)\/>/,'<calcPr$1 fullCalcOnLoad="1"/>'); }
-  else wbX=wbX.replace('</workbook>','<calcPr fullCalcOnLoad="1"/></workbook>');
-  kaydet(wbI,wbX);
-  return CFB.write(z,{fileType:'zip',type:'array'});
-}
-async function mszIndir(){
-  const M=_MSZ; if(!M||!M.t||!M.buf) return;
-  const t=M.t;
-  let CFB=XLSX.CFB; if(!CFB||!CFB.read){ try{ CFB=(await window.xlsxStilYukle()).CFB; }catch(e){} }
-  if(!CFB||!CFB.read){ toast('Zip bileseni bulunamadi','err'); return; }
-  const plan=M.mod==='plan';
-  const istenenAy=plan?M.hedefAy:mszAyIlk(M.bas);
-  const kaydir=M.ayKaydir&&istenenAy!==t.ilkIso;
-  const ayIlk=kaydir?istenenAy:t.ilkIso;
-  // satir -> {sutun -> deger}; null = hucre temizlenir
-  const yaz=new Map(); let hucre=0, atlanan=0;
-  const satirAl=rowNo=>{ let r=yaz.get(rowNo); if(!r){ r=new Map(); yaz.set(rowNo,r); } return r; };
-  if(plan){
-    if(ayIlk!==M.hedefAy){ toast('Hedef ay sablon ayindan farkli - "Ayi kaydir" acik olmali','err'); return; }
-    const aySon=mszAySon(ayIlk), gunler=[]; for(let d=ayIlk;d<=aySon;d=mszGunEkle(d,1)) gunler.push(d);
-    M.gruplar.forEach(g=>{ if(!g.secim) return;
-      const pl=mszPlan(M,g); const r=satirAl(g.secim.excelRow);
-      if(M.eskiPlanSil) for(let i=0;i<t.gunSayisi;i++) if(!r.has(t.planC+i)) r.set(t.planC+i,null);
-      if(!(pl.gunluk>0)) return;
-      gunler.forEach((d,i)=>{ if(i>=t.gunSayisi) return; if(M.pazarYok&&mszPazarMi(d)) return;
-        const c=t.planC+i; r.set(c,(r.get(c)||0)+pl.gunluk); hucre++; }); });
-  } else {
-    M.gruplar.forEach(g=>{ if(!g.secim) return;
-      Object.entries(g.gunler).forEach(([d,q])=>{ const i=mszGunFarki(ayIlk,d); if(i<0||i>=t.gunSayisi){ atlanan++; return; }
-        const r=satirAl(g.secim.excelRow); const c=t.faktC+i; r.set(c,(r.get(c)||0)+q); hucre++; }); });
-  }
-  if(!hucre){ toast(plan?'Yazilacak plan yok - kaynak donemde miktar bulunamadi':'Yazilacak hucre yok - tarih araligi sablon ayinin disinda olabilir','err'); return; }
-  let dizi;
-  try{ dizi=mszDosyaUret(CFB,M.buf,t,yaz,{unhide:M.unhide,ayIlk}); }
-  catch(e){ console.error(e); toast('Excel uretilemedi: '+(e.message||e),'err'); return; }
-  const ad=plan?`MSZ_PLAN_${(M.bina||t.sablonBina||'bina').replace(/[^\w-]+/g,'_')}_${ayIlk.slice(0,7)}.xlsx`
-    :`MSZ_${(M.bina||t.sablonBina||'bina').replace(/[^\w-]+/g,'_')}_${M.bas}_${M.bit}.xlsx`;
+  const rows=[...m.values()].sort((a,b)=>tr(a.bina,b.bina)||tr(a.kod,b.kod)||tr(a.ad,b.ad)||tr(a.kat,b.kat));
+  // stiller
+  const ince={style:'thin',color:{rgb:'FF9BA3AF'}}, dort=k=>({top:k,bottom:k,left:k,right:k});
+  const orta={horizontal:'center',vertical:'center',wrapText:true};
+  const S={
+    baslik:{fill:{patternType:'solid',fgColor:{rgb:'FF1E3A8A'}},font:{name:'Arial',sz:13,bold:true,color:{rgb:'FFFFFFFF'}},alignment:orta},
+    kafa:{fill:{patternType:'solid',fgColor:{rgb:'FF2563EB'}},font:{name:'Arial',sz:9.5,bold:true,color:{rgb:'FFFFFFFF'}},alignment:orta,border:dort(ince)},
+    kafaPazar:{fill:{patternType:'solid',fgColor:{rgb:'FF7C3AED'}},font:{name:'Arial',sz:9.5,bold:true,color:{rgb:'FFFFFFFF'}},alignment:orta,border:dort(ince)},
+    metin:{font:{name:'Arial',sz:10},border:dort(ince),alignment:{vertical:'center',wrapText:true}},
+    ortaM:{font:{name:'Arial',sz:10},border:dort(ince),alignment:orta},
+    sayi:{font:{name:'Arial',sz:10},border:dort(ince),alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0.##'},
+    toplam:{fill:{patternType:'solid',fgColor:{rgb:'FFFEF3C7'}},font:{name:'Arial',sz:10,bold:true},border:dort(ince),alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0.##'},
+    dip:{fill:{patternType:'solid',fgColor:{rgb:'FFDBEAFE'}},font:{name:'Arial',sz:10,bold:true},border:dort(ince),alignment:{horizontal:'right',vertical:'center'},numFmt:'#,##0.##'},
+    dipMetin:{fill:{patternType:'solid',fgColor:{rgb:'FFDBEAFE'}},font:{name:'Arial',sz:10,bold:true},border:dort(ince),alignment:{vertical:'center'}},
+  };
+  const koy=(ws,r,c,v,s,opt)=>{ const ref=X.utils.encode_cell({r,c}); const cell=(v===''||v==null)?{t:'s',v:''}:(typeof v==='number'?{t:'n',v}:{t:'s',v:String(v)}); if(opt&&opt.f){ cell.t='n'; cell.f=opt.f; delete cell.v; } if(opt&&opt.z) cell.z=opt.z; cell.s=s; ws[ref]=cell; };
+  const sabit=['Наименование здания\nBina','Код проекта\nProje Kodu','Этаж\nKat','Отм.\nKot','Вид работ\nİş Kalemi','Ед. изм.\nBirim'];
+  const aralik=`${fmtDateISO(M.bas)} – ${fmtDateISO(M.bit)}`;
+  const gunAd=['Pz','Pt','Sa','Ça','Pe','Cu','Ct'];
+  // ---- Sayfa 1: Metraj (gun sutunlu) ----
+  const ws={}; const sonC=sabit.length+gunler.length;   // toplam sutunu indeksi
+  for(let c=0;c<=sonC;c++) koy(ws,0,c,c===0?`Genel Montaj Metrajı / Общий объём монтажа · ${M.bina||'Tüm binalar'} · ${aralik}`:'',S.baslik);
+  sabit.forEach((h,c)=>koy(ws,1,c,h,S.kafa));
+  gunler.forEach((d,i)=>{ const p=d.split('-'); const dow=new Date(d+'T00:00:00Z').getUTCDay(); koy(ws,1,sabit.length+i,`${p[2]}.${p[1]}\n${gunAd[dow]}`,dow===0?S.kafaPazar:S.kafa); });
+  koy(ws,1,sonC,'Итого\nToplam',S.kafa);
+  rows.forEach((r,i)=>{
+    const R=2+i;
+    [r.bina,r.kod,r.kat,r.kot,r.ad,r.birim].forEach((v,c)=>koy(ws,R,c,v,c===4||c===0?S.metin:S.ortaM));
+    gunler.forEach((d,j)=>{ const q=r.g[d]; koy(ws,R,sabit.length+j,q?Math.round(q*1000)/1000:'',S.sayi); });
+    koy(ws,R,sonC,null,S.toplam,{f:`SUM(${X.utils.encode_cell({r:R,c:sabit.length})}:${X.utils.encode_cell({r:R,c:sonC-1})})`});
+  });
+  // dip: gunluk kalem sayisi (farkli birimler toplanmaz)
+  const dipR=2+rows.length;
+  for(let c=0;c<sabit.length;c++) koy(ws,dipR,c,c===0?'Günlük çalışılan kalem sayısı / Кол-во позиций':'',S.dipMetin);
+  gunler.forEach((d,j)=>{ const c=sabit.length+j; koy(ws,dipR,c,null,S.dip,{f:`COUNT(${X.utils.encode_cell({r:2,c})}:${X.utils.encode_cell({r:dipR-1,c})})`}); });
+  koy(ws,dipR,sonC,rows.length,S.dip);
+  ws['!ref']=X.utils.encode_range({s:{r:0,c:0},e:{r:dipR,c:sonC}});
+  ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:sonC}}];
+  ws['!cols']=[{width:12},{width:28},{width:7},{width:8},{width:38},{width:9},...gunler.map(()=>({width:7.5})),{width:12}];
+  ws['!rows']=[{hpt:30},{hpt:40},...rows.map(()=>({hpt:22})),{hpt:22}];
+  ws['!freeze']={xSplit:sabit.length,ySplit:2};
+  // ---- Sayfa 2: Ozet ----
+  const wo={}; const oz=['Наименование здания\nBina','Код проекта\nProje Kodu','Этаж\nKat','Вид работ\nİş Kalemi','Ед. изм.\nBirim','Рабочих дней\nÇalışılan Gün','Записей\nKayıt','Итого\nToplam'];
+  for(let c=0;c<oz.length;c++) koy(wo,0,c,c===0?`Özet / Сводка · ${M.bina||'Tüm binalar'} · ${aralik}`:'',S.baslik);
+  oz.forEach((h,c)=>koy(wo,1,c,h,S.kafa));
+  rows.forEach((r,i)=>{ const R=2+i;
+    koy(wo,R,0,r.bina,S.metin); koy(wo,R,1,r.kod,S.ortaM); koy(wo,R,2,r.kat,S.ortaM); koy(wo,R,3,r.ad,S.metin); koy(wo,R,4,r.birim,S.ortaM);
+    koy(wo,R,5,Object.keys(r.g).length,S.sayi); koy(wo,R,6,r.n,S.sayi); koy(wo,R,7,Math.round(r.toplam*1000)/1000,S.toplam); });
+  wo['!ref']=X.utils.encode_range({s:{r:0,c:0},e:{r:1+rows.length,c:oz.length-1}});
+  wo['!merges']=[{s:{r:0,c:0},e:{r:0,c:oz.length-1}}];
+  wo['!cols']=[{width:12},{width:28},{width:7},{width:40},{width:9},{width:11},{width:9},{width:13}];
+  wo['!rows']=[{hpt:30},{hpt:40}];
+  const wb=X.utils.book_new();
+  X.utils.book_append_sheet(wb,ws,'Metraj');
+  X.utils.book_append_sheet(wb,wo,'Ozet');
+  let dizi=X.write(wb,{bookType:'xlsx',type:'array'});
+  try{ dizi=metrajSonIsle(X,dizi,sabit.length); }catch(e){ console.warn('Metraj Excel son isleme atlandi',e); }
+  const ad=`Metraj_${(M.bina||'tum').replace(/[^\w-]+/g,'_')}_${M.bas}_${M.bit}.xlsx`;
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([dizi],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
   a.download=ad; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  logAction('export',`MSZ Excel ${plan?'PLAN '+ayIlk.slice(0,7)+' (kaynak '+M.bas+'..'+M.bit+')':'FAKT '+M.bas+'..'+M.bit}: ${M.bina||'tum binalar'} - ${yaz.size} satir, ${hucre} hucre`);
-  toast(plan?`MSZ plan Excel'i indirildi - ${yaz.size} satır, ${hucre} gün hücresi`:`MSZ Excel indirildi - ${yaz.size} satır, ${hucre} gün hücresi${atlanan?` · ${atlanan} gün ay dışı atlandı`:''}`);
+  logAction('export',`Metraj Excel: ${M.bina||'tum binalar'} ${M.bas}..${M.bit} - ${rows.length} kalem, ${list.length} kayit`);
+  toast(`Metraj Excel indirildi - ${rows.length} kalem, ${gunler.length} gün`);
 }
+// ilk sayfada dondurulmus baslik (2 satir + sabit sutunlar), A4 yatay genislige sigdir - kutuphane yazmadigi icin XML'e eklenir
+function metrajSonIsle(X,dizi,xSplit){
+  const z=X.CFB.read(new Uint8Array(dizi),{type:'array'});
+  z.FullPaths.forEach((p,i)=>{
+    if(!/xl\/worksheets\/sheet1\.xml$/.test(p)) return;
+    let x=new TextDecoder().decode(z.FileIndex[i].content);
+    const hucre=X.utils.encode_cell({r:2,c:xSplit});
+    x=x.replace('<dimension','<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension')
+      .replace('<sheetView workbookViewId="0"/>',`<sheetView zoomScale="85" zoomScaleNormal="85" workbookViewId="0"><pane xSplit="${xSplit}" ySplit="2" topLeftCell="${hucre}" activePane="bottomRight" state="frozen"/><selection pane="bottomRight" activeCell="${hucre}" sqref="${hucre}"/></sheetView>`)
+      .replace(/(<pageMargins[^>]*\/>)/,'$1<pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/>');
+    z.FileIndex[i].content=new TextEncoder().encode(x); z.FileIndex[i].size=z.FileIndex[i].content.length;
+  });
+  return X.CFB.write(z,{fileType:'zip',type:'array'});
+}
+function fmtDateISO(s){ if(!s)return''; const d=new Date(s); if(isNaN(d))return s; return d.toLocaleDateString('tr-TR'); }
 
 /* ===================================================================
    RAPOR EXCEL ICE AKTARMA - Gunluk Plan Excel'lerini toplu yukle
