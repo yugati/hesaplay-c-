@@ -41208,6 +41208,18 @@ async function saveRaporEntry(){
   }
   _rSaving=true;
   const saveBtn=document.getElementById('r_saveBtn'); if(saveBtn)saveBtn.disabled=true;
+  /* ISLEM PERDESI: Kaydet'e basildiginda sunucu yanitini beklerken ekran bos durmasin -
+     dolum OLCULEN bir orandir (bkz. wperdeAc): her asamada biten istek / o asamanin istek sayisi.
+     Asamalar: duzenlemede eski kaydin silinmesi (0-20), kalemlerin yazilmasi (-90),
+     taslak temizligi / link gonderiminin kapanmasi (-100). */
+  let _wpBitis='Kaydedilemedi';
+  const _wp={done:0,toplam:0,taban:0,tavan:90};
+  const _wpAsama=(taban,tavan)=>{ _wp.done=0; _wp.toplam=0; _wp.taban=taban; _wp.tavan=tavan; };
+  const _wpIstek=(pr,metin)=>{ _wp.toplam++;
+    return Promise.resolve(pr).then(r=>{ _wp.done++;
+      wperdeDurum({metin:metin||'',sayac:_wp.done+' / '+_wp.toplam,yuzde:_wp.taban+(_wp.tavan-_wp.taban)*_wp.done/_wp.toplam});
+      return r; }); };
+  wperdeAc(_rEditId?'Kayit guncelleniyor':'Saha kaydi kaydediliyor',{gecikme:250,alt:flat.length+' kalem sunucuya yaziliyor - sayfayi kapatmayin'});
   try{
     if(!DB.rapor.entries)DB.rapor.entries=[];
     // Duzenleme ise: eski kayitlari (ve bagli stok hareketlerini) temizle
@@ -41220,9 +41232,10 @@ async function saveRaporEntry(){
       if(oldEntries[0] && oldEntries[0].createdBy) _createdBy = oldEntries[0].createdBy;
       const oldIds=oldEntries.map(o=>o.id);
       const oldMoveIds=oldEntries.filter(o=>o._moveId).map(o=>o._moveId);
+      _wpAsama(0,20);
       await Promise.all([
-        sbDeleteRaporEntriesByIds(oldIds),
-        ...(oldMoveIds.length?[sbDeleteProjeItems(oldMoveIds)]:[])
+        _wpIstek(sbDeleteRaporEntriesByIds(oldIds),'Eski kayit kaldiriliyor'),
+        ...(oldMoveIds.length?[_wpIstek(sbDeleteProjeItems(oldMoveIds),'Eski stok hareketi kaldiriliyor')]:[])
       ]);
       oldEntries.forEach(o=>{ if(o._moveId) DB.proje.items=DB.proje.items.filter(it=>it.id!==o._moveId); });
       const delIds=new Set(oldIds);
@@ -41289,26 +41302,33 @@ async function saveRaporEntry(){
       }
       updEntries.push(entry);
     });
+    _wpAsama(_rEditId?20:0,90);
+    wperdeDurum({metin:'Kalemler yaziliyor',sayac:'0 / '+((newEntries.length?1:0)+(newItems.length?1:0)+updEntries.length+updMoves.length)});
     await Promise.all([
-      ...(newEntries.length?[sbInsertRaporEntries(newEntries)]:[]),
-      ...(newItems.length?[sbInsertProjeItems(newItems)]:[]),
-      ...updEntries.map(e=>sbUpdateRaporEntry(e.id,e)),
-      ...updMoves.map(m=>sbUpdateProjeItem(m.id,m))
+      ...(newEntries.length?[_wpIstek(sbInsertRaporEntries(newEntries),newEntries.length+' yeni kalem yazildi')]:[]),
+      ...(newItems.length?[_wpIstek(sbInsertProjeItems(newItems),newItems.length+' stok hareketi yazildi')]:[]),
+      ...updEntries.map(e=>_wpIstek(sbUpdateRaporEntry(e.id,e),'Mevcut kayda eklendi: '+(e.malzeme||''))),
+      ...updMoves.map(m=>_wpIstek(sbUpdateProjeItem(m.id,m),'Stok hareketi guncellendi: '+(m.name||'')))
     ]);
     newEntries.forEach(e=>DB.rapor.entries.push(e));
     newItems.forEach(item=>DB.proje.items.push(item));
     // taslaktan devam edilip kesin kaydedildiyse taslagi temizle
-    if(_rDraftId){ await draftsSet('rapor', draftsGet('rapor').filter(x=>x.id!==_rDraftId)); _rDraftId=null; }
-    if(_linkG) await slinkKabulIsaretle(_linkG.id, [...newEntries, ...updEntries].map(x=>x.id));
+    _wpAsama(90,100);
+    if(_rDraftId){ await _wpIstek(draftsSet('rapor', draftsGet('rapor').filter(x=>x.id!==_rDraftId)),'Taslak temizlendi'); _rDraftId=null; }
+    if(_linkG) await _wpIstek(slinkKabulIsaretle(_linkG.id, [...newEntries, ...updEntries].map(x=>x.id)),'Gonderim kabul edildi');
     RV.form=null; closeModal(); render(); rDayReopen(_day);
     const nNew=newEntries.length, nMerged=mergeInto.length;
     logAction('define',`Saha kaydi ${_rEditId?'guncellendi':'girildi'}: ${tarih} ${bina} - ${nNew} yeni${nMerged?`, ${nMerged} birlestirilen`:''} kalem`);
-    toast(_rEditId?'Kayit guncellendi':(
+    const _msg=_rEditId?'Kayit guncellendi':(
       nMerged ? (nNew? `${nNew} kalem eklendi, ${nMerged} kalem mevcut kayda birlestirildi`
                      : `${nMerged} kalem mevcut kayda birlestirildi`)
-              : (nNew>1? nNew+' is kalemi eklendi':'Saha kaydi eklendi')));
+              : (nNew>1? nNew+' is kalemi eklendi':'Saha kaydi eklendi'));
+    _wpBitis=_msg; toast(_msg);
   } finally {
     _rSaving=false;
+    // hata yolunda form acik kalir: Kaydet yeniden basilabilir olsun (basarida modal zaten kapandi)
+    const _sb=document.getElementById('r_saveBtn'); if(_sb) _sb.disabled=false;
+    wperdeKapat(_wpBitis);
   }
 }
 // Sartname disi (henuz spek olusturulmadan girilmis) saha kaydini,
