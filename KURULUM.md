@@ -47,9 +47,20 @@ gösterir: hangi değerin eksik olduğunu söyler ve bu dosyaya yönlendirir.
 - **Port 5173 dolu:** Eski bir sunucu hâlâ açık demektir; onu kapatın ya da
   Vite'ın önerdiği yeni portu (ör. 5174) kullanın.
 
+## Klasör düzeni
+
+| Klasör | İçerik |
+|---|---|
+| `src/`, `index.html` | Uygulamanın tarayıcı tarafı |
+| `api/`, `lib/` | Sunucu fonksiyonları (giriş, yetki, veri) |
+| `sql/` | Veritabanı kurulum ve migration dosyaları (Supabase → SQL Editor'de çalıştırılır) |
+| `public/` | Logo, ikonlar, statik sayfalar |
+| `scripts/`, `dev/` | Yedekleme ve yardımcı betikler |
+| `arsiv/` | Artık kullanılmayan eski dosyalar (eski tek dosya sürüm, örnek Excel) |
+
 ## Neden "tek dosya" olamıyor?
 
-Eski `malzeme-takip_17.html` gibi tek dosya sürümde şifre kontrolü tarayıcıda
+Eski `arsiv/malzeme-takip_17.html` gibi tek dosya sürümde şifre kontrolü tarayıcıda
 yapılıyordu; bu, veritabanı anahtarının ve şifrelerin dosyayı açan herkese
 görünmesi demekti. Güvenlik güncellemesiyle şifre doğrulama sunucu tarafına
 (`api/` klasörü) taşındı ve `users` tablosuna tarayıcıdan erişim kapatıldı.
