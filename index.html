@@ -53468,6 +53468,177 @@ function kgtHepsiniTemizle(){
   if(!confirm(fmtNum(st.sira.length)+' satirdaki kagitta yazan / onaylanan miktarlar, fiyatlar, sartname secimleri ve yerlesim kodu kirilimlari silinecek.\n\nDevam edilsin mi?')) return;
   st.sira=[]; st.yazan={}; st.onay={}; st.fiyat={}; st.kdv={}; st.sart={}; st.oz={}; st.skey={}; st.fyalniz=false; render();
 }
+/* ---------- EXCEL'DEN TOPLU AKTARMA ----------
+   Tedarikcinin kagidi cogu zaman elde zaten Excel'dir: urun adi, miktar, fiyat.
+   Dosya okunur, her satir firmanin urun havuzuyla eslestirilir (once stok kodu,
+   sonra birebir ad, sonra arama motoru), kullanici onizlemede eslesmeyi gorur ve
+   gerekirse degistirir; "Aktar" deyince kagitta yazan / fiyat / KDV kutulari
+   Excel sirasiyla dolar. Onaylanan DOKUNULMAZ - o imzali kagida gore ayrica girilir.
+   Havuzda bulunmayan urun sistem katalogunda aranir (alimsiz satir: yazan girilir,
+   onaylanamaz). Hic bulunamayan satir aktarilmaz ve listede kirmizi gorunur. */
+let _KXL=null;
+function kgtExcelSec(e){
+  const st=_KGT, f=e.target.files&&e.target.files[0]; e.target.value='';
+  if(!st||!f) return;
+  if(!st.companyId){ toast('Once firmayi secin - urunler o firmanin alimlarina gore eslestirilir','err'); return; }
+  const r=new FileReader();
+  r.onload=ev=>{ try{
+    const wb=XLSX.read(ev.target.result,{type:'binary'});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const rows=ws?XLSX.utils.sheet_to_json(ws,{header:1,blankrows:false,defval:''}):[];
+    if(!rows.length){ toast('Excel bos','err'); return; }
+    kgtExcelCoz(st,rows,f.name);
+  }catch(err){ console.error(err); toast('Excel okunamadi: '+(err&&err.message||err),'err'); } };
+  r.readAsBinaryString(f);
+}
+// Baslik satiri bulunur (ilk 10 satir icinde ad+miktar sutunu olan ilk satir); yoksa sutun sirasi: ad, miktar, fiyat
+function kgtExcelSutunlar(rows){
+  const al=['urun adi','urun','ad','malzeme','malzeme adi','aciklama','ekipman','name','description','item','product'];
+  const mk=['miktar','adet','qty','quantity','miktari'];
+  const fy=['birim fiyat','fiyat','b.fiyat','price','unit price','birim fiyati'];
+  for(let i=0;i<Math.min(rows.length,10);i++){
+    const row=rows[i]||[]; if(!row.some(c=>String(c).trim()!=='')) continue;
+    const pick=_hdrMap(row.map(c=>String(c==null?'':c)));
+    const iAd=pick(...al), iMk=pick(...mk);
+    if(iAd>=0&&iMk>=0) return { bas:i+1, iAd, iMk, iFy:pick(...fy), iKod:pick('stok kodu','stok','kod','code','sku','urun kodu'),
+      iKdv:pick('kdv','kdv orani','vat'), iSart:pick('sartname','sartname no','spec') };
+  }
+  return { bas:0, iAd:0, iMk:1, iFy:2, iKod:-1, iKdv:-1, iSart:-1 };
+}
+function kgtExcelCoz(st,rows,dosya){
+  const c=kgtExcelSutunlar(rows);
+  const havuz=[...st._havuz.values()].filter(u=>u.alimVar);
+  const gorunen=new Set(havuz.map(u=>u.key));
+  const kodu=v=>fatKodAnahtar(norm(v));
+  const liste=[];
+  for(let i=c.bas;i<rows.length;i++){
+    const row=rows[i]||[];
+    const ad=String(row[c.iAd]==null?'':row[c.iAd]).trim();
+    const kod=c.iKod>=0?String(row[c.iKod]==null?'':row[c.iKod]).trim():'';
+    const mk=fatSayi(row[c.iMk]);
+    if(!ad&&!kod) continue;
+    if(!(mk>0)) continue;                           // miktarsiz satir (toplam, bos, baslik tekrari)
+    const fiyatHam=c.iFy>=0?row[c.iFy]:'';
+    const fiyat=(fiyatHam===''||fiyatHam==null)?'':fatSayi(fiyatHam);
+    const kdvHam=c.iKdv>=0?String(row[c.iKdv]).replace('%','').trim():'';
+    const kdv=kdvHam===''?'':fatSayi(kdvHam);
+    const sart=c.iSart>=0?String(row[c.iSart]==null?'':row[c.iSart]).trim():'';
+    // adaylar: havuzdan puanli (dusuk puan = daha iyi)
+    const nAd=norm(ad).trim(), kAd=kodu(ad), kKod=kodu(kod);
+    const puan=u=>{
+      const uk=kodu(u.code), uad=norm(u.ad).trim();
+      if(kKod&&uk&&uk===kKod) return 0;
+      if(nAd&&uad===nAd) return 1;
+      if(kAd&&uk&&uk===kAd) return 1;
+      if(nAd&&uad&&(uad.indexOf(nAd)>=0||nAd.indexOf(uad)>=0)&&Math.min(nAd.length,uad.length)>=6) return 2;
+      if(kod&&fatAramaEslesir(u,kod)) return 3;
+      if(ad&&fatAramaEslesir(u,ad)) return 4;
+      return 9;
+    };
+    let aday=havuz.map(u=>({u,p:puan(u)})).filter(x=>x.p<9).sort((a,b)=>a.p-b.p||((b.u.kgKalan>0)-(a.u.kgKalan>0))||String(a.u.ad||'').localeCompare(String(b.u.ad||''),'tr'));
+    // birden cok urun tutuyorsa EN IYI puan grubu kalir
+    if(aday.length) aday=aday.filter(x=>x.p===aday[0].p).slice(0,8);
+    let dis=null;
+    if(!aday.length){
+      const d=fatAlinmamisAra(kod||ad,st.companyId,gorunen,null);
+      if(d.liste.length){ const u=d.liste[0];
+        dis={...u, kodlar:[], alinan:0, iade:0, net:0, fat:0, hamFat:0, kagitta:0, kgKalan:0, firmalar:[], alimVar:false, disDurum:u.durum}; }
+    }
+    liste.push({ satir:i+1, ad, kod, mk, fiyat, kdv, sart, aday, dis,
+      sec:aday.length?aday[0].u.key:(dis?dis.key:''), belirsiz:aday.length>1 });
+  }
+  if(!liste.length){ toast("Excel'de miktari dolu satir bulunamadi - sutunlar: urun adi, miktar, birim fiyat",'err'); return; }
+  _KXL={ st, dosya, liste, sutun:c };
+  kgtExcelRender();
+}
+function kgtExcelKapat(){ _KXL=null; closeModal(); }
+function kgtExcelSec2(i,v){ if(_KXL&&_KXL.liste[i]){ _KXL.liste[i].sec=v; kgtExcelRender(); } }
+function kgtExcelRender(){
+  closeModal(); const x=_KXL; if(!x) return;
+  const st=x.st, pb=st.paraBirimi||'TRY';
+  const sayac={tam:0,belirsiz:0,alimsiz:0,yok:0,atla:0};
+  const tr=x.liste.map((r,i)=>{
+    const u=r.sec?(st._havuz.get(r.sec)||(r.dis&&r.dis.key===r.sec?r.dis:null)):null;
+    const durum=!r.sec?(r.aday.length||r.dis?'atla':'yok'):!u?'yok':(u.alimVar===false?'alimsiz':(r.belirsiz?'belirsiz':'tam'));
+    sayac[durum]++;
+    const roz={tam:'<span class="fat-rozet tam">ESLESTI</span>',belirsiz:'<span class="fat-rozet kismi">KONTROL EDIN</span>',
+      alimsiz:'<span class="fat-rozet hic">ALIM YOK</span>',yok:'<span class="fat-rozet hic">BULUNAMADI</span>',atla:'<span class="fat-rozet yok">ATLANACAK</span>'}[durum];
+    const secenek=r.aday.map(a=>`<option value="${esc(a.u.key)}" ${r.sec===a.u.key?'selected':''}>${esc(a.u.ad||a.u.code||'-')}${a.u.code?' · '+esc(a.u.code):''} · kalan ${fmtNum(a.u.kgKalan)}</option>`).join('')
+      +(r.dis?`<option value="${esc(r.dis.key)}" ${r.sec===r.dis.key?'selected':''}>${esc(r.dis.ad||r.dis.code||'-')} (alim yok)</option>`:'')
+      +`<option value="" ${!r.sec?'selected':''}>- aktarma -</option>`;
+    return `<tr>
+      <td class="tl-no">${r.satir}</td>
+      <td><b>${esc(r.ad||'-')}</b>${r.kod?`<div class="t-meta">${esc(r.kod)}</div>`:''}</td>
+      <td class="num">${fmtNum(r.mk)}</td>
+      <td class="num">${r.fiyat===''?'-':fatPara(r.fiyat,'')}</td>
+      <td>${(r.aday.length||r.dis)?`<select onchange="kgtExcelSec2(${i},this.value)" style="max-width:360px">${secenek}</select>`
+          :'<span class="t-meta">Firmanin urunleri ve katalog arasinda eslesen yok - formda elle arayin</span>'}
+        ${u&&u.unit?`<div class="t-meta">${esc(birimAd(u.unit))}${u.alimVar!==false?' · kalan '+fmtNum(u.kgKalan):''}</div>`:''}</td>
+      <td>${roz}</td></tr>`; }).join('');
+  const n=sayac.tam+sayac.belirsiz+sayac.alimsiz;
+  const html=`<div class="modal-bg" onclick="if(event.target===this)kgtExcelKapat()"><div class="modal wide">
+    <div class="modal-head"><h3>Excel'den Kagit Satirlari</h3>
+      <button class="mini-btn" onclick="kgtExcelKapat()" title="Kapat - hicbir sey aktarilmaz">x</button></div>
+    <div class="modal-body">
+      <p class="t-meta" style="margin:0 0 10px"><b>${esc(x.dosya)}</b> · ${fmtNum(x.liste.length)} satir okundu ·
+        <span style="color:var(--green)">${fmtNum(sayac.tam)} eslesti</span>${sayac.belirsiz?` · <span style="color:var(--amber)">${fmtNum(sayac.belirsiz)} birden cok aday (kontrol edin)</span>`:''}${
+        sayac.alimsiz?` · <span style="color:var(--red)">${fmtNum(sayac.alimsiz)} alimi yok</span>`:''}${sayac.yok?` · <span style="color:var(--red)">${fmtNum(sayac.yok)} bulunamadi</span>`:''}${
+        sayac.atla?` · ${fmtNum(sayac.atla)} atlanacak`:''}<br>
+        Aktarilan satirlarda <b>kagitta yazan</b>, <b>birim fiyat</b> ve KDV dolar; <b>onaylanan</b> dokunulmaz. Ayni urun Excel'de iki kez geciyorsa ikincisi ek satir olarak acilir.
+        Formda zaten dolu olan satirin degerleri Excel'dekiyle degistirilir.</p>
+      <div class="tablewrap" style="max-height:60vh"><table>
+        <thead><tr><th>Excel satiri</th><th>Excel'de yazan</th><th class="num">Miktar</th><th class="num">Fiyat (${esc(pb)})</th><th>Sistemdeki urun</th><th>Durum</th></tr></thead>
+        <tbody>${tr}</tbody></table></div>
+    </div><div class="modal-foot">
+      <button class="btn btn-ghost" style="margin-right:auto" onclick="kgtExcelSablon()" title="Urun adi / stok kodu / miktar / birim fiyat / KDV sutunlu bos sablon">Bos sablon indir</button>
+      <button class="btn btn-ghost" onclick="kgtExcelKapat()">Vazgec</button>
+      <button class="btn btn-add" onclick="kgtExcelUygula()" ${n?'':'disabled'}>${fmtNum(n)} satiri aktar</button>
+    </div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+function kgtExcelSablon(){
+  const ws=XLSX.utils.aoa_to_sheet([['Urun Adi','Stok Kodu','Miktar','Birim Fiyat','KDV'],['Ornek urun','ABC-123',10,125.5,20]]);
+  ws['!cols']=[{wch:48},{wch:16},{wch:10},{wch:14},{wch:8}];
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Kagit'); XLSX.writeFile(wb,'Sartname_Kagidi_Sablon.xlsx');
+}
+function kgtExcelUygula(){
+  const x=_KXL; if(!x) return; const st=x.st; if(_KGT!==st){ kgtExcelKapat(); return; }
+  if(!st.disU) st.disU={};
+  const kullanilan=new Set();   // bu aktarimda doldurulan satir kimlikleri (ayni urun ikinci kez -> ek satir)
+  let n=0, alimsiz=0;
+  x.liste.forEach(r=>{
+    if(!r.sec) return;
+    let u=st._havuz.get(r.sec);
+    if(!u&&r.dis&&r.dis.key===r.sec){ u=r.dis; st.disU[u.key]=u; st._havuz.set(u.key,u); }
+    if(!u) return;
+    const key=u.key;
+    let sid=key;
+    if(kullanilan.has(key)){
+      // ayni urunun bu aktarimda kullanilmamis ek satiri varsa onu kullan, yoksa yeni ac
+      const bos=kgtEkSatirlar(st,key).find(s=>!kullanilan.has(s));
+      if(bos) sid=bos;
+      else{ sid=key+'~'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); st.skey[sid]=key; }
+    }
+    kullanilan.add(key); kullanilan.add(sid);
+    st.yazan[sid]=r.mk;
+    if(r.fiyat!=='') st.fiyat[sid]=r.fiyat;
+    if(r.kdv!=='') st.kdv[sid]=r.kdv;
+    else if(st.kdv[sid]===''||st.kdv[sid]==null){ if(st.varsayilanKdv!==''&&st.varsayilanKdv!=null) st.kdv[sid]=fatSayi(st.varsayilanKdv); }
+    const sartlar=u.sartnameler||[];
+    const sartEs=r.sart?sartlar.find(s=>norm(s)===norm(r.sart)):'';
+    if(sartEs) st.sart[sid]=sartEs;
+    else if(!st.sart[sid]&&sartlar.length===1) st.sart[sid]=sartlar[0];
+    if(fatSayi(st.onay[sid])>r.mk+FAT_EPS) st.onay[sid]=r.mk;   // onaylanan yazani asamaz
+    kgtBilgiYaz(st,{key:sid,u});
+    kgtSiraGuncelle(st,sid);
+    n++; if(u.alimVar===false) alimsiz++;
+  });
+  _KXL=null; closeModal();
+  st.fyalniz=true; st.fq='';
+  render();
+  if(alimsiz) toast(fmtNum(n)+" satir Excel'den aktarildi - "+fmtNum(alimsiz)+' satirin bu firmadan alimi yok (onaylanamaz)','err');
+  else toast(fmtNum(n)+" satir Excel'den aktarildi");
+}
 // Formdaki kagit satirlari, KAYITTAKI bicimde (kagit sirasiyla)
 function kgtFormSatirlari(st){
   if(!st) return [];
@@ -54291,6 +54462,8 @@ function renderKagitForm(){
             ${yazanli?`<button onclick="kgtTutanlariOnayla()" title="Yalnizca kagitta yazanin TAMAMI kalana sigan bos satirlari onaylar (onaylanan = kagitta yazan). Sigmayanlar bos kalir">Tutanlari onayla</button>`:''}
             ${yazanli?`<button onclick="kgtOnayDoldur()" title="Onaylanan kutularini kagitta yazanla doldurur - kalan yetmeyen satira kalan kadar yazilir">Onaylananlari doldur</button>`:''}
             ${sat.length?`<button onclick="kgtHepsiniTemizle()" title="Girilen tum miktarlari, fiyatlari ve sartname secimlerini siler">Girilenleri temizle</button>`:''}
+            ${st.companyId?`<button onclick="document.getElementById('kgtXlsInput').click()" title="Kagidi Excel'den toplu aktar: urun adi (ya da stok kodu), miktar ve birim fiyat sutunlu basit bir tablo yeter. Satirlar firmanin urunleriyle eslestirilir, aktarmadan once kontrol edersiniz">Excel'den aktar</button>
+              <input type="file" id="kgtXlsInput" accept=".xlsx,.xls,.csv" class="hidden" onchange="kgtExcelSec(event)">`:''}
           </div>
         </div>
         ${sartnameler.length?`<div class="suz">
