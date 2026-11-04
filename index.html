@@ -176,6 +176,11 @@ html{zoom:var(--ui-scale)}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+/* IMLEC: tarayicinin "imlecle gezinme" kipi (Chrome/Edge/Firefox'ta F7 ile acilir) tiklanan her
+   metne yanip sonen bir metin imleci koyar - duz yazida, etiket yaninda, basliklarda. Yazi
+   kutusu olmayan yerde imleci gizle; girdi alanlari kendi imlecini korur. */
+body{caret-color:transparent}
+input,textarea,select,[contenteditable],[contenteditable] *{caret-color:auto}
 button{font-family:inherit;cursor:pointer;border:none}
 input,select,textarea{font-family:inherit}
 .hidden{display:none!important}
@@ -333,6 +338,10 @@ input,select,textarea{font-family:inherit}
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:11px 16px;border-radius:9px;font-weight:600;font-size:13px;transition:transform .08s,filter .15s,box-shadow .15s;white-space:nowrap}
 .btn:active{transform:translateY(1px)}
+/* MESGUL DUGME (bkz. btnBekle): sunucuya yazarken dugme kilitlenir, basinda donen halka
+   belirir - ekran "donmus" gibi gorunmesin, ikinci tiklama ayni kaydi iki kez acmasin. */
+.btn.bekle{pointer-events:none;opacity:.75;cursor:wait}
+.btn.bekle::before{content:"";width:13px;height:13px;flex:0 0 auto;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:wp-don .7s linear infinite}
 .login-err{color:#fca5a5;font-size:12px;margin-top:12px;min-height:16px;text-align:center}
 .login-hint{margin-top:16px;text-align:center;font-size:11px;color:var(--lg-dim);font-family:var(--mono)}
 
@@ -3994,6 +4003,16 @@ p.yp-ayar-not{margin:2px 0 8px}
 .frow.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .frow.four{display:grid;grid-template-columns:1fr .7fr 1fr 1fr;gap:10px}
 .frow label{display:block;font-size:11px;color:var(--mute);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+/* BILGI BALONU (bkz. bilgiHtml / bbGoster): etiketin yanindaki (i) ikonu; uzerine gelince /
+   dokununca aciklama balonu. Balon <body>'ye sabit (position:fixed) cizilir - modal
+   overflow:auto oldugu icin hucre icindeki mutlak konumlu balon kirpilirdi. */
+.bb{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;margin-left:5px;padding:0;border:none;border-radius:50%;background:color-mix(in srgb,var(--mute) 18%,transparent);color:var(--mute);cursor:help;vertical-align:-3px;font:inherit;text-transform:none;letter-spacing:0}
+.bb svg{width:12px;height:12px}
+.bb:hover,.bb:focus-visible,.bb.on{background:var(--accent);color:#fff;outline:none}
+#bbBalon{position:fixed;z-index:2147483001;max-width:320px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);color:var(--ink);box-shadow:var(--shadow-lg);font-size:11.5px;line-height:1.5;font-family:var(--mono);text-transform:none;letter-spacing:0;font-weight:400;pointer-events:none;overflow-wrap:anywhere}
+#bbBalon b{color:var(--accent)}
+#bbBalon::before{content:"";position:absolute;left:var(--ok,14px);width:9px;height:9px;background:var(--panel2);border-left:1px solid var(--line);border-top:1px solid var(--line);transform:rotate(45deg);top:-5px}
+#bbBalon.ust::before{top:auto;bottom:-5px;transform:rotate(225deg)}
 .frow input,.frow select,.frow textarea{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--ink);padding:10px 12px;border-radius:9px;font-size:14px;outline:none;transition:border .15s,box-shadow .15s}
 .frow input:focus,.frow select:focus,.frow textarea:focus{border-color:var(--amber);box-shadow:var(--ring) rgba(240,160,32,.16)}
 .frow textarea{resize:vertical;min-height:54px}
@@ -17881,48 +17900,47 @@ function openMaterialModal(id,keepReturn){
   const birOpts=birIds.map(b=>`<option value="${esc(b)}" ${b===mBirim?'selected':''}>${esc(birimAdiBul(b))}</option>`).join('');
   const html=`<div class="modal-bg" onclick="matModalBgClick(event)"><div class="modal" style="max-width:860px"><div class="modal-head"><h3>${m?'Malzeme Duzenle':'Yeni Malzeme'}</h3><button class="mini-btn" onclick="matModalClose()">x</button></div><div class="modal-body">
     <div class="frow"><input type="hidden" id="mt_name" value="${m?esc(resmiAdKur(matResmi(m))||m.name):''}">${resmiFormHtml('mt',m?matResmi(m):[],'mtResmiYaz()',m?resmiCozUyari(m):'')}</div>
-    <div class="frow"><label>Piyasa Adlari  <span class="t-meta">(hangi ulkede nasil araniyorsa - aramada bulunur, KIMLIK degildir)</span></label>
+    <div class="frow"><label>Piyasa Adlari${bilgiHtml('Hangi ulkede nasil araniyorsa o ad: aramada bulunur, urunun KIMLIGI degildir. <b>Piyasa Adi Ekle</b> ile dil/ulke kodunu (TR, RU, EN...) ve o ulkede arandigi adi yazin.')}</label>
       <div class="vr-bar"><button type="button" class="btn btn-ghost" title="Bir dil/ulke icin piyasa adi ekleyin - TR, RU, EN ya da yeni bir kod" onclick="piyasaSatirEkle(null)">${icoPlus()} Piyasa Adi Ekle</button></div>
       <div id="mt_piyasaBox">${piyasaKutuHtml(null)}</div></div>
-    <div class="frow two"><div><label>Urun Kodu</label><input id="mt_code" value="${m?esc(m.code||''):''}" placeholder="orn. 121491"></div><div><label>Barkod</label><input id="mt_barkod" value="${m?esc(m.barkod||''):''}" placeholder="orn. 8698523950838"></div></div>
-    <div class="frow"><label>Marka  <span class="t-meta">(listeden secin - birden fazla olabilir)</span></label>${markaAlaniHtml('mt_brand',m?m.brand:'',true)}</div>
-    <div class="frow"><label>Es Kodlar  <span class="t-meta">(AYNI urunun bilindigi diger kodlar - eski kod, tedarikci kodu)</span></label>
+    <div class="frow two"><div><label>Urun Kodu${bilgiHtml('Ureticinin / tedarikcinin urun kodu - arama ve Excel eslestirmede ana anahtar. Bir kod yalnizca TEK urune ait olabilir.')}</label><input id="mt_code" value="${m?esc(m.code||''):''}" placeholder="orn. 121491"></div><div><label>Barkod${bilgiHtml('EAN / GTIN barkod numarasi - okuyucuyla aramada kullanilir.')}</label><input id="mt_barkod" value="${m?esc(m.barkod||''):''}" placeholder="orn. 8698523950838"></div></div>
+    <div class="frow"><label>Marka${bilgiHtml('Listeden secin - birden fazla marka olabilir. Listede yoksa <b>+ Yeni marka...</b> ile ekleyin.')}</label>${markaAlaniHtml('mt_brand',m?m.brand:'',true)}</div>
+    <div class="frow"><label>Es Kodlar${bilgiHtml('AYNI urunun bilindigi diger kodlar: eski kod, tedarikci kodu. Es kodlar aramada ve Excel eslestirmede ana kod gibi calisir; hepsi BU urune sayilir.<br><br>Beden / olcu / renk gibi AYRI urunleri birbirine baglamak icin kutuphane listesindeki <b>VARYANT</b> dugmesini (Varyant Ailesi) kullanin - her biri kendi kodu ve stoguyla kalir.')}</label>
       <div class="vr-bar">
         <button type="button" class="btn btn-ghost" onclick="varyantSatirEkle()">${icoPlus()} Es Kod Ekle</button>
       </div>
       <div id="mt_varyantBox"></div>
-      <p class="t-meta" style="font-size:10.5px;margin-top:7px;line-height:1.5">Es kodlar aramada ve Excel eslestirmede ana kod gibi calisir; hepsi BU urune sayilir. Beden / olcu / renk gibi AYRI urunleri birbirine baglamak icin kutuphane listesindeki <b>VARYANT</b> dugmesini (Varyant Ailesi) kullanin - her biri kendi kodu ve stoguyla kalir.</p>
     </div>
-    <div class="frow two"><div><label>Standart Numarasi</label><input id="mt_standart" value="${m?esc(m.standart||''):''}" placeholder="orn. TS EN 61386"></div><div><label>Agirlik (kg)  <span class="t-meta">(birim agirlik)</span></label><input id="mt_weight" type="number" step="any" min="0" value="${m&&m.weight!=null?m.weight:''}" placeholder="0"></div></div>
-    <div class="frow"><label>Birim</label>${birimSecHtml('mt_unit',m?m.unit:'')}</div>
-    <div class="frow"><label>Kategori  <span class="t-meta">(varsayilan bolum - malzeme baska bolumlerin sartnamelerinde de kullanilabilir)</span></label>
+    <div class="frow two"><div><label>Standart Numarasi${bilgiHtml('Urunun uydugu standart - orn. TS EN 61386, DIN 933. Aramada ve Excel eslestirmede kullanilir.')}</label><input id="mt_standart" value="${m?esc(m.standart||''):''}" placeholder="orn. TS EN 61386"></div><div><label>Agirlik (kg)${bilgiHtml('Birim agirlik - tek adet / metre / paket icin kg.')}</label><input id="mt_weight" type="number" step="any" min="0" value="${m&&m.weight!=null?m.weight:''}" placeholder="0"></div></div>
+    <div class="frow"><label>Birim${bilgiHtml('Olcu birimi - adet, metre, kg, paket... Miktarlar bu birimle sayilir.')}</label>${birimSecHtml('mt_unit',m?m.unit:'')}</div>
+    <div class="frow"><label>Kategori${bilgiHtml('Varsayilan bolum. Malzeme baska bolumlerin sartnamelerinde de kullanilabilir - fiilen kullanildigi bolumler sartname kalemlerinden gelir.')}</label>
       <select id="mt_cat"><option value="" ${!selCat?'selected':''}>- kategorisiz (varsayilan yok) -</option>${cats.map(c=>`<option ${selCat===c?'selected':''}>${esc(c)}</option>`).join('')}<option value="__new">+ Yeni kategori...</option></select>
       <input id="mt_newcat" class="hidden" style="margin-top:7px" placeholder="Yeni kategori">
       ${useCats.length?`<p style="font-size:11px;color:var(--dim);font-family:var(--mono);margin-top:6px">Fiilen kullanildigi bolum${useCats.length>1?'ler':''}: <b>${useCats.map(esc).join(', ')}</b> - bu bilgi sartname kalemlerinden gelir, yukaridaki secim sadece varsayilandir</p>`:''}
     </div>
-    <div class="frow"><label>Birim  <span class="t-meta">(urunun girildigi disiplin - ETIKET; kutuphane tum birimlerde ortaktir, bolum adi bu birimin bolumudur)</span></label>
+    <div class="frow"><label>Birim${bilgiHtml('Urunun girildigi disiplin - bir ETIKETTIR. Kutuphane tum birimlerde ortaktir; bolum adi bu birimin bolumudur.')}</label>
       <select id="mt_birim">${birOpts}</select></div>
-    <div class="frow"><label>Etiket  <span class="t-meta">(Enter veya virgul ile ekleyin - arama/filtrelemede kullanilir)</span></label>
+    <div class="frow"><label>Etiket${bilgiHtml('Enter veya virgul ile ekleyin. Arama ve filtrelemede kullanilir - orn. Yangin, Exproof, HDG, Ic Mekan.')}</label>
       <div id="mt_tagsBox" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;min-height:24px"></div>
       <input id="mt_tagInput" list="mt_tagSuggest" placeholder="orn. Yangin, Exproof, HDG, Ic Mekan" oninput="tagInputChange(event,'mt')" onkeydown="tagInputKeydown(event,'mt')">
       <datalist id="mt_tagSuggest">${allTags.map(t=>`<option value="${esc(t)}">`).join('')}</datalist>
       ${m?vaEtiketNotHtml('proje',m):''}
     </div>
-    <div class="frow"><label>Proje  <span class="t-meta">(bilgi amacli)</span></label><input id="mt_proje" value="${m?esc(m.proje||''):''}" placeholder="orn. X Santiyesi"></div>
+    <div class="frow"><label>Proje${bilgiHtml('Bilgi amacli - urunun hangi proje / santiye icin girildigi.')}</label><input id="mt_proje" value="${m?esc(m.proje||''):''}" placeholder="orn. X Santiyesi"></div>
     <div class="frow"><label>Not</label><textarea id="mt_note" placeholder="Teknik ozellik, tedarikci...">${m?esc(m.note||''):''}</textarea></div>
     <div class="frow"><label>Diger Not</label><textarea id="mt_note2" placeholder="Ek aciklama...">${m?esc(m.note2||''):''}</textarea></div>
     <div class="frow two">
-      <div><label>Fotograf  <span class="t-meta">(dosya secin veya internetten resim linki yapistirin)</span></label>
+      <div><label>Fotograf${bilgiHtml('Dosya secin, surukleyip birakin ya da alttaki kutuya internetten resim linki yapistirin.')}</label>
         <div class="drop ${m&&m.img?'has':''}" id="mtImgDrop" onclick="document.getElementById('mtImgInput').click()">${m&&m.img?`<img class="img-prev" src="${m.img}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div>
         <input type="file" id="mtImgInput" accept="image/*" class="hidden" onchange="pickImg(event,'mtImgDrop')">
         <input id="mt_imgUrl" style="margin-top:7px" placeholder="veya resim linki: https://..." value="${m&&m.img&&/^https?:/i.test(m.img)?esc(m.img):''}" onchange="setMatImgUrl(this.value)"></div>
-      <div><label>Fotograf 2  <span class="t-meta">(opsiyonel - sag/sol okla gecis)</span></label>
+      <div><label>Fotograf 2${bilgiHtml('Opsiyonel ikinci resim - buyuk gorunumde sag/sol okla gecilir.')}</label>
         <div class="drop ${m&&m.img2?'has':''}" id="mtImg2Drop" onclick="document.getElementById('mtImg2Input').click()">${m&&m.img2?`<img class="img-prev" src="${m.img2}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div>
         <input type="file" id="mtImg2Input" accept="image/*" class="hidden" onchange="pickImg2(event,'mtImg2Drop')">
         <input id="mt_img2Url" style="margin-top:7px" placeholder="veya resim linki: https://..." value="${m&&m.img2&&/^https?:/i.test(m.img2)?esc(m.img2):''}" onchange="setMatImgUrl2(this.value)"></div>
     </div>
     ${usage.length?`<p style="font-size:11px;color:var(--dim);font-family:var(--mono)">Bu malzeme ${usage.length} sartnamede kullaniliyor. Degisiklik hepsini etkiler.</p>`:''}
-  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="matModalClose()">Iptal</button><button class="btn btn-add" onclick="saveMaterial(${m?`'${m.id}'`:'null'})">Kaydet</button></div></div></div>`;
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="matModalClose()">Iptal</button><button class="btn btn-add" id="mt_kaydet" onclick="saveMaterial(${m?`'${m.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   document.getElementById('mt_cat').onchange=function(){document.getElementById('mt_newcat').classList.toggle('hidden',this.value!=='__new');};
   renderTagsBox('mt');
@@ -17979,7 +17997,7 @@ function piyasaKutuHtml(kutu){
   // Liste kapali degildir - kutuya elle yazilan yeni bir kod (KZ, DE...) kabul edilir.
   const dlId='piyasaDil_'+(kutu==null?'m':kutu);
   const dl=`<datalist id="${dlId}">${piyasaDilOnerileri().map(d=>`<option value="${esc(d)}"></option>`).join('')}</datalist>`;
-  if(!list.length&&!aile) return dl+'<p class="matd-empty" style="margin:0">Henuz piyasa adi yok - <b>Piyasa Adi Ekle</b> ile dil/ulke kodunu (TR, RU, EN...) ve o ulkede arandigi adi yazin.</p>';
+  if(!list.length&&!aile) return dl+'<p class="matd-empty" style="margin:0">Henuz piyasa adi yok - <b>Piyasa Adi Ekle</b> ile ekleyin.</p>';
   // silme sutunu 44px: .mini-btn bu boyda - 32px verilince dugme kutudan tasip
   //                     tabloda gereksiz yatay kaydirma cikariyordu (olculdu)
   const izgara='grid-template-columns:92px minmax(120px,1fr) 44px';
@@ -18017,7 +18035,7 @@ function varyantKutuHtml(){
   const {alanlar,satirlar}=modalVaryant;
   const izgara=vrGrid(alanlar.length,true);
   const basliklar=alanlar.map((a,i)=>`<div class="vr-th"><input value="${esc(a)}" placeholder="Ozellik" title="Sutun adi - orn. Olcu, Renk, Beden" oninput="varyantAlanAd(${i},this.value)"><button type="button" class="vr-x" title="Bu ozellik sutununu kaldir" onclick="varyantAlanSil(${i})">&times;</button></div>`).join('');
-  if(!satirlar.length) return `<p class="matd-empty" style="margin:0">Henuz es kod yok - <b>Es Kod Ekle</b> ile ayni urunun bilindigi diger kodu (eski kod, tedarikci kodu) ekleyin.</p>`;
+  if(!satirlar.length) return `<p class="matd-empty" style="margin:0">Henuz es kod yok - <b>Es Kod Ekle</b> ile ekleyin.</p>`;
   // ozellik sutunlari yalnizca ESKI kayitta (Varyant Ailesi oncesi) gorunur; yenisi eklenmez
   const govde=satirlar.map((r,i)=>`<div class="vr-row" style="${izgara}">
       <input class="mono" value="${esc(r.kod)}" placeholder="orn. 121491-EU" oninput="varyantSet(${i},-1,this.value)">
@@ -18042,7 +18060,12 @@ function varyantAlanSil(i){
    zaten dogru degeri gosteriyor (yer tutucular bir sonraki cizimde tazelenir). */
 function varyantAlanAd(i,v){ modalVaryant.alanlar[i]=v; }
 function varyantSet(i,j,v){ const r=modalVaryant.satirlar[i]; if(!r)return; if(j<0) r.kod=v; else r.d[j]=v; }
+/* CIFT KAYIT KORUMASI: sunucu yazimi suren bir kayit varken ikinci tiklama yutulur.
+   Eskiden Kaydet'e basinca ekran bekliyor gibi duruyordu, kullanici tekrar basiyor ve ayni
+   urun iki kez ekleniyordu (kod cakisma kontrolu ilk kayit DB.proje'ye girmeden calisir). */
+let _matKaydediyor=false;
 async function saveMaterial(id){ if(!guard('editMaterial'))return;
+  if(_matKaydediyor) return;
   // RESMI AD PARCALARI: dil basina kutu; Malzeme Ismi (kimlik) parcalardan " / " ile kurulur
   const resmi=resmiFormOku('mt');
   const name=resmi.length?resmiAdKur(resmi):document.getElementById('mt_name').value.trim();
@@ -18103,28 +18126,46 @@ async function saveMaterial(id){ if(!guard('editMaterial'))return;
   // BIRIM ETIKETI: formdaki secim; alan yoksa (eski form) aktif birim. Sunucuya giden
   // sarmalayici da bos etiketi aktif birimle doldurur (src/supabase.js matBirimDamga).
   const birim=String((document.getElementById('mt_birim')||{}).value||'')||window.AKTIF_BIRIM||'';
-  let savedMt, etkKardes=0, etkHata='';
+  let savedMt, etkKardes=0, etkHata='', _wpBitis='Kaydedilemedi';
+  _matKaydediyor=true;
+  const _ac=btnBekle(document.getElementById('mt_kaydet'),'Kaydediliyor...');
+  // ISLEM PERDESI (bkz. wperdeAc): yeni urun tek istekle yazilir - olculebilir ilerleme yok
+  // (belirsiz); guncellemede urun + bagli sartname kalemleri + aile etiketi ayri isteklerdir,
+  // sayac onlari sayar. gecikme 250: hizli biten kayitta perde hic gorunmez, yanip sonmez.
+  const _affected=id?materialUsage(id):[];
+  const _wp={done:0,toplam:0};
+  const _wpIstek=(pr,metin)=>{ _wp.toplam++;
+    return Promise.resolve(pr).then(r=>{ _wp.done++;
+      wperdeDurum({metin:metin||'',sayac:_wp.done+' / '+_wp.toplam,yuzde:100*_wp.done/_wp.toplam}); return r; }); };
+  wperdeAc(id?'Malzeme guncelleniyor':'Malzeme kaydediliyor',{gecikme:250,belirsiz:!id,
+    alt:id?(1+_affected.length)+' kayit sunucuya yaziliyor - sayfayi kapatmayin':(code||name)+' sunucuya yaziliyor - sayfayi kapatmayin'});
+  try{
   if(id){ const m=getMaterial(id);
     Object.assign(m,{name,resmi,piyasa,code,barkod,brand,unit,cat,birim,note,note2,standart,weight,tags,altCodes,varyant,proje,img:modalImg,img2:modalImg2,updatedAt:Date.now()});
-    const affectedSpecs=materialUsage(id);
+    const affectedSpecs=_affected;
     // sp.cat BILEREK guncellenmez: bolum kalemin ozelligidir (bkz. saveSpec), malzemenin kategorisi
     // sadece kutuphane varsayilanidir. Eskiden buradaki sp.cat=cat, varsayilan kategorisi bos bir
     // malzeme kaydedilince kalemin bolumunu silip sartname ekranindan kayboluyordu.
     affectedSpecs.forEach(sp=>{ sp.code=code; sp.name=name; if(unit)sp.unit=unit; sp.brand=brand; sp.matId=id; sp.standart=standart; sp.weight=weight; sp.tags=tags.slice(); sp.img=modalImg||null; });
     await Promise.all([
-      sbUpdateProjeMaterial(id,{...m}),
-      ...affectedSpecs.map(sp=>sbUpdateProjeSpec(sp.id,{...sp}))
+      _wpIstek(sbUpdateProjeMaterial(id,{...m}),name),
+      ...affectedSpecs.map(sp=>_wpIstek(sbUpdateProjeSpec(sp.id,{...sp}),'Sartname kalemi: '+(sp.name||sp.code||'')))
     ]);
     savedMt=m;
     // varyant ailesi: etiket ailenin TEK setidir - kardeslere de yazilir
-    try{ etkKardes=await vaEtiketYay('proje',m); }
+    try{ etkKardes=await _wpIstek(vaEtiketYay('proje',m),'Aile etiketi'); }
     catch(err){ console.error('vaEtiketYay',err); etkHata=(err&&err.message)||String(err); }
+    _wpBitis='Malzeme guncellendi';
   } else {
     const now=Date.now();
     savedMt={id:uid(),name,resmi,piyasa,code,barkod,brand,unit,cat,birim,note,note2,standart,weight,tags,altCodes,varyant,proje,img:modalImg,img2:modalImg2,createdAt:now,updatedAt:now};
+    wperdeDurum({metin:name});
     await sbInsertProjeMaterial(savedMt);
     DB.proje.materials.push(savedMt);
+    _wpBitis='Malzeme eklendi';
   }
+  } catch(err){ console.error('saveMaterial',err); toast('Kaydedilemedi: '+((err&&err.message)||err),'err'); return; }
+  finally{ _matKaydediyor=false; _ac(); wperdeKapat(_wpBitis, etkHata?'Aile etiketi yazilamadi':''); }
   logAction('editMaterial',(id?'Guncelleme: ':'Ekleme: ')+(code||name)+(etkKardes?' (etiket ailenin '+etkKardes+' urunune de yazildi)':''));
   const mesaj=etkHata?'Malzeme guncellendi ama etiket ailenin diger urunlerine yazilamadi: '+etkHata+' - sayfayi yenileyip tekrar kaydedin'
     :(id?'Malzeme guncellendi':'Malzeme eklendi')+(etkKardes?' - etiket ailenin '+etkKardes+' urunune de yazildi':'');
@@ -28745,7 +28786,7 @@ function openAltModal(specId, altId){
     <div class="modal-foot">
       ${ex&&isAdmin()?`<button class="btn btn-ghost" style="margin-right:auto;border-color:var(--red)55;color:var(--red)" onclick="delAlt('${ex.id}','${specId}')">${icoTrash()} Sil</button>`:''}
       <button class="btn btn-ghost" onclick="closeAltModal()">İptal</button>
-      <button class="btn btn-add" onclick="saveAlt('${specId}','${altId||''}')">Kaydet</button>
+      <button class="btn btn-add" id="alt_kaydet" onclick="saveAlt('${specId}','${altId||''}')">Kaydet</button>
     </div>
   </div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
@@ -28760,7 +28801,11 @@ function acAlt(){ const el=document.getElementById('alt_mat_input'); el.value=''
     info.className='lib-match match-found';
   }, false);
 }
+/* CIFT KAYIT KORUMASI + ISLEM PERDESI (bkz. saveMaterial): sunucu yazimi surerken ikinci
+   tiklama yutulur, Kaydet kilitlenir, "Alternatif kaydediliyor" perdesi gorunur. */
+let _altKaydediyor=false;
 async function saveAlt(specId, altId){
+  if(_altKaydediyor) return;
   if(!_altMat||!_altMat.name){ toast('Ürün seçimi zorunlu','err'); return; }
   // ANA URUNLE AYNI OLAMAZ: bir urun kendisinin alternatifi olamaz (anlamsiz kayit + siparis
   // ekraninda ayni urunun iki kez listelenmesi). Kutuphane kaydi (matId) veya kod/ad ile karsilastir.
@@ -28777,19 +28822,36 @@ async function saveAlt(specId, altId){
   const note=document.getElementById('alt_note').value.trim();
   const status=isAdmin()?(document.getElementById('alt_status')||{value:'oneri'}).value:'oneri';
   if(!DB.proje.alternatives)DB.proje.alternatives=[];
+  // AYNI ALTERNATIF IKI KEZ: ayni kaleme ayni urun (kutuphane kaydi ya da kod/ad) zaten
+  // alternatif yazilmissa ikinci kayit acilmaz - cift tiklama / tekrar deneme kopyasi olusmasin
+  const _altKey=matKey(_altMat.code,_altMat.name);
+  const _ayni=DB.proje.alternatives.find(a=>a.id!==altId&&a.specId===specId&&((_altMat.id&&a.matId===_altMat.id)||matKey(a.code,a.name)===_altKey));
+  if(_ayni){ toast('Bu urun bu kalemde zaten alternatif olarak kayitli ('+altStatusLabel(_ayni.status)+')','err'); return; }
+  _altKaydediyor=true;
+  const _ac=btnBekle(document.getElementById('alt_kaydet'),'Kaydediliyor...');
+  let _wpBitis='Kaydedilemedi';
+  // tek istekle biter - olculebilir ilerleme yok (belirsiz); 250ms'den once biterse perde gorunmez
+  wperdeAc(altId?'Alternatif guncelleniyor':'Alternatif kaydediliyor',{gecikme:250,belirsiz:true,alt:_altMat.name+' sunucuya yaziliyor - sayfayi kapatmayin'});
+  wperdeDurum({metin:_altMat.name});
+  try{
   if(altId){
     const ex=DB.proje.alternatives.find(a=>a.id===altId); if(!ex)return;
     const wasAdmin=isAdmin(); const prevStatus=ex.status;
     Object.assign(ex,{matId:_altMat.id||null,name:_altMat.name,code:_altMat.code||'',brand:_altMat.brand||'',unit:_altMat.unit||'',img:_altMat.img||null,standart:_altMat.standart||'',weight:_altMat.weight!=null?_altMat.weight:null,tags:(_altMat.tags||[]).slice(),reason,note,status});
     if(wasAdmin&&status!==prevStatus&&(status==='onaylandi'||status==='kullanımda')){ ex.approvedBy=CURRENT_USER.username; ex.approvedAt=Date.now(); }
     await sbUpdateProjeAlternative(altId,ex);
+    _wpBitis='Alternatif guncellendi';
     toast('Alternatif güncellendi');
   } else {
     const alt={id:uid(),specId,matId:_altMat.id||null,name:_altMat.name,code:_altMat.code||'',brand:_altMat.brand||'',unit:_altMat.unit||'',img:_altMat.img||null,standart:_altMat.standart||'',weight:_altMat.weight!=null?_altMat.weight:null,tags:(_altMat.tags||[]).slice(),reason,note,status,createdBy:CURRENT_USER.username,createdAt:Date.now(),approvedBy:null,approvedAt:null};
     DB.proje.alternatives.push(alt);
-    await sbInsertProjeAlternative(alt);
+    try{ await sbInsertProjeAlternative(alt); }
+    catch(err){ DB.proje.alternatives=DB.proje.alternatives.filter(a=>a.id!==alt.id); throw err; }  // sunucuya gitmedi - yerelde de kalmasin
+    _wpBitis='Alternatif eklendi';
     toast('Alternatif eklendi');
   }
+  } catch(err){ console.error('saveAlt',err); toast('Kaydedilemedi: '+((err&&err.message)||err),'err'); return; }
+  finally{ _altKaydediyor=false; _ac(); wperdeKapat(_wpBitis); }
   logAction('define',(altId?'Alternatif guncellendi: ':'Alternatif eklendi: ')+_altMat.name+(_sp?' ('+_sp.bina+' / '+_sp.name+')':''));
   closeAltModal(); refreshSpecDetailAlts(specId);
 }
@@ -30000,7 +30062,7 @@ function resmiFormHtml(p, list, onInput, uyari){
   const diller=resmiDiller(), l=resmiTemiz(list), tek=diller.length<2;
   const yer={RU:'orn. Анкер-шпилька HRD-C 10x80',EN:'orn. Frame anchor HRD-C 10x80',TR:'orn. Galvaniz Kablo Tavasi 200mm'};
   const kutular=diller.map((d,i)=>{ const v=(l.find(x=>x.d===d)||{}).ad||'';
-    return `<div><label>${tek?'Malzeme Adi':'Resmi ad ('+esc(d)+')'}${i===0?' <span class="specf-req">*</span>':''}</label>
+    return `<div><label>${tek?'Malzeme Adi':'Resmi ad ('+esc(d)+')'}${i===0?' <span class="specf-req">*</span>':''}${i===0?bilgiHtml(tek?'Urunun KIMLIK adi - kimlik, sartname kopyasi ve Excel bu adi kullanir.':'Urunun KIMLIK adi, dil dil. Parcalar \' / \' ile birlesip <b>Malzeme Ismi</b> olur - kimlik, sartname kopyasi ve Excel bu adi kullanir. Ilk dil zorunludur.'):''}</label>
       <input id="${p}_resmi_${esc(d)}" data-resmi="${esc(d)}" data-k="${i===0?'name':'resmi'}" value="${esc(v)}" placeholder="${esc(yer[d]||'')}" oninput="${onInput}"></div>`; }).join('');
   return `<div class="resmi-form${tek?'':' coklu'}">${kutular}</div>`
     +(tek?'':`<div class="t-meta resmi-onizle" id="${p}_resmi_onizle" title="Kayitli Malzeme Ismi: parcalar ' / ' ile birlesir - kimlik, sartname kopyasi ve Excel bu adi kullanir">${esc(resmiAdKur(l))||'&nbsp;'}</div>`)
@@ -31641,6 +31703,39 @@ function _openMatDetailPage(matId){
 function icoZoomSm(){ return '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3M11 8v6M8 11h6"/></svg>'; }
 // bilgi seridi ikonu (ⓘ)
 function icoInfoSm(){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11.5v4.5M12 7.7v.3"/></svg>'; }
+/* BILGI BALONU: form etiketlerindeki parantezli aciklamalar yerine (i) ikonu. Metin HTML
+   olabilir (<b> gibi) - data-bb'de kacirilmis saklanir, balona innerHTML ile basilir.
+   Fare/klavye/dokunma: mouseover+focus acar, mouseout+blur kapatir; telefonda dokunma
+   acip kapatir. Kaydirma ya da pencere boyutu degisince kapanir (yeri eskir). */
+/* MESGUL DUGME: btnBekle(btn,'Kaydediliyor...') kilitler ve yazisini degistirir; donus
+   degeri eski haline getiren fonksiyondur - try/finally icinde cagrilir ki hata olsa da acilsin. */
+function btnBekle(btn,yazi){
+  if(!btn) return ()=>{};
+  const eski=btn.innerHTML, eskiDis=btn.disabled;
+  btn.classList.add('bekle'); btn.disabled=true; if(yazi) btn.textContent=yazi;
+  return ()=>{ if(!btn.isConnected) return; btn.classList.remove('bekle'); btn.disabled=eskiDis; btn.innerHTML=eski; };
+}
+function bilgiHtml(metin){ return `<button type="button" class="bb" aria-label="Bilgi" data-bb="${esc(metin)}" onclick="event.stopPropagation();bbTik(this)">${icoInfoSm()}</button>`; }
+let _bbAcik=null;
+function bbGoster(btn){
+  bbKapat();
+  let b=document.getElementById('bbBalon'); if(!b){ b=document.createElement('div'); b.id='bbBalon'; document.body.appendChild(b); }
+  b.innerHTML=btn.getAttribute('data-bb')||''; b.classList.remove('ust'); b.style.visibility='hidden'; b.style.display='block';
+  const r=btn.getBoundingClientRect(), W=window.innerWidth, H=window.innerHeight, bw=b.offsetWidth, bh=b.offsetHeight;
+  let x=Math.max(8,Math.min(r.left+r.width/2-18,W-bw-8));
+  let y=r.bottom+8; if(y+bh>H-8&&r.top-8-bh>0){ y=r.top-8-bh; b.classList.add('ust'); }
+  b.style.left=x+'px'; b.style.top=y+'px'; b.style.setProperty('--ok',Math.max(6,Math.min(bw-15,r.left+r.width/2-x-4))+'px');
+  b.style.visibility=''; btn.classList.add('on'); _bbAcik=btn;
+}
+function bbKapat(){ const b=document.getElementById('bbBalon'); if(b) b.style.display='none'; if(_bbAcik){ _bbAcik.classList.remove('on'); _bbAcik=null; } }
+function bbTik(btn){ if(_bbAcik===btn) bbKapat(); else bbGoster(btn); }
+document.addEventListener('mouseover',e=>{ const t=e.target.closest&&e.target.closest('.bb'); if(t&&t!==_bbAcik) bbGoster(t); });
+document.addEventListener('mouseout',e=>{ const t=e.target.closest&&e.target.closest('.bb'); if(t&&t===_bbAcik&&!(e.relatedTarget&&t.contains(e.relatedTarget))) bbKapat(); });
+document.addEventListener('focusin',e=>{ const t=e.target.closest&&e.target.closest('.bb'); if(t) bbGoster(t); });
+document.addEventListener('focusout',e=>{ const t=e.target.closest&&e.target.closest('.bb'); if(t&&t===_bbAcik) bbKapat(); });
+document.addEventListener('scroll',()=>{ if(_bbAcik) bbKapat(); },true);
+window.addEventListener('resize',()=>{ if(_bbAcik) bbKapat(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&_bbAcik) bbKapat(); });
 function icoPencilSm(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg>'; }
 // deger https:// ile basliyorsa tiklanabilir link olur (ETA raporu, teknik foy, urun sayfasi...)
 function mdpVal(v){
