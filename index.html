@@ -45960,7 +45960,7 @@ function nordSummaryHtml(){
     <div class="nord-sum-right">
       <button class="btn btn-ghost" onclick="nordClear()">Temizle</button>
       ${draftBtn}
-      <button class="btn btn-order" ${ok.length?'':'disabled style="opacity:.5;cursor:not-allowed"'} onclick="saveNewOrder()">${icoDoc()} ${NORD.editId?`Degisiklikleri Kaydet (${ok.length})`:(nordBorc()?`Borcu Kaydet (${ok.length})`:`Siparisi Kaydet & Stok Ekle (${ok.length})`)}</button>
+      <button class="btn btn-order" id="nord_kaydet" ${ok.length?'':'disabled style="opacity:.5;cursor:not-allowed"'} onclick="saveNewOrder()">${icoDoc()} ${NORD.editId?`Degisiklikleri Kaydet (${ok.length})`:(nordBorc()?`Borcu Kaydet (${ok.length})`:`Siparisi Kaydet & Stok Ekle (${ok.length})`)}</button>
     </div>`;
 }
 function nordRenderLines(){
@@ -46089,7 +46089,28 @@ async function nordPickPdf(e){
 }
 // "x" ile kaldirma: dosya kovadan da silinir
 function nordPdfKaldir(){ const p=NORD.pdf; NORD.pdf=null; render(); if(p&&p.path&&window.sbBelgeSil) window.sbBelgeSil(p.path); }
+/* CIFT KAYIT KORUMASI + ISLEM PERDESI (bkz. saveMaterial): sunucu yazimi surerken ikinci
+   tiklama yutulur, Kaydet kilitlenir, perde her sunucu istegini sayar (nordWpIstek).
+   Dogrulama hatalari 250ms'den once dondugu icin perde o durumda hic gorunmez. */
+let _nordKaydediyor=false;
+const _nordWp={done:0,toplam:0};
+function nordWpIstek(pr,metin){ _nordWp.toplam++;
+  return Promise.resolve(pr).then(r=>{ _nordWp.done++;
+    wperdeDurum({metin:metin||'',sayac:_nordWp.done+' / '+_nordWp.toplam,yuzde:100*_nordWp.done/_nordWp.toplam}); return r; }); }
 async function saveNewOrder(){
+  if(_nordKaydediyor||!NORD) return;
+  _nordKaydediyor=true; _nordWp.done=0; _nordWp.toplam=0;
+  const _ac=btnBekle(document.getElementById('nord_kaydet'),'Kaydediliyor...');
+  const _edit=!!NORD.editId, _borc=nordBorc();
+  wperdeAc(_borc?(_edit?'Borc guncelleniyor':'Borc kaydediliyor'):(_edit?'Siparis guncelleniyor':'Siparis kaydediliyor'),
+    {gecikme:250,alt:'Siparis ve stok hareketleri sunucuya yaziliyor - sayfayi kapatmayin'});
+  let bitis='Kaydedilemedi';
+  try{ bitis=(await _saveNewOrderIc())||'Kaydedilemedi'; }
+  catch(err){ console.error('saveNewOrder',err); toast('Kaydedilemedi: '+((err&&err.message)||err),'err'); }
+  finally{ _nordKaydediyor=false; _ac(); wperdeKapat(bitis); }
+}
+// donus: perdenin bitis basligi ('' / undefined = kaydedilmedi)
+async function _saveNewOrderIc(){
   // BORC: ayni dogrulamalardan gecer ama stok hareketi URETMEZ ve DB.proje.borclar'a yazilir
   // (bkz. borcMu). No tekilligi kendi listesi icindedir - borc belgesi baska firmanin irsaliyesi.
   const borc=nordBorc(), kayitlar=borc?(DB.proje.borclar||[]):(DB.proje.orders||[]);
@@ -46276,7 +46297,7 @@ async function saveNewOrder(){
     if(borc){
       // borcun hareketi yok - yalnizca kayit yenilenir
       DB.proje.borclar[DB.proje.borclar.findIndex(x=>x.id===editId)]=order;
-      await sbUpdateProjeOrder(orderId,order);
+      await nordWpIstek(sbUpdateProjeOrder(orderId,order),'Borc kaydi');
       logAction('order','Borc '+no+' duzenlendi: '+lines.length+' urun - '+bina+(companyName?' - '+companyName:'')+tedLog);
     } else {
     // Silme listesi yalnizca ALIM girisleridir: iade hareketleri kimligini korur, upsert edilir
@@ -46285,26 +46306,27 @@ async function saveNewOrder(){
     newItems.forEach(it=>DB.proje.items.push(it));
     iadeItems.forEach(it=>DB.proje.items.push(it));
     DB.proje.orders[DB.proje.orders.findIndex(x=>x.id===editId)]=order;
-    await Promise.all([sbDeleteProjeItems(oldItemIds),sbInsertProjeItems(newItems),
-      sbUpsertProjeItems(iadeItems),sbUpdateProjeOrder(orderId,order)]);
+    await Promise.all([nordWpIstek(sbDeleteProjeItems(oldItemIds),'Eski stok hareketleri kaldiriliyor'),nordWpIstek(sbInsertProjeItems(newItems),newItems.length+' stok hareketi'),
+      nordWpIstek(sbUpsertProjeItems(iadeItems),'Iade hareketleri'),nordWpIstek(sbUpdateProjeOrder(orderId,order),'Siparis kaydi')]);
     logAction('order','Fatura '+no+' duzenlendi: '+lines.length+' urun - '+bina+(companyName?' - '+companyName:'')+(atama?` [ATAMA: ${NORD.kaynakBina}${NORD.kaynakSart?'/'+NORD.kaynakSart:''} -> ${bina}/${NORD.sart}]`:'')+tedLog);
     }
   } else if(borc){
     DB.proje.borclar.push(order);
-    await sbInsertProjeOrder(order);
+    await nordWpIstek(sbInsertProjeOrder(order),'Borc kaydi');
     logAction('order','Borc '+no+': '+lines.length+' urun - '+bina+(companyName?' - '+companyName+' firmasindan odunc':'')+tedLog);
   } else {
     newItems.forEach(it=>DB.proje.items.push(it));
     DB.proje.orders.push(order);
-    await Promise.all([sbInsertProjeItems(newItems),sbInsertProjeOrder(order)]);
+    await Promise.all([nordWpIstek(sbInsertProjeItems(newItems),newItems.length+' stok hareketi'),nordWpIstek(sbInsertProjeOrder(order),'Siparis kaydi')]);
     logAction('order','Fatura '+no+': '+lines.length+' urun - '+bina+(companyName?' - '+companyName:'')+(atama?` [ATAMA: ${NORD.kaynakBina}${NORD.kaynakSart?'/'+NORD.kaynakSart:''} -> ${bina}/${NORD.sart}${NORD.atamaNeden?' · '+atamaNedenLabel(NORD.atamaNeden):''}]`:'')+tedLog);
   }
   // bir taslaktan kesinlestiyse o taslak artik gercek siparis oldu - taslaklardan cikar
-  if(NORD.draftId){ await orderDraftsSave(orderDraftsGet().filter(d=>d.id!==NORD.draftId)); }
+  if(NORD.draftId){ await nordWpIstek(orderDraftsSave(orderDraftsGet().filter(d=>d.id!==NORD.draftId)),'Taslak kapatiliyor'); }
   PNEWORD=false; NORD=null; PORD=true; ORDBINA=bina; ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:'',tur:'',tag:''}; ORDVIEW=borc?'borclar':'orders';
-  if(borc){ render(); toast(`${editId?'Borc guncellendi':'Borc kaydedildi'} - ${lines.length} urun (${bina}) · stok ve alim degismedi`); return; }
+  if(borc){ render(); toast(`${editId?'Borc guncellendi':'Borc kaydedildi'} - ${lines.length} urun (${bina}) · stok ve alim degismedi`); return (editId?'Borc guncellendi':'Borc kaydedildi')+' - '+lines.length+' urun'; }
   const atamaOzet=atama?[acilanKalem?`${acilanKalem} yeni kalem acildi`:'',yerineBagli?`${yerineBagli} satir mevcut kalemin yerine baglandi`:''].filter(Boolean).join(' · '):'';
   render(); toast((editId?`Siparis guncellendi - ${lines.length} urun (${bina})`:`Siparis kaydedildi - ${lines.length} urun (${bina})`)+(atamaOzet?' · '+atamaOzet:''));
+  return (editId?'Siparis guncellendi':'Siparis kaydedildi')+' - '+lines.length+' urun, stok eklendi';
 }
 // TASLAK KAYDET (yeni tam-sayfa editor): siparisi kesinlestirmeden saklar (stok/ilerleme URETMEZ).
 // Not: eski modal formunun kendi saveOrderDraft'i (order_drafts) ayridir - bu NORD editorune ozgudur.
