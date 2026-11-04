@@ -3611,6 +3611,7 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .gy-anahtar{background:none;border:1px solid var(--line);color:var(--dim);border-radius:20px;padding:1px 8px;font-size:9px;font-weight:700;font-family:var(--mono);letter-spacing:.2px;cursor:pointer}
 .gy-anahtar:hover{color:var(--ink);border-color:var(--dim)}
 .gy-anahtar.on{background:color-mix(in srgb,var(--violet) 16%,transparent);border-color:color-mix(in srgb,var(--violet) 45%,transparent);color:var(--violet)}
+.gy-anahtar.gy-bina.on{background:color-mix(in srgb,var(--amber) 16%,transparent);border-color:color-mix(in srgb,var(--amber) 45%,transparent);color:var(--amber)}
 .gy-onizle{clear:both;white-space:pre;overflow:auto;max-height:280px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-family:var(--mono);font-size:11.5px;line-height:1.55;color:var(--ink);margin:0}
 /* ══ GUNLUK YAZI TELEFON (<=600px) - 390px iframe'de headless Edge ile olculdu ══
    Sorunlar: genel 44px mini-btn kurali + kisi + gece bir satirda oda kutusunu 122px'e
@@ -10245,8 +10246,10 @@ const GY_GRUPLAR=[
   // mahal kodu olmayanlar; 'ayri' = ustundeki odasiz baslikla arasina bos satir
   {ad:'KAROT DELİMİ-БУРЕНИЕ ОТВЕРСТИЙ',odali:false},
   {ad:'MARKALAMA KMK-МАРКИРОВКА КМК',  odali:false, ayri:true},
-  {ad:'GENEL SAHA-ОБЩ. ТЕР.',          odali:false, ayri:true},
-  {ad:'AMBAR',                         odali:false},
+  // 'binasiz' = bina disi calisan (genel saha, ambar): metinde bina bloklarinin ALTINA,
+  // firmanin tum binalarindan toplanarak yazilir - bkz. gyFirmaMetni
+  {ad:'GENEL SAHA-ОБЩ. ТЕР.',          odali:false, ayri:true, binasiz:true},
+  {ad:'AMBAR',                         odali:false, binasiz:true},
 ];
 // FIRMA / BINA / IS KALEMI basliklari BUYUK harfle yazilir - mahal kodlarina DOKUNULMAZ
 const gyBuyuk=s=>String(s==null?'':s).trim().toLocaleUpperCase('tr');
@@ -10294,11 +10297,16 @@ function gyTarihTR(k){ const p=giParcala(k); return p?giZ(p[2])+'.'+giZ(p[1])+'.
 /* Kaydin METNE cevrimi. Tek dogruluk kaynagi budur: onizleme kutusu da,
    "Metni Kopyala" da bunu kullanir - gorulen ile kopyalanan ayrisamaz. */
 // BIR BINANIN govdesi: is kalemi bloklari, aralarinda bos satir
-function gyGovde(y,vardiya){
+/* kapsam: 'bina' -> yalnizca binaya bagli basliklar (varsayilan), 'disi' -> yalnizca
+   bina disi (binasiz) basliklar. Bina disi basliklar binanin altinda DEGIL, firmanin
+   tum binalari yazildiktan sonra ayri blokta cikar (bkz. gyBinaDisi / gyFirmaMetni). */
+function gyGovde(y,vardiya,kapsam){
   const gece=vardiya==='GECE';
   if(gece&&y&&y.geceVar!==true) return '';
+  const disi=kapsam==='disi';
   const blok=[]; let odasizBlok=-1;
   (((y&&y.gruplar))||[]).forEach(g=>{
+    if(!g||!!g.binasiz!==disi) return;
     const ad=gyBuyuk((g&&g.ad)||''); if(!ad) return;
     if(g.odali){
       // MAHAL KODU OLDUGU GIBI KALIR: buyutulmez, icindeki - . / karakterlerine dokunulmaz
@@ -10324,6 +10332,20 @@ function gyGovde(y,vardiya){
    MAHAL -> KISI -> FIRMA TOPLAMI. Bir firmanin birden cok binasi olabilir; binalar
    arasinda bos satir birakilir ama BINA TOPLAMI YAZILMAZ - toplam yalnizca firmanin
    sonunda, tum binalarinin kisi sayilari toplanarak verilir. */
+/* BINA DISI BLOK: firmanin o gunku tum yazilarindaki 'binasiz' basliklar TEK yaziya
+   toplanir - ayni baslik iki binanin yazisinda da girildiyse (GENEL SAHA 3 + 2) kisi
+   sayilari toplanir, odali ise satirlari arka arkaya eklenir. Sira ilk gorulen siradir. */
+function gyBinaDisi(sirali){
+  const gruplar=[], ix=new Map();
+  sirali.forEach(y=>((y&&y.gruplar)||[]).forEach(g=>{
+    if(!g||!g.binasiz||!String(g.ad||'').trim()) return;
+    const k=norm(g.ad); let h=ix.get(k);
+    if(!h){ h={gid:g.gid,ad:g.ad,odali:!!g.odali,ayri:!!g.ayri,binasiz:true,satirlar:[],kisi:0,geceKisi:0}; ix.set(k,h); gruplar.push(h); }
+    if(g.odali) h.satirlar.push(...(g.satirlar||[]));
+    else { h.kisi+=gySayi(g.kisi); h.geceKisi+=gySayi(g.geceKisi); }
+  }));
+  return {gruplar, geceVar:sirali.some(y=>y&&y.geceVar===true)};
+}
 function gyFirmaMetni(yazilar){
   const list=(yazilar||[]).filter(Boolean);
   if(!list.length) return '';
@@ -10338,6 +10360,10 @@ function gyFirmaMetni(yazilar){
     const b=gyBuyuk(y.bina||'');
     return b?b+'\n'+govde:govde;
   }).filter(Boolean);
+  // bina disi basliklar: binalarin altinda, TOP'un ustunde tek blok
+  const disi=gyBinaDisi(sirali);
+  const disiG=gyGovde(disi,undefined,'disi'); if(disiG) binalar.push(disiG);
+  const disiN=gyGovde(disi,'GECE','disi'); if(disiN) geceBinalar.push(disiN);
   if(!binalar.length) return '';
   const bas=gyBuyuk(sirali[0].firma||GY_FIRMA_VARSAYILAN)+' '+gyTarihTR(sirali[0].tarih);
   // TOPLAM HESAPLANIR: sahada yazilan deger (toplamElle) yalnizca kontrol icindir
@@ -10668,7 +10694,7 @@ function gyFirmaSecenekleri(){
    kalmasi icindir; eslesme once gid, tutmazsa AD uzerinden yapilir (gid'siz eski
    kayitlar boyle baglanir). */
 const GY_BASLIK_AYARI='gunluk_yazi_basliklar';
-let _GYB=[];   // modaldaki ORTAK baslik listesi [{id,ad,odali,ayri}]
+let _GYB=[];   // modaldaki ORTAK baslik listesi [{id,ad,odali,ayri,binasiz}]
 /* Metinden okunan ama HENUZ islenmemis bina bolumleri: bir firmanin birden cok
    binasi tek metinde gelir, her Kaydet'ten sonra sirdaki forma dokulur. */
 let _GYKUYRUK=[];
@@ -10676,15 +10702,15 @@ let _GYKUYRUK=[];
 function gyBasliklar(){
   const kayitli=(DB&&DB.meta&&Array.isArray(DB.meta[GY_BASLIK_AYARI]))?DB.meta[GY_BASLIK_AYARI]:null;
   if(kayitli&&kayitli.length) return kayitli
-    .map(b=>({id:String((b&&b.id)||uid()), ad:String((b&&b.ad)||'').trim(), odali:!!(b&&b.odali), ayri:!!(b&&b.ayri)}))
+    .map(b=>({id:String((b&&b.id)||uid()), ad:String((b&&b.ad)||'').trim(), odali:!!(b&&b.odali), ayri:!!(b&&b.ayri), binasiz:!!(b&&b.binasiz)}))
     .filter(b=>b.ad);
   // ILK ACILIS: sabit liste + eskiden yazilmis kayitlarda gecen basliklar
-  const out=GY_GRUPLAR.map(g=>({id:uid(),ad:g.ad,odali:!!g.odali,ayri:!!g.ayri}));
+  const out=GY_GRUPLAR.map(g=>({id:uid(),ad:g.ad,odali:!!g.odali,ayri:!!g.ayri,binasiz:!!g.binasiz}));
   const gorulen=new Set(out.map(b=>norm(b.ad)));
   gyAll().sort((a,b)=>String(a.tarih||'').localeCompare(String(b.tarih||'')))
     .forEach(y=>(y.gruplar||[]).forEach(g=>{
       const ad=String((g&&g.ad)||'').trim(); if(!ad||gorulen.has(norm(ad))) return;
-      gorulen.add(norm(ad)); out.push({id:uid(),ad,odali:!!g.odali,ayri:!!g.ayri});
+      gorulen.add(norm(ad)); out.push({id:uid(),ad,odali:!!g.odali,ayri:!!g.ayri,binasiz:!!g.binasiz});
     }));
   return out;
 }
@@ -10709,7 +10735,7 @@ function gyDuzenKur(y){
   eski.forEach(g=>{
     if(harcanan.has(g)||(!gyGrupToplam(g)&&!gyGrupGeceToplam(g))) return;      // yalnizca DOLU olan geri gelir
     const ad=String(g.ad||'').trim(); if(!ad) return;
-    const b={id:String(g.gid||uid()),ad,odali:!!g.odali,ayri:!!g.ayri};
+    const b={id:String(g.gid||uid()),ad,odali:!!g.odali,ayri:!!g.ayri,binasiz:!!g.binasiz};
     ortak.push(b); gruplar.push(say(b,g));
   });
   gruplar.forEach((g,i)=>{ if(ortak[i].odali&&!g.satirlar.length) g.satirlar.push({oda:'',kisi:''}); });
@@ -10733,7 +10759,7 @@ function gyNormalize(y){
    Metin/toplam hesaplayanlar tek bir grup nesnesi bekledigi icin burada birlestirilir. */
 function gyBirlesikGrup(i){
   const b=_GYB[i]||{}, g=((_GY&&_GY.gruplar)||[])[i]||{};
-  return {gid:b.id, ad:b.ad||'', odali:!!b.odali, ayri:!!b.ayri, satirlar:g.satirlar||[], kisi:g.kisi, geceKisi:g.geceKisi};
+  return {gid:b.id, ad:b.ad||'', odali:!!b.odali, ayri:!!b.ayri, binasiz:!!b.binasiz, satirlar:g.satirlar||[], kisi:g.kisi, geceKisi:g.geceKisi};
 }
 function gyBirlesik(){ return (_GYB||[]).map((b,i)=>gyBirlesikGrup(i)); }
 // modaldaki yazinin o anki tam hali (metin, toplam ve kayit bunun uzerinden uretilir)
@@ -10787,7 +10813,7 @@ function openGunlukYazi(tarih,id){
       ${kayit&&giCanDelete()?`<button class="btn btn-ghost" style="color:var(--red)" onclick="gySilKayit('${kayit.id}')">Sil</button>`:''}
       <button class="btn btn-ghost" onclick="gyKopyala()">Metni Kopyala</button>
       <button class="btn btn-ghost" onclick="gyKapat()">${dz?'Iptal':'Kapat'}</button>
-      ${dz?`<button class="btn btn-add" onclick="gyKaydet()">Kaydet</button>`:''}
+      ${dz?`<button class="btn btn-add" id="gy_kaydet" onclick="gyKaydet()">Kaydet</button>`:''}
     </div>
   </div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
@@ -10877,10 +10903,16 @@ function gyGruplarHtml(){
     // baslik sirasi da ortaktir: burada degistirilen sira her yazida gecerli olur
     const tasi=`<span class="gy-tasi"><button${i===0?' disabled':kilit} title="Yukari tasi" onclick="gyGrupTasi(${i},-1)">&#9650;</button><button${i===son?' disabled':kilit} title="Asagi tasi" onclick="gyGrupTasi(${i},1)">&#9660;</button></span>`;
     const ad=`<input class="gy-ad" value="${esc(g.ad||'')}" placeholder="${g.odali?'baslik - orn. AYDINLATMA-ОСВЕЩЕНИЯ':'baslik - orn. AMBAR'}" title="Baslik TUM firmalar icin ortaktir" oninput="gySetGrupAd(${i},this.value)"${kilit}>`;
+    // BINAYA BAGLI / BINA DISI (ortak ayar): bina disi baslik metinde binanin altina degil,
+    // firmanin tum binalarindan toplanip bina bloklarinin ALTINA yazilir (GENEL SAHA, AMBAR)
+    const binaBtn=`<button class="gy-anahtar gy-bina${g.binasiz?' on':''}"${kilit} title="${g.binasiz
+      ?'BINA DISI: metinde hicbir binanin altinda degil, tum binalar yazildiktan sonra ayri blokta cikar (firmanin butun binalarindan toplanir). Tiklayinca binaya baglanir.'
+      :'BINAYA BAGLI: metinde bu yazinin binasinin altinda yazilir. Tiklayinca binadan koparilir - genel saha / ambar gibi bina disi calisanlar icin.'}" onclick="gyBinasizDegis(${i})">${g.binasiz?'bina disi':'binaya bagli'}</button>`;
     if(!g.odali) return `<div class="gy-grup">
       <div class="gy-grup-h">${tasi}${ad}<input class="gy-kisi" type="number" min="0" step="1" value="${say(g.kisi)}" placeholder="kisi" oninput="gySetGrupKisi(${i},this.value)"${kilit}>${_GY.geceVar?`<input class="gy-kisi gy-gece-kisi" type="number" min="0" step="1" value="${say(g.geceKisi)}" placeholder="gece" title="Gece kişi sayısı" oninput="gySetGeceGrupKisi(${i},this.value)"${kilit}>`:''}${sil}</div>
       <div class="gy-alt"><span class="gy-ipucu">odasiz - metne tek satir yazilir</span>
         <button class="gy-anahtar${g.ayri?' on':''}"${kilit} title="Ustundeki odasiz baslikla arasina BOS SATIR koyar (KAROT / MARKALAMA gibi). Kapaliyken alt alta yazilir (GENEL SAHA / AMBAR gibi)." onclick="gyAyriDegis(${i})">bos satir</button>
+        ${binaBtn}
         <span class="gy-gt" id="gyGT${i}"></span></div>
     </div>`;
     const satirlar=(g.satirlar||[]).map((r,j)=>`<div class="gy-satir${r&&r.tahmin?' tahmin':''}" id="gyR${i}_${j}"${r&&r.tahmin?' title="Tahmin Ata ile dagitildi - elle degistirince isaret kalkar"':''}>
@@ -10892,7 +10924,7 @@ function gyGruplarHtml(){
     return `<div class="gy-grup">
       <div class="gy-grup-h">${tasi}${ad}${sil}</div>
       ${satirlar}
-      <div class="gy-alt"><button class="gy-satir-ekle" onclick="gySatirEkle(${i})"${kilit}>+ oda</button><span class="gy-gt" id="gyGT${i}"></span></div>
+      <div class="gy-alt"><button class="gy-satir-ekle" onclick="gySatirEkle(${i})"${kilit}>+ oda</button>${binaBtn}<span class="gy-gt" id="gyGT${i}"></span></div>
       ${_GYT&&_GYT.gid===g.gid?`<div class="gy-tahmin" id="gyTP">${gyTahminHtml(i)}</div>`:''}
     </div>`;
   }).join('');
@@ -10928,7 +10960,7 @@ function gySatirSil(i,j){
 }
 function gyGrupEkle(odali){
   if(!_GY)return;
-  _GYB.push({id:uid(),ad:'',odali:!!odali,ayri:false});
+  _GYB.push({id:uid(),ad:'',odali:!!odali,ayri:false,binasiz:false});
   _GY.gruplar.push({gid:_GYB[_GYB.length-1].id,satirlar:odali?[{oda:'',kisi:'',geceKisi:''}]:[],kisi:'',geceKisi:''});
   gyCiz();
   const adlar=document.querySelectorAll('#gyGruplar .gy-grup input.gy-ad');
@@ -10949,6 +10981,8 @@ function gyGrupTasi(i,yon){
 }
 // odasiz basligin ustundeki odasiz baslikla arasina bos satir konsun mu (ortak ayar)
 function gyAyriDegis(i){ if(!_GYB[i]) return; _GYB[i].ayri=!_GYB[i].ayri; gyCiz(); }
+// baslik binaya bagli mi, bina disi mi (ortak ayar - metin duzenini degistirir, bkz. gyFirmaMetni)
+function gyBinasizDegis(i){ if(!_GYB[i]) return; _GYB[i].binasiz=!_GYB[i].binasiz; gyCiz(); }
 
 /* ── TAHMIN ATA ──────────────────────────────────────────────────────────────
    Yetismeyen gunlerde odali bir basligi hizla DOGRUYA YAKIN doldurmak icin:
@@ -11219,7 +11253,7 @@ function gyOkuBolum(r,not){
   r.gruplar.forEach((g,gi)=>{
     let i=_GYB.findIndex(b=>b&&norm(b.ad)===norm(g.ad));
     if(i<0){
-      const yeni={id:uid(),ad:g.ad,odali:!!g.odali,ayri:!!g.ayri};
+      const yeni={id:uid(),ad:g.ad,odali:!!g.odali,ayri:!!g.ayri,binasiz:!!g.binasiz};
       if(sonIx>=0) i=sonIx+1;
       else{
         /* Metnin ILK basligi da yeniyse dayanacak bir onceki yok. Sona atmak
@@ -11291,7 +11325,22 @@ function gyKopyala(){
   copyText(metin,_GYSEKME==='gun'?'Gunun tamami':'Firma yazisi');
 }
 
+/* CIFT KAYIT KORUMASI + ISLEM PERDESI (bkz. saveMaterial): sunucu yazimi surerken ikinci
+   tiklama yutulur, Kaydet kilitlenir, perde gercek adimlari sayar (yazi -> basliklar).
+   Dogrulama hatalari 250ms'den once dondugu icin perde o durumda hic gorunmez. */
+let _gyKaydediyor=false;
 async function gyKaydet(){
+  if(_gyKaydediyor||!_GY) return;
+  _gyKaydediyor=true;
+  const _ac=btnBekle(document.getElementById('gy_kaydet'),'Kaydediliyor...');
+  wperdeAc('Gunluk yazi kaydediliyor',{gecikme:250,alt:'Yazi ve basliklar sunucuya yaziliyor - sayfayi kapatmayin'});
+  let bitis='Kaydedilemedi';
+  try{ bitis=(await _gyKaydetIc())||'Kaydedilemedi'; }
+  catch(err){ console.error('gyKaydet',err); toast('Kaydedilemedi: '+((err&&err.message)||err),'err'); }
+  finally{ _gyKaydediyor=false; _ac(); wperdeKapat(bitis); }
+}
+// donus: perdenin bitis basligi ('' / undefined = kaydedilmedi)
+async function _gyKaydetIc(){
   if(!_GY) return;
   if(!gyDuzenlenebilir()){ toast('Bu islem icin yetkiniz yok','err'); return; }
   const tarih=String(_GY.tarih||'');
@@ -11327,8 +11376,8 @@ async function gyKaydet(){
      ekledigi basliklar) ertesi gun aynen acilsin. Metne cikan sey gyMetin'in
      suzgecinden gecer, kayit ham halidir. */
   const gruplar=gyBirlesik().filter(g=>String(g.ad||'').trim()).map(g=>g.odali
-    ? {gid:g.gid, ad:String(g.ad||'').trim(), odali:true, satirlar:(g.satirlar||[]).map(r=>({oda:String((r&&r.oda)||'').trim(), kisi:gySayi(r&&r.kisi), geceKisi:gySayi(r&&r.geceKisi), ...(r&&r.tahmin?{tahmin:true}:{})})).filter(r=>r.oda||r.kisi||r.geceKisi)}
-    : {gid:g.gid, ad:String(g.ad||'').trim(), odali:false, ayri:!!g.ayri, kisi:gySayi(g.kisi), geceKisi:gySayi(g.geceKisi)});
+    ? {gid:g.gid, ad:String(g.ad||'').trim(), odali:true, binasiz:!!g.binasiz, satirlar:(g.satirlar||[]).map(r=>({oda:String((r&&r.oda)||'').trim(), kisi:gySayi(r&&r.kisi), geceKisi:gySayi(r&&r.geceKisi), ...(r&&r.tahmin?{tahmin:true}:{})})).filter(r=>r.oda||r.kisi||r.geceKisi)}
+    : {gid:g.gid, ad:String(g.ad||'').trim(), odali:false, ayri:!!g.ayri, binasiz:!!g.binasiz, kisi:gySayi(g.kisi), geceKisi:gySayi(g.geceKisi)});
   const toplamElle=String(_GY.toplamElle==null?'':_GY.toplamElle).trim();
   const simdi=Date.now(), ben=(CURRENT_USER&&CURRENT_USER.username)||'?';
   const kayit={ ...(eski||{}), id:_GY.id, tur:'yazi', tarih, bina, firmaId, firma,
@@ -11339,9 +11388,11 @@ async function gyKaydet(){
     guncelleyen:ben, guncellemeTs:simdi };
   /* once SUNUCUYA, sonra yerele - ters sirada yazma patlarsa kayit ekranda gorunur,
      sayfa yenilenince kaybolurdu (saveGunlukIs ile ayni kural) */
+  wperdeDurum({metin:(firma||'?')+' / '+(bina||'genel')+' - '+toplam+' kisi',sayac:'1 / 2',yuzde:20});
   try{
     if(eski) await sbUpdateGunlukIs(kayit.id,kayit); else await sbInsertGunlukIs(kayit);
   }catch(e){ giYazHatasi(e,eski?'guncellenemedi':'kaydedilemedi','Gunluk yazi'); return; }
+  wperdeDurum({metin:'Ortak basliklar',sayac:'2 / 2',yuzde:70});
   window.__gunlukTableMissing=false;
   if(!DB.gunlukIsler) DB.gunlukIsler=[];
   const i=DB.gunlukIsler.findIndex(x=>x&&x.id===kayit.id);
@@ -11352,7 +11403,7 @@ async function gyKaydet(){
   try{
     if(!DB.meta) DB.meta={};
     const ortak=_GYB.filter(b=>b&&String(b.ad||'').trim())
-      .map(b=>({id:b.id, ad:String(b.ad).trim(), odali:!!b.odali, ayri:!!b.ayri}));
+      .map(b=>({id:b.id, ad:String(b.ad).trim(), odali:!!b.odali, ayri:!!b.ayri, binasiz:!!b.binasiz}));
     DB.meta[GY_BASLIK_AYARI]=ortak;
     await sbSetSetting(GY_BASLIK_AYARI,ortak);
   }catch(e){ toast('Basliklar kaydedilemedi (yazi kaydedildi): '+((e&&e.message)||e),'err'); }
@@ -11372,6 +11423,7 @@ async function gyKaydet(){
     toast('Sirada '+(sirada.bina||'?')+' var - kontrol edip Kaydet\'e basin'
       +(_GYKUYRUK.length?' ('+_GYKUYRUK.length+' bina daha)':''));
   } else openGunlukYazi(tarih,kayit.id);
+  return (eski?'Gunluk yazi guncellendi':'Gunluk yazi kaydedildi')+' - '+toplam+' kisi';
 }
 
 async function gySilKayit(id){
@@ -33593,7 +33645,8 @@ function orderInvoiceHtml(o,genis){
           <div class="inv-atama-not">Bu siparisteki malzemeler fiilen bu binanin hazir sartnamesinden alindi. Yalnizca kunye bilgisidir - o binanin hedef, alim ve montaj sayilari <b>etkilenmez</b>, hicbir dusum yapilmaz. Asagida <b>TEDARIK</b> rozeti tasiyan satirlarda ise o satira ozel kaynak gecerlidir.${o.tedarikNot?`<br>${esc(o.tedarikNot)}`:''}</div>
         </div>`:''}
         <div class="inv-grid">
-          <div class="inv-cell"><label>Tarih</label><b>${fmtDate(o.date)}</b></div>
+          <div class="inv-cell"><label>${o.alimTarihi&&fmtDate(o.alimTarihi)!==fmtDate(o.date)?'Siparis Tarihi':'Tarih'}</label><b>${fmtDate(o.date)}</b></div>
+          ${o.alimTarihi&&fmtDate(o.alimTarihi)!==fmtDate(o.date)?`<div class="inv-cell"><label>Alim Tarihi</label><b>${fmtDate(o.alimTarihi)}</b></div>`:''}
           <div class="inv-cell"><label>${borc?'Borc Alinan Firma':'Sirket'}</label><b>${esc(orderCompany(o)||'-')}</b></div>
           <div class="inv-cell"><label>Sartname</label><b>${esc(o.grup||'-')}</b></div>
           <div class="inv-cell"><label>Kalem</label><b>${o.lines.length} satir</b></div>
@@ -43264,6 +43317,20 @@ function _nordEmptyLine(){ return {specId:'',altId:'',srcSpecId:'',yerineSpecId:
                     binada urunun "karsilik kalemi" acilir ve satir ona baglanir. */
 function _nordAtamaDefaults(){ return {tur:'normal',kaynakBina:'',kaynakSart:'',atamaNeden:'',atamaAciklama:'',tedarikBina:'',tedarikSart:'',tedarikNot:''}; }
 function nordAtama(){ return !!(NORD&&NORD.tur==='atama'); }
+/* SIPARIS TARIHI / ALIM TARIHI: varsayilan ikisi AYNI (tik acik) - girilen siparis tarihi alim
+   tarihi sayilir. Tik kaldirilinca ayri bir Alim Tarihi kutusu acilir. Kayitta order.date =
+   siparis (belge) tarihi, order.alimTarihi = alim tarihi; STOK HAREKETLERI (items) alim tarihine
+   yazilir - malzeme fiilen o gun girmistir. Eski kayitlarda alimTarihi yoksa date sayilir. */
+function nordAlimAyniDegis(v){
+  if(!NORD) return; NORD.alimAyni=!!v;
+  if(!NORD.alimAyni&&!NORD.alimTarihi) NORD.alimTarihi=NORD.date||'';
+  const k=document.getElementById('nordAlimKutu'); if(k) k.classList.toggle('hidden',NORD.alimAyni);
+  const i=document.getElementById('nord_alim'); if(i&&!NORD.alimAyni){ i.value=NORD.alimTarihi||''; i.focus(); }
+}
+// siparis tarihi degisince: tik acikken alim da onu izler (kutu gizli, ayni degeri tasir)
+function nordAlimTazele(){ if(!NORD||NORD.alimAyni===false) return; NORD.alimTarihi=''; const i=document.getElementById('nord_alim'); if(i) i.value=NORD.date||''; }
+function nordAlimISO(){ return (NORD&&NORD.alimAyni===false&&NORD.alimTarihi)?NORD.alimTarihi:((NORD&&NORD.date)||''); }
+function orderAlimTarihi(o){ return (o&&o.alimTarihi)||(o&&o.date)||0; }
 // tur:'borc' -> odunc alinan malzeme: ayni form, stok hareketi URETMEZ (bkz. borcMu)
 function nordBorc(){ return !!(NORD&&NORD.tur==='borc'); }
 /* ─── TEDARIK KAYNAGI ────────────────────────────────────────────────────────
@@ -43609,7 +43676,7 @@ function openNewOrderPage(tur){
   if(!guard('order'))return;
   if(DB.proje.specs.filter(s=>!s.is_deleted).length===0){ toast("Once sartname kalemleri tanimlanmali","err"); return; }
   const bins=binaOptsFor('').filter(b=>canSeeBuilding(b));
-  NORD={no:'',noTur:'siparis',date:new Date().toISOString().slice(0,10),bina:bins[0]||'',sart:'',sartCoklu:false,sartlar:[],companyId:'',newCompany:'',pdf:null,imzaYok:false,not:'',lines:[_nordEmptyLine()],editId:null,draftId:null,..._nordAtamaDefaults()};
+  NORD={no:'',noTur:'siparis',date:new Date().toISOString().slice(0,10),alimAyni:true,alimTarihi:'',bina:bins[0]||'',sart:'',sartCoklu:false,sartlar:[],companyId:'',newCompany:'',pdf:null,imzaYok:false,not:'',lines:[_nordEmptyLine()],editId:null,draftId:null,..._nordAtamaDefaults()};
   if(tur==='borc') NORD.tur='borc';
   // PINV: fatura detay sayfasindan gelinmis olabilir - o sayfa render sirasinda panellerden
   // ONCE bakildigi icin burada kapatilmazsa siparis ekrani hic gorunmez
@@ -43720,6 +43787,9 @@ function openEditOrderPage(orderId){
   // (karsilik kalemin acildigi yer), yalnizca bir arama filtresi degil.
   const _sd=o.tur==='atama'?{coklu:false,sartlar:[],sart:o.hedefSart||''}:nordEditSartDurumu(o,lines);
   NORD={no:o.no||'',noTur:o.noTur==='irsaliye'?'irsaliye':'siparis',date:o.date?new Date(o.date).toISOString().slice(0,10):new Date().toISOString().slice(0,10),
+    // alim tarihi kayitta yoksa ya da siparis tarihiyle ayniysa tik acik kalir
+    alimAyni:!(o.alimTarihi&&o.date&&new Date(o.alimTarihi).toISOString().slice(0,10)!==new Date(o.date).toISOString().slice(0,10)),
+    alimTarihi:o.alimTarihi?new Date(o.alimTarihi).toISOString().slice(0,10):'',
     bina:o.bina||'',sart:_sd.sart,sartCoklu:_sd.coklu,sartlar:_sd.sartlar,companyId,newCompany,pdf:o.pdf||null,imzaYok:!!o.imzaYok,not:'',lines:lines.length?lines:[_nordEmptyLine()],editId:orderId,draftId:null,
     tur:(o.tur==='atama'||o.tur==='borc')?o.tur:'normal',kaynakBina:o.kaynakBina||'',kaynakSart:o.kaynakSart||'',atamaNeden:o.atamaNeden||'',atamaAciklama:o.atamaAciklama||'',
     tedarikBina:o.tedarikBina||'',tedarikSart:o.tedarikSart||'',tedarikNot:o.tedarikNot||''};
@@ -45925,7 +45995,12 @@ function renderNewOrderPage(){
               <label class="${nordIrsaliye()?'':'on'}"><input type="radio" name="nordnotur" ${nordIrsaliye()?'':'checked'} onchange="nordSetNoTur('siparis')"> Siparis No</label>
               <label class="${nordIrsaliye()?'on':''}"><input type="radio" name="nordnotur" ${nordIrsaliye()?'checked':''} onchange="nordSetNoTur('irsaliye')"> Irsaliye No</label>
             </div>`}<input id="nord_no" placeholder="${nordBorc()?'orn. irsaliye / teslim fisi no':(nordIrsaliye()?'orn. IRS-2026-0145':'orn. SIP-2026-0145')}" value="${esc(NORD.no)}" oninput="NORD.no=this.value"></div>
-          <div class="frow"><label>Tarih</label><input id="nord_date" type="date" value="${esc(NORD.date)}" onchange="NORD.date=this.value"></div>
+          <div class="frow"><label style="display:flex;align-items:center;gap:6px">Siparis Tarihi <span class="ibi" tabindex="0" style="text-transform:none;letter-spacing:0">i<span>Siparisin / belgenin tarihi. Malzeme ayni gun geldiyse alttaki tik acik kalir ve bu tarih <b>alim tarihi</b> olarak da kullanilir - stok girisi bu tarihe yazilir.</span></span></label><input id="nord_date" type="date" value="${esc(NORD.date)}" onchange="NORD.date=this.value;nordAlimTazele()"></div>
+          <div class="frow nord-alim">
+            <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer;text-transform:none;font-size:13px;color:var(--ink)"><input type="checkbox" id="nord_alimAyni" style="width:auto;margin:0" ${NORD.alimAyni!==false?'checked':''} onchange="nordAlimAyniDegis(this.checked)"> Siparis tarihi alim tarihi ile aynidir
+            <span class="ibi" tabindex="0">i<span>Malzeme siparis tarihinden <b>farkli bir gunde</b> teslim alindiysa tiki kaldirin; alim tarihi icin ayri bir kutu acilir. <b>Stok girisi alim tarihine</b> yazilir, siparis tarihi belge tarihi olarak kalir.</span></span></label>
+            <div id="nordAlimKutu" class="${NORD.alimAyni!==false?'hidden':''}" style="margin-top:8px"><label>Alim Tarihi *</label><input id="nord_alim" type="date" value="${esc(NORD.alimTarihi||NORD.date||'')}" onchange="NORD.alimTarihi=this.value"></div>
+          </div>
           ${nordAtama()?`
           <div class="frow"><label>Kaynak Bina * <span class="t-meta">(malzemenin tanimli oldugu bina)</span></label>
             <select onchange="nordSetKaynakBina(this.value)">
@@ -46092,6 +46167,8 @@ async function saveNewOrder(){
   const exOrder=editId?kayitlar.find(x=>x.id===editId):null;
   if(editId && !exOrder){ toast(borc?'Duzenlenen borc bulunamadi':'Duzenlenen siparis bulunamadi','err'); return; }
   const date=new Date(NORD.date||Date.now()).getTime();
+  if(NORD.alimAyni===false&&!NORD.alimTarihi){ toast('Alim tarihini girin ya da "siparis tarihi alim tarihi ile aynidir" tikini acin','err'); return; }
+  const alimTarihi=new Date(nordAlimISO()||NORD.date||Date.now()).getTime();   // stok girisi bu tarihe
   if(!DB.proje.orders) DB.proje.orders=[];
   if(!DB.proje.borclar) DB.proje.borclar=[];
   const orderId=editId||uid();
@@ -46113,13 +46190,13 @@ async function saveNewOrder(){
     // gibi satir yine TEK hareket kaydi uretir (ilerleme/stok degismez), kirilim kunye olarak durur.
     const tedPay=tedarikPaylari(l).map(p=>({bina:p.bina||'',sart:p.sart||'',qty:Number(p.qty)||0}));
     const ozPay=ozelPaylari(l).map(p=>({kod:String(p.kod||'').trim(),qty:Number(p.qty)||0}));
-    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,altId:l.altId||'',refSpecId:l.refSpecId||'',grup:l.grup||'',bina,lokId:l.lokId||null,img:l.img||null,brand:l.brand||'',pdf:null,tedarikBina:l.tedarikBina||'',tedarikSart:l.tedarikSart||'',tedarikPay:tedPay,ozelPay:ozPay,dagitimId:l.dagitimId||''};
+    const item={id:itemId,name:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),date:alimTarihi,order:no,orderId,note:'',cat:l.cat||'',code:l.code||'',specId:l.specId,altId:l.altId||'',refSpecId:l.refSpecId||'',grup:l.grup||'',bina,lokId:l.lokId||null,img:l.img||null,brand:l.brand||'',pdf:null,tedarikBina:l.tedarikBina||'',tedarikSart:l.tedarikSart||'',tedarikPay:tedPay,ozelPay:ozPay,dagitimId:l.dagitimId||''};
     if(!borc) newItems.push(item);   // BORC HAREKET URETMEZ - satir yalnizca belgede durur
     lines.push({code:l.code||'',ad:l.ad.trim(),qty:Number(l.qty),unit:(l.unit||'').trim(),specId:l.specId,altId:l.altId||'',refSpecId:l.refSpecId||'',grup:l.grup||'',lokId:l.lokId||null,tedarikBina:l.tedarikBina||'',tedarikSart:l.tedarikSart||'',tedarikPay:tedPay.map(p=>({...p})),ozelPay:ozPay.map(p=>({...p})),dagitimId:l.dagitimId||''});
   });
   const orderGrups=[...new Set(lines.map(l=>l.grup).filter(Boolean))];
   const orderGrup=orderGrups.length===1?orderGrups[0]:(orderGrups.length>1?'Karma ('+orderGrups.length+' spek)':'');
-  const order={id:orderId,no,noTur:(!borc&&nordIrsaliye())?'irsaliye':'',date,bina,companyId,company:companyName,grup:orderGrup,grups:orderGrups,lines,pdf:NORD.pdf,imzaYok:!!NORD.imzaYok,created:exOrder?exOrder.created:Date.now(),
+  const order={id:orderId,no,noTur:(!borc&&nordIrsaliye())?'irsaliye':'',date,alimTarihi,bina,companyId,company:companyName,grup:orderGrup,grups:orderGrups,lines,pdf:NORD.pdf,imzaYok:!!NORD.imzaYok,created:exOrder?exOrder.created:Date.now(),
     // SARTNAME FILTRESI: kullanicinin aramayi daraltmak icin sectigi grup. Hicbir hesaba
     // girmez - grup/grups SATIRLARDAN turetilir, bu ise kullanicinin SECIMIDIR. Yalnizca
     // siparis yeniden duzenlemeye acildiginda ayni secimle acilsin diye saklanir
@@ -46236,7 +46313,7 @@ async function nordSaveDraft(){
   const hasAny=(NORD.no||'').trim() || NORD.lines.some(l=>nordLineOk(l)||l.raw);
   if(!hasAny){ toast('Taslak icin en az siparis no veya bir urun girin','err'); return; }
   const id=NORD.draftId||uid();
-  const draft={ id, src:'nord', no:(NORD.no||'').trim(), noTur:NORD.noTur||'siparis', date:NORD.date, bina:NORD.bina, sart:NORD.sart||'',
+  const draft={ id, src:'nord', no:(NORD.no||'').trim(), noTur:NORD.noTur||'siparis', date:NORD.date, alimAyni:NORD.alimAyni!==false, alimTarihi:NORD.alimTarihi||'', bina:NORD.bina, sart:NORD.sart||'',
     sartCoklu:!!NORD.sartCoklu, sartlar:nordSartlar().slice(),
     companyId:NORD.companyId||'', newCompany:NORD.newCompany||'', pdf:NORD.pdf||null, imzaYok:!!NORD.imzaYok, not:NORD.not||'',
     tur:NORD.tur||'normal', kaynakBina:NORD.kaynakBina||'', kaynakSart:NORD.kaynakSart||'',
@@ -46256,7 +46333,7 @@ function nordOpenDraft(id){
   if(!guard('order'))return;
   const d=orderDraftsGet().find(x=>x.id===id);
   if(!d){ toast('Taslak bulunamadi','err'); return; }
-  NORD={ no:d.no||'', noTur:d.noTur==='irsaliye'?'irsaliye':'siparis', date:d.date||new Date().toISOString().slice(0,10), bina:d.bina||'', sart:d.sart||'',
+  NORD={ no:d.no||'', noTur:d.noTur==='irsaliye'?'irsaliye':'siparis', date:d.date||new Date().toISOString().slice(0,10), alimAyni:d.alimAyni!==false, alimTarihi:d.alimTarihi||'', bina:d.bina||'', sart:d.sart||'',
     sartCoklu:!!d.sartCoklu, sartlar:Array.isArray(d.sartlar)?d.sartlar.slice():[],
     companyId:d.companyId||'', newCompany:d.newCompany||'', pdf:d.pdf||null, imzaYok:!!d.imzaYok, not:d.not||'',
     tur:(d.tur==='atama'||d.tur==='borc')?d.tur:'normal',   // borc taslagi siparise DONMEMELI (sayimlara girerdi)
