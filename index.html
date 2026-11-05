@@ -343,6 +343,14 @@ input,select,textarea{font-family:inherit}
 .btn.bekle{pointer-events:none;opacity:.75;cursor:wait}
 .btn.bekle::before{content:"";width:13px;height:13px;flex:0 0 auto;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;animation:wp-don .7s linear infinite}
 .login-err{color:#fca5a5;font-size:12px;margin-top:12px;min-height:16px;text-align:center}
+/* kartin altindaki ikincil satir: "Davet kodunuz var mi?", "Girise don", "Kodu tekrar gonder" */
+.lg-alt{margin-top:14px;text-align:center;font-size:12px;color:var(--lg-dim);display:flex;gap:6px 14px;justify-content:center;flex-wrap:wrap}
+.lg-alt .lg-forgot{color:#93c5fd}
+:root[data-theme=light] .lg-alt .lg-forgot{color:#1d4ed8}
+.dv-not{font-size:12px;color:var(--lg-mute);margin:-8px 0 20px;line-height:1.5}
+.dv-not b{color:var(--lg-ink)}
+.fld input.dv-kod{font-family:var(--mono);letter-spacing:3px;text-transform:uppercase;text-align:center;font-size:16px}
+.fld input.dv-kod::placeholder{letter-spacing:2px}
 .login-hint{margin-top:16px;text-align:center;font-size:11px;color:var(--lg-dim);font-family:var(--mono)}
 
 /* duyarlilik: 320 / 768 / 1024 / 1440 / 1920 */
@@ -6339,7 +6347,7 @@ main:has(>.iht-form-wrap){max-width:none}
   <div class="login-card">
     <div class="brand"><img class="brand-mark" src="/logo.png" alt="Logo">
       <div><h1>Hoş Geldiniz</h1><span>SAHA MALZEME TAKIP · v2.0</span></div></div>
-    <div class="fld"><label for="username">Kullanıcı Adı</label><input type="text" id="username" placeholder="kullanıcı adınız" autocomplete="username"></div>
+    <div class="fld"><label for="username">Kullanıcı Adı veya E-posta</label><input type="text" id="username" placeholder="kullanıcı adınız ya da e-postanız" autocomplete="username"></div>
     <div class="fld"><label for="pw">Şifre</label><input type="password" id="pw" placeholder="••••••••" autocomplete="current-password"></div>
     <div class="lg-row">
       <label class="lg-check"><input type="checkbox" id="rememberMe"><span class="lg-check-box"></span>Beni Hatırla</label>
@@ -6347,11 +6355,13 @@ main:has(>.iht-form-wrap){max-width:none}
     </div>
     <button class="lg-btn" id="loginBtn">Giriş Yap</button>
     <div class="login-err" id="loginErr"></div>
+    <div class="lg-alt"><span>Davet kodunuz var mı?</span><button type="button" class="lg-forgot" onclick="davetEkraniAc()">Hesap oluşturun</button></div>
   </div>
 </div>
 
-<!-- Davetle hesap acma ekrani: ?davet=token varsa gosterilir (bkz. DOMContentLoaded).
-     login-card ile ayni gorsel dili paylasir, icerigi JS ile doldurulur (davetFormHtml). -->
+<!-- Davetle hesap acma ekrani: ?davet=kod linkiyle ya da giris ekranindaki "Hesap
+     oluşturun" baglantisiyla gosterilir (bkz. DOMContentLoaded, davetEkraniAc).
+     login-card ile ayni gorsel dili paylasir, icerigi JS ile doldurulur (davetCiz). -->
 <div id="davetKabul">
   <div class="login-card" id="davetBody">
     <div class="brand"><img class="brand-mark" src="/logo.png" alt="Logo">
@@ -8165,9 +8175,9 @@ function warmLoginApi(){
   try{ fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(()=>{}); }catch(e){}
 }
 /* Basarili girisin ORTAK son adimlari: veri yukleme, oturum kaydi, uygulamayi
-   gosterme. doLogin (kullanici adi/sifre) VE davetKabulEt (davetle kendi
+   gosterme. doLogin (kullanici adi/sifre) VE davetDogrulaGonder (davetle kendi
    kaydini olusturma) ikisi de buraya duser - iki ayri "giristen sonra ne olur"
-   yolu olmasin diye (bkz. openInviteModal/davetKabulEt asagida). */
+   yolu olmasin diye (bkz. openInviteModal/davetDogrulaGonder asagida). */
 async function afterLogin(user, token, remember, opts){
   opts=opts||{};
   const btn=opts.btn, screenEl=opts.screenEl, logMsg=opts.logMsg||'Giris yapildi';
@@ -8224,7 +8234,7 @@ async function afterLogin(user, token, remember, opts){
 async function doLogin(){
   const uname=(userInput.value||'').trim();
   const pass=pwInput.value||'';
-  if(!uname){ loginFail("Kullanici adi girin."); return; }
+  if(!uname){ loginFail("Kullanici adinizi ya da e-postanizi girin."); return; }
   if(!pass){ loginFail("Sifre girin."); return; }
   const btn=document.getElementById('loginBtn');
   btn.disabled=true; btn.textContent='Giriş yapılıyor...';
@@ -8232,7 +8242,7 @@ async function doLogin(){
     const remEl=document.getElementById('rememberMe');
     const remember=!!(remEl&&remEl.checked);
     const user=await sbLoginUser(uname,pass,remember);
-    if(!user){ loginFail("Kullanici adi veya sifre hatali."); return; }
+    if(!user){ loginFail("Kullanici adi / e-posta veya sifre hatali."); return; }
     const token=user.__token; delete user.__token;
     await afterLogin(user,token,remember,{btn,screenEl:document.getElementById('login'),logMsg:'Giris yapildi'});
   } catch(e) {
@@ -8373,59 +8383,176 @@ function showAppFade(){
 }
 
 /* ─── DAVETLE HESAP ACMA (self-servis kayit) ─────────────────────────────────
-   ?davet=token varsa DOMContentLoaded normal oturum akisini hic calistirmaz,
-   buraya duser. html.davet-mode CSS'i #login/#loading'i zaten gizli tutuyor
+   Iki giris yolu: ?davet=kod linki (DOMContentLoaded normal oturum akisini hic
+   calistirmaz, buraya duser) ve giris ekranindaki "Hesap oluşturun" baglantisi
+   (davetEkraniAc). html.davet-mode CSS'i #login/#loading'i zaten gizli tutuyor
    (bkz. sayfa basindaki erken script + stildeki html.davet-mode kurallari). */
-function davetFormHtml(info){
+/* UC ADIM, hepsi #davetBody icinde cizilir (davetCiz):
+     1. KOD     - davet kodu girilir (linkle gelindiyse atlanir)
+     2. FORM    - ad, kullanici adi, e-posta, sifre
+     3. DOGRULA - e-postaya giden 6 haneli kod; hesap ANCAK burada acilir
+   _davet adimlar arasi durumu tasir. form.password yalnizca "Kodu tekrar gonder"
+   ve "Bilgileri duzelt" icin bellekte durur - hicbir yere kaydedilmez. */
+let _davet=null;   // {token, info, form:{ad,username,email,password}, kayit, dakika}
+const DAVET_ALT='SAHA MALZEME TAKIP · v2.0';
+function davetBaslik(baslik,alt){
   return `<div class="brand"><img class="brand-mark" src="/logo.png" alt="Logo">
-      <div><h1>Hesabınızı Açın</h1><span>${esc(info.orgAd)} · ${esc(info.roleAd)}</span></div></div>
-    <p style="font-size:12px;color:var(--lg-mute);margin:-8px 0 20px;line-height:1.5">${esc(info.email)} adresine gönderilen davetle hesap açıyorsunuz. Kullanıcı adınızı ve şifrenizi kendiniz belirleyin.</p>
-    <div class="fld"><label for="dv_user">Kullanıcı Adı</label><input type="text" id="dv_user" placeholder="kullanıcı adı seçin" autocomplete="username"></div>
-    <div class="fld"><label for="dv_pass">Şifre</label><input type="password" id="dv_pass" placeholder="en az 8 karakter" autocomplete="new-password"></div>
-    <div class="fld"><label for="dv_pass2">Şifre (tekrar)</label><input type="password" id="dv_pass2" placeholder="şifreyi tekrar yazın" autocomplete="new-password"></div>
-    <button class="lg-btn" id="davetSubmitBtn">Hesabımı Aç</button>
-    <div class="login-err" id="davetErr"></div>`;
+      <div><h1>${baslik}</h1><span>${esc(alt||DAVET_ALT)}</span></div></div>`;
 }
-function davetHataHtml(msg){
-  return `<div class="brand"><img class="brand-mark" src="/logo.png" alt="Logo">
-      <div><h1>Davet Linki Geçersiz</h1><span>SAHA MALZEME TAKIP · v2.0</span></div></div>
-    <p style="font-size:13px;color:var(--lg-mute);line-height:1.6">${esc(msg)}. Yeni bir davet için yöneticinizle iletişime geçin.</p>`;
-}
-async function initDavetEkrani(token){
+// Adimi cizer: dugmeyi ve Enter'i gonder'e baglar, odak alanina gecer
+function davetCiz(html,gonder,odak){
   const box=document.getElementById('davetBody');
+  box.innerHTML=html;
+  const btn=document.getElementById('davetSubmitBtn'); if(btn) btn.onclick=gonder;
+  box.querySelectorAll('input').forEach(inp=>inp.addEventListener('keydown',e=>{ if(e.key==='Enter') gonder(); }));
+  const o=odak&&document.getElementById(odak); if(o) o.focus();
+}
+// bilgi=true: hata degil bilgilendirme ("Yeni kod gonderildi") - kirmizi yazilmaz
+function davetMesaj(msg,bilgi){
+  const el=document.getElementById('davetErr'); if(!el) return;
+  el.textContent=msg||''; el.style.color=bilgi?'var(--lg-mute)':'';
+}
+function davetBtn(mesgul,yazi){
+  const btn=document.getElementById('davetSubmitBtn'); if(!btn) return;
+  btn.disabled=!!mesgul; btn.textContent=yazi;
+}
+function davetHataMetni(e,varsayilan){
+  if(e&&e.status===429) return e.message||'Çok fazla deneme - bir süre sonra tekrar deneyin.';
+  if(e&&e.code==='23505') return 'Bu kullanıcı adı zaten var, başka bir ad seçin.';
+  if(e&&e.code==='eposta') return 'Bu e-posta ile kayıtlı bir hesap zaten var.';
+  return (e&&e.message)||varsayilan;
+}
+// Giris ekranindaki "Hesap oluşturun": ayni ekrani linksiz, kod adimindan acar
+function davetEkraniAc(){
+  document.documentElement.classList.add('davet-mode');
+  davetKodAdimi();
+}
+function davetGiriseDon(){
+  // Linkle gelindiyse normal acilis akisi hic calismadi - temiz adresle yeniden yuklenir
+  if(new URLSearchParams(location.search).get('davet')){ location.replace(location.pathname); return; }
+  _davet=null;
+  document.documentElement.classList.remove('davet-mode');
+  userInput.focus();
+}
+
+/* 1. ADIM - davet kodu */
+function davetKodAdimi(msg){
+  _davet=null;
+  davetCiz(davetBaslik('Hesap Oluştur')+`
+    <p class="dv-not">Yöneticinizin size verdiği davet kodunu girin.</p>
+    <div class="fld"><label for="dv_kod">Davet Kodu</label><input type="text" id="dv_kod" class="dv-kod" placeholder="XXXX-XXXX" maxlength="40" autocomplete="off" autocapitalize="characters" spellcheck="false"></div>
+    <button class="lg-btn" id="davetSubmitBtn">Devam</button>
+    <div class="login-err" id="davetErr"></div>
+    <div class="lg-alt"><button type="button" class="lg-forgot" onclick="davetGiriseDon()">Girişe dön</button></div>`,
+    davetKodGonder,'dv_kod');
+  if(msg) davetMesaj(msg);
+}
+async function davetKodGonder(){
+  const kod=(document.getElementById('dv_kod').value||'').trim();
+  if(!kod){ davetMesaj('Davet kodunu girin.'); return; }
+  davetBtn(true,'Kontrol ediliyor...');
+  try{
+    const info=await sbDavetOnizle(kod);
+    davetFormAdimi(kod,info);
+  }catch(e){
+    davetMesaj(davetHataMetni(e,'Davet kodu geçersiz veya süresi dolmuş.'));
+    davetBtn(false,'Devam');
+  }
+}
+// ?davet=kod linkiyle gelindi: kod adimi atlanir; kod gecersizse elle girilebilsin
+async function initDavetEkrani(token){
   try{
     const info=await sbDavetOnizle(token);
-    box.innerHTML=davetFormHtml(info);
-    const submit=()=>davetKabulEt(token);
-    document.getElementById('davetSubmitBtn').onclick=submit;
-    box.querySelectorAll('input').forEach(inp=>inp.addEventListener('keydown',e=>{ if(e.key==='Enter') submit(); }));
-    document.getElementById('dv_user').focus();
+    davetFormAdimi(token,info);
   }catch(e){
-    box.innerHTML=davetHataHtml(e.message||'Davet linki geçersiz veya süresi dolmuş');
+    davetKodAdimi(davetHataMetni(e,'Davet kodu geçersiz veya süresi dolmuş.'));
   }
 }
-async function davetKabulEt(token){
-  const uname=(document.getElementById('dv_user').value||'').trim();
-  const pass=document.getElementById('dv_pass').value||'';
-  const pass2=document.getElementById('dv_pass2').value||'';
-  const errEl=document.getElementById('davetErr');
-  const fail=(m)=>{ errEl.textContent=m; };
-  if(!uname){ fail('Kullanıcı adı girin.'); return; }
-  if(!pass){ fail('Şifre girin.'); return; }
-  if(pass!==pass2){ fail('Şifreler aynı değil.'); return; }
-  const btn=document.getElementById('davetSubmitBtn');
-  btn.disabled=true; btn.textContent='Hesap açılıyor...';
+
+/* 2. ADIM - hesap bilgileri. onceki: dogrulama adimindan "Bilgileri duzelt" ile
+   donuldugunde alanlar (sifre haric) yeniden doldurulur. */
+function davetFormAdimi(token,info,onceki){
+  _davet={token,info};
+  const f=onceki||{};
+  davetCiz(davetBaslik('Hesabınızı Açın',info.orgAd+' · '+info.roleAd)+`
+    <p class="dv-not">Bilgilerinizi kendiniz belirleyin. E-postanıza bir doğrulama kodu göndereceğiz; giriş yaparken kullanıcı adınızı ya da e-postanızı kullanabilirsiniz.</p>
+    <div class="fld"><label for="dv_ad">Ad Soyad</label><input type="text" id="dv_ad" placeholder="adınız ve soyadınız" maxlength="60" autocomplete="name" value="${esc(f.ad||'')}"></div>
+    <div class="fld"><label for="dv_user">Kullanıcı Adı</label><input type="text" id="dv_user" placeholder="harf, rakam, nokta, tire" maxlength="30" autocomplete="username" autocapitalize="none" spellcheck="false" value="${esc(f.username||'')}"></div>
+    <div class="fld"><label for="dv_email">E-posta</label><input type="email" id="dv_email" placeholder="ornek@sirket.com" maxlength="120" autocomplete="email" value="${esc(f.email||info.email||'')}"></div>
+    <div class="fld"><label for="dv_pass">Şifre</label><input type="password" id="dv_pass" placeholder="en az 8 karakter" autocomplete="new-password"></div>
+    <div class="fld"><label for="dv_pass2">Şifre (tekrar)</label><input type="password" id="dv_pass2" placeholder="şifreyi tekrar yazın" autocomplete="new-password"></div>
+    <button class="lg-btn" id="davetSubmitBtn">Doğrulama Kodu Gönder</button>
+    <div class="login-err" id="davetErr"></div>
+    <div class="lg-alt"><button type="button" class="lg-forgot" onclick="davetGiriseDon()">Girişe dön</button></div>`,
+    davetFormGonder,'dv_ad');
+}
+async function davetFormGonder(){
+  const al=id=>document.getElementById(id).value||'';
+  const form={ad:al('dv_ad').trim(),username:al('dv_user').trim(),email:al('dv_email').trim(),password:al('dv_pass')};
+  if(!form.ad){ davetMesaj('Adınızı ve soyadınızı girin.'); return; }
+  if(!form.username){ davetMesaj('Kullanıcı adı girin.'); return; }
+  if(!/^[\p{L}\p{N}._-]{3,30}$/u.test(form.username)){ davetMesaj('Kullanıcı adı 3-30 karakter olmalı; harf, rakam, nokta, tire ve alt çizgi kullanılabilir.'); return; }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)){ davetMesaj('Geçerli bir e-posta adresi girin.'); return; }
+  if(!form.password){ davetMesaj('Şifre girin.'); return; }
+  if(form.password!==al('dv_pass2')){ davetMesaj('Şifreler aynı değil.'); return; }
+  davetMesaj('');
+  davetBtn(true,'Kod gönderiliyor...');
   try{
-    const r=await sbDavetKabul(token,{username:uname,password:pass});
-    // Link kullanildi: URL'den token temizlenir ki sayfa yenilemede tekrar denenmesin
-    history.replaceState(null,'',location.pathname);
-    await afterLogin(r.user,r.token,false,{btn,screenEl:document.getElementById('davetKabul'),logMsg:'Davetle hesap acildi'});
+    const r=await sbDavetKabul(_davet.token,form);
+    _davet.form=form; _davet.kayit=r.kayit; _davet.dakika=r.dakika;
+    davetDogrulaAdimi();
   }catch(e){
-    if(e&&e.status===429) fail(e.message||'Çok fazla deneme - bir süre sonra tekrar deneyin.');
-    else if(e&&e.code==='23505') fail('Bu kullanıcı adı zaten var, başka bir ad seçin.');
-    else fail(e.message||'Hesap açılamadı.');
-    btn.disabled=false; btn.textContent='Hesabımı Aç';
+    // Davet bu arada iptal edilmis/kullanilmis: formda kalmanin anlami yok
+    if(e&&e.status===404){ davetKodAdimi(davetHataMetni(e,'Davet kodu geçersiz veya süresi dolmuş.')); return; }
+    davetMesaj(davetHataMetni(e,'Doğrulama kodu gönderilemedi.'));
+    davetBtn(false,'Doğrulama Kodu Gönder');
   }
+}
+
+/* 3. ADIM - e-posta dogrulama */
+function davetDogrulaAdimi(){
+  davetCiz(davetBaslik('E-postanızı Doğrulayın',_davet.info.orgAd+' · '+_davet.info.roleAd)+`
+    <p class="dv-not"><b>${esc(_davet.form.email)}</b> adresine 6 haneli bir doğrulama kodu gönderdik. Kod ${Number(_davet.dakika)||15} dakika geçerlidir; gelen kutunuzda yoksa gereksiz (spam) klasörüne bakın.</p>
+    <div class="fld"><label for="dv_dkod">Doğrulama Kodu</label><input type="text" id="dv_dkod" class="dv-kod" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="one-time-code"></div>
+    <button class="lg-btn" id="davetSubmitBtn">Hesabımı Aç</button>
+    <div class="login-err" id="davetErr"></div>
+    <div class="lg-alt"><button type="button" class="lg-forgot" id="davetTekrarBtn" onclick="davetKoduTekrar()">Kodu tekrar gönder</button><button type="button" class="lg-forgot" onclick="davetFormAdimi(_davet.token,_davet.info,_davet.form)">Bilgileri düzelt</button></div>`,
+    davetDogrulaGonder,'dv_dkod');
+}
+async function davetDogrulaGonder(){
+  const kod=(document.getElementById('dv_dkod').value||'').replace(/\s/g,'');
+  if(!/^\d{6}$/.test(kod)){ davetMesaj('E-postanıza gelen 6 haneli kodu girin.'); return; }
+  davetMesaj('');
+  davetBtn(true,'Hesap açılıyor...');
+  try{
+    const r=await sbDavetDogrula(_davet.token,{kayit:_davet.kayit,kod});
+    // Davet kullanildi: URL'den kod temizlenir ki sayfa yenilemede tekrar denenmesin
+    history.replaceState(null,'',location.pathname);
+    _davet=null;
+    await afterLogin(r.user,r.token,false,{btn:document.getElementById('davetSubmitBtn'),screenEl:document.getElementById('davetKabul'),logMsg:'Davetle hesap acildi'});
+  }catch(e){
+    if(!_davet){ davetMesaj((e&&e.message)||'Hesap açıldı ama veriler yüklenemedi - sayfayı yenileyin.'); return; }
+    if(e&&e.status===404){ davetKodAdimi(davetHataMetni(e,'Davet kodu geçersiz veya süresi dolmuş.')); return; }
+    const m=e&&e.code==='kod'?'Doğrulama kodu hatalı.'
+      :e&&e.code==='sure'?'Kodun süresi doldu - "Kodu tekrar gönder" ile yenisini isteyin.'
+      :e&&e.code==='23505'?'Bu kullanıcı adı ya da e-posta az önce başka bir hesapta kullanıldı - "Bilgileri düzelt" ile değiştirin.'
+      :davetHataMetni(e,'Hesap açılamadı.');
+    davetMesaj(m);
+    davetBtn(false,'Hesabımı Aç');
+  }
+}
+async function davetKoduTekrar(){
+  const btn=document.getElementById('davetTekrarBtn');
+  btn.disabled=true; davetMesaj('Yeni kod gönderiliyor...',true);
+  try{
+    const r=await sbDavetKabul(_davet.token,_davet.form);
+    _davet.kayit=r.kayit; _davet.dakika=r.dakika;
+    document.getElementById('dv_dkod').value='';
+    davetMesaj('Yeni kod gönderildi - önceki kod artık geçersiz.',true);
+  }catch(e){
+    if(e&&e.status===404){ davetKodAdimi(davetHataMetni(e,'Davet kodu geçersiz veya süresi dolmuş.')); return; }
+    davetMesaj(davetHataMetni(e,'Kod gönderilemedi.'));
+  }finally{ btn.disabled=false; }
 }
 
 document.addEventListener('DOMContentLoaded', async function(){
@@ -14364,17 +14491,17 @@ function renderPendingInvites(){
     const durum=d.used_at?'Kullanildi':(new Date(d.expires_at).getTime()<Date.now()?'Suresi doldu':'Bekliyor');
     const renk=d.used_at?'var(--green)':(durum==='Suresi doldu'?'var(--red)':'#f59e0b');
     return `<tr>
-      <td class="t-name">${esc(d.email)}</td>
+      <td class="t-name">${d.email?esc(d.email):'<span class="t-meta">Yalnizca kod</span>'}</td>
       <td>${roleBadge(d.role)}</td>
       <td class="t-meta" style="font-size:11px">${esc(fmtDate(d.created_at))}</td>
       <td><span class="cat-tag" style="background:${renk}22;color:${renk}">${durum}</span></td>
       <td><div class="row-actions">
-        ${durum!=='Kullanildi'?`<button class="mini-btn" title="Yeniden Gonder" onclick="resendInvite('${d.id}')">${icoRefresh()}</button>
+        ${durum!=='Kullanildi'?`<button class="mini-btn" title="Kodu Yenile" onclick="resendInvite('${d.id}')">${icoRefresh()}</button>
         <button class="mini-btn del" title="Iptal Et" onclick="revokeInvite('${d.id}')">${icoTrash()}</button>`:''}
       </div></td></tr>`;
   }).join('');
-  return `<div class="sel-head" style="margin-top:26px"><h2 style="font-size:16px">Bekleyen Davetler</h2></div>
-    <div class="tablewrap"><table><thead><tr><th>E-posta</th><th>Rol</th><th>Gonderim</th><th>Durum</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `<div class="sel-head" style="margin-top:26px"><h2 style="font-size:16px">Davetler</h2></div>
+    <div class="tablewrap"><table><thead><tr><th>Davet</th><th>Rol</th><th>Olusturma</th><th>Durum</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 /* BIRIM ERISIM KUTULARI (Kullanicilar + Davet): aktif tasarinin birimleri; bos = tumu.
    Liste sunucudan gelir (birimListesiYukle) - yonetici hepsini gorur. */
@@ -14392,7 +14519,7 @@ async function openInviteModal(){
   const permMatrix=ALL_SECTIONS.map(s=>`<tr><td style="font-weight:600;padding:4px 8px;min-width:140px;font-size:12px">${esc(SECTION_LABELS[s]||s)}</td><td style="text-align:center;padding:4px 8px"><input type="checkbox" class="uperm" data-mod="${s}" data-act="read"></td><td style="text-align:center;padding:4px 8px"><input type="checkbox" class="uperm" data-mod="${s}" data-act="create"></td><td style="text-align:center;padding:4px 8px"><input type="checkbox" class="uperm" data-mod="${s}" data-act="update"></td><td style="text-align:center;padding:4px 8px"><input type="checkbox" class="uperm" data-mod="${s}" data-act="delete"></td></tr>`).join('');
   const roleOpts=Object.keys(ROLES).map(r=>`<option value="${r}">${esc(ROLES[r])}</option>`).join('');
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:660px"><div class="modal-head"><h3>Kullanici Davet Et</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
-    <div class="frow"><label>E-posta *</label><input id="iv_email" placeholder="orn. ahmet@bykara.org" autocomplete="email"></div>
+    <div class="frow"><label>E-posta <span class="t-meta">(opsiyonel - bos birakilirsa yalnizca davet kodu uretilir)</span></label><input id="iv_email" placeholder="orn. ahmet@bykara.org" autocomplete="email"></div>
     <div class="frow"><label>Rol</label><select id="iv_role" onchange="_inviteRoleChange()">${roleOpts}</select>
       <p class="t-meta" id="iv_roleHint" style="font-size:11px;margin-top:6px"></p></div>
     <div id="iv_perms_izleyici" style="display:none">
@@ -14411,8 +14538,8 @@ async function openInviteModal(){
       <div class="frow"><label>Bina Erisimi <span class="t-meta">(bos = tum binalar)</span></label><div class="chk-grid">${binOptsSaha}</div></div>
       <div class="frow"><label>Birim Erisimi <span class="t-meta">(bos = tum birimler - girebilecegi disiplinler)</span></label><div class="chk-grid">${birOptsSaha}</div></div>
     </div>
-    <p class="t-meta" style="font-size:11px;margin-top:14px">Davet e-postasi kurulmus bir gonderim servisi varsa otomatik gider; yoksa hesap acma linki burada gosterilip panoya kopyalanir - elden iletebilirsiniz.</p>
-  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="sendInvite()">Davet Gonder</button></div></div></div>`;
+    <p class="t-meta" style="font-size:11px;margin-top:14px">Davet bir <b>kod</b> uretir. Kisi giris ekranindaki "Hesap olusturun" baglantisindan bu kodla adini, kullanici adini, e-postasini ve sifresini kendisi belirler; e-postasini dogrulayinca hesabi burada sectiginiz yetkilerle acilir. E-posta yazarsaniz kod ve link o adrese de gonderilir.</p>
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="sendInvite()">Davet Olustur</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   _inviteRoleChange();
 }
@@ -14433,7 +14560,7 @@ function _inviteRoleChange(){
 async function sendInvite(){
   const email=(document.getElementById('iv_email').value||'').trim();
   const role=document.getElementById('iv_role').value;
-  if(!email||!email.includes('@')){toast('Gecerli bir e-posta girin','err');return;}
+  if(email&&!email.includes('@')){toast('Gecerli bir e-posta girin ya da bos birakin','err');return;}
   let sections=[], buildings=[], permissions={}, birimler=[];
   if(role==='admin'){
     sections=ALL_SECTIONS.slice(); buildings=[];
@@ -14455,28 +14582,42 @@ async function sendInvite(){
   }
   try{
     const r=await sbCreateInvite({email,role,sections,buildings,permissions,birimler});
-    logAction('user','Davet gonderildi: '+email+' ('+(ROLES[role]||role)+')');
+    logAction('user','Davet olusturuldu: '+(email||'yalnizca kod')+' ('+(ROLES[role]||role)+')');
     closeModal();
     PENDING_INVITES=await sbListInvites();
     render();
-    if(r.emailSent){ toast('Davet gonderildi: '+email); }
-    else { toast('E-posta gonderilemedi - link kopyalandi, elden iletin','err'); copyText(r.link,'Davet linki'); }
-  }catch(e){ toast('Davet gonderilemedi: '+(e.message||'Hata'),'err'); }
+    davetKoduGoster(r);
+  }catch(e){ toast('Davet olusturulamadi: '+(e.message||'Hata'),'err'); }
+}
+/* DAVET KODU PENCERESI. Kod sunucuda yalnizca hash olarak durur (lib/invites.js),
+   yani BU PENCERE KODUN GORULDUGU TEK YERDIR - kapaninca bir daha okunamaz,
+   yalnizca listeden yenilenebilir. O yuzden toast degil pencere. */
+let _davetSon=null;
+function davetKoduGoster(r){
+  _davetSon=r;
+  const durum=r.emailSent?'Kod ve hesap acma linki <b>'+esc(r.email)+'</b> adresine gonderildi.'
+    :(r.email?'<b style="color:var(--red)">E-posta gonderilemedi</b> - kodu ya da linki elden iletin.':'Bu kodu ya da linki davet ettiginiz kisiye iletin.');
+  const html=`<div class="modal-bg"><div class="modal" style="max-width:460px"><div class="modal-head"><h3>Davet Kodu</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body" style="text-align:center">
+    <div style="font-family:var(--mono);font-size:30px;font-weight:700;letter-spacing:4px;padding:14px 0 10px;user-select:all">${esc(r.kod)}</div>
+    <p class="t-meta" style="font-size:12px;line-height:1.6">${durum}</p>
+    <p class="t-meta" style="font-size:11px;line-height:1.6;margin-top:10px">Kod 7 gun gecerlidir ve tek bir hesap acar. <b>Yalnizca simdi goruntulenir</b> - kaybolursa Davetler listesinden yenileyin.</p>
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="copyText(_davetSon.link,'Davet linki')">Linki Kopyala</button><button class="btn btn-add" onclick="copyText(_davetSon.kod,'Davet kodu')">Kodu Kopyala</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
 }
 async function resendInvite(id){
+  if(!confirm('Bu davet icin yeni bir kod uretilecek; eski kod ve link gecersiz olur. Devam edilsin mi?'))return;
   try{
     const r=await sbResendInvite(id);
     PENDING_INVITES=await sbListInvites(); render();
-    if(r.emailSent){ toast('Davet yeniden gonderildi'); }
-    else { toast('E-posta gonderilemedi - link kopyalandi, elden iletin','err'); copyText(r.link,'Davet linki'); }
-  }catch(e){ toast('Yeniden gonderilemedi: '+(e.message||'Hata'),'err'); }
+    davetKoduGoster(r);
+  }catch(e){ toast('Davet yenilenemedi: '+(e.message||'Hata'),'err'); }
 }
 async function revokeInvite(id){
   const d=(PENDING_INVITES||[]).find(x=>x.id===id); if(!d)return;
-  if(!confirm(`"${d.email}" davetini iptal etmek istiyor musunuz?`))return;
+  if(!confirm(`"${d.email||'Yalnizca kod'}" davetini iptal etmek istiyor musunuz?`))return;
   try{
     await sbRevokeInvite(id);
-    logAction('user','Davet iptal edildi: '+d.email);
+    logAction('user','Davet iptal edildi: '+(d.email||'yalnizca kod'));
     PENDING_INVITES=await sbListInvites(); render();
     toast('Davet iptal edildi');
   }catch(e){ toast('Iptal edilemedi: '+(e.message||'Hata'),'err'); }

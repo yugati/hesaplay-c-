@@ -22,6 +22,7 @@ import {
   sbRevokeInvite,
   sbDavetOnizle,
   sbDavetKabul,
+  sbDavetDogrula,
   // Saha linki
   sbSahaLinkListe,
   sbSahaLinkIslem,
@@ -297,6 +298,7 @@ window.sbResendInvite      = sbResendInvite
 window.sbRevokeInvite      = sbRevokeInvite
 window.sbDavetOnizle       = sbDavetOnizle
 window.sbDavetKabul        = sbDavetKabul
+window.sbDavetDogrula      = sbDavetDogrula
 
 // ─── Saha linki (Gunluk Saha Raporu) ─────────────────────────────────────────
 window.sbSahaLinkListe     = sbSahaLinkListe

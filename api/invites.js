@@ -1,14 +1,19 @@
 import { supabaseAdmin } from '../lib/supabaseAdmin.js'
 import { requireAdmin } from '../lib/auth.js'
 import { aktifOrg } from '../lib/org.js'
-import { uretToken, tokenHash, davetLinki, DAVET_GECERLILIK_MS } from '../lib/invites.js'
+import { uretKod, davetAnahtar, tokenHash, davetLinki, DAVET_GECERLILIK_MS } from '../lib/invites.js'
 import { epostaGonder, davetEpostaHtml } from '../lib/email.js'
 
 const ROL_AD = { admin: 'Yonetici', izleyici: 'Izleyici', saha_personeli: 'Saha Personeli' }
 
 // GET    /api/invites     - AKTIF ORGANIZASYONUN bekleyen/gecmis davetlerini listeler
-// POST   /api/invites     - yeni davet olusturur, Resend ile eposta gondermeyi dener
-// PUT    /api/invites/:id - daveti yeniden gonderir (token doner, sure uzar, eposta tekrar denenir)
+// POST   /api/invites     - yeni davet olusturur ve DAVET KODUNU doner; e-posta
+//                           verildiyse kodu/linki Resend ile gondermeyi de dener
+// PUT    /api/invites/:id - daveti yeniler (yeni kod, sure uzar, eposta tekrar denenir)
+// E-POSTA OPSIYONEL: bos birakilirsa davet yalnizca koddur - yonetici kodu elden
+// iletir, kisi e-postasini kayit sirasinda kendisi girip dogrular (api/davet.js).
+// Kod DB'de duz metin durmaz (yalnizca hash), o yuzden yalnizca olusturma/yenileme
+// yanitinda BIR KEZ gorunur; kaybolursa davet yenilenir.
 // DELETE /api/invites/:id - daveti iptal eder
 // Hepsi yalnizca admin rolundeki gecerli bir oturum tokeniyle calisir - ayni
 // api/users.js deseni: tek dosya (Vercel Hobby'nin 12 fonksiyon siniri), id
@@ -38,18 +43,19 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST') {
       const { email, role, sections, buildings, permissions, birimler } = req.body || {}
-      if (!email || !String(email).includes('@')) { res.status(400).json({ error: 'Gecerli bir e-posta girin' }); return }
+      const eposta = String(email || '').trim()
+      if (eposta && !eposta.includes('@')) { res.status(400).json({ error: 'Gecerli bir e-posta girin' }); return }
       if (!role) { res.status(400).json({ error: 'Rol gerekli' }); return }
       try {
-        const token = uretToken()
+        const kod = uretKod()
         const expiresAt = new Date(Date.now() + DAVET_GECERLILIK_MS).toISOString()
         // birimler: davet edilenin girebilecegi birimler (bos = tumu) - kabulde kullaniciya yazilir
         const { data, error } = await supabaseAdmin
           .from('invites')
           .insert([{
-            org_id: org, email, role, sections: sections || [], buildings: buildings || [],
+            org_id: org, email: eposta, role, sections: sections || [], buildings: buildings || [],
             birimler: Array.isArray(birimler) ? birimler : [],
-            permissions: permissions || {}, token_hash: tokenHash(token),
+            permissions: permissions || {}, token_hash: tokenHash(davetAnahtar(kod)),
             created_by: claims.sub, expires_at: expiresAt,
           }])
           .select('id, email, role, expires_at, created_at').single()
@@ -57,14 +63,14 @@ export default async function handler(req, res) {
 
         const { data: orgRow } = await supabaseAdmin.from('organizations').select('data').eq('id', org).maybeSingle()
         const orgAd = (orgRow && orgRow.data && orgRow.data.ad) || org
-        const link = davetLinki(token, req.headers.origin)
-        const eposta = await epostaGonder({
-          to: email,
+        const link = davetLinki(kod, req.headers.origin)
+        const gonderim = eposta ? await epostaGonder({
+          to: eposta,
           subject: orgAd + ' - hesap daveti',
-          html: davetEpostaHtml({ orgAd, rolAd: ROL_AD[role] || role, link }),
-        })
+          html: davetEpostaHtml({ orgAd, rolAd: ROL_AD[role] || role, link, kod }),
+        }) : { sent: false }
 
-        res.status(201).json({ ...data, link, emailSent: eposta.sent })
+        res.status(201).json({ ...data, kod, link, emailSent: gonderim.sent })
       } catch (e) {
         console.error('invites POST basarisiz', e)
         res.status(500).json({ error: e.message || 'Sunucu hatasi' })
@@ -84,25 +90,25 @@ export default async function handler(req, res) {
 
   if (req.method === 'PUT') {
     try {
-      const token = uretToken()
+      const kod = uretKod()
       const expiresAt = new Date(Date.now() + DAVET_GECERLILIK_MS).toISOString()
       const { data, error } = await supabaseAdmin
         .from('invites')
-        .update({ token_hash: tokenHash(token), expires_at: expiresAt, used_at: null, used_by: null })
+        .update({ token_hash: tokenHash(davetAnahtar(kod)), expires_at: expiresAt, used_at: null, used_by: null })
         .eq('id', id).eq('org_id', org)
         .select('id, email, role, expires_at, created_at').single()
       if (error) throw error
 
       const { data: orgRow } = await supabaseAdmin.from('organizations').select('data').eq('id', org).maybeSingle()
       const orgAd = (orgRow && orgRow.data && orgRow.data.ad) || org
-      const link = davetLinki(token, req.headers.origin)
-      const eposta = await epostaGonder({
+      const link = davetLinki(kod, req.headers.origin)
+      const gonderim = davet.email ? await epostaGonder({
         to: davet.email,
         subject: orgAd + ' - hesap daveti',
-        html: davetEpostaHtml({ orgAd, rolAd: ROL_AD[davet.role] || davet.role, link }),
-      })
+        html: davetEpostaHtml({ orgAd, rolAd: ROL_AD[davet.role] || davet.role, link, kod }),
+      }) : { sent: false }
 
-      res.status(200).json({ ...data, link, emailSent: eposta.sent })
+      res.status(200).json({ ...data, kod, link, emailSent: gonderim.sent })
     } catch (e) {
       console.error('invites PUT basarisiz', e)
       res.status(500).json({ error: e.message || 'Sunucu hatasi' })

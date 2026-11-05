@@ -211,11 +211,23 @@ export async function sbDavetOnizle(token) {
   return authFetch(`/api/davet/${encodeURIComponent(token)}`)
 }
 
-export async function sbDavetKabul(token, { username, password }) {
+/* Kayit IKI ADIMDIR (bkz. api/davet.js): sbDavetKabul formu yollar, sunucu
+   e-postaya dogrulama kodu gonderip imzali bir kayit tokeni ({kayit}) doner;
+   sbDavetDogrula o tokeni kodla birlikte yollar ve hesap acilir ({user, token}).
+   "Kodu tekrar gonder" = sbDavetKabul'u ayni formla yeniden cagirmak. */
+export async function sbDavetKabul(token, { ad, username, email, password }) {
   return authFetch(`/api/davet/${encodeURIComponent(token)}/kabul`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ ad, username, email, password }),
+  })
+}
+
+export async function sbDavetDogrula(token, { kayit, kod }) {
+  return authFetch(`/api/davet/${encodeURIComponent(token)}/dogrula`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kayit, kod }),
   })
 }
 

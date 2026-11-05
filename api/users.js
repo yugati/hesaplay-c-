@@ -7,6 +7,7 @@ import { aktifTasari } from '../lib/tasari.js'
 import { aktifBirim, birimIdGecerli } from '../lib/birim.js'
 import { denetimGorebilir, tokenKullanici } from '../lib/yetki.js'
 import { adUyumlu } from '../lib/adSutunu.js'
+import { epostaKullanimda } from '../lib/kimlik.js'
 
 // GET    /api/users     - AKTIF ORGANIZASYONUN kullanicilarini listeler (sifresiz)
 // POST   /api/users     - aktif organizasyonda yeni kullanici olusturur
@@ -79,6 +80,8 @@ export default async function handler(req, res) {
       }
 
       try {
+        // E-posta giris kimligidir (api/login.js) - iki hesapta ayni adres olamaz
+        if (await epostaKullanimda(email)) { res.status(409).json({ error: 'Bu e-posta baska bir hesapta kayitli' }); return }
         const hashed = await hashPassword(password)
         /* org_id ZORLA aktif organizasyon; is_super ZORLA false. Super yoneticilik
            bu uctan verilemez - verilebilseydi herhangi bir sirket yoneticisi kendine
@@ -191,7 +194,16 @@ export default async function handler(req, res) {
       }
     }
     if (tel !== undefined) update.tel = tel
-    if (email !== undefined) update.email = email
+    if (email !== undefined) {
+      // E-posta giris kimligidir (api/login.js) - iki hesapta ayni adres olamaz
+      try {
+        if (await epostaKullanimda(email, id)) { res.status(409).json({ error: 'Bu e-posta baska bir hesapta kayitli' }); return }
+      } catch (e) {
+        console.error('users PUT: e-posta kontrolu basarisiz', e)
+        res.status(500).json({ error: 'Sunucu hatasi' }); return
+      }
+      update.email = String(email).trim()
+    }
     if (meslek !== undefined) update.meslek = meslek
     /* GORUNEN AD. Yonetici de girebilir (yeni hesap acarken kisinin adi bilinir),
        ama kullanici da kendi degistirebilir - bkz. api/profil.js. Giris adi

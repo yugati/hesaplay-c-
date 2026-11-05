@@ -6,6 +6,7 @@ import { girisKilitli, hataliDeneme, basariliGiris, istekIp } from '../lib/giris
 import { denetimYaz } from '../lib/denetim.js'
 import { VARSAYILAN_ORG } from '../lib/org.js'
 import { adUyumlu } from '../lib/adSutunu.js'
+import { epostaKullanimda } from '../lib/kimlik.js'
 
 // PUT /api/profil - KULLANICININ KENDI hesabi: gorunen ad, telefon, e-posta, sifre.
 //
@@ -59,7 +60,11 @@ export default async function handler(req, res) {
     const yeniMail = String(email).trim()
     if (yeniMail.length > 120) { res.status(400).json({ error: 'E-posta cok uzun' }); return }
     if (yeniMail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(yeniMail)) { res.status(400).json({ error: 'E-posta adresi gecersiz' }); return }
-    if (yeniMail !== (user.email || '')) { update.email = yeniMail; degisenler.push('e-posta') }
+    if (yeniMail !== (user.email || '')) {
+      // E-posta giris kimligidir (api/login.js) - iki hesapta ayni adres olamaz
+      if (await epostaKullanimda(yeniMail, user.id)) { res.status(409).json({ error: 'Bu e-posta baska bir hesapta kayitli' }); return }
+      update.email = yeniMail; degisenler.push('e-posta')
+    }
   }
 
   if (yeniSifre) {
