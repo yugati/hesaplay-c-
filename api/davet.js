@@ -193,7 +193,8 @@ async function davetDogrula(req, res, token) {
   const govde = req.body || {}
   const kod = String(govde.kod || '').replace(/\s/g, '')
   const kayit = kayitCoz(govde.kayit)
-  if (!kayit || !kod) {
+  // kayit.inv: ayni anahtarla imzalanan sifre sifirlama tokeni (lib/sifreSifirla.js) burada gecmez
+  if (!kayit || !kayit.inv || !kod) {
     res.status(400).json({ error: 'Dogrulama suresi doldu. Kodu yeniden isteyin.', code: 'sure' })
     return
   }

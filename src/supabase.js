@@ -231,6 +231,25 @@ export async function sbDavetDogrula(token, { kayit, kod }) {
   })
 }
 
+/* SIFREMI UNUTTUM (bkz. lib/sifreSifirla.js): sbSifreIste hesaba kayitli
+   e-postaya kod yollatir ve imzali token ({kayit}) doner; sbSifreYenile o
+   tokeni kod ve yeni sifreyle yollar. */
+export async function sbSifreIste(kimlik) {
+  return authFetch('/api/sifre/iste', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kimlik }),
+  })
+}
+
+export async function sbSifreYenile({ kayit, kod, password }) {
+  return authFetch('/api/sifre/yenile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kayit, kod, password }),
+  })
+}
+
 /* SAHA LINKI yonetimi (yalnizca yonetici) - bkz. lib/sahaLink.js.
    Linki acan kisinin sayfasi (public/saha-link.html) bu dosyayi KULLANMAZ;
    oturumu olmadigi icin /api/saha-link/:token'a dogrudan fetch eder. */

@@ -8258,8 +8258,11 @@ async function doLogin(){
   }
 }
 function loginFail(msg){ document.getElementById('loginErr').textContent=msg; pwInput.value=''; (userInput.value?pwInput:userInput).focus(); }
-// Sifre sifirlama backend akisi olmadigi icin kullaniciyi dogru kanala yonlendiririz
-function forgotPw(){ toast('Şifre sıfırlama için yöneticinizle iletişime geçin'); }
+// Sifremi Unuttum: e-posta koduyla sifirlama - hesap acma ekranini (#davetKabul) kullanir, bkz. sifreIsteAdimi
+function forgotPw(){
+  document.documentElement.classList.add('davet-mode');
+  sifreIsteAdimi((userInput.value||'').trim());
+}
 function logout(sebep){
   /* Cikis kaydi sunucuya BEKLENEREK gonderilir: hemen ardindan location.reload()
      var ve bekleme olmadan istek yarida kesilirdi. Hata yutulur (bkz. sbCikis) -
@@ -8554,6 +8557,82 @@ async function davetKoduTekrar(){
     davetMesaj('Yeni kod gönderildi - önceki kod artık geçersiz.',true);
   }catch(e){
     if(e&&e.status===404){ davetKodAdimi(davetHataMetni(e,'Davet kodu geçersiz veya süresi dolmuş.')); return; }
+    davetMesaj(davetHataMetni(e,'Kod gönderilemedi.'));
+  }finally{ btn.disabled=false; }
+}
+
+/* SIFREMI UNUTTUM - iki adim (sunucu: lib/sifreSifirla.js), ayni ekranda:
+     1. ISTE   - kullanici adi ya da e-posta; hesaba kayitli adrese 6 haneli kod gider
+     2. YENILE - kod + yeni sifre
+   Sunucu hesabin var olup olmadigini soylemez; o yuzden metinler "kayitliysa" der. */
+let _sifre=null;   // {kimlik, kayit, dakika}
+function sifreIsteAdimi(kimlik,msg){
+  _sifre=null;
+  davetCiz(davetBaslik('Şifremi Unuttum')+`
+    <p class="dv-not">Kullanıcı adınızı ya da e-postanızı yazın; hesabınıza kayıtlı e-posta adresine bir kod göndereceğiz.</p>
+    <div class="fld"><label for="sf_kimlik">Kullanıcı Adı veya E-posta</label><input type="text" id="sf_kimlik" placeholder="kullanıcı adı ya da e-posta" maxlength="120" autocomplete="username" autocapitalize="none" spellcheck="false" value="${esc(kimlik||'')}"></div>
+    <button class="lg-btn" id="davetSubmitBtn">Kod Gönder</button>
+    <div class="login-err" id="davetErr"></div>
+    <div class="lg-alt"><button type="button" class="lg-forgot" onclick="davetGiriseDon()">Girişe dön</button></div>`,
+    sifreIsteGonder,'sf_kimlik');
+  if(msg) davetMesaj(msg);
+}
+async function sifreIsteGonder(){
+  const kimlik=(document.getElementById('sf_kimlik').value||'').trim();
+  if(!kimlik){ davetMesaj('Kullanıcı adınızı ya da e-postanızı girin.'); return; }
+  davetMesaj('');
+  davetBtn(true,'Kod gönderiliyor...');
+  try{
+    const r=await sbSifreIste(kimlik);
+    _sifre={kimlik,kayit:r.kayit,dakika:r.dakika};
+    sifreYenileAdimi();
+  }catch(e){
+    davetMesaj(davetHataMetni(e,'Kod gönderilemedi.'));
+    davetBtn(false,'Kod Gönder');
+  }
+}
+function sifreYenileAdimi(){
+  davetCiz(davetBaslik('Yeni Şifre Belirleyin')+`
+    <p class="dv-not"><b>${esc(_sifre.kimlik)}</b> hesabına kayıtlı bir e-posta adresi varsa 6 haneli bir kod gönderdik. Kod ${Number(_sifre.dakika)||15} dakika geçerlidir; gelen kutunuzda yoksa gereksiz (spam) klasörüne bakın. Hiç gelmediyse hesabınızda e-posta kayıtlı olmayabilir - yöneticinize başvurun.</p>
+    <div class="fld"><label for="sf_kod">E-postadaki Kod</label><input type="text" id="sf_kod" class="dv-kod" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="one-time-code"></div>
+    <div class="fld"><label for="sf_pass">Yeni Şifre</label><input type="password" id="sf_pass" placeholder="en az 8 karakter" autocomplete="new-password"></div>
+    <div class="fld"><label for="sf_pass2">Yeni Şifre (tekrar)</label><input type="password" id="sf_pass2" placeholder="şifreyi tekrar yazın" autocomplete="new-password"></div>
+    <button class="lg-btn" id="davetSubmitBtn">Şifreyi Değiştir</button>
+    <div class="login-err" id="davetErr"></div>
+    <div class="lg-alt"><button type="button" class="lg-forgot" id="davetTekrarBtn" onclick="sifreKoduTekrar()">Kodu tekrar gönder</button><button type="button" class="lg-forgot" onclick="davetGiriseDon()">Girişe dön</button></div>`,
+    sifreYenileGonder,'sf_kod');
+}
+async function sifreYenileGonder(){
+  const al=id=>document.getElementById(id).value||'';
+  const kod=al('sf_kod').replace(/\s/g,''), password=al('sf_pass');
+  if(!/^\d{6}$/.test(kod)){ davetMesaj('E-postanıza gelen 6 haneli kodu girin.'); return; }
+  if(!password){ davetMesaj('Yeni şifrenizi girin.'); return; }
+  if(password!==al('sf_pass2')){ davetMesaj('Şifreler aynı değil.'); return; }
+  davetMesaj('');
+  davetBtn(true,'Değiştiriliyor...');
+  try{
+    const r=await sbSifreYenile({kayit:_sifre.kayit,kod,password});
+    davetGiriseDon();
+    userInput.value=r.username||''; pwInput.value=''; pwInput.focus();
+    document.getElementById('loginErr').textContent='';
+    toast('Şifreniz değişti - yeni şifrenizle giriş yapın');
+  }catch(e){
+    const m=e&&e.code==='kod'?'Kod hatalı.'
+      :e&&e.code==='sure'?'Kodun süresi doldu - "Kodu tekrar gönder" ile yenisini isteyin.'
+      :davetHataMetni(e,'Şifre değiştirilemedi.');
+    davetMesaj(m);
+    davetBtn(false,'Şifreyi Değiştir');
+  }
+}
+async function sifreKoduTekrar(){
+  const btn=document.getElementById('davetTekrarBtn');
+  btn.disabled=true; davetMesaj('Yeni kod gönderiliyor...',true);
+  try{
+    const r=await sbSifreIste(_sifre.kimlik);
+    _sifre.kayit=r.kayit; _sifre.dakika=r.dakika;
+    document.getElementById('sf_kod').value='';
+    davetMesaj('Yeni kod gönderildi - önceki kod artık geçersiz.',true);
+  }catch(e){
     davetMesaj(davetHataMetni(e,'Kod gönderilemedi.'));
   }finally{ btn.disabled=false; }
 }

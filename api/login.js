@@ -7,6 +7,7 @@ import { VARSAYILAN_ORG } from '../lib/org.js'
 import { VARSAYILAN_TASARI, tasariKonumOku } from '../lib/tasari.js'
 import { birimCoz } from '../lib/birim.js'
 import { kullaniciBul } from '../lib/kimlik.js'
+import sifreSifirla from '../lib/sifreSifirla.js'
 
 // Kilit mesaji: kalan sureyi insan diliyle yazar
 function kalanMetin(sn) {
@@ -15,6 +16,12 @@ function kalanMetin(sn) {
 }
 
 export default async function handler(req, res) {
+  /* SIFREMI UNUTTUM da burada (lib/sifreSifirla.js): ayri dosya olsaydi Vercel
+     Hobby 12 fonksiyon sinirina dayanirdi (bkz. api/davet.js ayni not).
+       /api/sifre/:islem -> /api/login?sifre=:islem  (vercel.json) */
+  const sifre = Array.isArray(req.query.sifre) ? req.query.sifre[0] : req.query.sifre
+  if (sifre) return sifreSifirla(req, res, sifre)
+
   if (req.method !== 'POST') { res.status(405).json({ error: 'Method not allowed' }); return }
 
   const { username, password, rememberMe } = req.body || {}
