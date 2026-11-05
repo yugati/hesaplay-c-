@@ -3991,6 +3991,22 @@ p.yp-ayar-not{margin:2px 0 8px}
 .dedupe-row:hover{border-color:var(--dim)}
 .dedupe-row.keep{border-color:var(--green);background:#22c55e14}
 .dedupe-row-meta{font-size:11.5px;color:var(--mute);font-family:var(--mono)}
+/* MUKERRER TARAMA (Araclar > Bakim Araclari): Kayit Temizligi ile ayni grup/satir dili.
+   Satirda ad ustte, kunye ozeti altta - iki kaydi ayirt ettiren fark burada okunur. */
+.muk-ust{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.muk-olcut{display:flex;flex-wrap:wrap;gap:6px 14px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);margin-bottom:12px;font-size:11.5px;color:var(--mute)}
+.muk-olcut label{display:inline-flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap}
+.muk-neden{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+.muk-neden .cat-tag{background:var(--dim)33;color:var(--text);white-space:normal;word-break:break-word}
+.muk-row{align-items:flex-start;cursor:default}
+.muk-row.sec{cursor:pointer}
+.muk-row.ayri{opacity:.55}
+.muk-row>.merge-tag{flex:0 0 auto;margin-top:1px}
+.muk-row>input{flex:0 0 auto;margin-top:3px;width:15px;height:15px;cursor:pointer}
+.muk-kayit{flex:1;min-width:0}
+.muk-kayit b{display:block;font-size:12.5px;font-weight:600;color:var(--ink);word-break:break-word}
+.muk-kayit .dedupe-row-meta{display:block;margin-top:2px;font-size:10.5px;word-break:break-word}
+.muk-grup-alt{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:10px}
 .modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
 .modal-head h3{font-size:15px;font-weight:700}
 .modal-body{padding:20px}
@@ -9367,6 +9383,7 @@ function aracBakimKart(){
   if(can('backup'))  t.push(['Yedek Al','Butun verinin JSON kopyasini indirir','exportBackup()','<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>','']);
   if(can('restore')) t.push(['Yedek Yukle','Daha once alinmis bir yedegi geri yukler',"document.getElementById('restoreInput').click()",'<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>','uyari']);
   if(can('sync'))    t.push(['Full Sync (Excel)','Excel ile tam senkronizasyon (tek kaynak)',"document.getElementById('syncXlsx').click()",'<path d="M21 2v6h-6M3 12a9 9 0 0115-6.7L21 8M3 22v-6h6M21 12a9 9 0 01-15 6.7L3 16"/>','uyari']);
+  if(mukGorunenler().length) t.push(['Mukerrer Tarama','Kutuphanelerde ayni ya da birbirine cok yakin kod, barkod ve adla acilmis kayitlari bulur; hangisinin kabul edilecegini siz secersiniz','openMukerrer()','<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>','']);
   if(isAdmin())      t.push(['Kayit Temizligi','Mukerrer, sahipsiz ve sikismis kayitlari listeler - onayladiklariniz silinir','dedupeProjeSpecs()','<path d="M20 6L9 17l-5-5"/>','']);
   if(canAudit())     t.push(['Denetim Kaydi','Kim ne zaman ne yapti - giris/cikis ve silmeler dahil','openAudit()','<path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>','']);
   if(isAdmin())      t.push(['Kullanicilar','Kullanici, yetki ve davet yonetimi','openUsers()','<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>','']);
@@ -9385,6 +9402,226 @@ function aracBakimKart(){
     </div>
     <div class="arac-tiles">${tuslar}</div>
   </div>`;
+}
+/* ── MUKERRER TARAMA ───────────────────────────────────────────────────────
+   NE ISE YARAR: bir kutuphanede AYNI urunun birden fazla kayit olarak acilip
+   acilmadigini teyit eder. Her kutuphane (Proje / Mobilizasyon / Arac ve Gerec /
+   Marka) AYRI taranir - kutuphaneler arasi eslesme aranmaz, cunku ayni urunun iki
+   kutuphanede birden durmasi mukerrer degil, tasarimdir.
+
+   NASIL CALISIR: her kutuphanenin olcutleri vardir (MUK_KUT[].olcut). Bir olcut ya
+   ANAHTAR uretir (ayni anahtari tasiyan kayitlar eslesir: kod, barkod, ad) ya da
+   CIFT karsilastirir (benzer ad - bkz. mukBenzerOz). Eslesen kayitlar birlesik
+   kume (union-find) ile gruplanir: A-B kodla, B-C adla eslesiyorsa uc kayit tek
+   grupta gorunur ve grubun basinda HANGI olcutlerin bagladigi yazar.
+
+   TARAMA HICBIR SEYI DEGISTIRMEZ. Proje kutuphanesinde yonetici, grupta KABUL
+   edilecek kaydi secip digerlerini ona ENTEGRE edebilir - bu, kutuphanedeki
+   ENTEGRE dugmesinin AYNI yordamidir (matBirlestirUygula): sartname satirlari,
+   siparis/rapor baglari kabul edilen kayda tasinir, silinenin kodu es kod olur.
+   Diger kutuphanelerde grup "Kutuphanede Goster" ile kendi ekraninda acilir. */
+const MUK_BENZER_ESIK=0.86;   // benzer ad: harf ikilisi (bigram) ortusme orani, 0-1
+const MUK_GRUP_SINIR=150;     // pencerede basilan en cok grup - gerisi sayi olarak soylenir
+let _MUK=null;                // {kut, kapali:{'kut.olcut':true}, sonuc:{kut:[grup]}}
+function mukAdAnahtar(s){ return norm(s).replace(/\s+/g,' ').trim(); }
+function mukKodAnahtar(s){ return norm(s).replace(/\s+/g,''); }
+/* YAKIN YAZIM: buyuk/kucuk harf, bosluk, noktalama ve gorunusu ayni Kiril/Latin harf
+   farklari silinir ("Kablo-Tavasi 5х25" = "kablo tavası 5x25"). 3 karakterden kisa
+   anahtar eslesme sayilmaz - "A1" gibi adlar alakasiz kayitlari baglardi. */
+function mukYakinAnahtar(s){ let o=''; for(const ch of norm(s)) o+=(_ARAMA_HOMO[ch]||ch);
+  o=o.replace(/[^\p{L}\p{N}]+/gu,''); return o.length>=3?o:''; }
+/* BENZER AD ozeti: yakin-yazim anahtari + icindeki SAYILAR + harf ikilileri. Iki ad ancak
+   sayilari BIREBIR ayniysa karsilastirilir: "Tava 100x50" ile "Tava 100x60" neredeyse ayni
+   yazilir ama ayri urundur - olcu farki benzerlik sayilmaz. */
+function mukBenzerOz(s){ const y=mukYakinAnahtar(s); if(y.length<5) return null;
+  const ik=new Map(); for(let i=0;i<y.length-1;i++){ const b=y.substr(i,2); ik.set(b,(ik.get(b)||0)+1); }
+  return {y,sayi:(y.match(/\d+/g)||[]).join(','),ik,n:y.length-1}; }
+function mukBenzerlik(a,b){ let ort=0; a.ik.forEach((n,k)=>{ const m=b.ik.get(k); if(m) ort+=Math.min(n,m); }); return 2*ort/(a.n+b.n); }
+// ayni varyant ailesinin uyeleri (L / XL) bilerek ayri kayitlardir - ad olcutleri onlari birbirine baglamaz
+const mukKimlik=x=>(x.aile&&x.aile.id)||x.id;
+const mukAdGecerli=uy=>new Set(uy.map(mukKimlik)).size>1;
+// "yakin yazim" yalnizca birebir ad olcutunun YAKALAMADIGI gruplari soyler
+const mukYakinGecerli=(uy,ad)=>mukAdGecerli(uy)&&new Set(uy.map(x=>mukAdAnahtar(ad(x)))).size>1;
+function mukAdOlcutleri(ad){ return [
+  {id:'ad',ad:'Ad birebir ayni',deger:x=>[ad(x)],anahtar:mukAdAnahtar,gecerli:mukAdGecerli},
+  {id:'adyakin',ad:'Ad ayni, yazimi farkli',ipucu:'Bosluk, noktalama, buyuk/kucuk harf ve Kiril/Latin harf farki goz ardi edilir',deger:x=>[ad(x)],anahtar:mukYakinAnahtar,gecerli:uy=>mukYakinGecerli(uy,ad)},
+  {id:'benzer',ad:'Ad cok yakin',ipucu:'Bir iki harf farkla yazilmis adlar. Icindeki sayilar (olcu, cap) birebir ayni olmali',deger:x=>[ad(x)],cift:true}]; }
+const MUK_KUT=[
+  {id:'proje',ad:'Proje',gor:()=>canSee('kutuphane')||canSee('proje'),
+   liste:()=>((DB.proje&&DB.proje.materials)||[]).filter(m=>m&&!m.is_deleted),
+   adi:m=>m.name||'',
+   olcut:[{id:'kod',ad:'Urun kodu',ipucu:'Es kodlar dahil',deger:m=>matAllCodes(m),anahtar:mukKodAnahtar},
+          {id:'barkod',ad:'Barkod',deger:m=>[m.barkod],anahtar:mukKodAnahtar},
+          ...mukAdOlcutleri(m=>m.name)],
+   oz:m=>{ const n=materialUsage(m.id).length;
+     return [m.code?'Kod '+m.code:'kod yok',(m.altCodes||[]).length?'es kod '+m.altCodes.join(', '):'',m.barkod?'barkod '+m.barkod:'',m.brand,m.standart,birimAd(m.unit),m.cat,n?n+' sartname kaleminde':'sartnamede kullanilmiyor']; }},
+  {id:'gecici',ad:'Mobilizasyon',gor:()=>canSee('gecici'),
+   liste:()=>((DB.gecici&&DB.gecici.lib)||[]).filter(x=>x&&!x.is_deleted),
+   adi:x=>x.ad||'',
+   olcut:[{id:'kod',ad:'Urun kodu',ipucu:'Es kodlar dahil',deger:x=>[x.kod,...(x.altCodes||[])],anahtar:mukKodAnahtar},
+          {id:'barkod',ad:'Barkod',deger:x=>[x.barkod],anahtar:mukKodAnahtar},
+          ...mukAdOlcutleri(x=>x.ad)],
+   oz:x=>[x.kod?'Kod '+x.kod:'kod yok',x.barkod?'barkod '+x.barkod:'',x.marka,x.grup,x.cins,x.renk,birimAd(x.unit),x.adRu]},
+  {id:'alet',ad:'Araç ve Gereç',gor:()=>canSee('alet'),
+   liste:()=>aletLib().filter(x=>x&&!x.is_deleted),
+   adi:x=>x.ad||'',
+   olcut:[{id:'kod',ad:'Urun kodu',deger:x=>[x.kod],anahtar:mukKodAnahtar},
+          {id:'barkod',ad:'Barkod',deger:x=>[x.barkod],anahtar:mukKodAnahtar},
+          ...mukAdOlcutleri(x=>x.ad)],
+   oz:x=>[x.kod?'Kod '+x.kod:'kod yok',x.barkod?'barkod '+x.barkod:'',x.marka,x.grup,x.renk,x.olcu,x.madde,birimAd(x.birim)]},
+  {id:'marka',ad:'Marka',gor:()=>canSee('kutuphane')||canSee('proje')||canSee('gecici')||canSee('alet'),
+   liste:()=>markaListesi().filter(x=>x.id),
+   adi:x=>x.ad||'',
+   olcut:mukAdOlcutleri(x=>x.ad),
+   oz:x=>{ const k=markaKullanim(x.ad), t=markaToplam(k);
+     return [t?t+' kayitta geciyor (proje '+k.proje+' · mobilizasyon '+k.gecici+' · arac '+k.alet+')':'hicbir kayitta gecmiyor',x.logo?'logolu':'']; }},
+];
+function mukGorunenler(){ return MUK_KUT.filter(k=>k.gor()); }
+function mukKut(id){ return MUK_KUT.find(k=>k.id===id)||null; }
+// proje kutuphanesinde yonetici kabul edilecek kaydi secip digerlerini ona entegre edebilir
+function mukEntegreVar(kut){ return kut.id==='proje'&&isAdmin(); }
+function mukTara(kutId,kapali){
+  const kut=mukKut(kutId), liste=kut.liste();
+  const ata=liste.map((_,i)=>i);
+  const bul=i=>{ while(ata[i]!==i){ ata[i]=ata[ata[i]]; i=ata[i]; } return i; };
+  const kovalar=[];   // {o, uy:[indeks], yazi}
+  const bagla=(o,uy,yazi)=>{ const k=bul(uy[0]); uy.forEach(i=>{ ata[bul(i)]=k; }); kovalar.push({o,uy,yazi}); };
+  kut.olcut.forEach(o=>{ if(kapali&&kapali[kutId+'.'+o.id]) return;
+    if(o.cift){
+      const oz=liste.map(x=>mukBenzerOz(o.deger(x)[0])), sayiKova=new Map();
+      oz.forEach((z,i)=>{ if(z)(sayiKova.get(z.sayi)||sayiKova.set(z.sayi,[]).get(z.sayi)).push(i); });
+      sayiKova.forEach(uy=>{ for(let a=0;a<uy.length;a++) for(let b=a+1;b<uy.length;b++){
+        const za=oz[uy[a]], zb=oz[uy[b]];
+        if(za.y===zb.y || Math.min(za.n,zb.n)/Math.max(za.n,zb.n)<0.7) continue;
+        if(mukKimlik(liste[uy[a]])===mukKimlik(liste[uy[b]])) continue;
+        if(mukBenzerlik(za,zb)>=MUK_BENZER_ESIK) bagla(o,[uy[a],uy[b]],''); } });
+      return; }
+    const h=new Map(), ham=new Map();
+    liste.forEach((x,i)=>{ const gor=new Set();
+      (o.deger(x)||[]).forEach(v=>{ const k=o.anahtar(v); if(!k||gor.has(k)) return; gor.add(k);
+        (h.get(k)||h.set(k,[]).get(k)).push(i); if(!ham.has(k)) ham.set(k,String(v).trim()); }); });
+    h.forEach((uy,k)=>{ if(uy.length<2) return;
+      if(o.gecerli&&!o.gecerli(uy.map(i=>liste[i]))) return;
+      bagla(o,uy,ham.get(k)); });
+  });
+  const grup=new Map();
+  kovalar.forEach(kv=>{ const k=bul(kv.uy[0]); const g=grup.get(k)||grup.set(k,{uyeler:[],neden:[],keepId:null,haric:new Set()}).get(k); g.neden.push(kv); });
+  liste.forEach((x,i)=>{ const g=grup.get(bul(i)); if(g) g.uyeler.push(x); });
+  const out=[...grup.values()];
+  out.forEach(g=>{ const gor=new Set();   // ayni olcut+deger tek rozet (benzer ad ciftleri tek rozette toplanir)
+    g.neden=g.neden.filter(kv=>{ const k=kv.o.id+'|'+kv.yazi; if(gor.has(k)) return false; gor.add(k); return true; })
+      .map(kv=>({olcut:kv.o,yazi:kv.yazi,adet:kv.uy.length})); });
+  return out.sort((a,b)=>b.uyeler.length-a.uyeler.length||kut.adi(a.uyeler[0]).localeCompare(kut.adi(b.uyeler[0]),'tr'));
+}
+function mukSonuc(kutId){ if(!_MUK.sonuc[kutId]) _MUK.sonuc[kutId]=mukTara(kutId,_MUK.kapali); return _MUK.sonuc[kutId]; }
+function openMukerrer(){
+  const gor=mukGorunenler(); if(!gor.length){ toast('Yetkiniz yok','err'); return; }
+  _MUK={kut:gor[0].id,kapali:{},sonuc:{}};
+  renderMukModal();
+}
+function closeMukModal(){ _MUK=null; closeModal(); }
+function mukKutSec(id){ if(!_MUK||!mukKut(id)) return; _MUK.kut=id; renderMukModal(); }
+function mukOlcutAc(olcutId,acik){ if(!_MUK) return;
+  const k=_MUK.kut+'.'+olcutId; if(acik) delete _MUK.kapali[k]; else _MUK.kapali[k]=true;
+  delete _MUK.sonuc[_MUK.kut]; renderMukModal(); }
+function mukKabul(gi,id){ const g=_MUK&&mukSonuc(_MUK.kut)[gi]; if(!g) return; g.keepId=id; g.haric.delete(id); renderMukModal(); }
+function mukHaric(gi,id,entegre){ const g=_MUK&&mukSonuc(_MUK.kut)[gi]; if(!g) return; if(entegre) g.haric.delete(id); else g.haric.add(id); renderMukModal(); }
+// Gruptan GERCEKTEN entegre edilecekler: sayac, onay metni ve islem ayni listeyi kullanir
+function mukEntegreEdilecekler(g){ return g.keepId?g.uyeler.filter(x=>x.id!==g.keepId&&!g.haric.has(x.id)):[]; }
+function mukGrupHtml(kut,g,gi){
+  const entegre=mukEntegreVar(kut), edilecek=mukEntegreEdilecekler(g);
+  const rows=g.uyeler.map(x=>{
+    const keep=g.keepId===x.id, ayri=!!g.keepId&&!keep&&g.haric.has(x.id);
+    const rozet=!entegre||!g.keepId?'':keep?'<span class="merge-tag">KABUL</span>'
+      :`<input type="checkbox" ${ayri?'':'checked'} title="Isaretliyse kabul edilen kayda entegre edilir; isareti kaldirirsaniz bu kayit ayri kalir" onclick="event.stopPropagation();mukHaric(${gi},'${x.id}',this.checked)"><span class="merge-tag ${ayri?'lock':'rm'}">${ayri?'AYRI KALIR':'ENTEGRE'}</span>`;
+    return `<div class="dedupe-row muk-row${entegre?' sec':''}${keep?' keep':''}${ayri?' ayri':''}"${entegre?` onclick="mukKabul(${gi},'${x.id}')" title="Kabul edilecek kayit olarak sec"`:''}>
+      ${rozet}<div class="muk-kayit"><b>${esc(kut.adi(x)||'(adsiz)')}</b><span class="dedupe-row-meta">${kut.oz(x).filter(Boolean).map(esc).join(' · ')}${x.createdAt?' · eklenme '+esc(fmtDate(x.createdAt)):''}</span></div>
+    </div>`; }).join('');
+  const neden=g.neden.slice(0,6).map(n=>`<span class="cat-tag" title="${esc(n.olcut.ipucu||'')}">${esc(n.olcut.ad)}${n.yazi&&n.olcut.id!=='ad'&&n.olcut.id!=='adyakin'?': '+esc(n.yazi):''}</span>`).join('')
+    +(g.neden.length>6?`<span class="cat-tag">+${g.neden.length-6}</span>`:'');
+  return `<div class="dedupe-group">
+    <div class="dedupe-group-head" style="margin-bottom:8px">
+      <div style="flex:1;min-width:0"><div class="muk-neden" style="margin-top:0">${neden}</div></div>
+      <span class="cat-tag" style="background:var(--dim)33;color:var(--text);flex-shrink:0">${g.uyeler.length} kayit</span>
+    </div>
+    <div class="dedupe-rows">${rows}</div>
+    <div class="muk-grup-alt">
+      ${entegre&&!g.keepId?'<span class="t-meta" style="margin-right:auto;font-size:11px">Kabul edilecek kaydi secmek icin satira tiklayin</span>':''}
+      <button class="btn btn-ghost" style="padding:5px 11px;font-size:11.5px" title="Bu kayitlari kendi kutuphane ekraninda acar" onclick="mukGit(${gi})">Kutuphanede Goster</button>
+      ${entegre?`<button class="btn btn-add" style="padding:5px 11px;font-size:11.5px" ${edilecek.length?'':'disabled'} onclick="mukEntegre(${gi})">${icoMerge()} Entegre Et${edilecek.length?' ('+edilecek.length+')':''}</button>`:''}
+    </div>
+  </div>`;
+}
+function renderMukModal(){
+  if(!_MUK) return;
+  const gor=mukGorunenler(); if(!gor.some(k=>k.id===_MUK.kut)) _MUK.kut=gor[0].id;
+  const kut=mukKut(_MUK.kut), gruplar=mukSonuc(kut.id), toplam=kut.liste().length;
+  const kayitN=gruplar.reduce((n,g)=>n+g.uyeler.length,0);
+  const sekme=gor.map(k=>{ const n=mukSonuc(k.id).length;
+    return `<button class="${k.id===kut.id?'on':''}" onclick="mukKutSec('${k.id}')">${esc(k.ad)}${n?` <b style="color:${k.id===kut.id?'inherit':'var(--amber)'}">${n}</b>`:''}</button>`; }).join('');
+  const olcut=kut.olcut.map(o=>`<label title="${esc(o.ipucu||'')}"><input type="checkbox" ${_MUK.kapali[kut.id+'.'+o.id]?'':'checked'} onclick="mukOlcutAc('${o.id}',this.checked)">${esc(o.ad)}</label>`).join('');
+  const govde=gruplar.length
+    ?`<div class="dedupe-groups">${gruplar.slice(0,MUK_GRUP_SINIR).map((g,gi)=>mukGrupHtml(kut,g,gi)).join('')}</div>
+      ${gruplar.length>MUK_GRUP_SINIR?`<p class="t-meta" style="margin-top:10px">Ilk ${MUK_GRUP_SINIR} grup gosteriliyor - ${gruplar.length-MUK_GRUP_SINIR} grup daha var. Bunlari temizledikce ya da olcutleri daralttikca siradakiler gorunur.</p>`:''}`
+    :`<div class="empty" style="padding:26px"><p>Mukerrer kayit bulunamadi</p><span style="font-size:12px">${esc(kut.ad)} kutuphanesindeki ${toplam} kayit secili olcutlere gore temiz</span></div>`;
+  const acik=mukEntegreVar(kut)
+    ?'Her grupta <b>kabul edilecek</b> kaydi satirina tiklayarak secin; isaretli digerleri ona <b>entegre edilir</b> (kutuphanedeki ENTEGRE ile ayni islem): bagli sartname satirlari, siparis ve rapor kayitlari kabul edilen kayda tasinir, silinen kaydin kodu es kod olarak saklanir. Ayri urun olan kaydin isaretini kaldirin - o kayit oldugu gibi kalir.'
+    :'Bu pencere yalnizca <b>listeler</b>, hicbir kaydi degistirmez. Bir grubu duzeltmek icin <b>Kutuphanede Goster</b> ile kendi ekraninda acin.';
+  const html=`<div class="modal-bg" onclick="if(event.target===this)closeMukModal()"><div class="modal dedupe-modal"><div class="modal-head"><h3>Mukerrer Tarama</h3><button class="mini-btn" onclick="closeMukModal()">x</button></div><div class="modal-body">
+    <div class="muk-ust"><div class="seg" style="display:inline-flex">${sekme}</div>
+      <span class="t-meta" style="margin-left:auto;font-size:11.5px">${toplam} kayit tarandi · <b>${gruplar.length}</b> grup · ${kayitN} supheli kayit</span></div>
+    <div class="muk-olcut">${olcut}</div>
+    <p class="t-meta" style="margin-bottom:12px;line-height:1.5">${acik}</p>
+    ${govde}
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeMukModal()">Kapat</button></div></div></div>`;
+  // yeniden cizimde liste basa sarmasin: secim yapan kullanici ayni grubun onunde kalir
+  const eski=document.querySelector('.modal-bg .dedupe-groups'), kay=eski?eski.scrollTop:0;
+  document.querySelectorAll('.modal-bg').forEach(m=>m.remove());
+  document.body.insertAdjacentHTML('beforeend',html);
+  const yeni=document.querySelector('.modal-bg .dedupe-groups'); if(yeni&&kay) yeni.scrollTop=kay;
+}
+async function mukEntegre(gi){
+  if(!_MUK) return;
+  const kut=mukKut(_MUK.kut), g=mukSonuc(kut.id)[gi];
+  if(!g||!mukEntegreVar(kut)){ toast('Bu islem icin yetkiniz yok','err'); return; }
+  const keep=getMaterial(g.keepId), drops=mukEntegreEdilecekler(g).filter(x=>getMaterial(x.id));
+  if(!keep||!drops.length) return;
+  const ad=m=>m.code?m.code+' - '+m.name:m.name;
+  const kAile=vaAileOf('proje',keep);
+  const aileUy=kAile?drops.filter(d=>{ const a=vaAileOf('proje',d); return a&&a.id===kAile.id; }):[];
+  if(!confirm(`KABUL EDILEN:\n  ${ad(keep)}\n\nENTEGRE EDILECEK (silinir, baglari kabul edilene tasinir):\n${drops.map(d=>'  '+ad(d)).join('\n')}`
+    +(aileUy.length?`\n\nDIKKAT: ${aileUy.length} kayit kabul edilenle AYNI varyant ailesinde ("${kAile.ad}"). Entegre edilirse o varyant aileden duser.`:'')
+    +`\n\nBu islem geri alinamaz. Devam edilsin mi?`)) return;
+  let tamam=0, satir=0, hata='';
+  wperdeAc('Entegre ediliyor',{belirsiz:true});
+  try{ for(const d of drops){ const n=await matBirlestirUygula(keep.id,d.id); if(n!=null){ tamam++; satir+=n; } } }
+  catch(e){ console.error('mukEntegre',e); hata=(e&&e.message)||String(e); }
+  finally{ wperdeKapat(); }
+  if(!_MUK) return;
+  _MUK.sonuc={};   // marka sayaclari da proje kayitlarindan turer - hepsi yeniden taranir
+  render(); renderMukModal();
+  if(hata) toast(`${tamam}/${drops.length} kayit entegre edildi, sonra hata: ${hata} - sayfayi yenileyip kontrol edin`,'err');
+  else toast(`${tamam} kayit entegre edildi (${satir} sartname satiri guncellendi)`);
+}
+/* KUTUPHANEDE GOSTER: grubu kendi ekraninda acar. Arama kutusuna grubun ORTAK degeri
+   yazilir (kod / ad; yazimi farkli adlarda ortak bas kisim) ki uyeler ayni listede
+   gorunsun. Proje ve Marka'da yonetici icin uyeler secili gelir - tam 2 kayitsa o
+   ekrandaki ENTEGRE dugmesi dogrudan kullanilabilir. */
+function mukGit(gi){
+  if(!_MUK) return;
+  const kut=mukKut(_MUK.kut), g=mukSonuc(kut.id)[gi]; if(!g) return;
+  if(_BRM&&_BRM.kirli&&!confirm('Birim Sozlugu\'nde kaydedilmemis degisiklik var. Sayfadan ayrilirsaniz kaybolur. Devam edilsin mi?')) return;
+  const adlar=g.uyeler.map(x=>mukAdAnahtar(kut.adi(x))).filter(Boolean);
+  let ort=adlar[0]||''; adlar.forEach(a=>{ let i=0; while(i<ort.length&&i<a.length&&ort[i]===a[i]) i++; ort=ort.slice(0,i); });
+  const n0=g.neden[0];
+  const ara=(n0&&n0.yazi&&n0.adet===g.uyeler.length)?n0.yazi:(ort.trim().length>=3?ort.trim():(kut.adi(g.uyeler[0])||''));
+  const ids=g.uyeler.map(x=>x.id);
+  _MUK=null; closeModal(); PARAC=false; _BRM=null;
+  MATF={scope:kut.id,cat:'',brand:'',unit:'',tag:'',img:'',renk:'',cins:'',sort:''};
+  if(kut.id==='proje') MATF.birim='';   // birim suzgeci grubun bir uyesini gizlemesin
+  _matUsageFilter='all'; _matSel.clear(); _markaSel.clear(); _matPage=0;
+  if(isAdmin()){ if(kut.id==='proje') ids.forEach(id=>_matSel.add(id)); if(kut.id==='marka') ids.forEach(id=>_markaSel.add(id)); }
+  openMaterialLib(); SEARCH=ara; render();
 }
 /* ── ARAC 3: BIRIM SOZLUGU ─────────────────────────────────────────────────
    Satirlar: anahtar + TR / RU / EN etiketi + es yazimlar (virgulle). Degisiklik
@@ -17035,6 +17272,19 @@ async function confirmMergeMaterials(){
      Bilerek yapilabilir (yanlis acilmis kopya), ama ayrica sorulur. */
   const kAile=vaAileOf('proje',keep), dAile=vaAileOf('proje',drop);
   if(kAile&&dAile&&kAile.id===dAile.id&&!confirm(`Iki urun AYNI varyant ailesinde: "${kAile.ad}" - ${vaDegerYazi(kAile,keep)||'-'} ve ${vaDegerYazi(dAile,drop)||'-'}.\n\nBirlestirilirse "${vaDegerYazi(dAile,drop)||'-'}" varyanti aileden duser ve iki kod tek urune sayilir. Yine de birlestirilsin mi?`)) return;
+  const n=await matBirlestirUygula(keepId,dropId);
+  if(n==null) return;
+  _matSel.clear(); _mergeKeepId=null;
+  closeModal(); render();
+  toast(`Urunler birlestirildi (${n} sartname satiri guncellendi)`);
+}
+/* BIRLESTIRMENIN KENDISI: onay sorulari ve ekran isi cagirandadir. Iki kapi ayni yordami
+   kullanir - kutuphanedeki ENTEGRE dugmesi (confirmMergeMaterials) ve Araclar > Mukerrer
+   Tarama (mukEntegre). Tasinan sartname satiri sayisini dondurur; kayit bulunamazsa null. */
+async function matBirlestirUygula(keepId,dropId){
+  const keep=getMaterial(keepId), drop=getMaterial(dropId);
+  if(!keep||!drop||keepId===dropId) return null;
+  const kAile=vaAileOf('proje',keep), dAile=vaAileOf('proje',drop);
 
   // ana kayittaki BOS alanlari diger kayittan doldur (dolu olanlarin ustune yazmaz)
   const FIELDS=['img','unit','brand','note','standart','tags','cat','proje','barkod'];
@@ -17096,9 +17346,7 @@ async function confirmMergeMaterials(){
     if(eb.kalem.length) await sbUpsertProjeSpecs(eb.kalem.map(sp=>({...sp})));
   }
   logAction('editMaterial',`Birlestirme: "${drop.code||drop.name}" -> "${keep.code||keep.name}" (${affectedSpecs.length} sartname satiri tasindi)`);
-  _matSel.clear(); _mergeKeepId=null;
-  closeModal(); render();
-  toast(`Urunler birlestirildi (${affectedSpecs.length} sartname satiri guncellendi)`);
+  return affectedSpecs.length;
 }
 function renderMaterialLib(){
   // yetkisi olmayan kullanici gecici/alet kapsaminda kalmasin
