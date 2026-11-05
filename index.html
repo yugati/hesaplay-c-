@@ -18676,6 +18676,43 @@ const kunyeGirilebilir=gecici=>kunyeSutun(gecici).filter(c=>!c.sistem);
 const kunyeGenis =gecici=>kunyeSutun(gecici).map(c=>({wch:c.w}));
 const TOPM_XLS_BASLIK=kunyeGirilebilir(false).map(c=>c.b);
 const TOPM_XLS_GENIS=kunyeGirilebilir(false).map(c=>({wch:c.w}));
+/* ===== EXCEL DONDURMA (freeze panes) ==============================
+   Baslik satiri ve Malzeme Ismi sutunu kaydirmada SABIT kalsin diye: toplu urun
+   sablonu, kutuphane ciktisi ve ambar raporu hep bu yoldan iner. SheetJS'in acik
+   surumu sheetView icine <pane> yazamaz; bu yuzden dosya uretildikten sonra zip
+   icindeki sayfa XML'ine pane eklenir (XLSX.CFB zip'i okuyup yazabiliyor).
+   Sayfa dosyalari SheetNames sirasiyla sheet1..N.xml olarak yazilir.
+   dondur = { 'Sayfa Adi': {satir:1, sutun:1} } - satir: ustten kac satir,
+   sutun: soldan kac sutun sabit. Herhangi bir adimda hata olursa dosya
+   dondurulmadan ama eksiksiz indirilir (XLSX.writeFile). */
+function xlsxDondurIndir(wb,dosyaAdi,dondur){
+  try{
+    const dizi=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+    const cfb=XLSX.CFB.read(new Uint8Array(dizi),{type:'array'});
+    const enc=new TextEncoder(), dec=new TextDecoder();
+    wb.SheetNames.forEach((ad,i)=>{
+      const d=dondur&&dondur[ad]; if(!d) return;
+      const satir=d.satir|0, sutun=d.sutun|0; if(!satir&&!sutun) return;
+      const yol='/xl/worksheets/sheet'+(i+1)+'.xml';
+      const dosya=XLSX.CFB.find(cfb,yol); if(!dosya) return;
+      const xml=dec.decode(new Uint8Array(dosya.content));
+      const pane='<pane'+(sutun?' xSplit="'+sutun+'"':'')+(satir?' ySplit="'+satir+'"':'')
+        +' topLeftCell="'+XLSX.utils.encode_cell({r:satir,c:sutun})+'"'
+        +' activePane="'+(satir&&sutun?'bottomRight':satir?'bottomLeft':'topRight')+'" state="frozen"/>';
+      const yeni=xml.replace(/<sheetView([^>]*)\/>/,'<sheetView$1>'+pane+'</sheetView>');
+      if(yeni!==xml) XLSX.CFB.utils.cfb_add(cfb,yol,enc.encode(yeni));
+    });
+    const out=XLSX.CFB.write(cfb,{fileType:'zip',type:'array'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+    a.download=dosyaAdi; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+  }catch(e){ console.warn('Excel dondurma atlandi',e); XLSX.writeFile(wb,dosyaAdi); }
+}
+// kunye sayfalari: baslik satiri + Malzeme Ismi (A) sabit
+const XLS_DONDUR_KUNYE={satir:1,sutun:1};
+// "Urun Kodu | Malzeme Ismi | ..." sayfalari: baslik + ilk iki sutun sabit
+const XLS_DONDUR_KODAD={satir:1,sutun:2};
 function topmSablonIndir(){
   const wb=XLSX.utils.book_new();
   /* 1) DOLDURULACAK sayfa: yalnizca baslik satiri. Ornek satirlar bilerek AYRI
@@ -18757,7 +18794,7 @@ function topmSablonIndir(){
     ['   tasidigi icin bu ekrana dogrudan yuklenebilir - yalnizca yeni satirlari'],
     ['   eklenir, mevcutlar hata olarak isaretlenir.']
   ]),'OKUBENI');
-  XLSX.writeFile(wb,'toplu_urun_ekleme_sablonu.xlsx');
+  xlsxDondurIndir(wb,'toplu_urun_ekleme_sablonu.xlsx',{'Yeni Urunler':XLS_DONDUR_KUNYE,'ORNEK':XLS_DONDUR_KUNYE});
   toast('Sablon indirildi');
 }
 /* Urun sayfasini bul: once sablonun/kutuphane ciktisinin adlari, sonra "Malzeme
@@ -19750,7 +19787,7 @@ function topgSablonIndir(){
     ['    degeri yazilir: Beden=XL   ya da   Cap=10 mm; Boy=160 mm'],
     ['    Kutuphanede ayni adli aile varsa yeni malzeme ona eklenir.']
   ]),'OKUBENI');
-  XLSX.writeFile(wb,'mobilizasyon_toplu_malzeme_sablonu.xlsx');
+  xlsxDondurIndir(wb,'mobilizasyon_toplu_malzeme_sablonu.xlsx',{'Yeni Malzemeler':XLS_DONDUR_KUNYE,'ORNEK':XLS_DONDUR_KUNYE,'Ozellikler':XLS_DONDUR_KODAD});
   toast('Sablon indirildi');
 }
 /* Malzeme sayfasini bul: once sablonun/rapor ciktisinin adlari, sonra "Ad" ya da
@@ -20257,7 +20294,7 @@ function exportMaterialLib(){
   const wsTek=XLSX.utils.aoa_to_sheet(tekRows); wsTek['!cols']=[{wch:18},{wch:42},{wch:26},{wch:46}];
   wsTek['!autofilter']={ref:XLSX.utils.encode_range({s:{r:0,c:0},e:{r:tekRows.length-1,c:3}})};
   XLSX.utils.book_append_sheet(wb,wsTek,"Teknik Bilgi");
-  XLSX.writeFile(wb,`Malzeme_Kutuphanesi_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel indirildi");
+  xlsxDondurIndir(wb,`Malzeme_Kutuphanesi_${new Date().toISOString().slice(0,10)}.xlsx`,{'Malzeme_Kutuphanesi':XLS_DONDUR_KUNYE,'Teknik Bilgi':XLS_DONDUR_KODAD}); toast("Excel indirildi");
 }
 /* ═══ OZEL INDIRME (Malzeme Kutuphanesi) ═════════════════════════════════════════
    Kutuphanede SECILEN urunlerin - secim yoksa filtreye uyan TUM urunlerin (yalnizca
@@ -36954,7 +36991,7 @@ function exportLibExcel(){
   if(DB.gecici.moves.length){ const mv=[["Tarih","Malzeme","Tip","Miktar","Birim","Siparis/Aciklama"]];
     DB.gecici.moves.slice().sort((a,b)=>b.date-a.date).forEach(m=>{ const x=DB.gecici.lib.find(i=>i.id===m.libId); mv.push([fmtDate(m.date),x?x.ad:'(silinmis)',m.type==='in'?'GIRIS':'CIKIS',Number(m.qty),x?x.unit:'',m.order||'']); });
     const ws2=XLSX.utils.aoa_to_sheet(mv); ws2['!cols']=[{wch:12},{wch:34},{wch:8},{wch:10},{wch:8},{wch:24}]; XLSX.utils.book_append_sheet(wb,ws2,"Hareketler"); }
-  XLSX.writeFile(wb,`Gecici_Ambar_${new Date().toISOString().slice(0,10)}.xlsx`); toast("Excel raporu indirildi");
+  xlsxDondurIndir(wb,`Gecici_Ambar_${new Date().toISOString().slice(0,10)}.xlsx`,{'Ambar':XLS_DONDUR_KUNYE,'Ozellikler':XLS_DONDUR_KODAD,'Ambar Stok':XLS_DONDUR_KODAD}); toast("Excel raporu indirildi");
 }
 /* ===================================================================
    ARAC VE GERECLER MODULU
