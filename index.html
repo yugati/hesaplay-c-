@@ -10655,7 +10655,7 @@ async function giSil(id){
    yazar. Cikti, sahada zaten elle yazilip paylasilan metnin AYNISIDIR:
 
        BYKARA 24.08.2026
-       UYB
+       UYB [37]
        AYDINLATMA-ОСВЕЩЕНИЯ
        00UYB14R017 / 3
        00UYB14R019 / 3
@@ -10785,8 +10785,8 @@ function gyGovde(y,vardiya,kapsam){
 }
 /* BIR FIRMANIN o gunku TAM bolumu. Hiyerarsi: FIRMA+TARIH -> BINA -> IS KALEMI ->
    MAHAL -> KISI -> FIRMA TOPLAMI. Bir firmanin birden cok binasi olabilir; binalar
-   arasinda bos satir birakilir ama BINA TOPLAMI YAZILMAZ - toplam yalnizca firmanin
-   sonunda, tum binalarinin kisi sayilari toplanarak verilir. */
+   arasinda bos satir birakilir; bina toplami bina satirinda "00UYB [69]" olarak durur,
+   firma toplami ise sonda, tum binalarinin kisi sayilari toplanarak verilir. */
 /* BINA DISI BLOK: firmanin o gunku tum yazilarindaki 'binasiz' basliklar TEK yaziya
    toplanir - ayni baslik iki binanin yazisinda da girildiyse (GENEL SAHA 3 + 2) kisi
    sayilari toplanir, odali ise satirlari arka arkaya eklenir. Sira ilk gorulen siradir. */
@@ -10805,16 +10805,18 @@ function gyFirmaMetni(yazilar){
   const list=(yazilar||[]).filter(Boolean);
   if(!list.length) return '';
   const sirali=list.slice().sort((a,b)=>String(a.bina||'').localeCompare(String(b.bina||''),'tr'));
-  const binalar=sirali.map(y=>{
-    const govde=gyGovde(y); if(!govde) return '';
-    const b=gyBuyuk(y.bina||'');
-    return b?b+'\n'+govde:govde;
-  }).filter(Boolean);
-  const geceBinalar=sirali.map(y=>{
-    const govde=gyGovde(y,'GECE'); if(!govde) return '';
-    const b=gyBuyuk(y.bina||'');
-    return b?b+'\n'+govde:govde;
-  }).filter(Boolean);
+  /* BINA SATIRI "00UYB [69]": koseli parantezdeki sayi o binanin (bina disi basliklar
+     HARIC) kisi toplamidir - binalar hizlica ayirt edilsin diye. TOP ile ayni sayim
+     kullanilir, boylece [bina toplamlari] + bina disi = TOP-ИТО. Okurken yok sayilir
+     (bkz. gyMetinCoz). */
+  const binaBlok=(y,vardiya)=>{
+    const govde=gyGovde(y,vardiya); if(!govde) return '';
+    const b=gyBuyuk(y.bina||''); if(!b) return govde;
+    const n=((y&&y.gruplar)||[]).reduce((s,g)=>s+(g&&!g.binasiz?gyGrupVardiyaToplam(g,vardiya):0),0);
+    return b+' ['+n+']\n'+govde;
+  };
+  const binalar=sirali.map(y=>binaBlok(y)).filter(Boolean);
+  const geceBinalar=sirali.map(y=>binaBlok(y,'GECE')).filter(Boolean);
   // bina disi basliklar: binalarin altinda, TOP'un ustunde tek blok
   const disi=gyBinaDisi(sirali);
   const disiG=gyGovde(disi,undefined,'disi'); if(disiG) binalar.push(disiG);
@@ -10871,7 +10873,8 @@ function gyBolSayili(satir){
 function gyMetinCoz(metin){
   const ham=String(metin||'').replace(/\r\n?/g,'\n').split('\n');
   const bloklar=[]; let kume=[];
-  ham.forEach(l=>{ const t=l.trim();
+  // satir sonundaki "[69]" bina toplamidir (gyFirmaMetni yazar) - hesaplanan deger, okunmaz
+  ham.forEach(l=>{ const t=l.trim().replace(/^(.*\S)\s*\[\d+\]$/,'$1');
     if(!t){ if(kume.length){bloklar.push(kume); kume=[];} return; }
     kume.push(t); });
   if(kume.length) bloklar.push(kume);
