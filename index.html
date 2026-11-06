@@ -49030,6 +49030,7 @@ function openIhtiyacDetay(id){
       </div>
       <div class="modal-foot">
         <button class="btn btn-ghost" onclick="exportIhtiyacXlsx('${x.id}')">${icoXls()} Excel</button>
+        <button class="btn btn-ghost" onclick="exportIhtiyacTalepXlsx('${x.id}')" title="Satin alma ekibi icin: ERP talep sablonu doldurulmus olarak iner">${icoXls()} Satin Alma Excel</button>
         <button class="btn btn-ghost" onclick="printIhtiyacPdf('${x.id}','detay')">${icoIhtPdf()} PDF Kat Detayi</button>
         <button class="btn btn-ghost" onclick="printIhtiyacPdf('${x.id}','ozet')">${icoIhtOzet()} PDF Ozet</button>
         <button class="btn btn-add" onclick="closeModal()">Kapat</button></div></div></div>`);
@@ -49248,6 +49249,7 @@ function renderIhtiyacForm(){
     <div class="kata-page-foot">
       <button class="btn btn-ghost" style="margin-right:auto" onclick="ihtCancelForm()">${icoArr('left')} Vazgec</button>
       <button class="btn btn-ghost" onclick="exportIhtiyacXlsx(null)" title="Kaydetmeden de aktarilabilir">${icoXls()} Excel'e Aktar</button>
+      <button class="btn btn-ghost" onclick="exportIhtiyacTalepXlsx(null)" title="Satin alma ekibi icin: ERP talep sablonu doldurulmus olarak iner (ayni urun bina basina tek satir) - kaydetmeden de alinabilir">${icoXls()} Satin Alma Excel</button>
       <button class="btn btn-ghost" onclick="printIhtiyacPdf(null,'detay')" title="Malzemeler bina/kat kumelerine ayrilir - kaydetmeden de alinabilir">${icoIhtPdf()} PDF Kat Detayi</button>
       <button class="btn btn-ghost" onclick="printIhtiyacPdf(null,'ozet')" title="Ayni urun tek satirda, miktarlar toplanir - kaydetmeden de alinabilir">${icoIhtOzet()} PDF Ozet</button>
       <button class="btn btn-add" onclick="saveIhtiyac()">Kaydet</button>
@@ -51520,6 +51522,127 @@ function exportIhtiyacXlsx(id){
   XLSX.writeFile(wb,((x.kod||('Ihtiyac_'+(x.ad||'liste')+'_'+new Date().toISOString().slice(0,10)))+'.xlsx')
     .replace(/[\\/:*?"<>|]/g,'-'));
   toast('Excel indirildi');
+}
+
+/* ---------- SATIN ALMA TALEBI (ERP SABLONU) ----------
+   Satin alma ekibine giden cikti. Yukaridaki "Excel'e Aktar"dan FARKLI bir istir: o,
+   listenin tam dokumudur; bu ise ERP'nin "Talepler > Yeni Talep > Excel'den Yukle"
+   ekraninin okudugu SABLONUN doldurulmus halidir (public/talep_sablonu.xlsx).
+   SABLON YENIDEN URETILMEZ, DOSYANIN KENDISI DOLDURULUR: stiller, acilir listeler,
+   gizli "Listeler" sayfasi ve "Urun Katalogu" oldugu gibi kalir - yalnizca "Talep"
+   sayfasinin sari hucreleri yazilir. ERP sablonu degistirirse public/'teki dosyayi
+   yenilemek yeter (baslik satiri ve hucre yerleri ayni kaldigi surece).
+   KURALLAR:
+   - Satin alma KAT bilmez: ayni urunun ayni binadaki satirlari TEK satirda toplanir.
+   - Urun, sablonun "Urun Katalogu"nda (ERP urunleri) once kodla sonra adla aranir.
+     Bulunursa ERP'nin kodu ve adi yazilir -> mevcut urunle eslesir. Bulunamazsa
+     Urun Kodu BOS birakilir (ERP kodu kendi uretir, uretici kodu oraya yazilirsa
+     yanlis urunle eslesebilir); uretici kodu ve marka Not sutununa yazilir.
+   - Birim sablonun listesindeki yazima cevrilir (ADET -> adet, MT -> metre...).
+   - Sablon en fazla 50 kalem alir: fazlasi 50'ser satirlik AYRI dosyalara bolunur. */
+const IHT_TALEP_SABLON='/talep_sablonu.xlsx';
+const IHT_TALEP_ILK=7, IHT_TALEP_MAX=50;   // kalem satirlari 7..56
+let _ihtTalepSablon=null;                  // indirilen sablon (Uint8Array) - oturum boyunca saklanir
+const ihtTalepKat=s=>String(s==null?'':s).toLocaleLowerCase('tr').replace(/ı/g,'i').replace(/ç/g,'c').replace(/ş/g,'s')
+  .replace(/ğ/g,'g').replace(/ö/g,'o').replace(/ü/g,'u').replace(/²/g,'2').replace(/³/g,'3').replace(/[\s.]+/g,'');
+const IHT_TALEP_BIRIM_ES={ad:'adet',adt:'adet',mt:'metre',m:'metre',mtul:'metre',lt:'litre',l:'litre',
+  pk:'paket',pkt:'paket',kt:'kutu',tk:'takim',tkm:'takim',cft:'cift',gr:'',kilogram:'kg',kilo:'kg'};
+// sablondaki yardimci sayfalar: birim/aktivite/bina listeleri + ERP urun katalogu
+function ihtTalepSablonOku(bayt){
+  const wb=XLSX.read(bayt,{type:'array'});
+  const aoa=ad=>{ const ws=wb.Sheets[ad]; return ws?XLSX.utils.sheet_to_json(ws,{header:1,defval:''}):[]; };
+  const L=aoa('Listeler').slice(1), sut=c=>L.map(r=>String(r[c]==null?'':r[c]).trim()).filter(Boolean);
+  const kodla=new Map(), adla=new Map();
+  aoa('Ürün Kataloğu').slice(1).forEach(r=>{
+    const u={kod:String(r[0]||'').trim(),ad:String(r[1]||'').trim()}; if(!u.ad) return;
+    if(u.kod&&!kodla.has(ihtTalepKat(u.kod))) kodla.set(ihtTalepKat(u.kod),u);
+    if(!adla.has(ihtTalepKat(u.ad))) adla.set(ihtTalepKat(u.ad),u);
+  });
+  return {birimler:sut(0),aktiviteler:sut(1),binalar:sut(2),kodla,adla};
+}
+/* SABLONU DOLDURUR (saf fonksiyon: bayt girer, bayt cikar). Hucreler "Talep" sayfasinin
+   XML'inde yerinde degistirilir - hucrenin stili (s="..") korunur, yalnizca degeri yazilir.
+   satirlar: [[urunAdi,urunKodu,miktar,birim,aktivite,bina,projeKodu,not], ...] (en fazla 50) */
+function ihtTalepDoldur(bayt,baslik,notu,satirlar){
+  const cfb=XLSX.CFB.read(bayt,{type:'array'});
+  const yol='/xl/worksheets/sheet1.xml', dosya=XLSX.CFB.find(cfb,yol);
+  if(!dosya) throw new Error('sablonda Talep sayfasi yok');
+  let xml=new TextDecoder().decode(new Uint8Array(dosya.content));
+  if(xml.indexOf('SATIN ALMA TALEB')<0) throw new Error('sablonun ilk sayfasi Talep sayfasi degil');
+  const kac=s=>String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const yaz=(ref,v)=>{
+    if(v==null||v==='') return;
+    const re=new RegExp('<c r="'+ref+'"((?: s="\\d+")?)[^>]*?(?:/>|>[\\s\\S]*?</c>)');
+    if(!re.test(xml)) throw new Error('sablonda '+ref+' hucresi yok');
+    xml=xml.replace(re,(_,s)=>typeof v==='number'
+      ? '<c r="'+ref+'"'+s+' t="n"><v>'+v+'</v></c>'
+      : '<c r="'+ref+'"'+s+' t="inlineStr"><is><t xml:space="preserve">'+kac(v)+'</t></is></c>');
+  };
+  yaz('B3',baslik); yaz('B4',notu);
+  satirlar.forEach((r,i)=>r.forEach((v,c)=>yaz('ABCDEFGH'[c]+(IHT_TALEP_ILK+i),v)));
+  XLSX.CFB.utils.cfb_add(cfb,yol,new TextEncoder().encode(xml));
+  return XLSX.CFB.write(cfb,{fileType:'zip',type:'array',compression:true});
+}
+async function exportIhtiyacTalepXlsx(id){
+  const x=id?(DB.ihtiyaclar||[]).find(y=>y.id===id):_IHT;
+  if(!x){ toast('Ihtiyac listesi bulunamadi','err'); return; }
+  const ls=ihtFilledLines(x);
+  if(!ls.length){ toast('Aktarilacak satir yok','err'); return; }
+  try{
+    if(!_ihtTalepSablon){
+      const r=await fetch(IHT_TALEP_SABLON,{cache:'no-cache'});
+      const b=new Uint8Array(await r.arrayBuffer());
+      // dosya yoksa sunucu index.html dondurur (200) - zip imzasi 'PK' ile ayirt edilir
+      if(!r.ok||b[0]!==0x50||b[1]!==0x4B) throw new Error('sablon dosyasi bulunamadi ('+IHT_TALEP_SABLON+')');
+      _ihtTalepSablon=b;
+    }
+    const S=ihtTalepSablonOku(_ihtTalepSablon);
+    const birimKat=new Map(S.birimler.map(b=>[ihtTalepKat(b),b]));
+    const binaKat=new Map(S.binalar.map(b=>[ihtTalepKat(b),b]));
+    const taninmayan=new Set();
+    const birim=v=>{ const k=ihtTalepKat(v); if(!k) return '';
+      const b=birimKat.get(k)||birimKat.get(IHT_TALEP_BIRIM_ES[k]||'');
+      if(!b) taninmayan.add(String(v).trim());
+      return b||String(v).trim().toLocaleLowerCase('tr'); };
+    const secSart=new Set(ihtSartlar(x));
+    // ayni urun + ayni bina -> tek satir (ilk gorulme sirasi korunur)
+    const sira=[], harita=new Map(); let eslesen=0;
+    ls.forEach(l=>{
+      const k=ihtPdfKunye(l);
+      const a=(l.matId?'k|@|'+(l.matSrc||'')+'|@|'+l.matId:'e|@|'+norm(k.kod||'')+'|@|'+norm(k.ad||''))+'|@|'+norm(l.bina||'');
+      let g=harita.get(a);
+      if(!g){ g={k,l,qty:0,notlar:[],kodlar:[]}; harita.set(a,g); sira.push(g); }
+      g.qty+=ihtSayi(l.qty);
+      const n=String(l.not||'').trim(); if(n&&!g.notlar.includes(n)) g.notlar.push(n);
+      if(secSart.size) ihtSatirSartKodlari(l).forEach(c=>{ if(secSart.has(c)&&!g.kodlar.includes(c)) g.kodlar.push(c); });
+    });
+    const satirlar=sira.map(g=>{
+      const k=g.k;
+      const erp=(k.kod&&S.kodla.get(ihtTalepKat(k.kod)))||S.adla.get(ihtTalepKat(k.ad))||null;
+      if(erp) eslesen++;
+      const marka=(k.marka||[]).join(', ');
+      const notu=[(!erp&&k.kod)?'Kod: '+k.kod:'', marka?'Marka: '+marka:'', ...g.notlar].filter(Boolean).join(' · ');
+      const bina=String(g.l.bina||'').trim();
+      return [erp?erp.ad:(k.ad||''), erp?erp.kod:'', Math.round(g.qty*1000)/1000, birim(k.birim||g.l.birim),
+        S.aktiviteler[0]||'', binaKat.get(ihtTalepKat(bina))||bina, g.kodlar.join(', '), notu];
+    });
+    const parcalar=[]; for(let i=0;i<satirlar.length;i+=IHT_TALEP_MAX) parcalar.push(satirlar.slice(i,i+IHT_TALEP_MAX));
+    const baslik=ihtAdGoster(x), notu=[x.kod||'',String(x.aciklama||'').trim()].filter(Boolean).join(' - ');
+    const kok=('Talep_'+(x.kod||x.ad||'liste')).replace(/[\\/:*?"<>|]/g,'-');
+    parcalar.forEach((p,i)=>{
+      const ek=parcalar.length>1?' ('+(i+1)+'/'+parcalar.length+')':'';
+      const out=ihtTalepDoldur(_ihtTalepSablon,baslik+ek,notu,p);
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+      a.download=kok+(parcalar.length>1?'_'+(i+1):'')+'.xlsx';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+    });
+    toast('Satin alma talebi indirildi: '+satirlar.length+' kalem'
+      +(parcalar.length>1?' ('+parcalar.length+' dosya)':'')+' · '+eslesen+' ERP urunuyle eslesti');
+    if(taninmayan.size) toast('Sablonda olmayan birim: '+[...taninmayan].join(', ')+' - dosyada duzeltin','err');
+  }catch(e){ console.error('Satin alma talebi',e); toast('Satin alma talebi olusturulamadi: '+((e&&e.message)||e),'err'); }
 }
 
 
