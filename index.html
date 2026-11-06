@@ -430,8 +430,12 @@ html.davet-mode #login,html.davet-mode #loading{display:none!important}
 .wperde.acik{display:flex}
 .wperde.kapaniyor{opacity:0}
 .wperde-kart{background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-md);
-  padding:30px 34px 26px;min-width:322px;max-width:min(430px,92vw);text-align:center;
-  animation:wp-in .28s cubic-bezier(.16,.8,.3,1) both}
+  padding:30px 34px 20px;box-sizing:border-box;width:min(384px,92vw);text-align:center;
+  animation:wp-in .28s cubic-bezier(.16,.8,.3,1);
+  transition:transform .24s cubic-bezier(.4,0,.2,1)}
+/* SABIT BOYUT: genislik icerige gore degil sabittir, her satirin yeri de (bos olsa bile)
+   ayrilmistir - is bitince alt yazilar silindiginde kart DARALMAZ/ZIPLAMAZ. */
+.wperde.kapaniyor .wperde-kart{transform:translateY(6px) scale(.97)}
 .wperde-mark{position:relative;width:84px;height:84px;margin:0 auto 20px}
 /* ilerleme halkasi: -90deg ile saat 12'den baslar, dashoffset JS'te GERCEK oranla surulur */
 .wperde-ring{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg)}
@@ -442,21 +446,26 @@ html.davet-mode #login,html.davet-mode #loading{display:none!important}
 .wperde-logo{position:absolute;left:50%;top:50%;width:56%;height:56%;margin:-28% 0 0 -28%;fill:var(--ink);
   animation:wp-don 1.7s cubic-bezier(.62,.05,.36,.95) infinite}
 .wperde.kapaniyor .wperde-logo{animation-duration:.7s}
-.wperde-baslik{font-size:15px;font-weight:650;letter-spacing:.1px;color:var(--ink)}
+.wperde-baslik{font-size:15px;font-weight:650;letter-spacing:.1px;color:var(--ink);line-height:1.35;min-height:21px;
+  transition:opacity .13s ease}
+/* baslik ve alt yazi degisirken kisa bir sonup-yanma ile gecer (bkz. wperdeDurum) */
+.wperde-baslik.sw,.wperde-alt.sw{opacity:0}
 .wperde-sayac{margin-top:9px;font-family:var(--mono);font-size:12.5px;display:flex;justify-content:center;
   gap:9px;align-items:baseline;color:var(--ink);min-height:17px}
 .wperde-sayac b{font-weight:600}
 .wperde-sayac .yzd{opacity:.55;font-size:11.5px}
 .wperde-satir{margin-top:8px;font-size:12px;color:var(--mute);line-height:1.45;min-height:35px;
   overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;word-break:break-word}
-.wperde-alt{margin-top:10px;font-size:11px;color:var(--mute);opacity:.8;line-height:1.5}
+.wperde-alt{margin-top:10px;font-size:11px;color:var(--mute);opacity:.8;line-height:1.5;min-height:33px;
+  transition:opacity .13s ease}
 @keyframes wp-don{to{transform:rotate(360deg)}}
 @keyframes wp-in{from{opacity:0;transform:translateY(8px) scale(.97)}to{opacity:1;transform:none}}
 /* hareket azaltma: isaret doner ama sarsmadan - ilerleme yine de okunur kalir */
 @media (prefers-reduced-motion:reduce){
   .wperde-logo{animation-timing-function:linear;animation-duration:2.4s}
-  .wperde-kart{animation:none}
+  .wperde-kart{animation:none;transition:none}
   .wperde-ring .dolum{transition:none}
+  .wperde-baslik,.wperde-alt{transition:none}
 }
 
 /* ══ BEKLEME ISARETI ═════════════════════════════════════════════════════
@@ -6543,7 +6552,19 @@ function wperdeAc(baslik,opt){
 function wperdeDurum(d){
   d=d||{};
   const yaz=(id,v)=>{ if(v==null)return; const e=document.getElementById(id); if(e&&e.textContent!==v) e.textContent=v; };
-  yaz('wperdeBaslik',d.baslik); yaz('wperdeSayac',d.sayac); yaz('wperdeSatir',d.metin); yaz('wperdeAlt',d.alt);
+  /* BASLIK ve ALT yazi seyrek degisir (acilis, bitis): perde gorunurken kisa bir
+     sonup-yanma ile gecer. Sayac ve satir her kalemde degistigi icin ANINDA yazilir -
+     onlari da soldurmak 160 satirlik kayitta surekli titreme olurdu. Ust uste gelen
+     degisikliklerde tek zamanlayici calisir, son deger yazilir. */
+  const gorunur=(()=>{ const p=document.getElementById('wperde'); return !!(p&&p.classList.contains('acik')); })();
+  const yumusak=(id,v)=>{ if(v==null)return; const e=document.getElementById(id); if(!e)return;
+    if(!gorunur){ clearTimeout(e._swT); e._swT=null; e._swV=null; e.classList.remove('sw'); if(e.textContent!==v) e.textContent=v; return; }
+    if((e._swV!=null?e._swV:e.textContent)===v) return;
+    e._swV=v; if(e._swT) return;
+    e.classList.add('sw');
+    e._swT=setTimeout(()=>{ e.textContent=e._swV; e._swV=null; e._swT=null; e.classList.remove('sw'); },130);
+  };
+  yumusak('wperdeBaslik',d.baslik); yaz('wperdeSayac',d.sayac); yaz('wperdeSatir',d.metin); yumusak('wperdeAlt',d.alt);
   if(d.yuzde!=null){
     const y=Math.max(0,Math.min(100,d.yuzde));
     const h=document.getElementById('wperdeHalka'); if(h) h.style.strokeDashoffset=(WP_CEVRE*(1-y/100)).toFixed(2);
