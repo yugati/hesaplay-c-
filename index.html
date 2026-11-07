@@ -2531,6 +2531,19 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .fw-inline .fw-inp{flex:1;min-width:0}
 .floww-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
 .floww-zoom{display:flex;align-items:center;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:2px}
+/* TUVAL ARAMASI: arac cubugundaki kutu - eslesen dugum yazilari MARKER MODU isaretiyle (mark.mkr)
+   boyanir, Enter / oklar eslesmeler arasinda gezdirir, kamera dugume ucar */
+.fw-ara{display:flex;align-items:center;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:2px 2px 2px 8px}
+.fw-ara:focus-within{border-color:var(--mkr-c)}
+.fw-ara svg{width:13px;height:13px;color:var(--mute);flex:0 0 auto}
+.fw-ara input{border:0;background:none;color:var(--ink);font:inherit;font-size:12.5px;width:150px;padding:4px 6px;outline:none;min-width:0}
+.fw-ara .fw-ara-say{font-family:var(--mono);font-size:11px;color:var(--mute);min-width:36px;text-align:center;white-space:nowrap}
+.fw-ara.yok .fw-ara-say{color:var(--red)}
+.fw-ara button{border:0;background:none;color:var(--mute);font:inherit;font-size:13px;line-height:1;width:24px;height:24px;border-radius:7px;cursor:pointer;padding:0}
+.fw-ara button:hover{background:var(--line);color:var(--ink)}
+.fw-ara button:disabled{opacity:.35;cursor:default;background:none}
+mark.mkr.fw-mk.on{box-shadow:0 0 0 2px var(--mkr-c),0 0 0 5px color-mix(in srgb,var(--mkr-c) 35%,transparent)}
+.floww-canvas.uzak mark.mkr.fw-mk{background:none;box-shadow:none;padding:0}
 .floww-zoom button{width:28px;height:26px;border:none;background:none;color:var(--mute);cursor:pointer;font-size:15px;font-weight:700;border-radius:7px}
 .floww-zoom button:hover{background:var(--hover);color:var(--ink)}
 .floww-zoom span{font-size:11px;font-family:var(--mono);color:var(--mute);min-width:42px;text-align:center}
@@ -23610,6 +23623,8 @@ window.addEventListener('keydown',e=>{
   // Ctrl/Cmd+Z: yerlesim adimini (duzenleme modunda sablon adimini) geri al - yazi
   // kutusundayken metnin kendi geri almasi kalir
   if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='z'||e.key==='Z')&&!yaz){ e.preventDefault(); if(FLOWW.ed) flowEdGeriAl(); else flowGeriAl(); return; }
+  // Ctrl/Cmd+F: tuval aramasina odaklan (tarayicinin bul kutusu yerine - yazi kutusundayken dokunulmaz)
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='f'||e.key==='F')&&!yaz&&!FLOWW.ed){ const a=document.getElementById('flowAra'); if(a){ e.preventDefault(); a.focus({preventScroll:true}); a.select(); return; } }
   // Esc: duzenleme modunda taslaktan cikis (kaydedilmemis degisiklik varsa sorulur);
   // normal kipte sira baglanti menusu > coklu secim > tam ekran
   if(e.key==='Escape'&&FLOWW.ed){ if(!yaz) flowEdVazgec(); return; }
@@ -23991,6 +24006,7 @@ function renderBinaFlow(){
   const eskiC=document.getElementById('flowCanvas'), eskiS=document.querySelector('.floww-side');
   FLOWW._once=eskiC&&FLOWW._L&&!FLOWW.ed?{pos:flowKonumAl(FLOWW._L)}:null;
   FLOWW._panelKay=eskiS?flowPanelKayAl(eskiS):null;   // havuz listesinin kaydirmasi ve arama odagi da
+  FLOWW._araOdak=flowAraOdakAl();   // tuval arama kutusunun odagi da
   if(_HVY.tuvalT){ clearTimeout(_HVY.tuvalT); _HVY.tuvalT=0; }   // ertelenmis tuval cizimi bu cizimle karsilanir
   flowGecisDur(false);
   const T=flowTuvalHtml(), binas=T.binas, ed=FLOWW.ed;
@@ -24021,6 +24037,7 @@ function renderBinaFlow(){
       </div>
       ${zoom}
       <button class="btn btn-ghost" onclick="flowFit(true)">Sigdir</button>
+      ${flowAraHtml()}
       <button class="btn btn-ghost" onclick="flowOtoHizala()" title="Elle verilen yerleri silip tum dugumleri sablon duzenine oturtur (gruplar kalir, Ctrl+Z ile geri alinir)">Otomatik Hizala</button>
       <button class="def-sec-chip ${FLOW_IZGARA?'on':''}" style="--cc:var(--blue)" onclick="flowIzgaraDegis()" title="Surukleme 12px izgaraya oturur (Alt basiliyken serbest)">Izgara</button>
       <button class="def-sec-chip ${FLOW_ODAK?'on':''}" style="--cc:var(--violet)" onclick="flowOdakDegis()" title="Odak: secili ya da dalinan dugumun atalari ve alt agaci parlak, digerleri soluk - ustuste binen dallar ayrisir">Odak</button>
@@ -24043,7 +24060,7 @@ function renderBinaFlow(){
       <div class="floww-canvas${ed?' ed':''}${uzak?' uzak':''}${L&&L.odak?' odakli':''}" id="flowCanvas" onmousedown="flowPanStart(event)" onwheel="flowWheel(event)" onclick="flowCanvasClick(event)" onmouseover="flowUzerinde(event)" onmouseleave="flowVurguTemizle()">
         <div class="floww-dots" style="background-size:${ds}px ${ds}px;background-position:${FLOWW.pan.x}px ${FLOWW.pan.y}px"></div>
         <div class="floww-dots b"></div>
-        <div class="floww-inner" id="flowInner" style="transform:translate(${FLOWW.pan.x}px,${FLOWW.pan.y}px) scale(${FLOWW.zoom})">${T.html}</div>
+        <div class="floww-inner" id="flowInner" data-mkr="yok" style="transform:translate(${FLOWW.pan.x}px,${FLOWW.pan.y}px) scale(${FLOWW.zoom})">${T.html}</div>
         <div class="fw-etk-kat" id="flowEtk" onclick="flowEtkTik(event)"></div>
         ${flowIzHtml()}
         <div class="fw-harita" id="flowHarita" onmousedown="flowHaritaBas(event)" onclick="event.stopPropagation()" onwheel="event.stopPropagation();event.preventDefault()" title="Tuval haritasi - tiklayin / surukleyin" ${FLOW_HARITA?'':'hidden'}><canvas></canvas></div>
@@ -24101,6 +24118,123 @@ function flowNkDegis(id){ if(FLOWW.nk[id]) delete FLOWW.nk[id]; else FLOWW.nk[id
 // ODAKLAN: dugumu alt agaciyla ekrana sigdirir - alt nesillere "dalmak" icin (Mikro / Nano agaca in)
 function flowOdaklan(k){ flowDal(k); }
 // dugumun kisa adi (etiket, iz, harita ipucu)
+/* ══════════════════════════════════════════════════════════════════════════
+   TUVAL ARAMASI (arac cubugu). Gorunen dugumlerin yazilarinda arar; eslesen
+   karakterler MARKER MODU'nun kendi kurali ve gorunumuyle (markMaske / mark.mkr:
+   renk, fosforlu-cerceve-alti cizili-yazi rengi, yogunluk, kalinlik) isaretlenir -
+   mod kapali olsa da, cunku burada isaret aramanin kendisidir. Yalniz KOYU adimlar
+   kurulur (birebir, kelime kelime, ayracsiz); harf sirasi yedegi yok - "R010"
+   yazan R010 ister, sirayla gecen baska odayi degil. Eslesme listesi L.nodes
+   sirasindadir; Enter / Asagi ok sonraki, Shift+Enter / Yukari ok onceki, Esc temizler.
+   Kamera eslesen dugume ucar (uzak haritadaysa okunur yakinliga iner) ve dugum nabiz atar.
+   Isaretler #flowInner icindeki metin dugumlerine konur (fw-mk sarmalayicisi);
+   genel katman tuvale girmez (data-mkr="yok") ve bu isaretleri "elle bagli ekran"
+   saymaz (.fw-mk). Her cizimde flowDerinlikKur yeniden kurar. */
+FLOWW.ara={q:'',i:0,es:[]};
+const FW_ARA_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+function flowAraHtml(){
+  const A=FLOWW.ara, n=A.es.length, dolu=!!A.q.trim();
+  return `<div class="fw-ara${dolu&&!n?' yok':''}" id="flowAraKutu" title="Tuvaldeki dugumlerde ara - eslesen yazi marker ile isaretlenir. Enter: sonraki, Shift+Enter: onceki, Esc: temizle">
+      ${FW_ARA_SVG}<input id="flowAra" data-mkr="yok" value="${esc(A.q)}" placeholder="Dugum ara..." autocomplete="off" spellcheck="false" oninput="flowAraYaz(this.value)" onkeydown="flowAraTus(event)" onmousedown="event.stopPropagation()">
+      <span class="fw-ara-say" id="flowAraSay">${dolu?(n?(A.i+1)+'/'+n:'0/0'):''}</span>
+      <button type="button" onclick="flowAraGit(-1)" title="Onceki eslesme (Shift+Enter)" ${n>1?'':'disabled'}>&#8593;</button>
+      <button type="button" onclick="flowAraGit(1)" title="Sonraki eslesme (Enter)" ${n>1?'':'disabled'}>&#8595;</button>
+      <button type="button" onclick="flowAraTemizle()" title="Temizle (Esc)" ${dolu?'':'disabled'}>&times;</button>
+    </div>`;
+}
+function flowAraOdakAl(){ const a=document.activeElement; return a&&a.id==='flowAra'?[a.selectionStart,a.selectionEnd]:null; }
+function flowAraOdakKoy(K){ if(!K) return; const a=document.getElementById('flowAra'); if(!a) return;
+  a.focus({preventScroll:true}); try{ a.setSelectionRange(K[0],K[1]); }catch(e){} }
+// dugumun aranan metinleri: ad + (oda/kat icin) kod ve kot, sartname kodu + bolum + adi, kalem kodu + adi + poz
+function flowAraMetin(n){
+  const t=[flowDugumAd(n)];
+  if(n.type==='lok'){ if(n.lok.code) t.push(n.lok.code); if(n.lok.kot!=null&&n.lok.kot!=='') t.push('Kot '+n.lok.kot); }
+  else if(n.type==='srt'){ t.push(n.sr.section||'', n.sr.name||''); }
+  else if(n.type==='ozel'){ t.push(n.sp.code||'', n.sp.name||'', n.sp.poz?'Poz '+n.sp.poz:''); }
+  return t.filter(Boolean).join(' \u0001 ');   // alanlar birbirine karismasin (ayracsiz adim boslugu siler)
+}
+function flowAraEslesir(txt,q){ return markMaskeHepsi(txt,[q],true).some(x=>x>0); }
+function flowAraYaz(v){
+  const A=FLOWW.ara; if(A.q===v) return;
+  A.q=v; A.i=0;
+  flowAraUygula(true);
+}
+function flowAraTemizle(){ const A=FLOWW.ara; A.q=''; A.i=0; A.es=[];
+  const a=document.getElementById('flowAra'); if(a){ a.value=''; a.focus({preventScroll:true}); }
+  flowAraUygula(false); }
+function flowAraTus(e){
+  if(e.key==='Enter'){ e.preventDefault(); flowAraGit(e.shiftKey?-1:1); }
+  else if(e.key==='ArrowDown'){ e.preventDefault(); flowAraGit(1); }
+  else if(e.key==='ArrowUp'){ e.preventDefault(); flowAraGit(-1); }
+  else if(e.key==='Escape'){ e.preventDefault(); e.stopPropagation(); if(FLOWW.ara.q) flowAraTemizle(); else e.target.blur(); }
+  else e.stopPropagation();   // tuvalin kisayollari (Backspace: ust dal vb.) yazarken calismasin
+}
+/* eslesmeleri bulur, isaretleri kurar, sayaci yazar; git=true ise ilk eslesmeye ucar */
+function flowAraUygula(git){
+  const A=FLOWW.ara, L=FLOWW._L, q=A.q.trim();
+  A.es=(q&&L&&!FLOWW.ed)?L.nodes.filter(n=>n.type!=='more'&&flowAraEslesir(flowAraMetin(n),q)).map(n=>n.k):[];
+  if(A.i>=A.es.length) A.i=0;
+  flowAraIsaretle(q);
+  flowAraSayac();
+  if(git&&A.es.length) flowAraGoster(A.es[A.i],true);
+}
+function flowAraSayac(){
+  const A=FLOWW.ara, n=A.es.length, dolu=!!A.q.trim(), k=document.getElementById('flowAraKutu'), s=document.getElementById('flowAraSay');
+  if(!k||!s) return;
+  s.textContent=dolu?(n?(A.i+1)+'/'+n:'0/0'):'';
+  k.classList.toggle('yok',dolu&&!n);
+  const b=k.querySelectorAll('button'); if(b.length===3){ b[0].disabled=b[1].disabled=n<2; b[2].disabled=!dolu; }
+}
+function flowAraGit(d){
+  const A=FLOWW.ara, n=A.es.length; if(!n) return;
+  A.i=((A.i+d)%n+n)%n;
+  flowAraSayac(); flowAraIsaretOn();
+  flowAraGoster(A.es[A.i],true);
+}
+// kamerayi dugume goturur (yakinlik korunur, uzak haritadaysa okunur boya iner) ve nabiz attirir
+function flowAraGoster(k,uc){
+  const c=document.getElementById('flowCanvas'), L=FLOWW._L, n=L&&L.byK[k]; if(!c||!n) return;
+  const z=Math.min(flowZoomMax(),Math.max(FLOWW.zoom,Math.max(1,FLOW_UZAK*2.2)/(n.olc||1)));
+  const pan={x:c.clientWidth/2-(n.x+n.w/2)*z,y:c.clientHeight/2-(n.y+n.h/2)*z};
+  if(uc) flowKamera(z,pan); else { FLOWW.zoom=z; FLOWW.pan=pan; flowApply(); }
+  const el=c.querySelector(`#flowInner .floww-node[data-k="${CSS.escape(k)}"]`);
+  if(el){ el.classList.remove('fw-nabiz'); void el.offsetWidth; el.classList.add('fw-nabiz'); setTimeout(()=>el.classList.remove('fw-nabiz'),1300); }
+}
+/* isaretleme: once eski sarmalayicilar sokulur, sonra eslesen dugumlerin metin dugumleri
+   markMaske (koyu) ile mark.mkr.fw-mk olarak sarilir - genel katmanin mkrGenelSar kalibi */
+function flowAraIsaretle(q){
+  const inner=document.getElementById('flowInner'); if(!inner) return;
+  const eski=inner.querySelectorAll('fw-mk');
+  if(eski.length){ const eb=new Set(); eski.forEach(f=>{ const p=f.parentNode; if(!p) return; p.replaceChild(document.createTextNode(f.textContent),f); eb.add(p); }); eb.forEach(p=>p.normalize()); }
+  if(!q||!FLOWW.ara.es.length) return;
+  const qs=[q];
+  FLOWW.ara.es.forEach(k=>{
+    const el=inner.querySelector(`.floww-node[data-k="${CSS.escape(k)}"]`); if(!el) return;
+    const w=document.createTreeWalker(el,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT,{acceptNode(x){
+      if(x.nodeType!==1) return NodeFilter.FILTER_ACCEPT;
+      return (MKR_G_ATLA.has(x.tagName)||x.classList.contains('floww-node'))?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_SKIP; }});
+    const ts=[]; let t; while((t=w.nextNode())) if(t.nodeValue.trim().length>=1) ts.push(t);
+    ts.forEach(t=>{
+      const o=t.nodeValue, im=markMaskeHepsi(o,qs,true); if(!im.some(x=>x>0)||!t.parentNode) return;
+      const f=document.createElement('fw-mk');
+      for(let i=0;i<o.length;){ const g=im[i]>0; let j=i; while(j<o.length&&(im[j]>0)===g) j++;
+        const s=o.slice(i,j);
+        if(g){ const mk=document.createElement('mark'); mk.className='mkr fw-mk'; mk.textContent=s; f.appendChild(mk); }
+        else f.appendChild(document.createTextNode(s));
+        i=j; }
+      t.parentNode.replaceChild(f,t);
+    });
+  });
+  flowAraIsaretOn();
+}
+// gecerli eslesmenin isareti halkali gorunur
+function flowAraIsaretOn(){
+  const inner=document.getElementById('flowInner'); if(!inner) return;
+  inner.querySelectorAll('mark.fw-mk.on').forEach(m=>m.classList.remove('on'));
+  const A=FLOWW.ara, k=A.es[A.i]; if(!k) return;
+  const el=inner.querySelector(`.floww-node[data-k="${CSS.escape(k)}"]`);
+  if(el) el.querySelectorAll('mark.fw-mk').forEach(m=>{ if(m.closest('.floww-node')===el) m.classList.add('on'); });
+}
 function flowDugumAd(n){
   return n.type==='bina'?n.bina:n.type==='lok'?n.lok.name:n.type==='bolum'?n.sec:n.type==='srt'?n.sr.code
     :n.type==='ozel'?flowOzelEtiket(n.sp):n.type==='kod'?String(n.pay.kod):n.type==='more'?'+'+n.n+' daha':'?';
@@ -24329,6 +24463,8 @@ function flowDerinlikKur(){
     if(a&&n){ dX=n.x-a.x; dY=n.y-a.y; FLOWW.pan.x-=dX*FLOWW.zoom; FLOWW.pan.y-=dY*FLOWW.zoom; } }
   // ayni panel yeniden cizildiyse (secim degismedi) kaydirma konumu (havuz listesi dahil) ve arama odagi korunur
   flowPanelKayKoy(document.querySelector('.floww-side'),P);
+  flowAraOdakKoy(FLOWW._araOdak); FLOWW._araOdak=null;
+  flowAraUygula(false);   // yeni cizimde isaretler yeniden konur (kamera oynamaz)
   c.classList.toggle('odakli',!!L.odak);
   flowHaritaHazirla(); flowApply();
   if(_FLOWYOL) flowYolCiz();   // imlecin altindaki dugumun bag zinciri yeni cizimde de kalir
@@ -25001,6 +25137,7 @@ function flowSidePanel(){
       Kesikli yesil cizgiye tikla: paylasimli bagi kopar<br>
       Ctrl+tik / Shift+bos alanda surukle: coklu secim → grupla, hizala, dagit<br>
       Ctrl+Z: yerlesimi geri al · Esc: secim / odak / tam ekran<br>
+      Ara (Ctrl+F): dugum adi / kod / sartname / kalem - eslesen yazi marker ile isaretlenir · Enter: sonraki, Shift+Enter: onceki, Esc: temizle<br>
       Derinlik: dugume cift tik = o dala dal (kamera iner, dal disi soluklasir) · Backspace: bir ust dal · bos alana cift tik: yakinlas (Alt: uzaklas) · %2 - %1600<br>
       Uzaktan: yazilar etikete doner, ozel kodlar durum mozaigi (yesil montaj tamam, turuncu baslamis, gri yok) · etikete tikla: dal · sag alttaki haritadan gezin<br>
       Kilcallar: kat dalindaki kirilimli kalem kartinin "bu katta / toplam" rozeti (ya da karta cift tik) kalemin bu kattaki kodlarini kotlarina gore kilcal olarak dallandirir · kod rengi siparislerdeki alim (yesil alindi, turuncu kismi, gri yok)<br>
@@ -32666,6 +32803,11 @@ function upsertMaterialsFromRows(rows, report){
   const iTags=pick('etiket','etiketler','tags','tag');
   const iAltCodes=esKodSutunu(pick);
   const iPiyasa=pick('piyasa adlari','piyasa adi','piyasa ismi','piyasa','market adi');
+  /* BARKOD + RESMI ADLAR (7 Kas): kunye Excel'i ikisini de yaziyordu ama bu okuyucu okumuyordu -
+     dosyada duzenlenen barkod / resmi ad yuklemede sessizce yok sayiliyordu. Sutun adlari Toplu
+     Ekleme okuyucusuyla ayni (bkz. topmExcelDosya). */
+  const iBarkod=pick('barkod','barcode','bar kod','barkod no');
+  const iResmi=pick('resmi adlar','resmi ad','resmi adi','resmi isim','official names','official name');
   const iProje=pick('proje','project');
   const iImg=pick('image_url','imageurl','resim linki','resim_linki','resim url','resim_url','resim','foto linki','foto_linki','fotograf linki','fotograf_linki','fotograf url','fotograf','foto','photo url','photo_url','photo','image','gorsel','gorsel linki','gorsel url');
   const iImg2=pick('resim linki 2','resim_linki_2','resim url 2','fotograf linki 2','fotograf 2','image_url_2','image2','photo2','photo_url_2');
@@ -32677,7 +32819,11 @@ function upsertMaterialsFromRows(rows, report){
   for(let r=h+1;r<rows.length;r++){
     const row=rows[r]; if(!row || row.every(c=>String(c).trim()==='')) continue;
     const code=_crTemiz(row[iCode]).trim();
-    const name=_crTemiz(row[iName]).trim();
+    /* Resmi ad parcalari piyasa hucresiyle ayni bicimde ("RU: ... | EN: ..."). Malzeme Ismi
+       bossa parcalardan " / " ile kurulur; doluysa Malzeme Ismi kimlik olarak kalir, parcalar
+       yanina yazilir (bkz. KUNYE_SUTUN "Resmi Adlar"). */
+    const resmi=iResmi>=0?resmiTemiz(parsePiyasaCell(_crTemiz(row[iResmi]))):[];
+    const name=_crTemiz(row[iName]).trim()||resmiAdKur(resmi);
     if(!code && !name) continue;
     // sablon aciklama satirini atla
     if(/^(REQUIRED|optional|REQ|blank|ZORUNLU|ops)/i.test(code)) continue;
@@ -32696,6 +32842,7 @@ function upsertMaterialsFromRows(rows, report){
       continue;
     }
     const brand=iBrand>=0?_crTemiz(row[iBrand]).trim():'';
+    const barkod=iBarkod>=0?_crTemiz(row[iBarkod]).trim():'';
     const cat=iCat>=0?_crTemiz(row[iCat]).trim():'';
     const unit=iUnit>=0?_crTemiz(row[iUnit]).trim():'';
     const note=iNote>=0?_crTemiz(row[iNote]).trim():'';
@@ -32721,6 +32868,12 @@ function upsertMaterialsFromRows(rows, report){
          "temizle" emridir: oteki alanlarin aksine marka bilerek bosaltilabilmeli. */
       existing.name=name||existing.name; if(iBrand>=0)existing.brand=brand; if(cat)existing.cat=cat; if(unit)existing.unit=unit; if(note!=='')existing.note=note; if(note2!=='')existing.note2=note2; if(img)existing.img=img; if(img2)existing.img2=img2;
       if(standart!=='')existing.standart=standart; if(weight!=null)existing.weight=weight; if(tags.length)existing.tags=tags; if(altCodes.length){ existing.altCodes=altCodes; esKodTabloEsitle(existing); } if(proje!=='')existing.proje=proje; if(piyasa.length)existing.piyasa=piyasa;
+      if(barkod!=='')existing.barkod=barkod;
+      /* Resmi ad: disa aktarma kayitsiz urunde addan TURETILMIS parcalari yazar (matResmi).
+         Dokunulmamis dosya geri yuklenince o turetme kayda islenmesin - toplu turetme
+         bilerek yapilmiyor (bkz. RESMI AD PARCALARI). Yalnizca gorunen parcalardan
+         AYRILAN hucre yazilir. */
+      if(resmi.length&&JSON.stringify(resmi)!==JSON.stringify(resmiTemiz(matResmi(existing))))existing.resmi=resmi;
       if(JSON.stringify(existing)!==oncesi){ existing.updatedAt=Date.now(); report.matUpdated++; }
       /* Spec senkronu malzeme degismese de calisir: kalem satiri baska bir yoldan kaymis
          olabilir. Bosuna yazma riski yok - disaridaki fark suzgeci neyin yazilacagina karar verir.
@@ -32731,7 +32884,7 @@ function upsertMaterialsFromRows(rows, report){
       dosyaIds.add(existing.id);
     } else { // INSERT
       const now=Date.now();
-      const yeniM={id:uid(),code,name:name||code,piyasa,brand,unit,cat,note,note2,img:img||null,img2:img2||null,standart,weight,tags,altCodes,proje,createdAt:now,updatedAt:now};
+      const yeniM={id:uid(),code,name:name||code,resmi,piyasa,barkod,brand,unit,cat,note,note2,img:img||null,img2:img2||null,standart,weight,tags,altCodes,proje,createdAt:now,updatedAt:now};
       DB.proje.materials.push(yeniM); report.matCreated++;
       if(vaS.ad>=0) vaSat.push({x:yeniM,ad:_crTemiz(row[vaS.ad]),deg:vaS.deg>=0?_crTemiz(row[vaS.deg]):'',etiket:'Malzeme satir '+(r+1)});
       dosyaIds.add(yeniM.id);
@@ -43648,7 +43801,7 @@ function mkrGenelUygula(){
   const birak=k=>{ if(k.isConnected) mkrGenelSok(k); k._mkrGImza=''; _mkrGKokler.delete(k); };
   _mkrGKokler.forEach(k=>{ if(!kok.has(k)||!k.isConnected) birak(k); });
   kok.forEach((qs,k)=>{
-    if(k.querySelector('mark.mkr:not(.mkr-g),.mkr-iz')){ if(_mkrGKokler.has(k)) birak(k); return; }   // elle bagli ekran
+    if(k.querySelector('mark.mkr:not(.mkr-g):not(.fw-mk),.mkr-iz')){ if(_mkrGKokler.has(k)) birak(k); return; }   // elle bagli ekran
     const imza=JSON.stringify(qs);
     if(k._mkrGImza!==imza){ mkrGenelSok(k); k._mkrGImza=imza; mkrGenelYuru(k,qs,imza); }   // yeni sorgu: bastan
     else yeni.forEach(n=>{   // ayni sorgu: yalnizca yeni gelenler
