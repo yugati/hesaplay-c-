@@ -2138,6 +2138,22 @@ tr.specfg-haserr td{background:rgba(239,68,68,.05)}
 .kp-oda .kp-kod{font-family:var(--mono);font-size:9.5px;font-weight:700;color:var(--ink);white-space:nowrap}
 .kp-oda .kp-ad{font-size:11px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .kp-oda .kp-alan{font-size:9.5px;color:var(--mute);font-family:var(--mono)}
+.kp-oda>span{position:relative}
+.kp-oda .kp-yazi{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;text-align:center;gap:1px;max-width:92%;pointer-events:none}
+.kp-canvas.uzak .kp-oda .kp-yazi{visibility:hidden}
+.kp-oda.sekil{border-color:transparent;background:none;border-radius:0}
+.kp-oda .kp-sekil{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.kp-oda .kp-sekil polygon{fill:color-mix(in srgb,var(--cc,var(--blue)) 16%,transparent);stroke:var(--cc,var(--blue));stroke-width:1.5;stroke-linejoin:round;vector-effect:non-scaling-stroke;transition:fill .12s,stroke .12s}
+.kp-oda.sekil:hover{border-color:transparent;background:none}
+.kp-oda.sekil:hover .kp-sekil polygon{fill:color-mix(in srgb,var(--cc,var(--blue)) 26%,transparent);stroke:var(--ink)}
+.kp-oda.sekil.sel{border-color:transparent;box-shadow:none}
+.kp-oda.sekil.sel .kp-sekil polygon{stroke:var(--amber);stroke-width:3}
+.kp-oda.sekil.yok .kp-sekil polygon{stroke-dasharray:4 3;stroke:color-mix(in srgb,var(--mute) 55%,transparent);fill:color-mix(in srgb,var(--mute) 5%,transparent)}
+.kp-oda.sekil.grid .kp-sekil polygon{fill:color-mix(in srgb,var(--amber) 14%,var(--panel))}
+.kp-canvas.uzak .kp-oda.sekil{background:none}
+.kp-canvas.uzak .kp-oda.sekil .kp-sekil{visibility:visible}
+.kp-canvas.uzak .kp-oda.sekil .kp-sekil polygon{fill:color-mix(in srgb,var(--cc,var(--blue)) 40%,transparent)}
+.kp-canvas.uzak .kp-oda.sekil.yok .kp-sekil polygon{fill:color-mix(in srgb,var(--mute) 10%,transparent)}
 .kp-oda .kp-tut{position:absolute;right:0;bottom:0;width:11px;height:11px;cursor:nwse-resize;background:linear-gradient(135deg,transparent 50%,var(--cc,var(--blue)) 50%);opacity:0;border-radius:0 0 4px 0}
 .kp-oda:hover .kp-tut,.kp-oda.sel .kp-tut{opacity:.8}
 .kp-canvas.uzak .kp-oda>*{visibility:hidden}
@@ -24097,7 +24113,9 @@ function kpLayout(){
   if(!L.P&&KP.ref){ for(let i=1;i<=kpKatSayisi(b);i++){ if(i===k||!kpDosya(b,i)) continue; const Vi=kpVeri(b,i); if(Vi&&!Vi.hata){ L.P=Vi; L.ref=true; L.refKat=i; break; } } }
   const P=L.P, off=kpOff(), byNo=new Map();
   (P?P.oda||[]:[]).forEach(o=>{ const p=kpKodParse(o.kod); if(p&&!byNo.has(p.no)) byNo.set(p.no,o); });
-  const kutu=o=>({x:o.x*KP_PX,y:o.y*KP_PX,w:Math.max(36,o.w*KP_PX),h:Math.max(22,o.h*KP_PX)});
+  // kutu = cizimdeki oda sinirinin kapsayan dikdortgeni; oda L / T bicimliyse 'p' kapsayana gore 0..1 normalize cokgen
+  const kutu=o=>{ const w=Math.max(36,o.w*KP_PX), h=Math.max(22,o.h*KP_PX);
+    return {x:o.x*KP_PX,y:o.y*KP_PX,w,h,tx:o.lx!=null&&o.w>0?Math.min(.95,Math.max(.05,(o.lx-o.x)/o.w)):null,ty:o.ly!=null&&o.h>0?Math.min(.95,Math.max(.05,(o.ly-o.y)/o.h)):null,p:Array.isArray(o.p)&&o.p.length>=3&&o.w>0&&o.h>0?o.p.map(q=>[Math.min(1,Math.max(0,(q[0]-o.x)/o.w)),Math.min(1,Math.max(0,(q[1]-o.y)/o.h))]):null}; };
   const used=new Set(), bos=[];
   const odalar=binaLoklar(b).filter(l=>l.level==='oda'&&kpOdaKat(l,b)===k)
     .sort((a,c)=>(a.name||'').localeCompare(c.name||'','tr',{numeric:true}));
@@ -24133,8 +24151,18 @@ function kpTuvalHtml(L){
   s+=L.nodes.map(n=>{
     const ad=n.l?lokKullanim(n.l):'', alan=n.l&&n.l.alan!=null&&n.l.alan!==''?lokAlanTxt(n.l.alan)+' m²':'';
     const tt=n.yok?'Cizimde var, lokasyon agacinda bu kodla oda yok':n.grid?'Agacta var, cizimde yeri yok - surukleyip plana oturtabilirsiniz':n.tahmin?'Referans plandaki ayni numarali odanin yeri (tahmini)':'';
-    return `<div class="kp-oda${n.yok?' yok':''}${n.tahmin?' tahmin':''}${n.grid?' grid':''}${KP.sel===n.k?' sel':''}" data-k="${esc(n.k)}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:${kpOdaRenk(n)}" title="${esc(tt)}">
-      <span class="kp-kod">${esc(n.kod)}</span>${ad?`<span class="kp-ad">${esc(ad)}</span>`:''}${alan?`<span class="kp-alan">${esc(alan)}</span>`:''}<i class="kp-tut" title="Boyutlandir"></i></div>`;
+    // cokgen oda: kutu seffaf, sekil icerideki SVG ile cizilir; clip-path tiklamayi da sekle sinirlar
+    // (L odanin bos kosesine tiklayinca alttaki oda secilir). Tutamac sekle en sag-alt kosede.
+    let sekil='', klip='', tutStil='';
+    if(n.p){
+      const pts=n.p.map(q=>q[0].toFixed(3)+','+q[1].toFixed(3)).join(' ');
+      sekil=`<svg class="kp-sekil" viewBox="0 0 1 1" preserveAspectRatio="none"><polygon points="${pts}"/></svg>`;
+      klip=`clip-path:polygon(${n.p.map(q=>(q[0]*100).toFixed(2)+'% '+(q[1]*100).toFixed(2)+'%').join(',')});`;
+      const k=n.p.reduce((m,q)=>q[0]+q[1]>m[0]+m[1]?q:m,n.p[0]);
+      tutStil=` style="left:${(k[0]*100).toFixed(2)}%;top:${(k[1]*100).toFixed(2)}%;right:auto;bottom:auto;transform:translate(-100%,-100%)"`;
+    }
+    return `<div class="kp-oda${n.p?' sekil':''}${n.yok?' yok':''}${n.tahmin?' tahmin':''}${n.grid?' grid':''}${KP.sel===n.k?' sel':''}" data-k="${esc(n.k)}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px;--cc:${kpOdaRenk(n)};${klip}" title="${esc(tt)}">${sekil}
+      ${n.p&&n.tx!=null?`<div class="kp-yazi" style="left:${(n.tx*100).toFixed(2)}%;top:${(n.ty*100).toFixed(2)}%">`:''}<span class="kp-kod">${esc(n.kod)}</span>${ad?`<span class="kp-ad">${esc(ad)}</span>`:''}${alan?`<span class="kp-alan">${esc(alan)}</span>`:''}${n.p&&n.tx!=null?'</div>':''}<i class="kp-tut" title="Boyutlandir"${tutStil}></i></div>`;
   }).join('');
   return s;
 }
