@@ -2734,7 +2734,12 @@ body:has(.fwm-sheet-bg){overflow:hidden}
 .def-sec-x{flex:0 0 auto;width:17px;height:17px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;color:var(--mute);font-size:15px;line-height:1;opacity:0;transition:opacity .15s,background .15s,color .15s}
 .def-sec-item:hover .def-sec-x,.def-sec-item.on .def-sec-x{opacity:.5}
 .def-sec-x:hover{opacity:1;background:color-mix(in srgb,var(--red) 20%,transparent);color:var(--red)}
-@media(hover:none){.def-sec-x{opacity:.5}}
+/* kalem: bolumu yeniden adlandir - silme carpisiyla ayni yerde, ayni gorunurluk kurali */
+.def-sec-ed{flex:0 0 auto;width:17px;height:17px;border-radius:5px;display:inline-flex;align-items:center;justify-content:center;color:var(--mute);opacity:0;transition:opacity .15s,background .15s,color .15s}
+.def-sec-ed svg{width:11px;height:11px}
+.def-sec-item:hover .def-sec-ed,.def-sec-item.on .def-sec-ed{opacity:.5}
+.def-sec-ed:hover{opacity:1;background:color-mix(in srgb,var(--amber) 20%,transparent);color:var(--amber)}
+@media(hover:none){.def-sec-x,.def-sec-ed{opacity:.5}}
 .srt-none{background:var(--panel);border:1px dashed var(--line);border-radius:12px;padding:36px 16px;text-align:center;color:var(--mute);font-size:13px}
 /* dar ekranda tek sutun: liste yeniden yatay kutucuklara doner */
 @media(max-width:900px){
@@ -17041,6 +17046,7 @@ function renderDefinitions(){
       <span class="def-sec-dot" style="background:${cc}"></span>
       <span class="def-sec-nm">${esc(s)}</span>
       <span class="def-sec-ct">${cnt}</span>
+      <span class="def-sec-ed" onclick="event.stopPropagation();openSectionRenameModal('${esc(s)}')" title="Bolumu yeniden adlandir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></span>
       <span class="def-sec-x" onclick="event.stopPropagation();delSection('${esc(s)}')" title="Bolumu sil">×</span></button>`;
   });
   // secili bolumun sartnameleri (bina bazli) - DEFF filtreleri uygulanir
@@ -17209,6 +17215,56 @@ async function addSection(){ if(!guard('define'))return; const v=prompt("Yeni bo
   await sbInsertProjeSection(s);
   logAction('define','Bolum eklendi: '+s);
   DB.proje.sections.push(s); DEF_SEC=s; render(); toast("Bolum eklendi");
+}
+/* BOLUM YENIDEN ADLANDIRMA: bolum adi ayri bir kimlik degil, dogrudan metin olarak
+   sartname (section), sartname kalemi (cat), stok/hareket kalemi (cat), kutuphane
+   malzemesi (cat) ve Saha Kaydi baslik-bolum baglarinda (skAyar.bag) gecer - bina
+   adindaki kalipla hepsi tek islemde yeni ada cevrilir, gecmis kaybolmaz. */
+function openSectionRenameModal(s){
+  if(!guard('define'))return;
+  const nSart=(DB.proje.sartnames||[]).filter(x=>x.section===s).length;
+  const nSpec=(DB.proje.specs||[]).filter(x=>x.cat===s).length;
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal"><div class="modal-head"><h3>Bolumu Yeniden Adlandir</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
+    <p class="t-meta" style="margin-bottom:10px;line-height:1.5">Bu bolume bagli ${nSart} sartname, ${nSpec} sartname kalemi ile stok hareketi, kutuphane kategorisi ve Saha Kaydi baglari yeni adla guncellenir. Gecmis kayitlar kaybolmaz.</p>
+    <div class="frow"><label>Yeni Bolum Adi *</label><input id="rs_ad" value="${esc(s)}" placeholder="orn. Kablolama"></div>
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveSectionRename('${esc(s)}')">Kaydet</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+  setTimeout(()=>{ const el=document.getElementById('rs_ad'); if(el){el.focus(); el.select();} },50);
+}
+async function saveSectionRename(oldName){
+  const el=document.getElementById('rs_ad'); if(!el)return;
+  const newName=el.value.trim();
+  if(!newName){ toast('Bolum adi zorunlu','err'); return; }
+  if(newName===oldName){ closeModal(); return; }
+  if((DB.proje.sections||[]).some(x=>x!==oldName&&norm(x)===norm(newName))){ toast('Bu isimde baska bir bolum zaten var','err'); return; }
+  const sarts=(DB.proje.sartnames||[]).filter(x=>x.section===oldName);
+  const specs=(DB.proje.specs||[]).filter(x=>x.cat===oldName);
+  const items=(DB.proje.items||[]).filter(x=>x.cat===oldName);
+  const mats=(DB.proje.materials||[]).filter(x=>x.cat===oldName);
+  // Saha Kaydi: baslik -> bolum baglarinin degerleri bolum adidir
+  const ska=skAyar(); let skaYeni=null;
+  if(Object.values(ska.bag).some(v=>v===oldName)){
+    skaYeni={bag:Object.fromEntries(Object.entries(ska.bag).map(([k,v])=>[k,v===oldName?newName:v])),binaGeneli:ska.binaGeneli}; }
+  sarts.forEach(x=>x.section=newName);
+  specs.forEach(x=>x.cat=newName);
+  items.forEach(x=>x.cat=newName);
+  mats.forEach(x=>x.cat=newName);
+  const idx=(DB.proje.sections||[]).indexOf(oldName); if(idx>=0) DB.proje.sections[idx]=newName;
+  if(skaYeni){ if(!DB.meta) DB.meta={}; DB.meta[SK_AYAR]=skaYeni; }
+  try{
+    await Promise.all([
+      sbRenameProjeSection(oldName,newName),
+      ...sarts.map(x=>sbUpdateProjeSartname(x.id,{...x})),
+      ...specs.map(x=>sbUpdateProjeSpec(x.id,{...x})),
+      ...items.map(x=>sbUpdateProjeItem(x.id,{...x})),
+      ...mats.map(x=>sbUpdateProjeMaterial(x.id,{...x})),
+      ...(skaYeni?[sbSetSetting(SK_AYAR,skaYeni)]:[])
+    ]);
+  }catch(e){ toast('Bazi kayitlar guncellenemedi: '+(e.message||'Hata'),'err'); }
+  if(DEF_SEC===oldName) DEF_SEC=newName;
+  if(PCAT===oldName) PCAT=newName;
+  logAction('define','Bolum yeniden adlandirildi: '+oldName+' -> '+newName+' ('+sarts.length+' sartname, '+specs.length+' kalem)');
+  closeModal(); render(); toast('Bolum yeniden adlandirildi: '+newName);
 }
 async function delSection(s){ if(!guard('define'))return;
   const used=DB.proje.specs.filter(sp=>sp.cat===s).length;

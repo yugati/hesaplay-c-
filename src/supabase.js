@@ -927,6 +927,11 @@ export async function sbRenameProjeBuilding(oldCode, newCode) {
   await veri({ op: 'update', table: 'proje_buildings', eq: { col: 'code', val: oldCode }, patch: { code: newCode } })
 }
 
+// name kolonu bolumun kendisi (ayri id yok) - bina ile ayni kalip: satir silinmez, sort_order korunur
+export async function sbRenameProjeSection(oldName, newName) {
+  await veri({ op: 'update', table: 'proje_sections', eq: { col: 'name', val: oldName }, patch: { name: newName } })
+}
+
 export async function sbGetProjeSections() {
   const rows = await veriSelect('proje_sections', { columns: 'name', order: SIRA_BINA })
   return (rows || []).map(r => r.name)

@@ -132,6 +132,7 @@ import {
   sbGetProjeSections,
   sbInsertProjeSection,
   sbInsertProjeSections,
+  sbRenameProjeSection,
   sbDeleteProjeSection,
   sbGetProjeSartnames,
   sbInsertProjeSartname,
@@ -421,6 +422,7 @@ window.sbDeleteProjeBuilding   = guardedSafe('tanimlar', 'delete', sbDeleteProje
 window.sbRenameProjeBuilding   = guardedSafe('tanimlar', 'update', sbRenameProjeBuilding)
 window.sbGetProjeSections      = sbGetProjeSections
 window.sbInsertProjeSection    = guardedSafe('tanimlar', 'create', sbInsertProjeSection)
+window.sbRenameProjeSection    = guardedSafe('tanimlar', 'update', sbRenameProjeSection)
 window.sbInsertProjeSections   = guardedSafe('tanimlar', 'create', sbInsertProjeSections)
 window.sbDeleteProjeSection    = guardedSafe('tanimlar', 'delete', sbDeleteProjeSection)
 window.sbGetProjeSartnames     = sbGetProjeSartnames
