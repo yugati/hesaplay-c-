@@ -49549,8 +49549,30 @@ function renderIhtiyacList(){
 /* ---------- DETAY (salt okuma) ----------
    Duzenleme yetkisi olmayan kullanici da (izleyici) listenin icini gorebilmeli;
    duzenleyen icin de formu acmadan hizli bakis. */
+/* Detay modalinda onceki/sonraki gecisi: sira, ekrandaki tabloyla AYNI olmali
+   (ayni siralama + ayni filtreler). Acilan liste filtreye takiliyorsa tum kayitlar uzerinden gezilir. */
+function ihtDetaySira(id){
+  const all=(DB.ihtiyaclar||[]).slice().sort((a,b)=>(b.tarih||0)-(a.tarih||0));
+  const list=all.filter(x=>ihtBinaEsler(x,IHTV.bina)&&ihtAramaEsler(x,IHTV.q)&&(!IHTV.durum||ihtDurumu(x)===IHTV.durum));
+  return list.some(x=>x.id===id)?list:all;
+}
+function ihtDetayGec(yon){
+  const m=document.getElementById('ihtDetayModal'); if(!m) return;
+  const sira=ihtDetaySira(m.dataset.id), i=sira.findIndex(x=>x.id===m.dataset.id), hedef=sira[i+yon];
+  if(i<0||!hedef) return;
+  openIhtiyacDetay(hedef.id);
+}
+document.addEventListener('keydown',e=>{
+  if(e.key!=='ArrowLeft'&&e.key!=='ArrowRight') return;
+  if(!document.getElementById('ihtDetayModal')) return;
+  if(/^(INPUT|TEXTAREA|SELECT)$/.test((e.target&&e.target.tagName)||'')) return;
+  e.preventDefault(); ihtDetayGec(e.key==='ArrowLeft'?-1:1);
+});
 function openIhtiyacDetay(id){
   const x=(DB.ihtiyaclar||[]).find(y=>y.id===id); if(!x){ toast('Ihtiyac listesi bulunamadi','err'); return; }
+  const eskiModal=document.getElementById('ihtDetayModal'); if(eskiModal) eskiModal.remove();
+  const sira=ihtDetaySira(id), sIdx=sira.findIndex(y=>y.id===id);
+  const okBtn=(yon,pasif)=>`<button class="mini-btn" ${pasif?'disabled style="opacity:.35;cursor:default"':''} title="${yon<0?'Onceki liste (sol ok tusu)':'Sonraki liste (sag ok tusu)'}" onclick="ihtDetayGec(${yon})"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="${yon<0?'M15 18l-6-6 6-6':'M9 18l6-6-6-6'}"/></svg></button>`;
   const ls=ihtFilledLines(x), tt=ihtTotals(x);
   const satirlar=ls.length?ls.map((l,i)=>`<tr>
       <td class="tl-no">${i+1}</td>
@@ -49561,8 +49583,11 @@ function openIhtiyacDetay(id){
     </tr>`).join('')
     :`<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--mute);font-size:12.5px">Bu listede dolu satir yok</td></tr>`;
   document.body.insertAdjacentHTML('beforeend',
-    `<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:780px">
-      <div class="modal-head"><h3>${esc(ihtAdGoster(x))}</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
+    `<div class="modal-bg" id="ihtDetayModal" data-id="${esc(x.id)}" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:780px">
+      <div class="modal-head"><h3 style="flex:1;min-width:0">${esc(ihtAdGoster(x))}</h3>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+          ${okBtn(-1,sIdx<=0)}<span class="t-meta" style="font-family:var(--mono);font-size:11.5px;white-space:nowrap">${sIdx+1} / ${sira.length}</span>${okBtn(1,sIdx>=sira.length-1)}
+          <button class="mini-btn" style="margin-left:6px" onclick="closeModal()">x</button></div></div>
       <div class="modal-body">
         <p class="t-meta" style="margin-bottom:12px">${esc(fmtDate(x.tarih))}${ihtIstenenFirmaAd(x)?' · Istenen: '+esc(ihtIstenenFirmaAd(x)):''}${x.bina?' · '+esc(x.bina):''}${ihtSartlar(x).length?' · '+esc(ihtSartlar(x).join(', ')):''} · ${fmtNum(tt.kalem)} kalem · toplam ${fmtNum(tt.miktar)}${
           tt.eksik?` · <span class="iht-uyari">&#9888; ${fmtNum(tt.eksik)} satirda bina/kat yok</span>`:''}</p>
