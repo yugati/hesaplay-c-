@@ -3162,6 +3162,9 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .order-urunler{font-size:12px;color:var(--mute);margin-bottom:10px;line-height:1.4;min-height:16px}
 .order-foot{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--text);border-top:1px solid var(--line);padding-top:9px}
 .order-open{color:#a855f7;font-weight:600;display:flex;align-items:center;gap:2px}
+.order-newtab{background:none;border:1px solid transparent;color:var(--mute);border-radius:6px;padding:2px 4px;margin-right:6px;line-height:0;cursor:pointer;opacity:.55;transition:.15s}
+.order-card:hover .order-newtab{opacity:1}
+.order-newtab:hover{color:#a855f7;border-color:#a855f755;background:#a855f714}
 /* fatura gorunumu */
 /* Fatura / Siparis Detayi - profesyonel yerlesim: bilgiler etiketli hucre gridinde,
    kalem tablosu SABIT sutun genislikli (table-layout:fixed) - uzun malzeme adi/spek kodu
@@ -8350,6 +8353,7 @@ async function afterLogin(user, token, remember, opts){
   }
   showAppFade();
   startClock(); applyUserChrome(); render(); tasariKonumKontrol();
+  hashSiparisAc();
   /* KISI DIZINI ARKADAN GELIR - acilisi BEKLETMEZ. Yalnizca gosterim icin
      ("olusturan kisi" adlari); geldiginde ekran bir kez tazelenir. Await
      edilseydi her acilisa gereksiz bir tur eklenirdi. */
@@ -8861,6 +8865,7 @@ document.addEventListener('DOMContentLoaded', async function(){
     hideLoading();
     showAppFade();
     startClock(); applyUserChrome(); render(); tasariKonumKontrol();
+    hashSiparisAc(); // #siparis=<id> ile acilan sekme: belge tam sayfa gelir
   /* KISI DIZINI ARKADAN GELIR - acilisi BEKLETMEZ. Yalnizca gosterim icin
      ("olusturan kisi" adlari); geldiginde ekran bir kez tazelenir. Await
      edilseydi her acilisa gereksiz bir tur eklenirdi. */
@@ -15831,7 +15836,7 @@ function renderAllOrders(){
       const notIz=(MKR.acik&&SEARCH&&![o.no,o.bina,o.grup,orderCompany(o),...(o.lines||[]).flatMap(l=>[l.ad,l.code])].some(x=>markVarMi(x,SEARCH)))
         ?markGizliIz([['Not',orderNotlar(o).map(nt=>nt.text||'')]],SEARCH):'';
       const badges=[atamaBadge(o),irsaliyeBadge(o),imzaWarnBadge(o),iadeBadge(o),notBadge(o)].join('');
-      cards+=`<div class="order-card" onclick="openOrderDetail('${o.id}')">
+      cards+=`<div class="order-card" onclick="orderCardClick(event,'${o.id}')" onauxclick="orderCardAux(event,'${o.id}')">
         <div class="order-card-head">
           <div class="order-badges">${badges}</div>
           <span class="order-date">${fmtDate(o.date)}</span>
@@ -15847,7 +15852,7 @@ function renderAllOrders(){
           ${tagRozet}
         </div>
         <div class="order-urunler">${urunOzet}</div>${notIz}
-        <div class="order-foot"><span>${(o.lines||[]).length} kalem · ${fmtNum(qty)} birim</span><span class="order-open">Detay ${icoChevron()}</span></div>
+        <div class="order-foot"><span>${(o.lines||[]).length} kalem · ${fmtNum(qty)} birim</span><span class="order-open"><button type="button" class="order-newtab" onclick="event.stopPropagation();orderYeniSekme('${o.id}')" title="Yeni sekmede ac (orta tus ya da Ctrl+tik da acar)">${icoNewTab()}</button>Detay ${icoChevron()}</span></div>
       </div>`;
     });
     cards=`<div class="order-grid">${cards}</div>`;
@@ -15912,7 +15917,7 @@ function renderBorclar(tabs){
     list.forEach(({o,z})=>{
       const col=buildingColor(o.bina);
       const ozet=(o.lines||[]).slice(0,3).map(l=>markIsaret(String(l.ad||'').split('/').pop().trim(),SEARCH)).join(', ')+((o.lines||[]).length>3?` +${(o.lines||[]).length-3} urun`:'');
-      cards+=`<div class="order-card" onclick="openOrderDetail('${o.id}')">
+      cards+=`<div class="order-card" onclick="orderCardClick(event,'${o.id}')" onauxclick="orderCardAux(event,'${o.id}')">
         <div class="order-card-head">
           <div class="order-badges">${[borcBadge(o),irsaliyeBadge(o),imzaWarnBadge(o),notBadge(o)].join('')}</div>
           <span class="order-date">${fmtDate(o.date)}</span>
@@ -15923,7 +15928,7 @@ function renderBorclar(tabs){
           ${orderCompany(o)?`<span class="cat-tag" style="background:#a855f722;color:#a855f7" title="Borc alinan firma: ${esc(orderCompany(o))}">${markIsaret(orderCompanyKisa(o),SEARCH)}</span>`:''}
         </div>
         <div class="order-urunler">${ozet}</div>
-        <div class="order-foot"><span>Borc ${fmtNum(z.borc)} · geri ${fmtNum(z.geri)} · <b style="color:${z.kalan>0?'var(--amber)':'var(--green)'}">kalan ${fmtNum(z.kalan)}</b></span><span class="order-open">Detay ${icoChevron()}</span></div>
+        <div class="order-foot"><span>Borc ${fmtNum(z.borc)} · geri ${fmtNum(z.geri)} · <b style="color:${z.kalan>0?'var(--amber)':'var(--green)'}">kalan ${fmtNum(z.kalan)}</b></span><span class="order-open"><button type="button" class="order-newtab" onclick="event.stopPropagation();orderYeniSekme('${o.id}')" title="Yeni sekmede ac (orta tus ya da Ctrl+tik da acar)">${icoNewTab()}</button>Detay ${icoChevron()}</span></div>
       </div>`;
     });
     cards=`<div class="order-grid">${cards}</div>`;
@@ -34766,7 +34771,7 @@ function renderProjeOrders(){
       const col=buildingColor(o.bina);
       const urunOzet=o.lines.slice(0,3).map(l=>esc(l.ad.split('/').pop().trim())).join(', ')+(o.lines.length>3?` +${o.lines.length-3} urun`:'');
       const badges=[atamaBadge(o),irsaliyeBadge(o),imzaWarnBadge(o),iadeBadge(o),notBadge(o)].join('');
-      cards+=`<div class="order-card" onclick="openOrderDetail('${o.id}')">
+      cards+=`<div class="order-card" onclick="orderCardClick(event,'${o.id}')" onauxclick="orderCardAux(event,'${o.id}')">
         <div class="order-card-head">
           <div class="order-badges">${badges}</div>
           <span class="order-date">${fmtDate(o.date)}</span>
@@ -34781,7 +34786,7 @@ function renderProjeOrders(){
           ${orderCompany(o)?`<span class="cat-tag" style="background:#a855f722;color:#a855f7" title="${esc(orderCompany(o))}">${esc(orderCompanyKisa(o))}</span>`:''}
         </div>
         <div class="order-urunler">${urunOzet}</div>
-        <div class="order-foot"><span>${o.lines.length} kalem · ${fmtNum(qty)} birim</span><span class="order-open">Detay ${icoChevron()}</span></div>
+        <div class="order-foot"><span>${o.lines.length} kalem · ${fmtNum(qty)} birim</span><span class="order-open"><button type="button" class="order-newtab" onclick="event.stopPropagation();orderYeniSekme('${o.id}')" title="Yeni sekmede ac (orta tus ya da Ctrl+tik da acar)">${icoNewTab()}</button>Detay ${icoChevron()}</span></div>
       </div>`;
     });
     cards=`<div class="order-grid">${cards}</div>`;
@@ -34980,6 +34985,7 @@ function orderActionsHtml(o,sayfada){
   const borc=borcMu(o), borcKalan=borc&&borcOzet(o).kalan>0;
   return `${o.pdf?`<button class="btn btn-ghost" onclick="openProjeOrderPdf('${o.id}')" title="${esc(o.pdf.name||'belge')} - yeni sekmede acilir">${icoDoc()} ${borc?'Belge PDF':'Siparis PDF'}</button>`:''}
       ${o.pdf&&o.pdf.path?`<button class="btn btn-ghost" onclick="belgePaylasAc('${o.id}')" title="Hesabi olmayan kisiye gonderilebilecek link uretir">${icoShare()} Paylas</button>`:''}
+      <button class="btn btn-ghost" onclick="orderYeniSekme('${o.id}')" title="Bu belgeyi ayri sekmede ac - liste bu sekmede kalir">${icoNewTab()} Yeni Sekme</button>
       <button class="btn btn-ghost" style="${sayfada?'':'margin-right:auto;'}border-color:var(--red)55;color:var(--red)" onclick="delProjeOrder('${o.id}')">${icoTrash()} ${borc?'Borcu Sil':'Siparisi Sil'}</button>
       ${!borc&&can('order',{bina:o.bina})?`<button class="btn btn-ghost" style="border-color:var(--amber)55;color:var(--amber)" onclick="openIadeModal('${o.id}')" title="Bu siparisin bir kismini ya da tamamini tedarikciye geri gonderin - iade edilen miktar alim ve ilerleme sayilarindan dusulur">${icoArr('up')} Iade Olustur</button>`:''}
       ${borcKalan&&can('order',{bina:o.bina})?`<button class="btn btn-ghost" style="border-color:var(--grid);color:var(--grid)" onclick="openBorcGeriModal('${o.id}')" title="Odunc alinan malzemenin aynisini geri verin - borcun kalani duser; stok, alim ve ilerleme degismez">${icoArr('up')} Geri Ver</button>`:''}
@@ -34990,12 +34996,38 @@ function orderActionsHtml(o,sayfada){
    fatura genis calisma alaninda acilir - Kat Ata / Oda Metraji sayfalariyla ayni desen.
    Baglam _INV'de durur; siparis silinirse sayfa kendiliginden dusulur (render icinde). */
 let _INV=null;
+/* YENI SEKMEDE ACMA: siparis/borc detayi adres cubugundan acilabilir -> #siparis=<id>.
+   Uygulama tek sayfadir; yeni sekme acilista oturumu ve veriyi normal yoldan yukler,
+   sonra hashSiparisAc() adresteki siparisi TAM SAYFA (openOrderPage) acar. Kartlarda
+   orta tus / Ctrl+tik / kucuk dugme, detayda "Yeni Sekme" dugmesi ayni adresi uretir.
+   Sayfa kapatilinca (Geri Don) hash temizlenir ki yenilemede ayni belge tekrar acilmasin. */
+function icoNewTab(){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6"/><path d="M10 14L21 3"/></svg>'; }
+function orderUrl(id){ return location.origin+location.pathname+location.search+'#siparis='+encodeURIComponent(id); }
+function orderYeniSekme(id){
+  if(!orderBul(id)) return;
+  const w=window.open(orderUrl(id),'_blank');
+  if(!w) toast('Tarayici yeni sekmeyi engelledi - bu site icin acilir pencereye izin verin','err');
+}
+function orderCardClick(e,id){
+  if(e&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); orderYeniSekme(id); return; }
+  openOrderDetail(id);
+}
+function orderCardAux(e,id){ if(e&&e.button===1){ e.preventDefault(); orderYeniSekme(id); } }
+function hashSiparisId(){ const m=/[#&]siparis=([^&]+)/.exec(location.hash||''); return m?decodeURIComponent(m[1]):''; }
+function hashSiparisAc(){
+  const id=hashSiparisId(); if(!id) return false;
+  if(!canSeeOrders()){ toast('Bu siparisi gormek icin yetkiniz yok','err'); return false; }
+  if(!orderBul(id)){ toast('Adresteki siparis bulunamadi - silinmis olabilir','err'); hashSiparisTemizle(); return false; }
+  openOrderPage(id); return true;
+}
+function hashSiparisTemizle(){ if(hashSiparisId()){ try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){} } }
+window.addEventListener('hashchange',()=>{ if(DB&&hashSiparisId()) hashSiparisAc(); });
 function openOrderPage(id){
   const o=orderBul(id); if(!o)return;
   closeModal(); _INV={id}; PINV=true; render();
   try{ window.scrollTo(0,0); }catch(e){}
 }
-function closeOrderPage(){ PINV=false; _INV=null; render(); }
+function closeOrderPage(){ PINV=false; _INV=null; hashSiparisTemizle(); render(); }
 function renderOrderPage(){
   const o=orderBul(_INV&&_INV.id); if(!o) return '';
   const col=buildingColor(o.bina);
