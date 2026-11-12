@@ -3201,20 +3201,6 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .inv-not-sil:hover{opacity:1;color:var(--red);background:color-mix(in srgb,var(--red) 14%,transparent)}
 .inv-not-tx{font-size:12.5px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
 .inv-not-bos{font-size:12px;color:var(--mute);font-style:italic}
-/* PDF EKSIK SIPARISLER paneli (bkz. pdfsizSiparisHtml) - notlarla ayni dil, amber kenar:
-   eksik belge bir uyaridir, miktar degistirmez */
-.inv-pdfsiz{margin-top:14px;background:var(--panel2);border:1px solid var(--line);border-left:3px solid color-mix(in srgb,var(--amber) 60%,transparent);border-radius:10px;padding:10px 13px}
-.inv-pdfsiz-h{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;color:var(--amber);font-family:var(--mono);cursor:pointer;list-style:none;flex-wrap:wrap}
-.inv-pdfsiz-h::-webkit-details-marker{display:none}
-.inv-pdfsiz-h svg{width:13px;height:13px}
-.inv-pdfsiz-h>span{background:color-mix(in srgb,var(--amber) 16%,transparent);border-radius:20px;padding:1px 8px;font-size:10px}
-.inv-pdfsiz-kendi{font-weight:500;text-transform:none;letter-spacing:0;color:var(--red);font-style:normal}
-.inv-pdfsiz-list{margin-top:9px;display:flex;flex-direction:column;gap:3px;max-height:260px;overflow:auto}
-.inv-pdfsiz-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:12px;padding:5px 8px;border-radius:7px;cursor:pointer;transition:.12s}
-.inv-pdfsiz-row:hover{background:var(--bg)}
-.inv-pdfsiz-row b{font-family:var(--mono)}
-.inv-pdfsiz-bina{font-weight:600}
-.inv-pdfsiz-firma{flex:1;min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* siparis karesinde ve fatura basliginda gorunen not damgasi */
 .ord-not{display:inline-flex;align-items:center;gap:3px;height:17px;padding:0 5px;
   border-radius:5px;background:color-mix(in srgb,var(--blue) 14%,transparent);
@@ -34972,7 +34958,6 @@ function orderInvoiceHtml(o,genis){
         ${orderIadeHtml(o)}
         ${borcGeriHtml(o)}
         ${orderHistoryHtml(o)}
-        ${pdfsizSiparisHtml(o)}
         <div class="invoice-footer">${o.lines.length} kalem · ${fmtNum(qty)} toplam birim · ${esc(o.bina||'')} binasi${orderCompany(o)?' · '+esc(orderCompany(o)):''}</div>
       </div>`;
 }
@@ -35681,41 +35666,6 @@ function specNotBadge(sp){
 }
 /* Faturadaki NOTLAR bolumu. Yazma yetkisi de not da yoksa hic cizilmez - bos kutu
    faturayi bosuna kalabaliklastirir. En yeni not en ustte durur. */
-/* PDF EKSIK SIPARISLER: Fatura / Siparis Detayi'nda, siparis PDF'i yuklenmemis diger
-   siparislerin listesi. Borclar listeye girmez (belge PDF'i ayri takip edilir), acik olan
-   siparis de kendisi listelenmez. Satira tiklayinca o siparisin detayi acilir; "Tum
-   Siparisler" dugmesi listeyi PDF eksik suzgeciyle acar. Yalniz bilgidir - hesaba karismaz. */
-function pdfsizSiparisler(haricId){
-  return (DB.proje.orders||[]).filter(o=>o&&!o.pdf&&o.id!==haricId&&!borcMu(o)).sort((a,b)=>(b.date||0)-(a.date||0));
-}
-function pdfsizSiparisHtml(o){
-  if(borcMu(o)||!canSeeOrders()) return '';
-  const list=pdfsizSiparisler(o.id);
-  const kendisi=!o.pdf;
-  if(!list.length&&!kendisi) return '';
-  const rows=list.map(x=>`<div class="inv-pdfsiz-row" onclick="pdfsizGit('${x.id}')" title="Siparis detayini ac">
-      <b>${esc(x.no||'(no yok)')}</b>${irsaliyeBadge(x)}
-      <span class="t-meta">${fmtDate(x.date)}</span>
-      <span class="inv-pdfsiz-bina" style="color:${buildingColor(x.bina)}">${esc(x.bina||'-')}</span>
-      <span class="t-meta inv-pdfsiz-firma">${esc(orderCompanyKisa(x)||'')}</span>
-      <span class="t-meta">${(x.lines||[]).length} satir</span>
-    </div>`).join('');
-  return `<details class="inv-pdfsiz"${kendisi?' open':''}>
-    <summary class="inv-pdfsiz-h">${icoDoc()} PDF EKSIK SIPARISLER <span>${list.length+(kendisi?1:0)}</span>
-      ${kendisi?`<i class="inv-pdfsiz-kendi">bu siparisin de PDF'i yok</i>`:''}
-      <button type="button" class="inv-not-ac" onclick="event.preventDefault();event.stopPropagation();pdfsizTumSiparisler()" title="Tum Siparisler sayfasini 'PDF eksik' suzgeciyle ac">Tum Siparisler ${icoChevron()}</button></summary>
-    ${list.length?`<div class="inv-pdfsiz-list">${rows}</div>`:`<div class="inv-not-bos">Baska PDF'siz siparis yok.</div>`}
-  </details>`;
-}
-function pdfsizGit(id){
-  if(!orderBul(id)) return;
-  if(PINV){ _INV={id}; render(); try{ window.scrollTo(0,0); }catch(e){} }
-  else { closeModal(); openOrderDetail(id); }
-}
-function pdfsizTumSiparisler(){
-  closeModal(); if(PINV){ PINV=false; _INV=null; }
-  openAllOrders(); if(PORD){ ORDF.pdf='yok'; render(); }
-}
 function orderNotlarHtml(o){
   const nl=orderNotlar(o).slice().sort((a,b)=>(b.ts||0)-(a.ts||0));
   const yazabilir=can('order',{bina:o.bina});
