@@ -2702,6 +2702,12 @@ body:has(.fwm-sheet-bg){overflow:hidden}
 .srt-bina-block{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;box-shadow:var(--shadow-sm)}
 .srt-bina-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
 .srt-row{display:flex;align-items:center;gap:10px;padding:9px 11px;background:var(--bg);border:1px solid var(--line);border-radius:8px;margin-bottom:7px}
+.srt-row.mv-on{border-color:var(--amber);background:color-mix(in srgb,var(--amber) 9%,var(--bg))}
+.def-mv-chk{width:16px;height:16px;flex:0 0 auto;accent-color:var(--amber);cursor:pointer}
+.def-mv-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 14px;margin-bottom:12px;border:1px solid color-mix(in srgb,var(--amber) 55%,var(--line));background:color-mix(in srgb,var(--amber) 8%,var(--panel));border-radius:10px;font-size:13px}
+.def-mv-bar label{display:flex;align-items:center;gap:8px;font-weight:600}
+.def-mv-bar select{min-width:220px;padding:6px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--text);font-family:inherit;font-size:13px}
+.def-mv-bar .btn[disabled]{opacity:.45;cursor:not-allowed}
 .srt-code{font-family:var(--mono);font-size:12px;font-weight:600;word-break:break-all}
 .srt-code .copy-btn{margin-left:6px;vertical-align:2px}
 .srt-name{font-size:11px;color:var(--mute);margin-top:2px}
@@ -15108,7 +15114,7 @@ async function saveProfil(){
 /* ============ BOLUM & SARTNAME TANIMLAMA EKRANI ============ */
 let DEF_SEC=""; // tanimlar ekraninda secili bolum
 function openDefinitions(){ PDEF=true; PUSERS=false; PAUDIT=false; PLIB=false; PORD=false; PCOMP=false; PEKIP=false; PNEWORD=false; PBINAY=false; DEF_SEC=(DB.proje.sections||[])[0]||""; SEARCH=""; render(); }
-function closeDefinitions(){ PDEF=false; render(); }
+function closeDefinitions(){ PDEF=false; DEFMV={on:false,sel:new Set()}; render(); }
 
 /* ============ TUM SIPARISLER (bina filtreli) ============ */
 function openAllOrders(){ if(!canSeeOrders()){toast('Bu bolume erisim yetkiniz yok','err');return;} PORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PCOMP=false; PEKIP=false; PNEWORD=false; PBINAY=false; ORDBINA=""; ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:'',tur:'',tag:''}; ORDVIEW='orders'; SEARCH=""; render(); }
@@ -17024,6 +17030,58 @@ async function tmutExcel(dil){
   toast(stilli?'Mutabakat Excel indirildi':'Mutabakat Excel indirildi (stil bileseni yuklenemedi - renksiz)');
 }
 function defSelectSection(s){ DEF_SEC=s; render(); }
+/* SARTNAME TASIMA MODU: Excel aktarimi sonrasi ayni isi anlatan iki bolum olustugunda
+   (orn. "Aydinlatma" ile "Aydinlatma Sistemi") eski bolumdeki sartnameler secilip
+   teknik adli bolume tasinir. Sartnameyle birlikte kalemleri (specs.cat) ve stok
+   hareketleri (items.cat) de yeni bolume gecer - gecmis kaybolmaz. Secim bolumler
+   arasinda gezerken korunur (id bazli), hedef bolum tasima aninda secilir. */
+let DEFMV={on:false,sel:new Set()};
+function defMvToggle(){ DEFMV={on:!DEFMV.on,sel:new Set()}; render(); }
+function defMvSel(id,on){ if(on) DEFMV.sel.add(id); else DEFMV.sel.delete(id); defMvBarYenile(); }
+function defMvSelBina(bina,on){
+  (DB.proje.sartnames||[]).filter(x=>x.section===DEF_SEC&&x.bina===bina).forEach(x=>{ if(on) DEFMV.sel.add(x.id); else DEFMV.sel.delete(x.id); });
+  render();
+}
+function defMvBarYenile(){ const el=document.getElementById('defMvN'); if(el) el.textContent=DEFMV.sel.size; const b=document.getElementById('defMvBtn'); if(b) b.disabled=!DEFMV.sel.size; }
+async function defMvTasi(){ if(!guard('define'))return;
+  const selEl=document.getElementById('defMvHedef'); const hedef=selEl?selEl.value:'';
+  if(!hedef){ toast('Hedef bolum secin','err'); return; }
+  const secili=(DB.proje.sartnames||[]).filter(x=>DEFMV.sel.has(x.id)&&x.section!==hedef);
+  if(!secili.length){ toast('Tasinacak sartname secilmedi (hedefle ayni bolumdekiler atlanir)','err'); return; }
+  // hedef bolumde ayni bina + ayni kod varsa tasinmaz (iki tanim ust uste binmesin)
+  const cakisan=secili.filter(sr=>(DB.proje.sartnames||[]).some(x=>x.section===hedef&&x.bina===sr.bina&&norm(x.code)===norm(sr.code)));
+  const tasinacak=secili.filter(sr=>!cakisan.includes(sr));
+  if(!tasinacak.length){ toast('Secilenlerin hepsi hedef bolumde zaten tanimli','err'); return; }
+  const plan=tasinacak.map(sr=>{
+    const specs=DB.proje.specs.filter(sp=>sp.bina===sr.bina&&sp.cat===sr.section&&specGroupKey(sp)===sr.code);
+    const sid=new Set(specs.map(s=>s.id));
+    const items=(DB.proje.items||[]).filter(it=>it.cat===sr.section&&((it.specId&&sid.has(it.specId))||(it.bina===sr.bina&&(it.grup||'')===sr.code)));
+    // saha raporu satirlari: kaleme bagli olanlar (specId) ayni bolume gecer, yoksa rapor eslesmesi (42705) bolum uyusmazligindan bosa duser
+    const entries=((DB.rapor&&DB.rapor.entries)||[]).filter(e=>e.cat===sr.section&&e.specId&&sid.has(e.specId));
+    return {sr,specs,items,entries};
+  });
+  const nSpec=plan.reduce((n,p)=>n+p.specs.length,0), nItem=plan.reduce((n,p)=>n+p.items.length,0), nEnt=plan.reduce((n,p)=>n+p.entries.length,0);
+  if(!confirm(`${tasinacak.length} sartname "${hedef}" bolumune tasinacak.\nBirlikte ${nSpec} sartname kalemi, ${nItem} stok hareketi ve ${nEnt} saha raporu satiri da bu bolume gecer.${cakisan.length?`\n\n${cakisan.length} sartname hedefte zaten var, atlanacak:\n${cakisan.map(x=>x.code).join('\n')}`:''}\n\nDevam edilsin mi?`)) return;
+  const eski=[...new Set(tasinacak.map(x=>x.section))];
+  const isler=[];
+  plan.forEach(({sr,specs,items,entries})=>{
+    sr.section=hedef; isler.push(sbUpdateProjeSartname(sr.id,{...sr}));
+    specs.forEach(sp=>{ sp.cat=hedef; isler.push(sbUpdateProjeSpec(sp.id,{...sp})); });
+    items.forEach(it=>{ it.cat=hedef; isler.push(sbUpdateProjeItem(it.id,{...it})); });
+    entries.forEach(e=>{ e.cat=hedef; isler.push(sbUpdateRaporEntry(e.id,{...e})); });
+  });
+  // kayitlar tek tek yazilir (islem butunlugu yok): biri kalirsa sayfa yenilenince
+  // kaynak bolumde gorunur, tasima tekrar calistirilinca kalan da gecer
+  const sonuc=await Promise.allSettled(isler);
+  const hata=sonuc.filter(r=>r.status==='rejected').length;
+  if(hata) toast(`${hata} kayit Supabase'e yazilamadi - sayfayi yenileyip tasimayi tekrar calistirin`,'err');
+  logAction('define',`Sartname tasindi: ${eski.join(', ')} -> ${hedef} (${tasinacak.length} sartname, ${nSpec} kalem, ${nItem} hareket, ${nEnt} rapor satiri${hata?', '+hata+' kayit YAZILAMADI':''}): ${tasinacak.map(x=>x.code).join(', ')}`);
+  DEFMV={on:false,sel:new Set()};
+  // bosalan kaynak bolumler kullaniciya hatirlatilir - silme kararini o verir
+  const bosalan=eski.filter(s=>!(DB.proje.sartnames||[]).some(x=>x.section===s)&&!DB.proje.specs.some(sp=>sp.cat===s));
+  render();
+  toast(`${tasinacak.length} sartname "${hedef}" bolumune tasindi${bosalan.length?' · bosalan bolum: '+bosalan.join(', ')+' (soldan silebilirsiniz)':''}`);
+}
 let DEFF={bina:'',q:'',use:''};
 function setDefF(k,v){ DEFF[k]=v; render(); }
 function clearDefF(){ DEFF={bina:'',q:'',use:''}; render(); }
@@ -17072,7 +17130,8 @@ function renderDefinitions(){
           const hideTag=sr.hakedisGoster===false?`<span class="cat-tag" style="background:var(--dim)33;color:var(--mute)" title="Hakediste gizli">Hakedis: gizli</span>`:'';
           const katTxt=sartKatLabel(sr);
           const katTag=katTxt?`<span class="cat-tag" style="background:color-mix(in srgb,var(--blue) 12%,transparent);color:var(--blue)" title="Bu sartnamenin kapsadigi katlar (Duzenle ile degistirilir)">${esc(katTxt)}</span>`:'';
-          rows+=`<div class="srt-row">
+          const mvBox=DEFMV.on?`<input type="checkbox" class="def-mv-chk" ${DEFMV.sel.has(sr.id)?'checked':''} onchange="defMvSel('${sr.id}',this.checked)" title="Tasimak icin sec">`:'';
+          rows+=`<div class="srt-row ${DEFMV.on&&DEFMV.sel.has(sr.id)?'mv-on':''}">${mvBox}
             <div style="flex:1;min-width:0"><div class="srt-code">${esc(sr.code)}${copyBtn(sr.code,'Sartname kodu')}</div>${sr.name&&sr.name!==sr.code?`<div class="srt-name">${esc(sr.name)}</div>`:''}</div>
             ${katTag}${feeTag}${hideTag}
             <span class="t-meta">${usedBy} kalem</span>
@@ -17082,7 +17141,8 @@ function renderDefinitions(){
       } else { rows=`<div class="srt-empty">${anyDefF?'Filtreyle eslesen sartname yok':`Bu binada ${esc(DEF_SEC)} icin sartname yok`}</div>`; }
       srtHtml+=`<div class="srt-bina-block">
         <div class="srt-bina-head"><span class="bina-tag" style="background:${bcol}22;color:${bcol};border:1px solid ${bcol}55">${esc(bina)}</span>
-          <button class="btn btn-ghost" style="padding:5px 11px;font-size:12px" onclick="addSartname('${esc(bina)}','${esc(DEF_SEC)}')">${icoPlus()} Sartname Ekle</button></div>
+          ${DEFMV.on&&list.length?`<span style="display:flex;gap:6px"><button class="btn btn-ghost" style="padding:5px 11px;font-size:12px" onclick="defMvSelBina('${esc(bina)}',true)">Tumunu Sec</button><button class="btn btn-ghost" style="padding:5px 11px;font-size:12px" onclick="defMvSelBina('${esc(bina)}',false)">Birakin</button></span>`
+          :`<button class="btn btn-ghost" style="padding:5px 11px;font-size:12px" onclick="addSartname('${esc(bina)}','${esc(DEF_SEC)}')">${icoPlus()} Sartname Ekle</button>`}</div>
         ${rows}</div>`;
     });
   }
@@ -17091,6 +17151,7 @@ function renderDefinitions(){
     <div class="def-head-row">
       <div class="sel-head"><h2>Bolum &amp; Sartname Tanimlari</h2><p>Bolumler tum binalarda ortaktir. Sartnameler bina + bolume ozeldir. Excel sync bu tanimlari dogrular.</p></div>
       <div class="def-head-act">
+        <button class="btn ${DEFMV.on?'btn-add':'btn-ghost'}" style="padding:7px 13px;font-size:12px" title="Sartname Tasi - secilen sartnameleri (kalem ve hareketleriyle) baska bir bolume tasir; Excel aktarimi sonrasi olusan cift bolumleri birlestirmek icin" onclick="defMvToggle()">${DEFMV.on?'Tasima Modu Acik':'Sartname Tasi'}</button>
         <button class="btn btn-ciplak" title="Uygulanan Sartnameleri Kopyala - kalemi olan (uygulanmis) tum sartname kodlarini alt alta panoya kopyalar" aria-label="Uygulanan sartnameleri kopyala" onclick="defCopyUygulanan()">${icoCopy()}</button>
         <button class="btn btn-ciplak" title="Excel'den Ice Aktar - bolum ve sartname tanimlarini secilen Excel dosyasindan gunceller" aria-label="Excel'den ice aktar" onclick="document.getElementById('defXlsx').click()">${icoXlsIc()}</button>
         <input type="file" id="defXlsx" accept=".xlsx,.xls" class="hidden" onchange="importDefinitionsExcel(event)">
@@ -17105,6 +17166,12 @@ function renderDefinitions(){
       </aside>
       <div class="def-main">
         ${filterbar}
+        ${DEFMV.on?`<div class="def-mv-bar">
+          <span><b id="defMvN">${DEFMV.sel.size}</b> sartname secili <span class="t-meta">(bolumler arasinda gezerken secim korunur)</span></span>
+          <label>Hedef bolum <select id="defMvHedef"><option value="">- secin -</option>${sections.filter(s=>s!==DEF_SEC).map(s=>`<option>${esc(s)}</option>`).join('')}</select></label>
+          <button class="btn btn-add" id="defMvBtn" style="padding:7px 14px" ${DEFMV.sel.size?'':'disabled'} onclick="defMvTasi()">Tasi</button>
+          <button class="btn btn-ghost" style="padding:7px 12px" onclick="defMvToggle()">Vazgec</button>
+        </div>`:''}
         ${DEF_SEC?`<div class="ord-sumline"><b>${fmtNum(shownCount)}</b> sartname${anyDefF?` <span class="t-meta">(${esc(DEF_SEC)} bolumunde filtrelendi)</span>`:` <span class="t-meta">(${esc(DEF_SEC)})</span>`}</div>`:''}
         <div class="srt-wrap">${DEF_SEC?srtHtml:`<div class="srt-none">${sections.length?'Soldaki listeden bir bolum secin':'Once soldaki "Bolum Ekle" ile bir bolum tanimlayin'}</div>`}</div>
       </div>
@@ -17144,6 +17211,13 @@ function exportDefinitions(){
   toast("Excel indirildi");
 }
 // BOLUM & SARTNAME - Excel ice aktar (bolum sutunu zorunlu; bina+sartname_kodu varsa sartname da olusturulur)
+/* Excel'deki bolum adlari sisteme DOGRUDAN yazilmaz: listede olmayan her ad once
+   ONIZLEME'de gosterilir ve kullanici "yeni bolum" ya da "mevcut su bolum" diye karar
+   verir (benzer adli bolum varsa o onerilir). Boylece "Aydinlatma" varken Excel'den
+   "Aydinlatma Sistemi" gelince ikinci bir bolum acilmaz. Sartname kodu bina icinde
+   TEKTIR: ayni bina + ayni kod baska bir bolumde zaten tanimliysa yeniden olusturulmaz,
+   raporda "zaten X bolumunde" diye yazar. Onaylanmadan hicbir sey yazilmaz. */
+let _DEFIMP=null;
 function importDefinitionsExcel(e){ if(!guard('define')){e.target.value='';return;} const f=e.target.files[0]; if(!f)return;
   const r=new FileReader();
   r.onload=async ev=>{ try{
@@ -17156,38 +17230,80 @@ function importDefinitionsExcel(e){ if(!guard('define')){e.target.value='';retur
     const iCode=pick('sartname_kodu','sartname kodu','sartname','code');
     const iName=pick('sartname_adi','sartname adi','sartname_name','name','aciklama');
     if(iSec<0){ toast("Excel'de 'bolum' sutunu bulunamadi","err"); e.target.value=''; return; }
-    const validBinas=new Set(projBuildings().map(b=>norm(b)));
     if(!DB.proje.sections)DB.proje.sections=[];
     if(!DB.proje.sartnames)DB.proje.sartnames=[];
     // ice aktarma oncesi Supabase'den taze liste cekilir: iki bilgisayar/sekme ayni anda acikken
     // biri az once eklediyse yerel onbellek bunu gormeden mukerrer olusmasin diye (satir basina degil, tek seferde)
     try{ DB.proje.sartnames=await sbGetProjeSartnames(); }catch(e){}
-    const report={secCreated:0,sartCreated:0,sartUpdated:0,errors:[]};
-    const newSections=[]; const newSartnames=[]; const updSartnames=[];
+    try{ const s=await sbGetProjeSections(); if(Array.isArray(s)&&s.length) DB.proje.sections=s; }catch(e){}
+    const satirlar=[]; const yeniBolum=[];
     for(let i=1;i<rows.length;i++){
       const row=rows[i]; if(!row||row.every(c=>String(c).trim()==='')) continue;
       const sec=String(row[iSec]??'').trim(); if(!sec) continue;
-      if(!DB.proje.sections.some(x=>norm(x)===norm(sec)) && !newSections.some(x=>norm(x)===norm(sec))) newSections.push(sec);
-      const bina=iBina>=0?String(row[iBina]??'').trim():'';
-      const code=iCode>=0?String(row[iCode]??'').trim():'';
-      if(!bina && !code) continue; // sadece bolum satiri, sartname yok
-      if(!code){ report.errors.push(`Satir ${i+1}: sartname kodu bos ("${bina}")`); continue; }
-      if(!bina||!validBinas.has(norm(bina))){ report.errors.push(`Satir ${i+1}: "${bina||'(bos)'}" binasi tanimli degil`); continue; }
-      const name=iName>=0?String(row[iName]??'').trim():'';
-      const existing=(DB.proje.sartnames||[]).find(x=>norm(x.bina)===norm(bina)&&norm(x.section)===norm(sec)&&norm(x.code)===norm(code))
-        || newSartnames.find(x=>norm(x.bina)===norm(bina)&&norm(x.section)===norm(sec)&&norm(x.code)===norm(code));
-      if(existing){ if(name && existing.name!==name) updSartnames.push({existing,name}); }
-      else newSartnames.push({id:uid(),bina,section:sec,code,name:name||code});
+      const mevcut=DB.proje.sections.find(x=>norm(x)===norm(sec));
+      if(!mevcut && !yeniBolum.some(x=>norm(x)===norm(sec))) yeniBolum.push(sec);
+      satirlar.push({no:i+1, sec:mevcut||yeniBolum.find(x=>norm(x)===norm(sec)), bina:iBina>=0?String(row[iBina]??'').trim():'', code:iCode>=0?String(row[iCode]??'').trim():'', name:iName>=0?String(row[iName]??'').trim():''});
     }
-    if(newSections.length){ await sbInsertProjeSections(newSections); DB.proje.sections.push(...newSections); report.secCreated=newSections.length; }
-    if(newSartnames.length){ await sbInsertProjeSartnames(newSartnames); DB.proje.sartnames.push(...newSartnames); report.sartCreated=newSartnames.length; }
-    for(const {existing,name} of updSartnames){ existing.name=name; await sbUpdateProjeSartname(existing.id,{...existing}); report.sartUpdated++; }
-    if(!DEF_SEC && DB.proje.sections.length) DEF_SEC=DB.proje.sections[0];
-    render();
-    logAction('import',`Bolum & Sartname: +${report.secCreated} bolum, +${report.sartCreated} sartname, ~${report.sartUpdated} guncel`);
-    showDefImportReport(report);
+    if(!satirlar.length){ toast("Excel'de islenecek satir yok","err"); e.target.value=''; return; }
+    _DEFIMP={satirlar,yeniBolum,dosya:f.name};
+    if(yeniBolum.length) defImpOnizleme(); else await defImpUygula({});
   }catch(err){ toast('Excel okunamadi: '+err.message,'err'); } e.target.value=''; };
   r.readAsBinaryString(f);
+}
+// benzer adli mevcut bolum onerisi: biri digerini iceriyorsa ya da 4+ harfli ortak kelime varsa
+function defImpOneri(ad){
+  const n=norm(ad), kel=n.split(/[^a-zçğıöşü0-9]+/).filter(k=>k.length>=4);
+  let best='',puan=0;
+  (DB.proje.sections||[]).forEach(s=>{ const m=norm(s);
+    let p=0; if(m.includes(n)||n.includes(m)) p=100;
+    else { const mk=m.split(/[^a-zçğıöşü0-9]+/); p=kel.filter(k=>mk.some(x=>x.startsWith(k)||k.startsWith(x))).length*10; }
+    if(p>puan){ puan=p; best=s; } });
+  return best;
+}
+function defImpOnizleme(){
+  const P=_DEFIMP; if(!P)return;
+  const secOpt=(sel)=>`<option value="">+ Yeni bolum olarak ekle</option>`+(DB.proje.sections||[]).map(s=>`<option value="${esc(s)}" ${sel===s?'selected':''}>${esc(s)}</option>`).join('');
+  const satir=P.yeniBolum.map((b,i)=>{ const n=P.satirlar.filter(r=>r.sec===b&&r.code).length; const oneri=defImpOneri(b);
+    return `<div class="srt-row" style="gap:12px"><div style="flex:1;min-width:0"><div class="srt-code">${esc(b)}</div><div class="srt-name">${n} sartname satiri${oneri?' · benzer: <b>'+esc(oneri)+'</b>':''}</div></div>
+      <select class="def-imp-map" data-i="${i}" style="min-width:230px;padding:6px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--text);font-family:inherit;font-size:12px">${secOpt(oneri)}</select></div>`; }).join('');
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:720px"><div class="modal-head"><h3>Ice Aktarma Onizleme - ${P.yeniBolum.length} yeni bolum adi</h3><button class="mini-btn" onclick="closeModal();_DEFIMP=null">x</button></div><div class="modal-body">
+    <p class="t-meta" style="margin-bottom:12px;line-height:1.5">Excel'de sistemde olmayan bolum adlari var. Her biri icin ya <b>yeni bolum</b> acilir ya da satirlari <b>mevcut bir bolume</b> yazilir (benzer adli bolum varsa onerildi). Hicbir mevcut kayit silinmez ya da yeniden adlandirilmaz; aktarim onaylanmadan hicbir sey yazilmaz.</p>
+    ${satir}
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal();_DEFIMP=null">Iptal</button><button class="btn btn-add" onclick="defImpOnayla()">Aktar</button></div></div></div>`;
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+async function defImpOnayla(){
+  const P=_DEFIMP; if(!P)return;
+  const map={}; document.querySelectorAll('.def-imp-map').forEach(s=>{ const b=P.yeniBolum[Number(s.dataset.i)]; if(s.value) map[b]=s.value; });
+  closeModal();
+  await defImpUygula(map);
+}
+async function defImpUygula(map){
+  const P=_DEFIMP; if(!P)return; _DEFIMP=null;
+  const validBinas=new Set(projBuildings().map(b=>norm(b)));
+  const report={secCreated:0,sartCreated:0,sartUpdated:0,errors:[],eslenen:Object.keys(map).length};
+  const newSections=[]; const newSartnames=[]; const updSartnames=[];
+  P.satirlar.forEach(r=>{
+    const sec=map[r.sec]||r.sec;
+    if(!DB.proje.sections.some(x=>norm(x)===norm(sec)) && !newSections.some(x=>norm(x)===norm(sec))) newSections.push(sec);
+    if(!r.bina && !r.code) return; // sadece bolum satiri, sartname yok
+    if(!r.code){ report.errors.push(`Satir ${r.no}: sartname kodu bos ("${r.bina}")`); return; }
+    if(!r.bina||!validBinas.has(norm(r.bina))){ report.errors.push(`Satir ${r.no}: "${r.bina||'(bos)'}" binasi tanimli degil`); return; }
+    // sartname kodu BINA icinde tektir - hangi bolumde olursa olsun ikinci kez acilmaz
+    const existing=(DB.proje.sartnames||[]).find(x=>norm(x.bina)===norm(r.bina)&&norm(x.code)===norm(r.code))
+      || newSartnames.find(x=>norm(x.bina)===norm(r.bina)&&norm(x.code)===norm(r.code));
+    if(existing){
+      if(norm(existing.section)!==norm(sec)) report.errors.push(`Satir ${r.no}: ${r.code} zaten "${existing.section}" bolumunde tanimli - "${sec}" altina ikinci kez acilmadi`);
+      if(r.name && existing.name!==r.name && (DB.proje.sartnames||[]).includes(existing)) updSartnames.push({existing,name:r.name});
+    } else newSartnames.push({id:uid(),bina:r.bina,section:sec,code:r.code,name:r.name||r.code});
+  });
+  if(newSections.length){ await sbInsertProjeSections(newSections); DB.proje.sections.push(...newSections); report.secCreated=newSections.length; }
+  if(newSartnames.length){ await sbInsertProjeSartnames(newSartnames); DB.proje.sartnames.push(...newSartnames); report.sartCreated=newSartnames.length; }
+  for(const {existing,name} of updSartnames){ existing.name=name; await sbUpdateProjeSartname(existing.id,{...existing}); report.sartUpdated++; }
+  if(!DEF_SEC && DB.proje.sections.length) DEF_SEC=DB.proje.sections[0];
+  render();
+  logAction('import',`Bolum & Sartname (${P.dosya}): +${report.secCreated} bolum, +${report.sartCreated} sartname, ~${report.sartUpdated} guncel${report.eslenen?', '+report.eslenen+' Excel bolumu mevcut bolume eslendi ('+Object.entries(map).map(([a,b])=>a+' -> '+b).join(', ')+')':''}`);
+  showDefImportReport(report);
 }
 function showDefImportReport(rep){
   const ok=rep.errors.length===0;
