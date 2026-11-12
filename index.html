@@ -17048,39 +17048,57 @@ async function defMvTasi(){ if(!guard('define'))return;
   if(!hedef){ toast('Hedef bolum secin','err'); return; }
   const secili=(DB.proje.sartnames||[]).filter(x=>DEFMV.sel.has(x.id)&&x.section!==hedef);
   if(!secili.length){ toast('Tasinacak sartname secilmedi (hedefle ayni bolumdekiler atlanir)','err'); return; }
-  // hedef bolumde ayni bina + ayni kod varsa tasinmaz (iki tanim ust uste binmesin)
-  const cakisan=secili.filter(sr=>(DB.proje.sartnames||[]).some(x=>x.section===hedef&&x.bina===sr.bina&&norm(x.code)===norm(sr.code)));
-  const tasinacak=secili.filter(sr=>!cakisan.includes(sr));
-  if(!tasinacak.length){ toast('Secilenlerin hepsi hedef bolumde zaten tanimli','err'); return; }
-  const plan=tasinacak.map(sr=>{
+  /* Iki durum var:
+     TASI  - hedefte ayni bina+kod yok: sartname tanimi bolum degistirir.
+     BIRLESTIR - hedefte ayni bina+kod ZATEN var (Excel aktarimi teknik bolume bos bir
+       kopya actiysa): kalemler, hareketler ve rapor satirlari hedefteki tanima baglanir;
+       kat kapsami / montaj bedeli / hakedis ayari hedefte bossa kaynaktan tasinir;
+       bos kalan kaynak TANIM satiri kaldirilir. Kalem, siparis, hareket silinmez. */
+  const plan=secili.map(sr=>{
+    const hedefSr=(DB.proje.sartnames||[]).find(x=>x.section===hedef&&x.bina===sr.bina&&norm(x.code)===norm(sr.code))||null;
     const specs=DB.proje.specs.filter(sp=>sp.bina===sr.bina&&sp.cat===sr.section&&specGroupKey(sp)===sr.code);
     const sid=new Set(specs.map(s=>s.id));
     const items=(DB.proje.items||[]).filter(it=>it.cat===sr.section&&((it.specId&&sid.has(it.specId))||(it.bina===sr.bina&&(it.grup||'')===sr.code)));
-    // saha raporu satirlari: kaleme bagli olanlar (specId) ayni bolume gecer, yoksa rapor eslesmesi (42705) bolum uyusmazligindan bosa duser
+    // saha raporu satirlari: kaleme bagli olanlar (specId) ayni bolume gecer, yoksa rapor eslesmesi bolum uyusmazligindan bosa duser
     const entries=((DB.rapor&&DB.rapor.entries)||[]).filter(e=>e.cat===sr.section&&e.specId&&sid.has(e.specId));
-    return {sr,specs,items,entries};
+    return {sr,hedefSr,specs,items,entries};
   });
+  const birlesen=plan.filter(p=>p.hedefSr), tasinan=plan.filter(p=>!p.hedefSr);
   const nSpec=plan.reduce((n,p)=>n+p.specs.length,0), nItem=plan.reduce((n,p)=>n+p.items.length,0), nEnt=plan.reduce((n,p)=>n+p.entries.length,0);
-  if(!confirm(`${tasinacak.length} sartname "${hedef}" bolumune tasinacak.\nBirlikte ${nSpec} sartname kalemi, ${nItem} stok hareketi ve ${nEnt} saha raporu satiri da bu bolume gecer.${cakisan.length?`\n\n${cakisan.length} sartname hedefte zaten var, atlanacak:\n${cakisan.map(x=>x.code).join('\n')}`:''}\n\nDevam edilsin mi?`)) return;
-  const eski=[...new Set(tasinacak.map(x=>x.section))];
-  const isler=[];
-  plan.forEach(({sr,specs,items,entries})=>{
-    sr.section=hedef; isler.push(sbUpdateProjeSartname(sr.id,{...sr}));
-    specs.forEach(sp=>{ sp.cat=hedef; isler.push(sbUpdateProjeSpec(sp.id,{...sp})); });
-    items.forEach(it=>{ it.cat=hedef; isler.push(sbUpdateProjeItem(it.id,{...it})); });
+  let msg=`"${hedef}" bolumune:\n`;
+  if(tasinan.length) msg+=`• ${tasinan.length} sartname tasinacak\n`;
+  if(birlesen.length) msg+=`• ${birlesen.length} sartname hedefteki AYNI KODLU tanimla birlestirilecek (kalemler hedefteki tanima baglanir, eski bos tanim satiri kaldirilir):\n${birlesen.map(p=>'   '+p.sr.code).join('\n')}\n`;
+  msg+=`\nBirlikte ${nSpec} sartname kalemi, ${nItem} stok hareketi ve ${nEnt} saha raporu satiri bu bolume gecer. Kalem, siparis ve hareket silinmez.\n\nDevam edilsin mi?`;
+  if(!confirm(msg)) return;
+  const eski=[...new Set(secili.map(x=>x.section))];
+  const isler=[]; const kalkan=[];
+  plan.forEach(({sr,hedefSr,specs,items,entries})=>{
+    const kod=hedefSr?hedefSr.code:sr.code;   // kod yaziminda buyuk/kucuk farki varsa hedefinki esas
+    specs.forEach(sp=>{ sp.cat=hedef; if(sp.grup&&sp.grup!==kod) sp.grup=kod; isler.push(sbUpdateProjeSpec(sp.id,{...sp})); });
+    items.forEach(it=>{ it.cat=hedef; if(it.grup&&it.grup!==kod) it.grup=kod; isler.push(sbUpdateProjeItem(it.id,{...it})); });
     entries.forEach(e=>{ e.cat=hedef; isler.push(sbUpdateRaporEntry(e.id,{...e})); });
+    if(hedefSr){
+      let degisti=false;
+      if(!(hedefSr.katIds&&hedefSr.katIds.length)&&sr.katIds&&sr.katIds.length){ hedefSr.katIds=sr.katIds.slice(); degisti=true; }
+      if(!hedefSr.montajBedeli&&sr.montajBedeli){ hedefSr.montajBedeli=sr.montajBedeli; degisti=true; }
+      if(hedefSr.hakedisGoster===undefined&&sr.hakedisGoster!==undefined){ hedefSr.hakedisGoster=sr.hakedisGoster; degisti=true; }
+      if(!hedefSr.name||hedefSr.name===hedefSr.code){ if(sr.name&&sr.name!==sr.code){ hedefSr.name=sr.name; degisti=true; } }
+      if(degisti) isler.push(sbUpdateProjeSartname(hedefSr.id,{...hedefSr}));
+      kalkan.push(sr.id); isler.push(sbDeleteProjeSartname(sr.id));
+    } else { sr.section=hedef; isler.push(sbUpdateProjeSartname(sr.id,{...sr})); }
   });
+  if(kalkan.length) DB.proje.sartnames=DB.proje.sartnames.filter(x=>!kalkan.includes(x.id));
   // kayitlar tek tek yazilir (islem butunlugu yok): biri kalirsa sayfa yenilenince
   // kaynak bolumde gorunur, tasima tekrar calistirilinca kalan da gecer
   const sonuc=await Promise.allSettled(isler);
   const hata=sonuc.filter(r=>r.status==='rejected').length;
   if(hata) toast(`${hata} kayit Supabase'e yazilamadi - sayfayi yenileyip tasimayi tekrar calistirin`,'err');
-  logAction('define',`Sartname tasindi: ${eski.join(', ')} -> ${hedef} (${tasinacak.length} sartname, ${nSpec} kalem, ${nItem} hareket, ${nEnt} rapor satiri${hata?', '+hata+' kayit YAZILAMADI':''}): ${tasinacak.map(x=>x.code).join(', ')}`);
+  logAction('define',`Sartname tasindi: ${eski.join(', ')} -> ${hedef} (${tasinan.length} tasindi, ${birlesen.length} ayni kodlu tanimla birlesti, ${nSpec} kalem, ${nItem} hareket, ${nEnt} rapor satiri${hata?', '+hata+' kayit YAZILAMADI':''}): ${secili.map(x=>x.code).join(', ')}`);
   DEFMV={on:false,sel:new Set()};
   // bosalan kaynak bolumler kullaniciya hatirlatilir - silme kararini o verir
   const bosalan=eski.filter(s=>!(DB.proje.sartnames||[]).some(x=>x.section===s)&&!DB.proje.specs.some(sp=>sp.cat===s));
-  render();
-  toast(`${tasinacak.length} sartname "${hedef}" bolumune tasindi${bosalan.length?' · bosalan bolum: '+bosalan.join(', ')+' (soldan silebilirsiniz)':''}`);
+  DEF_SEC=hedef; render();
+  toast(`${secili.length} sartname "${hedef}" bolumune gecti${bosalan.length?' · bosalan bolum: '+bosalan.join(', ')+' (soldan silebilirsiniz)':''}`);
 }
 let DEFF={bina:'',q:'',use:''};
 function setDefF(k,v){ DEFF[k]=v; render(); }
