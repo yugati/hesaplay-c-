@@ -1204,7 +1204,13 @@ export async function sbLoadAllData(scope) {
   const need = name => !scope || scope.includes(name)
   // rapor/tanimlar/kutuphane ekranlari da proje temel verisine (bina, bolum, sartname,
   // sartname kalemi, malzeme kutuphanesi) ihtiyac duyar - bunlar 'proje' modulunden ayrı sayılır.
-  const needProjeCore = need('proje') || need('rapor') || need('tanimlar') || need('kutuphane')
+  /* 'siparis' ve 'fatura' DA TEMEL VERIYI ISTER: siparis satiri fotograf tasimaz, fotograf
+     her cizimde kutuphaneden (proje_materials / proje_specs) okunur (bkz. index.html
+     orderLineImgs). Bu iki tablo inmediginde YALNIZCA siparis yetkisi olan izleyici
+     "Tum Siparisler"de kalemleri gorur ama hicbir malzeme fotografi gelmez; alternatif
+     urun adi, standart no ve bina adlari da bosalir. Sunucudaki karsiligi lib/yetki.js
+     OKUMA_MODULLERI (needProjeCore satirlari) - ikisi birlikte degisir. */
+  const needProjeCore = need('proje') || need('rapor') || need('tanimlar') || need('kutuphane') || need('siparis') || need('fatura')
   // 'siparis' bagimsiz bir modul haline geldi: yalnizca siparis yetkisi olan kullanici
   // (orn. ambarci) siparisleri, siparise bagli stok girislerini ve alternatif urunleri de
   // gormeli - yoksa "Tum Siparisler" ekrani bos acilir. Sirketler de siparis formunda secilir.
