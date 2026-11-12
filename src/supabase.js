@@ -1231,16 +1231,27 @@ export async function sbLoadAllData(scope) {
   const needCompanies = need('proje') || need('tanimlar') || need('siparis') || need('fatura') || need('rapor')
 
   const tasks = { settingsRes: anahtarDegerGetir('app_settings') }
+  /* KUTUPHANELER HER OTURUMDA INER (modul kapsamindan bagimsiz): proje_materials,
+     gecici_lib ve alet_lib. Gerekce: siparis / ihtiyac listesi / tutanak satirlari
+     fotograf TASIMAZ, yalnizca matId (+matSrc) tutar ve fotograf her cizimde ilgili
+     kutuphaneden okunur (index.html orderLineImgs / ihtLineImg / tutKaynakBul).
+     Kutuphane inmediginde kullanici kalemi gorur ama "foto yok" okur - izleyici ve
+     tek modullu kullanicilarda tam olarak bu oluyordu. Kutuphane zaten organizasyon
+     genelinde ORTAK veridir (bkz. api/veri.js ORTAK_TABLOLAR), gizli bir sey tasimaz;
+     DUZENLEME yetkisi degismedi, yalnizca okuma herkese acildi.
+     Sunucudaki karsiligi lib/yetki.js SERBEST_OKUMA - ikisi birlikte degisir. */
+  tasks.projeMaterials = sbGetAll('proje_materials')
+  tasks.geciciLib = sbGetAll('gecici_lib').catch(() => [])
+  // alet_lib tablosu migration_alet_lib.sql ile olusturulur; migration henuz
+  // calistirilmamissa TUM yuklemeyi kilitlememesi icin hataya toleransli
+  // (tutanaklar/proje_lokasyonlar ile ayni desen). Eksikse uygulamaya haber verilir:
+  // Mekanik kutuphanesi ekrani "once SQL'i calistirin" uyarisi gosterir.
+  tasks.aletLib = sbGetAll('alet_lib').catch(() => {
+    if (typeof window !== 'undefined') window.__aletLibTableMissing = true
+    return []
+  })
   if (need('alet')) {
     tasks.aletItems = sbGetAll('alet_items')
-    // alet_lib tablosu migration_alet_lib.sql ile olusturulur; migration henuz
-    // calistirilmamissa TUM yuklemeyi kilitlememesi icin hataya toleransli
-    // (tutanaklar/proje_lokasyonlar ile ayni desen). Eksikse uygulamaya haber verilir:
-    // Mekanik kutuphanesi ekrani "once SQL'i calistirin" uyarisi gosterir.
-    tasks.aletLib = sbGetAll('alet_lib').catch(() => {
-      if (typeof window !== 'undefined') window.__aletLibTableMissing = true
-      return []
-    })
   }
   if (need('saha')) {
     tasks.sahaPanels = sbGetAll('saha_panels')
@@ -1249,7 +1260,6 @@ export async function sbLoadAllData(scope) {
     tasks.sahaSettings = sbGetAllSahaSettings()
   }
   if (need('gecici')) {
-    tasks.geciciLib = sbGetAll('gecici_lib')
     tasks.geciciMoves = sbGetAll('gecici_moves')
     tasks.geciciOrders = sbGetAll('gecici_orders')
   }
@@ -1268,7 +1278,6 @@ export async function sbLoadAllData(scope) {
     tasks.projeBuildingsRes = veriSelect('proje_buildings', { columns: 'code', order: SIRA_BINA })
     tasks.projeSectionsRes = veriSelect('proje_sections', { columns: 'name', order: SIRA_BINA })
     tasks.projeSartnames = sbGetAll('proje_sartnames')
-    tasks.projeMaterials = sbGetAll('proje_materials')
     tasks.projeSpecs = sbGetAll('proje_specs')
     // proje_lokasyonlar tablosu supabase_schema.sql'in yeni bölümüyle oluşturulur;
     // migration henüz çalıştırılmamışsa yüklemeyi kilitlememesi için hataya toleranslı.
