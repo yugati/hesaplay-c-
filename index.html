@@ -4667,6 +4667,8 @@ tr.va-uye:has(+tr.va-uye) td.va-dal::before{content:"";position:absolute;left:31
 .va-grid-sat input{width:100%;font-size:12.5px;padding:6px 9px;font-family:var(--mono)}
 .va-grid-sat input.bos{border-color:color-mix(in srgb,var(--amber) 70%,transparent)}
 .va-grid-sat.cift input{border-color:var(--red)}
+.va-grid-sat.yeni{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+.va-sat-dug{display:flex;gap:4px;justify-content:flex-end}
 .va-u{display:flex;align-items:center;gap:9px;min-width:0}
 .va-u>img,.va-u>.thumb-ph{width:34px;height:34px;border-radius:7px;object-fit:contain;background:#fff;border:1px solid var(--line);flex:0 0 auto}
 .va-u>.thumb-ph{background:none}
@@ -31981,19 +31983,25 @@ const VA_KUT={
     ad:m=>m.name||'', kod:m=>m.code||'', img:m=>m.img||m.img2||'',
     ara:m=>[m.name,m.code,(m.altCodes||[]).join(' '),matPiyasaAdlari(m).join(' ')].filter(Boolean).join(' '),
     yetki:()=>can('editMaterial'),
-    yaz:list=>vaStrict('upsertMaterials')(list)},
+    yaz:list=>vaStrict('upsertMaterials')(list),
+    ekle:x=>{ DB.proje.materials.push(x); },
+    kopya:(x,ad,now)=>{ const e={...x,id:uid(),name:ad,code:'',altCodes:[],piyasaAd:'',is_deleted:false,createdAt:now,updatedAt:now}; delete e.aile; delete e.piyasa; return e; }},
   gecici:{etiket:'Mobilizasyon',log:'define',
     liste:()=>(DB.gecici&&DB.gecici.lib)||[],
     ad:x=>x.ad||'', kod:x=>x.kod||'', img:x=>x.img||x.img2||'',
     ara:x=>[x.ad,x.adRu,x.kod,x.barkod,(x.altCodes||[]).join(' ')].filter(Boolean).join(' '),
     yetki:()=>canUpdate('gecici'),
-    yaz:list=>vaStrict('upsertGeciciLib')(list)},
+    yaz:list=>vaStrict('upsertGeciciLib')(list),
+    ekle:x=>{ DB.gecici.lib.push(x); },
+    kopya:(x,ad,now,v)=>{ const r=kmbBedenAyir(x.adRu); const e={...x,id:uid(),ad,adRu:r?vaKopyaAdKur(r.taban,v):'',kod:'',barkod:'',altCodes:[],createdAt:now,updatedAt:now}; delete e.aile; delete e.bakiye; return e; }},
   alet:{etiket:'Araç ve Gereç',log:'define',
     liste:()=>aletLib(),
     ad:x=>x.ad||'', kod:x=>x.kod||'', img:x=>x.img||x.img2||'',
     ara:x=>[x.ad,x.kod,x.barkod,x.olcu].filter(Boolean).join(' '),
     yetki:()=>canEdit('alet'),
-    yaz:list=>vaStrict('upsertAletLib')(list)},
+    yaz:list=>vaStrict('upsertAletLib')(list),
+    ekle:x=>{ aletLib().push(x); },
+    kopya:(x,ad,now)=>{ const e={...x,id:uid(),ad,kod:'',barkod:''}; delete e.aile; return e; }},
 };
 /* HATA FIRLATAN toplu yazma (src/main.js SB_STRICT): pencereye acilan sb* sarmalayicilari
    hatayi yutar - yarim kalan bir aile kaydi "kaydedildi" gorunup uyeleri farkli tanimla
@@ -32009,6 +32017,7 @@ function vaStrict(ad){
 let _vaMemo={};
 function vaOnbellekSifirla(){ _vaMemo={}; }
 function vaKayit(src,id){
+  if(_VA&&_VA.src===src&&_VA.yeni&&_VA.yeni.has(id)) return _VA.yeni.get(id);   // Kaydet'i bekleyen kopya (bkz. vaUyeCogalt)
   const k=src+':id'; let h=_vaMemo[k];
   if(!h){ h=new Map(((VA_KUT[src]&&VA_KUT[src].liste())||[]).map(x=>[x.id,x])); _vaMemo[k]=h; }
   return h.get(id)||null;
@@ -32317,7 +32326,7 @@ function openVaryantAilesi(src,aileId,ids,donus){
   if(!g&&kayitlar.length){ const a=kayitlar.map(x=>vaAileOf(src,x)); if(a[0]&&a.every(y=>y===a[0])) g=a[0]; }
   // pa: piyasa adi aileden mi (ac) ve hangi dilde - kapatilip acilinca dil korunur
   // etiket: ailenin TEK etiket seti (uyelerin birlesimi) - kayitta her uyeye yazilir (bkz. vaEtiketYay)
-  _VA={src,id:null,ad:'',eksen:[],uyeler:[],eskiIds:[],ara:'',donus:donus||null,pa:{ac:false,d:'TR'},etiket:[],etiketFarkli:false};
+  _VA={src,id:null,ad:'',eksen:[],uyeler:[],eskiIds:[],ara:'',donus:donus||null,pa:{ac:false,d:'TR'},etiket:[],etiketFarkli:false,yeni:new Map()};
   if(g) Object.assign(_VA,{id:g.id,ad:g.ad,eksen:g.eksen.map(e=>({ad:e.ad,deger:e.deger.slice()})),
     uyeler:g.uyeler.map(x=>({id:x.id,v:(g.deg.get(x.id)||[]).slice()})),eskiIds:g.uyeler.map(x=>x.id),
     pa:{ac:!!g.pa,d:g.pa?g.pa.d:'TR'},etiket:vaAileEtiket(g),etiketFarkli:vaEtiketFarkli(g)});
@@ -32331,7 +32340,7 @@ function openVaryantAilesi(src,aileId,ids,donus){
   vaCiz();
   setModalGuard(()=>!!_VA&&vaImza()!==_VA.ilk,vaKapat);
 }
-function vaImza(){ return _VA?JSON.stringify([_VA.ad,_VA.eksen,_VA.uyeler,_VA.pa,_VA.etiket]):''; }
+function vaImza(){ return _VA?JSON.stringify([_VA.ad,_VA.eksen,_VA.uyeler,_VA.pa,_VA.etiket,[..._VA.yeni.keys()]]):''; }
 /* PENCEREDE ETIKET: uye eklenince onun etiketleri de sete girer (silinmez - kullanici
    pencerede kaldirir); uyelerin seti farkliysa not dusulur, kayitta hepsi esitlenir. */
 function vaEtiketUyeler(ekle){
@@ -32408,19 +32417,23 @@ function vaCiz(){
       <button type="button" class="mini-btn del" title="Bu ekseni kaldir" onclick="vaEksenSil(${i})">${icoTrash()}</button>
     </div>`).join(''):'<p class="matd-empty" style="margin:0">Henuz eksen yok - <b>Eksen</b> ile ekleyin (orn. Beden).</p>'}</div>`;
   // en kucuk genislik eksen sayisina gore: tek eksenli aile telefonda yatay kaymadan sigar
-  const izgara='grid-template-columns:minmax(150px,1.6fr)'+' minmax(84px,1fr)'.repeat(_VA.eksen.length)+' 44px;min-width:'+(214+92*_VA.eksen.length)+'px';
+  const izgara='grid-template-columns:minmax(150px,1.6fr)'+' minmax(84px,1fr)'.repeat(_VA.eksen.length)+' 64px;min-width:'+(234+92*_VA.eksen.length)+'px';
+  vaYeniAdlariTazele();
   const ciftIds=new Set(vaCiftler().flat());
   const paAcik=src==='proje'&&_VA.pa.ac;
   const satirlar=_VA.uyeler.map((u,k)=>{
     const x=vaKayit(src,u.id); if(!x) return '';
-    const baska=x.aile&&x.aile.id&&x.aile.id!==_VA.id?idx.get(x.aile.id):null;
-    return `<div class="va-grid-sat${ciftIds.has(u.id)?' cift':''}" style="${izgara}">
-      ${vaUrunHucre(src,x,baska?esc(baska.ad)+' ailesinden tasinacak':'',paAcik?vaPaSatirHtml(u,k):'')}
+    const yeni=_VA.yeni.has(u.id);
+    const baska=!yeni&&x.aile&&x.aile.id&&x.aile.id!==_VA.id?idx.get(x.aile.id):null;
+    return `<div class="va-grid-sat${ciftIds.has(u.id)?' cift':''}${yeni?' yeni':''}" style="${izgara}">
+      ${vaUrunHucre(src,x,yeni?'yeni urun - Kaydet ile olusur, kodu sonra kunyeden verilir':baska?esc(baska.ad)+' ailesinden tasinacak':'',paAcik?vaPaSatirHtml(u,k):'')}
       ${_VA.eksen.map((e,i)=>`<input list="vaDl_${i}" value="${esc(u.v[i]||'')}" class="${String(u.v[i]||'').trim()?'':'bos'}" placeholder="${esc(e.ad||'deger')}" oninput="vaUyeDeger(${k},${i},this.value)" onchange="vaDegerEsitle()">`).join('')}
-      <button type="button" class="mini-btn del" title="Aileden cikar - urun silinmez" onclick="vaUyeCikar(${k})">${icoTrash()}</button></div>`;
+      <span class="va-sat-dug"><button type="button" class="mini-btn" title="Cogalt - bu urunun kopyasindan yeni varyant: foto, marka, birim ve etiket ayni kalir; degeri ve kodu siz verirsiniz" onclick="vaUyeCogalt(${k})">${icoCopy()}</button><button type="button" class="mini-btn del" title="${yeni?'Kopyayi kaldir':'Aileden cikar - urun silinmez'}" onclick="vaUyeCikar(${k})">${icoTrash()}</button></span></div>`;
   }).join('');
   const dl=_VA.eksen.map((e,i)=>`<datalist id="vaDl_${i}">${e.deger.map(v=>`<option value="${esc(v)}"></option>`).join('')}</datalist>`).join('');
-  const uyeHtml=`<div class="frow" style="margin:0"><div class="va-blok-bas">Urunler <span class="va-say">${fmtNum(_VA.uyeler.length)}</span><i>her satir ayri urundur - kendi kodu, stogu ve kullanimi degismez</i></div>
+  const eksik=vaEksikKombinasyonlar();
+  const uyeHtml=`<div class="frow" style="margin:0"><div class="va-blok-bas">Urunler <span class="va-say">${fmtNum(_VA.uyeler.length)}</span><i>her satir ayri urundur - kendi kodu, stogu ve kullanimi degismez${_VA.yeni.size?` &middot; <b>${fmtNum(_VA.yeni.size)}</b> yeni kopya Kaydet ile olusur`:''}</i>
+      ${eksik.length?`<button type="button" class="btn btn-ghost" onclick="vaKombinasyonTamamla()" title="Eksenlerdeki degerlerin her birlesimi icin urun olsun: olmayan ${fmtNum(eksik.length)} birlesim en yakin uyenin kopyasindan uretilir (orn. 40 Kislik varsa 40 Yazlik ondan). Kopyalar Kaydet ile olusur">${icoCopy()} Eksik kombinasyonlari tamamla (${fmtNum(eksik.length)})</button>`:''}</div>
     ${_VA.uyeler.length?`<div class="va-grid"><div class="va-grid-sat bas" style="${izgara}"><span>Urun</span>${_VA.eksen.map(e=>`<span>${esc(e.ad||'-')}</span>`).join('')}<span></span></div>${satirlar}</div>`
       :'<p class="matd-empty" style="margin:0">Henuz urun yok - asagidan arayip ekleyin ya da onerilen bir aileyi secin.</p>'}${dl}</div>`;
   const araHtml=`<div class="frow" style="margin:0"><div class="va-blok-bas">Urun Ekle <i>${esc(VA_KUT[src].etiket)} kutuphanesinden - baska kutuphanenin urunu bu aileye girmez</i></div>
@@ -32523,7 +32536,79 @@ function vaUyeEkle(id){
   vaDegerListesi(); vaCiz();
   const a=document.getElementById('va_ara'); if(a&&_VA.ara) a.focus();
 }
-function vaUyeCikar(k){ _VA.uyeler.splice(k,1); vaDegerListesi(); vaCiz(); }
+function vaUyeCikar(k){ const u=_VA.uyeler[k]; if(u) _VA.yeni.delete(u.id); _VA.uyeler.splice(k,1); vaDegerListesi(); vaCiz(); }
+/* ── KOPYADAN YENI VARYANT (12 Kas) ──
+   Ayni urunun 40 Yazlik / 40 Kislik hali cogu alanda ortaktir (foto, marka, birim, etiket);
+   degisen yalniz eksen degeri ve stok kodu. Kullanici bunu kunyeden tek tek kurmasin:
+   satirdaki "Cogalt" o urunun kopyasini TASLAK olarak aileye koyar (_VA.yeni: id -> kayit),
+   "Eksik kombinasyonlari tamamla" olmayan her birlesim icin en yakin uyeden kopya uretir.
+   Taslak kutuphaneye yalnizca Kaydet'te yazilir (K.kopya + K.yaz, sonra K.ekle) - Vazgec
+   yarim kayit birakmaz. Kod / barkod / es kod kopyalanmaz: ambarda kod ayirt edicidir,
+   kopyanin kodu sonradan kunyeden verilir. Ad aile adi + degerlerden turer (vaKopyaAdKur),
+   degerler yazildikca tazelenir (vaYeniAdlariTazele). Toplu tamamlama Proje'de kapali:
+   orada urun kodu sartname eslestirmesinin anahtari, kodsuz toplu urun istenmez. */
+function vaKopyaAdKur(taban,v){
+  const d=(v||[]).map(s=>String(s==null?'':s).replace(/\s+/g,' ').trim()).filter(Boolean);
+  const t=String(taban||'').replace(/\s+/g,' ').trim();
+  return d.length?`${t} (${d.join(', ')})`.trim():t;
+}
+function vaKopyaAd(v){
+  const K=VA_KUT[_VA.src];
+  let taban=String(_VA.ad||'').trim();
+  if(!taban){ const ilk=_VA.uyeler.map(u=>vaKayit(_VA.src,u.id)).find(x=>x&&!_VA.yeni.has(x.id)); const p=ilk&&kmbBedenAyir(K.ad(ilk)); taban=p?p.taban:(ilk?K.ad(ilk):''); }
+  return vaKopyaAdKur(taban,v);
+}
+function vaYeniAdlariTazele(){
+  if(!_VA||!_VA.yeni.size) return;
+  const proje=_VA.src==='proje';
+  _VA.uyeler.forEach(u=>{ const t=_VA.yeni.get(u.id); if(!t) return; const ad=vaKopyaAd(u.v); if(proje) t.name=ad; else t.ad=ad; });
+}
+function vaKopyaTaslak(kaynakId,v){
+  const K=VA_KUT[_VA.src], x=vaKayit(_VA.src,kaynakId); if(!x||!K.kopya) return null;
+  const e=K.kopya(x,vaKopyaAd(v),Date.now(),v);
+  _VA.yeni.set(e.id,e);
+  _VA.uyeler.push({id:e.id,v:v.slice()});
+  return e;
+}
+function vaUyeCogalt(k){
+  const u=_VA&&_VA.uyeler[k]; if(!u) return;
+  if(_VA.uyeler.length>=300){ toast('Bir aileye en fazla 300 urun baglanabilir','err'); return; }
+  if(!_VA.eksen.length){ toast('Once bir eksen ekleyin (orn. Mevsim) - kopya o eksende farkli degeri tasir','err'); return; }
+  const e=vaKopyaTaslak(u.id,u.v.map(s=>String(s||'').trim())); if(!e) return;
+  vaCiz();
+  // ayni degerlerle kopya "ayni kombinasyon" diye kirmizi durur - imlec ilk degere gider, kullanici degistirir
+  setTimeout(()=>{ const sat=document.querySelectorAll('.va-grid-sat:not(.bas)'); const son=sat[sat.length-1]; const i=son&&son.querySelector('input'); if(i){ i.focus(); i.select(); son.scrollIntoView({block:'nearest'}); } },0);
+}
+// eksen degerlerinin kartezyen carpiminda hic uyesi olmayan birlesimler (eksen dizisine hizali)
+function vaEksikKombinasyonlar(){
+  if(!_VA||!_VA.eksen.length||_VA.src==='proje') return [];
+  const eks=_VA.eksen.map(e=>e.deger.filter(v=>String(v||'').trim()));
+  if(eks.some(d=>!d.length)) return [];
+  const toplam=eks.reduce((a,d)=>a*d.length,1); if(toplam>300) return [];
+  const olan=new Set(_VA.uyeler.map(u=>u.v.map(s=>norm(String(s||'')).trim()).join('\u0001')));
+  let komb=[[]];
+  eks.forEach(d=>{ komb=komb.flatMap(k=>d.map(v=>[...k,v])); });
+  return komb.filter(k=>!olan.has(k.map(s=>norm(s).trim()).join('\u0001')));
+}
+function vaKombinasyonTamamla(){
+  if(!_VA) return;
+  const eksik=vaEksikKombinasyonlar(); if(!eksik.length) return;
+  if(_VA.uyeler.length+eksik.length>300){ toast('Bir aileye en fazla 300 urun baglanabilir','err'); return; }
+  const ornek=eksik.slice(0,8).map(k=>k.join(' / ')).join(', ')+(eksik.length>8?' ...':'');
+  if(!confirm(`${eksik.length} eksik birlesim icin yeni urun uretilecek: ${ornek}.\n\nHer biri en yakin uyenin kopyasidir (foto, marka, birim, etiket); kod ve barkod bos kalir, kunyeden verilir. Kopyalar Kaydet ile olusur. Devam?`)) return;
+  // en yakin uye: degerleri en cok tutan (one gelen eksen oncelikli) - secicideki vaEnYakin kurali
+  eksik.forEach(k=>{
+    let iyi=null, iyiP=null;
+    _VA.uyeler.forEach(u=>{ if(_VA.yeni.has(u.id)) return;
+      const p=k.map((v,i)=>vaEsit(u.v[i],v)?1:0), t=p.reduce((a,b)=>a+b,0);
+      if(!iyi){ iyi=u; iyiP=p; return; }
+      const ti=iyiP.reduce((a,b)=>a+b,0);
+      if(t>ti||(t===ti&&p.join('')>iyiP.join(''))){ iyi=u; iyiP=p; } });
+    if(iyi) vaKopyaTaslak(iyi.id,k.slice());
+  });
+  vaDegerListesi(); vaCiz();
+  toast(eksik.length+' kopya eklendi - Kaydet ile olusur');
+}
 // acik uyelerle ayni kalipta adi olan (yalniz olcu/beden kismi farkli) urunler
 function vaBenzerler(){
   const K=VA_KUT[_VA.src], icinde=new Set(_VA.uyeler.map(u=>u.id));
@@ -32617,11 +32702,16 @@ async function vaKaydet(){
     const kalan=g.uyeler.filter(x=>!yeni.has(x.id));
     if(kalan.length<2) kalan.forEach(x=>yeni.set(x.id,null));
   });
+  vaYeniAdlariTazele();   // kopyanin adi son degerlerden
   const kayit=[];
   yeni.forEach((aile,rid)=>{ const x=vaKayit(src,rid); if(!x) return;
     const e={...x,updatedAt:now}; if(aile){ e.aile=aile; if(etiket) e.tags=etiket.slice(); } else delete e.aile; kayit.push(e); });
   try{ await K.yaz(kayit); }
   catch(err){ console.error('vaKaydet',err); toast('Aile kaydedilemedi: '+((err&&err.message)||err)+' - sayfayi yenileyip kontrol edin','err'); return; }
+  // kopya taslaklari artik kutuphanenin kaydidir (yazildi) - bellekteki listeye de girer
+  const kopyaN=_VA.yeni.size;
+  kayit.forEach(e=>{ const t=_VA.yeni.get(e.id); if(!t) return; Object.assign(t,e); K.ekle(t); _VA.yeni.delete(e.id); });
+  vaOnbellekSifirla();
   kayit.forEach(e=>{ const x=vaKayit(src,e.id); if(!x) return; if(e.aile){ x.aile=e.aile; if(etiket) x.tags=etiket.slice(); } else delete x.aile; x.updatedAt=now; });
   // Proje: sartname kalemleri etiketin KOPYASINI tasir (specEtiketleri) - uyelerinki de esitlenir
   if(src==='proje'&&etiket){
@@ -32633,9 +32723,9 @@ async function vaKaydet(){
   // Proje listesinde aileyi kuran secim tuketildi (Birlestir ile ayni): baska isleme tasinmasin
   if(src==='proje') kayit.forEach(e=>_matSel.delete(e.id));
   const n=_VA.uyeler.length, yeniMi=!_VA.id, d=_VA.donus;
-  logAction(K.log,(yeniMi?'Varyant ailesi kuruldu: ':'Varyant ailesi guncellendi: ')+ad+' ('+n+' urun; '+eksen.map(e=>e.ad).join(' x ')+(pa?'; piyasa adi aileden ('+pa.d+')':'')+(etiket&&etiket.length?'; etiket: '+etiket.join(', '):'')+')');
+  logAction(K.log,(yeniMi?'Varyant ailesi kuruldu: ':'Varyant ailesi guncellendi: ')+ad+' ('+n+' urun; '+eksen.map(e=>e.ad).join(' x ')+(kopyaN?'; '+kopyaN+' yeni urun kopyadan':'')+(pa?'; piyasa adi aileden ('+pa.d+')':'')+(etiket&&etiket.length?'; etiket: '+etiket.join(', '):'')+')');
   _VA=null; closeModal(); render(); if(d) d();
-  toast((yeniMi?'Varyant ailesi kuruldu':'Varyant ailesi guncellendi')+' - '+n+' urun');
+  toast((yeniMi?'Varyant ailesi kuruldu':'Varyant ailesi guncellendi')+' - '+n+' urun'+(kopyaN?' ('+kopyaN+' yeni kopya - kodlarini kunyeden verin)':''));
 }
 async function vaDagit(){
   if(!_VA||!_VA.id) return;
