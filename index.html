@@ -4784,6 +4784,8 @@ tr.va-uye:has(+tr.va-uye) td.va-dal::before{content:"";position:absolute;left:31
 .drop{border:1.5px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--mute);cursor:pointer;transition:.15s;font-size:13px}
 .drop:hover{border-color:var(--amber);color:var(--ink)}
 .drop.has{padding:8px}
+.drop.uzerinde{border-color:var(--amber);border-style:solid;color:var(--ink);background:color-mix(in srgb,var(--amber) 10%,transparent);box-shadow:0 0 0 3px color-mix(in srgb,var(--amber) 22%,transparent)}
+.drop.uzerinde *{pointer-events:none}
 .img-prev{width:100%;max-height:170px;object-fit:contain;border-radius:8px;background:var(--bg)}
 .file-pill{display:inline-flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line);padding:8px 12px;border-radius:9px;font-size:12px;font-family:var(--mono)}
 .file-pill button{margin-left:auto;background:none;color:var(--red);font-size:16px;line-height:1}
@@ -47384,7 +47386,7 @@ function renderNewOrderPage(){
               <option value="__new" ${NORD.companyId==='__new'?'selected':''}>+ Yeni sirket...</option></select>
             <input id="nord_newsirket" class="${NORD.companyId==='__new'?'':'hidden'}" style="margin-top:7px" placeholder="Yeni sirket adi" value="${esc(NORD.newCompany)}" oninput="NORD.newCompany=this.value"></div>
           <div class="frow"><label>${nordBorc()?"Borc Belgesi PDF'i":"Siparis PDF'i"}</label>
-            <div class="drop ${NORD.pdf?'has':''}" id="nordPdfDrop" onclick="${NORD.pdf&&NORD.pdf.yukleniyor?'':`document.getElementById('nordPdfInput').click()`}">${NORD.pdf?`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(NORD.pdf.name)}${NORD.pdf.yukleniyor?' <span style="opacity:.7">· '+icoBekle()+' yukleniyor…</span>':`<button onclick="event.stopPropagation();nordPdfKaldir()">x</button>`}</div>`:icoDoc()+'<div style="margin-top:6px">PDF ekleyin</div>'}</div>
+            <div class="drop ${NORD.pdf?'has':''}" id="nordPdfDrop" onclick="${NORD.pdf&&NORD.pdf.yukleniyor?'':`document.getElementById('nordPdfInput').click()`}" ondragenter="nordPdfSurukle(event,true)" ondragover="nordPdfSurukle(event,true)" ondragleave="nordPdfSurukle(event,false)" ondrop="nordPdfBirak(event)" title="PDF dosyasini buraya surukleyip birakabilirsiniz">${NORD.pdf?`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(NORD.pdf.name)}${NORD.pdf.yukleniyor?' <span style="opacity:.7">· '+icoBekle()+' yukleniyor…</span>':`<button onclick="event.stopPropagation();nordPdfKaldir()">x</button>`}</div>`:icoDoc()+'<div style="margin-top:6px">PDF ekleyin</div><div class="t-meta" style="font-size:11px;margin-top:3px">ya da dosyayi buraya surukleyin</div>'}</div>
             <input type="file" id="nordPdfInput" accept="application/pdf" class="hidden" onchange="nordPickPdf(event)"></div>
           <div class="frow" style="margin-bottom:0;display:flex;align-items:center;gap:7px">
             <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer;text-transform:none;font-size:13px;color:var(--ink)"><input type="checkbox" id="nord_imza" style="width:auto;margin:0" ${NORD.imzaYok?'checked':''} onchange="NORD.imzaYok=this.checked"> Imzali kagit elde degil</label>
@@ -47426,7 +47428,29 @@ function renderNewOrderPage(){
 function wireNewOrderPage(){ setTimeout(()=>{ const el=document.getElementById('nord_no'); if(el&&!el.value)el.focus(); },50); }
 // Siparis sayfasindaki fatura PDF'i - pickPdf ile ayni mantik, tek farki durumu NORD'da tutmasi
 async function nordPickPdf(e){
-  const f=e.target.files[0]; e.target.value=''; if(!f)return;
+  const f=e.target.files[0]; e.target.value=''; nordPdfAl(f);
+}
+/* SURUKLE-BIRAK: PDF dosyasi Siparis PDF'i kutusuna dogrudan birakilir - dosya secici
+   acmadan. Kutunun ustunde amber cerceve yanar; PDF olmayan dosya reddedilir. Yukleme
+   surerken birakma yutulur (ikinci dosya ilkinin uzerine binmesin). dragover'da
+   preventDefault SART: yoksa tarayici dosyayi sekmede acar. */
+function nordPdfSurukle(e,uzerinde){
+  e.preventDefault(); e.stopPropagation();
+  if(e.dataTransfer) e.dataTransfer.dropEffect='copy';
+  const el=document.getElementById('nordPdfDrop'); if(el) el.classList.toggle('uzerinde',!!uzerinde);
+}
+function nordPdfBirak(e){
+  e.preventDefault(); e.stopPropagation();
+  const el=document.getElementById('nordPdfDrop'); if(el) el.classList.remove('uzerinde');
+  if(NORD&&NORD.pdf&&NORD.pdf.yukleniyor){ toast('Onceki PDF hala yukleniyor','err'); return; }
+  const dosyalar=[...((e.dataTransfer&&e.dataTransfer.files)||[])];
+  const f=dosyalar.find(x=>x&&(x.type==='application/pdf'||/\.pdf$/i.test(x.name||'')));
+  if(!f){ toast('Yalnizca PDF dosyasi birakilabilir','err'); return; }
+  if(dosyalar.length>1) toast('Birden fazla dosya birakildi - yalnizca ilk PDF alindi');
+  nordPdfAl(f);
+}
+async function nordPdfAl(f){
+  if(!f||!NORD)return;
   if(f.size>20*1024*1024){ toast("PDF 20MB'tan buyuk","err"); return; }
   const eski=NORD.pdf;
   NORD.pdf={name:f.name,yukleniyor:1}; render();
