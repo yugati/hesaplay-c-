@@ -16076,7 +16076,17 @@ function ordFiltreOzeti(){
    yazi tipleri Kiril/Turkce harf yazamaz, tuval sistem yazi tipini kullanir.
    PDF'i olmayan / acilamayan siparis atlanir ama icindekilerde "PDF yok" diye satiri kalir. */
 let _OPDF=null;
-const OPDF_SATIR=34;           // icindekiler: sayfa basina satir
+const OPDF_SATIR=34;           // icindekiler: sayfa basina satir (2. sayfadan itibaren)
+/* Icindekiler kapagi: filtre olcutleri basligin altinda 3 sutunlu etiket/deger blogu olarak
+   yazilir; blok buyudukce ilk sayfaya daha az satir siger. Sayfa sayisi ve cizim ayni
+   hesabi kullanir. Sirket adi kapakta ve tabloda KISA ad (Sirketler > kisaAd) ile yazilir. */
+function opdfSirketKisa(ad){ const c=(DB.companies||[]).find(x=>x.ad===ad); return (c&&c.kisaAd)||ad||''; }
+function opdfKapakOlcut(){ return ordFiltreOzeti().map(([a,v])=>[a,a==='Sirket'?opdfSirketKisa(v):v]); }
+function opdfKapakUst(olcutSay){ return 250+Math.ceil(Math.max(1,olcutSay)/3)*66+24; }
+function opdfIcSayfaDilim(n,olcutSay){ // -> [[bas,bit],...] satir araliklari
+  const ilk=Math.max(10,Math.floor((1754-110-opdfKapakUst(olcutSay))/40)), out=[]; let i=0;
+  do{ const k=out.length?OPDF_SATIR:ilk; out.push([i,Math.min(n,i+k)]); i+=k; }while(i<n);
+  return out; }
 const OPDF_A4=[595.28,841.89]; // pt
 function loadPdfLib(){
   if(window.PDFLib) return Promise.resolve(window.PDFLib);
@@ -16168,19 +16178,32 @@ async function opdfBaytlar(pdf){
 function opdfKisalt(g,s,w){ s=String(s||''); if(g.measureText(s).width<=w) return s;
   while(s.length>1&&g.measureText(s+'…').width>w) s=s.slice(0,-1); return s+'…'; }
 // icindekiler sayfalari: A4 @150dpi tuval -> PNG baytlari
-function opdfIcindekilerPng(satirlar,altBaslik){
-  const W=1240,H=1754,sol=90,sag=1150,ust=250,sh=40, yazi='system-ui,"Segoe UI",Arial,sans-serif';
+function opdfIcindekilerPng(satirlar,olcutler){
+  const W=1240,H=1754,sol=90,sag=1150,sh=40, yazi='system-ui,"Segoe UI",Arial,sans-serif';
   const kol=[{x:sol,w:46,ad:'#'},{x:sol+46,w:290,ad:'Sipariş No'},{x:sol+336,w:140,ad:'Tarih'},{x:sol+476,w:140,ad:'Bina'},{x:sol+616,w:320,ad:'Şirket'}];
-  const sayfaSay=Math.max(1,Math.ceil(satirlar.length/OPDF_SATIR)), simdi=new Date(), out=[];
+  const dilim=opdfIcSayfaDilim(satirlar.length,olcutler.length), sayfaSay=dilim.length, simdi=new Date(), out=[];
+  const pdfSay=satirlar.filter(r=>r.sayfa).length;
   for(let p=0;p<sayfaSay;p++){
     const c=document.createElement('canvas'); c.width=W; c.height=H; const g=c.getContext('2d');
     g.fillStyle='#fff'; g.fillRect(0,0,W,H); g.textBaseline='alphabetic';
-    g.fillStyle='#1f2937'; g.font='bold 44px '+yazi; g.fillText('Sipariş Faturaları',sol,130);
-    g.fillStyle='#6b7280'; g.font='22px '+yazi; g.fillText(opdfKisalt(g,altBaslik,sag-sol),sol,172);
-    g.fillStyle='#333'; g.fillRect(sol,ust-34,sag-sol,2);
+    let ust=250;
+    if(p===0){
+      // Kapak: baslik, ozet satiri, 3 sutunlu filtre olcutleri (etiket ustte kucuk, deger altta)
+      g.fillStyle='#111827'; g.font='bold 44px '+yazi; g.fillText('Sipariş Faturaları',sol,130);
+      g.fillStyle='#6b7280'; g.font='20px '+yazi;
+      g.fillText(`${fmtNum(satirlar.length)} sipariş · ${fmtNum(pdfSay)} fatura · ${fmtDate(simdi)}`,sol,168);
+      g.fillStyle='#e5e7eb'; g.fillRect(sol,196,sag-sol,1);
+      const kw=(sag-sol)/3, by=232;
+      if(!olcutler.length){ g.fillStyle='#9ca3af'; g.font='italic 20px '+yazi; g.fillText('Filtre yok · tüm siparişler',sol,by+26); }
+      olcutler.forEach(([ad,deger],i)=>{ const x=sol+(i%3)*kw, y=by+Math.floor(i/3)*66;
+        g.fillStyle='#9ca3af'; g.font='bold 14px '+yazi; g.fillText(String(ad).toLocaleUpperCase('tr-TR'),x,y);
+        g.fillStyle='#1f2937'; g.font='21px '+yazi; g.fillText(opdfKisalt(g,deger,kw-24),x,y+28); });
+      ust=opdfKapakUst(olcutler.length);
+    } else { g.fillStyle='#6b7280'; g.font='bold 24px '+yazi; g.fillText('Sipariş Faturaları · İçindekiler (devam)',sol,ust-70); }
+    g.fillStyle='#111827'; g.fillRect(sol,ust-34,sag-sol,2);
     g.font='bold 20px '+yazi; g.fillStyle='#374151';
     kol.forEach(k=>g.fillText(k.ad,k.x,ust-8)); g.textAlign='right'; g.fillText('Sayfa',sag,ust-8); g.textAlign='left';
-    satirlar.slice(p*OPDF_SATIR,(p+1)*OPDF_SATIR).forEach((r,i)=>{
+    satirlar.slice(dilim[p][0],dilim[p][1]).forEach((r,i)=>{
       const y=ust+(i+1)*sh-12;
       if(i%2===0){ g.fillStyle='#f3f4f6'; g.fillRect(sol,y-27,sag-sol,sh); }
       g.font=(r.iade?'italic ':'')+'20px '+yazi; g.fillStyle=r.sayfa?'#1f2937':'#9ca3af';
@@ -16251,7 +16274,7 @@ function opdfDetayPng(bloklar,altBaslik,sayfaOf,st,kodla){
     const s=sayfaOf(b.g), sagMetin=typeof s==='number'?(s?'Fatura s. '+s:''):s;
     g.font='bold 19px '+yazi; g.textAlign='right'; g.fillStyle=typeof s==='number'?'#1f2937':'#9ca3af'; g.fillText(sagMetin,sag-12,y+30);
     const sagW=g.measureText(sagMetin).width; g.textAlign='left';
-    const metin=[b.g.etiket,opdfGirdiTarih(b.g),b.g.o.bina||'',orderCompany(b.g.o)].filter(Boolean).join('  ·  ')+(devam?'  (devam)':'');
+    const metin=[b.g.etiket,opdfGirdiTarih(b.g),b.g.o.bina||'',orderCompanyKisa(b.g.o)].filter(Boolean).join('  ·  ')+(devam?'  (devam)':'');
     g.font=(b.g.iade?'bold italic ':'bold ')+'20px '+yazi; g.fillStyle='#111827'; g.fillText(opdfKisalt(g,metin,sag-sol-sagW-40),sol+12,y+30);
     y+=h; };
   yeniSayfa();
@@ -16310,8 +16333,9 @@ async function ordPdfBirlestir(){
     /* On sayfalar: icindekiler + (istenirse) detay tablosu, faturalarin ONUNE eklenir; fatura
        sayfa numaralari bu yuzden on sayfa sayisi kadar kayar. Detay sayfa sayisi once
        kodlamadan sayilir, sonra gercek numaralarla cizilir. */
-    const filtre=ordFiltreOzeti().map(([a,v])=>a+': '+v).join(' · ')||'Filtre yok - tüm siparişler';
-    const icP=st.icindekiler?Math.max(1,Math.ceil(girdiler.length/OPDF_SATIR)):0;
+    const olcutler=opdfKapakOlcut();
+    const filtre=olcutler.map(([a,v])=>a+': '+v).join(' · ')||'Filtre yok - tüm siparişler';
+    const icP=st.icindekiler?opdfIcSayfaDilim(girdiler.length,olcutler.length).length:0;
     let bloklar=null, dP=0;
     const detayAlt=filtre+' · '+(st.detayKapsam==='tum'?'siparişin tüm ürünleri':'yalnız filtreye uyan ürünler');
     if(st.detay){ opdfDurum('Detay tablosu hazirlaniyor…'); bloklar=opdfDetayBloklar(girdiler,st); dP=opdfDetayPng(bloklar,detayAlt,()=>0,st,false).sayfa; }
@@ -16321,9 +16345,9 @@ async function ordPdfBirlestir(){
     const onEkle=async(pngs,bas)=>{ for(let i=0;i<pngs.length;i++){ const img=await out.embedPng(pngs[i]); const pg=out.insertPage(bas+i,OPDF_A4);
       pg.drawImage(img,{x:0,y:0,width:OPDF_A4[0],height:OPDF_A4[1]}); } };
     if(st.icindekiler){
-      const satirlar=girdiler.map((g,i)=>({sira:i+1,no:g.etiket,tarih:opdfGirdiTarih(g),bina:g.o.bina||'',sirket:orderCompany(g.o),iade:g.iade,
+      const satirlar=girdiler.map((g,i)=>({sira:i+1,no:g.etiket,tarih:opdfGirdiTarih(g),bina:g.o.bina||'',sirket:orderCompanyKisa(g.o),iade:g.iade,
           sayfa:sayfaNo(g), not:notu(g)}));
-      await onEkle(opdfIcindekilerPng(satirlar,filtre),0);
+      await onEkle(opdfIcindekilerPng(satirlar,olcutler),0);
     }
     if(st.detay) await onEkle(opdfDetayPng(bloklar,detayAlt,g=>sayfaNo(g)||notu(g),st,true).png,icP);
     const blob=new Blob([await out.save()],{type:'application/pdf'});
