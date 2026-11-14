@@ -16120,9 +16120,9 @@ function openOrdersPdfBirlestir(){
   _OPDF.calisiyor=false;
   closeModal();
   document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg" onclick="if(event.target===this&&!_OPDF.calisiyor)closeModal()"><div class="modal" style="max-width:560px">
-    <div class="modal-head"><h3>Siparis PDF'lerini Birlestir</h3><button class="mini-btn" onclick="if(!_OPDF.calisiyor)closeModal()">x</button></div>
+    <div class="modal-head"><h3>Siparis PDF'lerini Birlestir</h3><button class="mini-btn" onclick="opdfVazgec()">x</button></div>
     <div class="modal-body" id="opdfGovde"></div>
-    <div class="modal-foot"><button class="btn btn-ghost" style="margin-right:auto" onclick="if(!_OPDF.calisiyor)closeModal()">Vazgec</button>
+    <div class="modal-foot"><button class="btn btn-ghost" style="margin-right:auto" onclick="opdfVazgec()">Vazgec</button>
       <button class="btn btn-add" id="opdfBtn" onclick="ordPdfBirlestir()">${icoDoc()} PDF Olustur</button></div>
   </div></div>`);
   opdfCiz();
@@ -16170,9 +16170,13 @@ function opdfCiz(){
   const btn=document.getElementById('opdfBtn'); if(btn) btn.disabled=!inecek.length;
 }
 function opdfDurum(t){ const el=document.getElementById('opdfDurum'); if(el) el.textContent=t; }
-async function opdfBaytlar(pdf){
+/* Vazgec: calisirken basilirsa surmekte olan indirmeler kesilir (AbortController), birlestirme
+   dongusu bayragi gorup sessizce biter, pencere kapanir. Her calisma kendi kesicisini tasir;
+   kapandiktan sonra biten eski is pencereye dokunmaz. */
+function opdfVazgec(){ const st=_OPDF; if(st&&st.calisiyor){ st.iptal=true; if(st.kesici) st.kesici.abort(); st.calisiyor=false; toast('PDF olusturma iptal edildi'); } closeModal(); }
+async function opdfBaytlar(pdf,signal){
   const url=pdf.path?await window.sbBelgeUrl(pdf.path):pdf.data;
-  const r=await fetch(url); if(!r.ok) throw new Error('indirilemedi ('+r.status+')');
+  const r=await fetch(url,{signal}); if(!r.ok) throw new Error('indirilemedi ('+r.status+')');
   return r.arrayBuffer();
 }
 function opdfKisalt(g,s,w){ s=String(s||''); if(g.measureText(s).width<=w) return s;
@@ -16308,27 +16312,31 @@ async function ordPdfBirlestir(){
   const {girdiler}=opdfGirdiler(st.sira,st.iade);
   const inecek=girdiler.filter(g=>g.pdf&&!g.tekrar);
   if(!inecek.length){ toast('Birlestirilecek PDF yok','err'); return; }
-  st.calisiyor=true;
+  st.calisiyor=true; st.iptal=false; const kesici=st.kesici=new AbortController();
   const btn=document.getElementById('opdfBtn'); if(btn) btn.disabled=true;
   document.querySelectorAll('#opdfGovde input').forEach(i=>i.disabled=true);
   const bitir=()=>{ st.calisiyor=false; if(btn) btn.disabled=false; document.querySelectorAll('#opdfGovde input').forEach(i=>i.disabled=false); };
+  const iptal=()=>kesici.signal.aborted;
   let L;
   try{ opdfDurum('PDF motoru yukleniyor…'); L=await loadPdfLib(); }
-  catch(e){ toast(e.message,'err'); opdfDurum(e.message); bitir(); return; }
+  catch(e){ if(iptal()) return; toast(e.message,'err'); opdfDurum(e.message); bitir(); return; }
+  if(iptal()) return;
   // 3'erli paralel indirme: imzali adres + dosya; bozuk/sifreli olan atlanir, nedeni yazilir
   let sira=0, bitti=0;
-  const isci=async()=>{ while(sira<inecek.length){ const g=inecek[sira++];
-    try{ g.doc=await L.PDFDocument.load(await opdfBaytlar(g.pdf),{ignoreEncryption:true}); }
-    catch(e){ g.hata=(e&&e.message)||'acilamadi'; console.warn('PDF birlestir',g.etiket,e); }
+  const isci=async()=>{ while(sira<inecek.length&&!iptal()){ const g=inecek[sira++];
+    try{ g.doc=await L.PDFDocument.load(await opdfBaytlar(g.pdf,kesici.signal),{ignoreEncryption:true}); }
+    catch(e){ if(iptal()) return; g.hata=(e&&e.message)||'acilamadi'; console.warn('PDF birlestir',g.etiket,e); }
     opdfDurum(`Belgeler indiriliyor ${++bitti} / ${inecek.length}`); } };
   await Promise.all([isci(),isci(),isci()]);
+  if(iptal()) return;
   try{
     opdfDurum('Birlestiriliyor…');
     const out=await L.PDFDocument.create();
     let sayfa=0;
     for(const g of inecek){ if(!g.doc) continue;
       try{ const ps=await out.copyPages(g.doc,g.doc.getPageIndices()); g.ilk=sayfa+1; ps.forEach(pg=>out.addPage(pg)); sayfa+=ps.length; }
-      catch(e){ g.hata=(e&&e.message)||'kopyalanamadi'; console.warn('PDF birlestir',g.etiket,e); } }
+      catch(e){ g.hata=(e&&e.message)||'kopyalanamadi'; console.warn('PDF birlestir',g.etiket,e); }
+      if(iptal()) return; }
     if(!sayfa) throw new Error('Hicbir PDF acilamadi');
     /* On sayfalar: icindekiler + (istenirse) detay tablosu, faturalarin ONUNE eklenir; fatura
        sayfa numaralari bu yuzden on sayfa sayisi kadar kayar. Detay sayfa sayisi once
@@ -16350,6 +16358,7 @@ async function ordPdfBirlestir(){
       await onEkle(opdfIcindekilerPng(satirlar,olcutler),0);
     }
     if(st.detay) await onEkle(opdfDetayPng(bloklar,detayAlt,g=>sayfaNo(g)||notu(g),st,true).png,icP);
+    if(iptal()) return;
     const blob=new Blob([await out.save()],{type:'application/pdf'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
     a.download=`Siparis_Faturalari_${ORDBINA||'tum'}_${new Date().toISOString().slice(0,10)}.pdf`;
@@ -16357,7 +16366,7 @@ async function ordPdfBirlestir(){
     const hatali=inecek.filter(g=>g.hata);
     bitir(); closeModal();
     toast(hatali.length?`PDF indirildi - ${hatali.length} belge acilamadi: ${hatali.slice(0,3).map(g=>g.etiket).join(', ')}${hatali.length>3?'…':''}`:`PDF indirildi: ${inecek.length} belge, ${sayfa} sayfa`,hatali.length?'warn':undefined);
-  }catch(e){ console.error('PDF birlestir',e); toast('PDF olusturulamadi: '+((e&&e.message)||e),'err'); opdfDurum('Hata: '+((e&&e.message)||e)); bitir(); }
+  }catch(e){ if(iptal()) return; console.error('PDF birlestir',e); toast('PDF olusturulamadi: '+((e&&e.message)||e),'err'); opdfDurum('Hata: '+((e&&e.message)||e)); bitir(); }
 }
 /* ═══ MALZEME TESLIMAT MUTABAKATI (Tum Siparisler 3. sekme) ═══════════════════════════
    Secilen TEDARIKCI firmadan, secilen TARIHE KADAR (istenirse bir donem basindan itibaren)
