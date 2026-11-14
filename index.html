@@ -4777,6 +4777,8 @@ tr.va-uye:has(+tr.va-uye) td.va-dal::before{content:"";position:absolute;left:31
 .drop.has{padding:8px}
 .drop.uzerinde{border-color:var(--amber);border-style:solid;color:var(--ink);background:color-mix(in srgb,var(--amber) 10%,transparent);box-shadow:0 0 0 3px color-mix(in srgb,var(--amber) 22%,transparent)}
 .drop.uzerinde *{pointer-events:none}
+/* tutanak PDF karti: dosya rozeti doluyken de surukleme isigi yansin */
+.tut-card.uzerinde{outline:2px dashed var(--amber);outline-offset:-6px;background:color-mix(in srgb,var(--amber) 5%,transparent)}
 .img-prev{width:100%;max-height:170px;object-fit:contain;border-radius:8px;background:var(--bg)}
 .file-pill{display:inline-flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line);padding:8px 12px;border-radius:9px;font-size:12px;font-family:var(--mono)}
 .file-pill button{margin-left:auto;background:none;color:var(--red);font-size:16px;line-height:1}
@@ -48208,7 +48210,7 @@ function tutPdfCopAt(p){
 }
 function tutPdfKutuHtml(){
   const p=_TUT&&_TUT.pdf;
-  if(!p) return `<div class="drop" onclick="document.getElementById('tutPdfInput').click()">${icoDoc()}<div style="margin-top:6px">PDF ekleyin</div></div>`;
+  if(!p) return `<div class="drop" onclick="document.getElementById('tutPdfInput').click()" title="PDF dosyasini buraya surukleyip birakabilirsiniz">${icoDoc()}<div style="margin-top:6px">PDF ekleyin</div><div class="t-meta" style="font-size:11px;margin-top:3px">ya da dosyayi buraya surukleyin</div></div>`;
   return `<div class="file-pill" style="margin:0">${icoDoc()}
     <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name||'belge')}</span>
     ${p.size?`<span style="opacity:.7;flex:none">· ${fmtBytes(p.size)}</span>`:''}
@@ -48218,12 +48220,44 @@ function tutPdfKutuHtml(){
 function tutPdfCiz(){ const el=document.getElementById('tutPdfKutu'); if(el) el.innerHTML=tutPdfKutuHtml(); }
 function tutPdfAc(){ acPdf(_TUT&&_TUT.pdf); }
 async function tutPdfSec(e){
-  const f=e.target.files[0]; e.target.value=''; if(!f||!_TUT)return;
-  if(!/\.pdf$/i.test(f.name)){ toast('Yalnizca PDF yuklenebilir','err'); return; }
+  const f=e.target.files[0]; e.target.value=''; tutPdfAl(f);
+}
+/* SURUKLE-BIRAK: PDF, "Tutanak PDF'i" kartinin herhangi bir yerine birakilabilir - bos
+   kutuya da, dolu kutunun (dosya rozeti) ustune de; ikincisi dosyayi degistirir. Kart
+   uzerindeyken amber cerceve yanar. dragover'da preventDefault SART: yoksa tarayici PDF'i
+   sekmede acar. dragleave kartin cocuklari arasinda gecerken de atesler; relatedTarget
+   hala kartin icindeyse isik sondurulmez (titreme olmasin). Yukleme surerken ikinci
+   birakma yutulur. (nordPdfBirak ile ayni kalip.) */
+let _tutPdfYukleniyor=false;
+function tutPdfSurukle(e,uzerinde){
+  e.preventDefault(); e.stopPropagation();
+  if(e.dataTransfer) e.dataTransfer.dropEffect='copy';
+  const card=document.getElementById('tutPdfCard'); if(!card)return;
+  if(!uzerinde&&e.relatedTarget&&card.contains(e.relatedTarget)) return;
+  card.classList.toggle('uzerinde',!!uzerinde);
+  const d=card.querySelector('.drop'); if(d) d.classList.toggle('uzerinde',!!uzerinde);
+}
+function tutPdfBirak(e){
+  e.preventDefault(); e.stopPropagation();
+  const card=document.getElementById('tutPdfCard');
+  if(card){ card.classList.remove('uzerinde'); const d=card.querySelector('.drop'); if(d) d.classList.remove('uzerinde'); }
+  if(_tutPdfYukleniyor){ toast('Onceki PDF hala yukleniyor','err'); return; }
+  const dosyalar=[...((e.dataTransfer&&e.dataTransfer.files)||[])];
+  const f=dosyalar.find(x=>x&&(x.type==='application/pdf'||/\.pdf$/i.test(x.name||'')));
+  if(!f){ toast('Yalnizca PDF dosyasi birakilabilir','err'); return; }
+  if(dosyalar.length>1) toast('Birden fazla dosya birakildi - yalnizca ilk PDF alindi');
+  tutPdfAl(f);
+}
+// dosya secici ve surukle-birak ortak yolu
+async function tutPdfAl(f){
+  if(!f||!_TUT)return;
+  if(!/\.pdf$/i.test(f.name)&&f.type!=='application/pdf'){ toast('Yalnizca PDF yuklenebilir','err'); return; }
   if(f.size>20*1024*1024){ toast("PDF 20MB'tan buyuk",'err'); return; }
+  if(_tutPdfYukleniyor){ toast('Onceki PDF hala yukleniyor','err'); return; }
   const onceki=_TUT.pdf||null;
   const el=document.getElementById('tutPdfKutu');
   if(el) el.innerHTML=`<div class="file-pill" style="margin:0">${icoDoc()} ${esc(f.name)} <span style="opacity:.7">· ${icoBekle()} yukleniyor…</span></div>`;
+  _tutPdfYukleniyor=true;
   try{
     _TUT.pdf=await window.sbBelgeYukle('tutanak',_TUT.id,f);
     tutPdfCopAt(onceki);                 // degistirilen dosya kayda hic islenmediyse birakma
@@ -48232,7 +48266,7 @@ async function tutPdfSec(e){
   }catch(err){
     _TUT.pdf=onceki; tutPdfCiz();
     toast('PDF yuklenemedi: '+((err&&err.message)||'baglanti hatasi'),'err');
-  }
+  }finally{ _tutPdfYukleniyor=false; }
 }
 function tutPdfSil(){
   if(!_TUT||!_TUT.pdf)return;
@@ -48665,7 +48699,7 @@ function renderTutanakForm(){
       <textarea rows="3" placeholder="Ciktidaki ACIKLAMALAR / ПРИМЕЧАНИЯ kutusunda gorunur" onchange="tutSet('aciklama',this.value)" style="width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:10px 12px;font-size:13px;resize:vertical">${esc(t.aciklama||'')}</textarea>
     </div>
 
-    <div class="tut-card"><h4>Tutanak PDF'i <i>Скан акта</i></h4>
+    <div class="tut-card" id="tutPdfCard" ondragenter="tutPdfSurukle(event,true)" ondragover="tutPdfSurukle(event,true)" ondragleave="tutPdfSurukle(event,false)" ondrop="tutPdfBirak(event)"><h4>Tutanak PDF'i <i>Скан акта</i></h4>
       <div id="tutPdfKutu">${tutPdfKutuHtml()}</div>
       <input type="file" id="tutPdfInput" accept="application/pdf,.pdf" class="hidden" onchange="tutPdfSec(event)">
       <p class="t-meta" style="margin-top:9px;font-size:11.5px">Imzalanmis/taranmis nushayi buraya yukleyin - tutanak <b>kaydedilmeden once de</b> yuklenebilir, sonradan da degistirilebilir. Dosya kayda gomulmez, guvenli belge kovasinda saklanir; tutanak listesinden tek tikla acilir. En fazla 20 MB, yalnizca PDF. <b>Yazdir</b> ciktisi bundan bagimsizdir - o her zaman guncel veriden basar.</p>
