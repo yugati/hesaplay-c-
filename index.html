@@ -40530,6 +40530,23 @@ function slinkGyBasliklar(yz,vardiya){
     k:norm(String(g.ad).trim()), ad:String(g.ad).trim(), n:gyGrupVardiyaToplam(g,vardiya),
     odalar:g.odali?(g.satirlar||[]).filter(r=>r&&String(r.oda||'').trim()&&gySayi(vardiya==='GECE'?r.geceKisi:r.kisi)).map(r=>String(r.oda).trim()+' / '+gySayi(vardiya==='GECE'?r.geceKisi:r.kisi)):[] }));
 }
+/* BOLUM -> BASLIK (ters yon): formun bolumune bagli (Saha Kaydi Ayarlari bagi ya da ad eslesmesi)
+   Gunluk Yazi basliklarinin anahtarlari. Yazi formun binasina ait degilse bos. */
+function gyBolumBasliklari(y){
+  if(!y||!y.cat||!y.tarih) return [];
+  const yz=slinkGyKaynak(y); if(!yz||String(yz.bina||'')!==String(y.bina||'')) return [];
+  const ayar=skAyar();
+  return slinkGyBasliklar(yz,y.vardiya).filter(b=>skBaslikBolum(b.ad,ayar).bolum===y.cat).map(b=>b.k);
+}
+/* Baslik secimi bos ya da daha once OTOMATIK dolmussa (gyOto) bolumun basliklari secilir.
+   Doner: secim degisti mi. Elle secim varsa dokunulmaz. */
+function gyOtoSec(y){
+  if(!y||!y.cat||((y.gySec||[]).length&&!y.gyOto)) return false;
+  const ks=gyBolumBasliklari(y);
+  if(!ks.length){ if(y.gyOto&&(y.gySec||[]).length){ y.gySec=[]; y.gyOto=false; return true; } return false; }
+  if(ks.join('|')===(y.gySec||[]).join('|')) return false;
+  y.gySec=ks; y.gyOto=true; return true;
+}
 function slinkGyToplam(y){ const set=new Set(y.gySec); return slinkGyBasliklar(slinkGyKaynak(y),y.vardiya).filter(b=>set.has(b.k)).reduce((s,b)=>s+b.n,0); }
 // adam kutusu yerinde guncellenir (tum form yeniden cizilmez - odak ve yazilan kaybolmasin)
 function slinkGyKutu(){
@@ -40585,6 +40602,8 @@ function slinkGyOtoUygula(){
 }
 // secim degisti: adam sayisi toplanir, baglar uygulanir; bolum/sartname/kat degistiyse form bastan cizilir
 function slinkGySonrasi(){
+  const y=SLINK.yeni;
+  if(y&&gyOtoSec(y)){ if(y.gySec.length) slinkGyUygula(); else { y.adam=''; slinkGyKutu(); } }
   if(slinkGyOtoUygula()) slinkModalCiz(true); else slinkGyCiz();
 }
 // i = slinkGyBasliklar sirasi; 'hepsi' / 'hic' toplu secim
@@ -40594,6 +40613,7 @@ function slinkGySec(i){
   if(i==='hepsi') y.gySec=bs.map(b=>b.k);
   else if(i==='hic') y.gySec=[];
   else { const b=bs[i]; if(!b) return; y.gySec=y.gySec.includes(b.k)?y.gySec.filter(k=>k!==b.k):[...y.gySec,b.k]; }
+  y.gyOto=false;   // elle secim: bolumden otomatik baslik secimi durur
   if(y.gySec.length) slinkGyUygula(); else { y.adam=''; slinkGyKutu(); }
   slinkGySonrasi();
 }
@@ -40610,7 +40630,7 @@ function slinkAdamYaz(v){
   const y=SLINK.yeni; if(!y) return;
   if(adamGyZorunlu()){ slinkGyKutu(); return; }
   y.adam=v;
-  if(y.gySec.length){ y.gySec=[]; slinkGyKutu(); slinkGyCiz(); }
+  if(y.gySec.length){ y.gySec=[]; y.gyOto=false; slinkGyKutu(); slinkGyCiz(); }
 }
 function slinkTarihDegis(v){
   const y=SLINK.yeni; if(!y) return;
@@ -40653,7 +40673,7 @@ function slinkGyHtml(y,o){
 }
 function slinkYeniAc(){
   const binalar=binaOptsFor('');
-  SLINK.yeni={tarih:rISO(Date.now()), vardiya:VARDIYALAR[0], bina:binalar[0]||'', cat:'', ekip:'', sartlar:[], katId:'', dolduran:'', dolduranElle:false, adam:'', gySec:[], gyKaynak:'', sure:'6s', stokDus:true, catOto:false, sartOto:false, katOto:false};
+  SLINK.yeni={tarih:rISO(Date.now()), vardiya:VARDIYALAR[0], bina:binalar[0]||'', cat:'', ekip:'', sartlar:[], katId:'', dolduran:'', dolduranElle:false, adam:'', gySec:[], gyKaynak:'', sure:'6s', stokDus:true, catOto:false, sartOto:false, katOto:false, gyOto:false};
   SLINK.gorunum='yeni'; slinkModalCiz(true);
 }
 /* DOLDURACAK KISI: secilen ekibe atanmis kullanicilar (Kullanici Yonetimi > Ekip; app_settings >
@@ -40698,8 +40718,10 @@ function slinkYeniSet(k,v){
   const y=SLINK.yeni; if(!y) return;
   y[k]=v;
   // bina degisince Gunluk Yazi kaynagi yeni binanin yazisina doner, secili basliklar oradan toplanir
-  if(k==='bina'){ y.sartlar=[]; y.katId=''; y.gyKaynak=''; slinkGyUygula(); slinkGyOtoUygula(); }
-  if(k==='cat'){ y.catOto=false; const ok=new Set(slinkSartListesi(y).map(s=>s.code)); y.sartlar=y.sartlar.filter(c=>ok.has(c)); slinkGyOtoUygula(); }
+  if(k==='bina'){ y.sartlar=[]; y.katId=''; y.gyKaynak=''; slinkGyUygula(); }
+  if(k==='cat'){ y.catOto=false; const ok=new Set(slinkSartListesi(y).map(s=>s.code)); y.sartlar=y.sartlar.filter(c=>ok.has(c)); }
+  // bolum / bina degisince: bolume bagli basliklar otomatik secilir (adam sayisi dolar), sonra sartname/kat baglari
+  if(k==='bina'||k==='cat'){ if(gyOtoSec(y)){ if(y.gySec.length) slinkGyUygula(); else y.adam=''; } slinkGyOtoUygula(); }
   // ekip degisince listeden secilmis kisi yeni ekipte yoksa bosalir; elle yazilan ad kalir
   if(k==='ekip'&&!y.dolduranElle&&y.dolduran){ const k2=slinkEkipKisileri(v); if(!k2.includes(y.dolduran)&&!slinkDolduranGecmis(v,k2).includes(y.dolduran)) y.dolduran=''; }
   if(y.katId&&!slinkKatSecenek(y).some(x=>x.id===y.katId)) y.katId='';
@@ -40771,7 +40793,7 @@ async function slinkOlustur(){
     // gySec/gyKaynak formun Gunluk Yazi seciminin durumu - linke yalniz sonuc sayisi (adam) gider
     // gySec/gyKaynak formun Gunluk Yazi seciminin durumu. Zorunlu modda (adamGy) linke yazilir:
     // onayda Saha Kaydi formuna geri gelir; secilmediyse linki acana adam sorulmaz
-    const {gySec, gyKaynak, catOto, sartOto, katOto, ...gonder}=y;
+    const {gySec, gyKaynak, catOto, sartOto, katOto, gyOto, ...gonder}=y;
     const z=adamGyZorunlu();
     const r=await sbSahaLinkIslem({op:'olustur', ...gonder, dolduran:y.dolduran.trim(), adam:adam===''?'':Number(adam),
       ...(z?{adamGy:true, gySec:gySec.slice(), gyKaynak:gyKaynak||''}:{})});
@@ -42308,6 +42330,8 @@ function rSetBlockCat(bi,v){
   const bk=_rBlocks[bi]; if(!bk)return;
   bk.cat=v;
   const bina=document.getElementById('r_bina').value;
+  // bolum secildi: bolume bagli Gunluk Yazi basliklari otomatik secilir, adam sayisi dolar
+  if(rGyOtoSec(bk)) rGyUygula(bk);
   // bolum degisti: yeni bolume ait olmayan sartname baglantili kalemleri temizle
   bk.lines.forEach(l=>{ if(l.specId){ const sp=DB.proje.specs.find(s=>s.id===l.specId); if(sp && v && sp.cat!==v){ l.specId=null;l.matId=null;l.code='';l.name='';l.grup=''; } } });
   // sartname secimi yeni bolume ait degilse temizle
@@ -42349,10 +42373,15 @@ function rSetBlockSart(bi,v){
 function rGyDurum(bk){
   if(!Array.isArray(bk.gySec)) bk.gySec=[];
   return {tarih:(document.getElementById('r_tarih')||{}).value||'', bina:(document.getElementById('r_bina')||{}).value||'',
-    vardiya:(document.getElementById('r_vardiya')||{}).value||'GUNDUZ', cat:bk.cat||'', gySec:bk.gySec, gyKaynak:bk.gyKaynak||''};
+    vardiya:(document.getElementById('r_vardiya')||{}).value||'GUNDUZ', cat:bk.cat||'', gySec:bk.gySec, gyKaynak:bk.gyKaynak||'', gyOto:!!bk.gyOto};
 }
 // secim varsa bolumun adam sayisi eldeki yazidan yeniden hesaplanir (hicbiri yoksa bosalir)
 function rGyUygula(bk){ if(!bk||!(bk.gySec||[]).length) return; const t=slinkGyToplam(rGyDurum(bk)); bk.adam=t?String(t):''; }
+// bolume bagli basliklar bloga otomatik secilir (gyOtoSec); secim bosalirsa adam da bosalir
+function rGyOtoSec(bk){
+  const y=rGyDurum(bk); const d=gyOtoSec(y); if(!d) return false;
+  bk.gySec=y.gySec; bk.gyOto=y.gyOto; if(!bk.gySec.length){ bk.adam=''; } return true;
+}
 function rGyKutu(bi){
   const bk=_rBlocks[bi], inp=document.getElementById('r_adam_'+bi); if(!bk||!inp) return;
   if(inp.value!==String(bk.adam==null?'':bk.adam)) inp.value=bk.adam==null?'':bk.adam;
@@ -42396,6 +42425,7 @@ function rGySec(bi,i){
   if(i==='hepsi') bk.gySec=bs.map(b=>b.k);
   else if(i==='hic') bk.gySec=[];
   else { const b=bs[i]; if(!b) return; bk.gySec=bk.gySec.includes(b.k)?bk.gySec.filter(k=>k!==b.k):[...bk.gySec,b.k]; }
+  bk.gyOto=false;   // elle secim: bolumden otomatik baslik secimi durur
   if(bk.gySec.length) rGyUygula(bk); else bk.adam='';
   skGyOtoUygula(bi);
   rRenderBlocks();
@@ -42412,12 +42442,12 @@ function rAdamYaz(bi,v){
   const bk=_rBlocks[bi]; if(!bk) return;
   if(adamGyZorunlu()){ rGyKutu(bi); return; }   // kutu salt okunur - yine de elle deger kabul edilmez
   bk.adam=v;
-  if((bk.gySec||[]).length){ bk.gySec=[]; rGyKutu(bi); rGyCiz(bi); }
+  if((bk.gySec||[]).length){ bk.gySec=[]; bk.gyOto=false; rGyKutu(bi); rGyCiz(bi); }
 }
 // formun tarihi degisti: secimli bolumler o gunun yazisindan yeniden toplanir (bloklar yeniden
 // CIZILMEZ - yalniz adam kutusu ve panel; satirlarda yazilanlar/odak yerinde kalir)
-function rTarihDegis(){ _rBlocks.forEach((bk,bi)=>{ rGyUygula(bk); rGyKutu(bi); rGyCiz(bi); }); }
-function rVardiyaDegis(){ _rBlocks.forEach((bk,bi)=>{ rGyUygula(bk); rGyKutu(bi); rGyCiz(bi); }); }
+function rTarihDegis(){ _rBlocks.forEach((bk,bi)=>{ rGyOtoSec(bk); rGyUygula(bk); rGyKutu(bi); rGyCiz(bi); }); }
+function rVardiyaDegis(){ _rBlocks.forEach((bk,bi)=>{ rGyOtoSec(bk); rGyUygula(bk); rGyKutu(bi); rGyCiz(bi); }); }
 /* ══ SAHA KAYDI ↔ GUNLUK YAZI ↔ BINALAR BAGI (1 Eki 2026) ═══════════════════════
    Zincir: Gunluk Yazi BASLIGI -> BOLUM -> basligin odalarinin KATI (Binalar agaci,
    gyOdaIndeks) -> o kati kapsayan, o bolume ait SARTNAME.
