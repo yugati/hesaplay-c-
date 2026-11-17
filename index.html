@@ -40543,7 +40543,50 @@ function slinkGyUygula(){
   const t=slinkGyToplam(y); y.adam=t?String(t):'';
   slinkGyKutu();
 }
-function slinkGyCiz(){ const e=document.getElementById('slinkGy'); if(e&&SLINK.yeni) e.innerHTML=slinkGyHtml(SLINK.yeni); }
+// Gunluk Yazi paneli + altinda bag seridi (baslik -> bolum -> kat -> sartname)
+function slinkGyAlanHtml(y){
+  return slinkGyHtml(y)+skBagSerit(skBagHesapla(y), y.cat, {cokBolum:'Link tek bölüm tutar, bu yüzden bölüm otomatik seçilmedi; bölümü siz seçin.', kim:'linkin bölümü',
+    ipucu:'Linkin şartnameleri ve katı bu bağlardan otomatik seçildi; elle değiştirirseniz otomatik seçim o alanda durur.'});
+}
+function slinkGyCiz(){ const e=document.getElementById('slinkGy'); if(e&&SLINK.yeni) e.innerHTML=slinkGyAlanHtml(SLINK.yeni); }
+/* BASLIK SECILINCE LINKIN BOLUMU / SARTNAMELERI / KATI OTOMATIK (Saha Kaydi'ndaki skGyOtoUygula'nin
+   link karsiligi, ayni bag zinciri: baslik -> bolum (Saha Kaydi Ayarlari bagi ya da ad eslesmesi) ->
+   basligin odalarinin kati -> o kati kapsayan sartname). Yalniz BOS ya da daha once OTOMATIK dolmus
+   alanlara yazilir (catOto / sartOto / katOto); kullanicinin elle sectigi degere dokunulmaz.
+   - bolum: secilen basliklar tek bolume dusuyorsa o bolum
+   - sartnameler: bolumdeki basliklarin katlarini kapsayan, tek adaya inen sartnamelerin hepsi
+   - kat: basliklarin odalari tek kata dusuyorsa o kat; birden cok kata dusuyorsa "linki acan secsin"
+   Doner: true -> form bastan cizilmeli (bolum/sartname/kat degisti) */
+function slinkGyOtoUygula(){
+  const y=SLINK.yeni; if(!y) return false;
+  const b=skBagHesapla(y); if(!b||!b.ayni) return false;
+  let degisti=false;
+  const bl=[...b.bolumler];
+  if(bl.length===1&&(DB.proje.sections||[]).includes(bl[0])&&(!y.cat||y.catOto)&&y.cat!==bl[0]){
+    y.cat=bl[0]; y.catOto=true; degisti=true;
+    const ok=new Set(slinkSartListesi(y).map(s=>s.code)); y.sartlar=y.sartlar.filter(c=>ok.has(c));
+  }
+  if(!y.cat) return degisti;
+  // bolume bagli basliklarin katlari: tek adaya inen sartnameler + kat kumesi
+  const kodlar=new Set(), katlar=new Set();
+  b.basliklar.filter(x=>x.bolum===y.cat).forEach(x=>x.katlar.forEach(k=>{ katlar.add(k.kat.id); if(k.c&&k.c.list.length===1) kodlar.add(k.c.list[0].code); }));
+  if(kodlar.size&&(!y.sartlar.length||y.sartOto)){
+    const yeni=slinkSartListesi(y).map(s=>s.code).filter(c=>kodlar.has(c));
+    if(yeni.length&&yeni.join('|')!==y.sartlar.join('|')){ y.sartlar=yeni; degisti=true; }
+    if(yeni.length) y.sartOto=true;
+  }
+  if(katlar.size&&(!y.katId||y.katOto)){
+    const tek=katlar.size===1?[...katlar][0]:'';
+    const hedef=tek&&slinkKatSecenek(y).some(k=>k.id===tek)?tek:'';
+    if(hedef!==y.katId){ y.katId=hedef; degisti=true; }
+    y.katOto=true;
+  }
+  return degisti;
+}
+// secim degisti: adam sayisi toplanir, baglar uygulanir; bolum/sartname/kat degistiyse form bastan cizilir
+function slinkGySonrasi(){
+  if(slinkGyOtoUygula()) slinkModalCiz(true); else slinkGyCiz();
+}
 // i = slinkGyBasliklar sirasi; 'hepsi' / 'hic' toplu secim
 function slinkGySec(i){
   const y=SLINK.yeni; if(!y) return;
@@ -40552,14 +40595,16 @@ function slinkGySec(i){
   else if(i==='hic') y.gySec=[];
   else { const b=bs[i]; if(!b) return; y.gySec=y.gySec.includes(b.k)?y.gySec.filter(k=>k!==b.k):[...y.gySec,b.k]; }
   if(y.gySec.length) slinkGyUygula(); else { y.adam=''; slinkGyKutu(); }
-  slinkGyCiz();
+  slinkGySonrasi();
 }
 function slinkGyKaynakSec(i){
   const y=SLINK.yeni; if(!y) return;
   const x=slinkGyKaynaklar(y)[i]; if(!x) return;
   y.gyKaynak=slinkGyAnahtar(x);
-  slinkGyUygula(); slinkGyCiz();
+  slinkGyUygula(); slinkGySonrasi();
 }
+// kat elle secildi: otomatik kat secimi durur
+function slinkKatSec(v){ const y=SLINK.yeni; if(!y) return; y.katId=v; y.katOto=false; }
 // adam sayisi ELLE yazildi: sayi artik yazidan gelmiyor, cipler "secili" gorunmesin
 function slinkAdamYaz(v){
   const y=SLINK.yeni; if(!y) return;
@@ -40569,11 +40614,11 @@ function slinkAdamYaz(v){
 }
 function slinkTarihDegis(v){
   const y=SLINK.yeni; if(!y) return;
-  y.tarih=v; slinkGyUygula(); slinkGyCiz();
+  y.tarih=v; slinkGyUygula(); slinkGySonrasi();
 }
 function slinkVardiyaDegis(v){
   const y=SLINK.yeni; if(!y) return;
-  y.vardiya=v; slinkGyUygula(); slinkGyCiz();
+  y.vardiya=v; slinkGyUygula(); slinkGySonrasi();
 }
 /* o: paneli kullanan ekranin baglantisi - Saha Linki (varsayilan) ve Saha Kaydi formu (rGyAlanHtml)
    ayni paneli kendi tiklama islevleriyle cizer. sec(a)/kay(i) onclick metnini dondurur. */
@@ -40608,7 +40653,7 @@ function slinkGyHtml(y,o){
 }
 function slinkYeniAc(){
   const binalar=binaOptsFor('');
-  SLINK.yeni={tarih:rISO(Date.now()), vardiya:VARDIYALAR[0], bina:binalar[0]||'', cat:'', ekip:'', sartlar:[], katId:'', dolduran:'', dolduranElle:false, adam:'', gySec:[], gyKaynak:'', sure:'6s', stokDus:true};
+  SLINK.yeni={tarih:rISO(Date.now()), vardiya:VARDIYALAR[0], bina:binalar[0]||'', cat:'', ekip:'', sartlar:[], katId:'', dolduran:'', dolduranElle:false, adam:'', gySec:[], gyKaynak:'', sure:'6s', stokDus:true, catOto:false, sartOto:false, katOto:false};
   SLINK.gorunum='yeni'; slinkModalCiz(true);
 }
 /* DOLDURACAK KISI: secilen ekibe atanmis kullanicilar (Kullanici Yonetimi > Ekip; app_settings >
@@ -40653,8 +40698,8 @@ function slinkYeniSet(k,v){
   const y=SLINK.yeni; if(!y) return;
   y[k]=v;
   // bina degisince Gunluk Yazi kaynagi yeni binanin yazisina doner, secili basliklar oradan toplanir
-  if(k==='bina'){ y.sartlar=[]; y.katId=''; y.gyKaynak=''; slinkGyUygula(); }
-  if(k==='cat'){ const ok=new Set(slinkSartListesi(y).map(s=>s.code)); y.sartlar=y.sartlar.filter(c=>ok.has(c)); }
+  if(k==='bina'){ y.sartlar=[]; y.katId=''; y.gyKaynak=''; slinkGyUygula(); slinkGyOtoUygula(); }
+  if(k==='cat'){ y.catOto=false; const ok=new Set(slinkSartListesi(y).map(s=>s.code)); y.sartlar=y.sartlar.filter(c=>ok.has(c)); slinkGyOtoUygula(); }
   // ekip degisince listeden secilmis kisi yeni ekipte yoksa bosalir; elle yazilan ad kalir
   if(k==='ekip'&&!y.dolduranElle&&y.dolduran){ const k2=slinkEkipKisileri(v); if(!k2.includes(y.dolduran)&&!slinkDolduranGecmis(v,k2).includes(y.dolduran)) y.dolduran=''; }
   if(y.katId&&!slinkKatSecenek(y).some(x=>x.id===y.katId)) y.katId='';
@@ -40668,6 +40713,7 @@ function slinkSartSec(i){
   else if(i==='hic') y.sartlar=[];
   else { const c=liste[i]; if(c==null) return; y.sartlar=y.sartlar.includes(c)?y.sartlar.filter(x=>x!==c):[...y.sartlar,c]; }
   y.sartlar=liste.filter(c=>y.sartlar.includes(c));   // liste sirasi korunur
+  y.sartOto=false;
   if(y.katId&&!slinkKatSecenek(y).some(x=>x.id===y.katId)) y.katId='';
   slinkModalCiz(true);
 }
@@ -40702,9 +40748,9 @@ function slinkYeniHtml(){
       <div><label>Adam sayısı</label>${adamGyZorunlu()
         ?`<input id="slinkAdam" type="number" value="${esc(y.adam)}" placeholder="Günlük Yazı'dan - seçilmezse onayda" readonly class="adam-gy-kilit${y.gySec.length&&String(y.adam)!==''?' slink-adam-gy':''}" title="${esc(ADAM_GY_IPUCU+'. Seçmezseniz linkte adam sorulmaz; onaylarken seçersiniz.')}">`
         :`<input id="slinkAdam" type="number" min="0" max="999" step="1" value="${esc(y.adam)}" placeholder="boş bırakılırsa linkte sorulur" oninput="slinkAdamYaz(this.value)"${y.gySec.length&&String(y.adam)!==''?' class="slink-adam-gy" title="Günlük Yazı başlıklarından toplandı - elle yazarsanız seçim bırakılır"':''}>`}</div></div>
-    <div class="frow"><label>Adam sayısını Günlük Yazı'dan al <span class="t-meta" style="text-transform:none;letter-spacing:0">(birden fazla başlık seçilebilir)</span></label><div class="slink-gy" id="slinkGy">${slinkGyHtml(y)}</div></div>
+    <div class="frow"><label>Adam sayısını Günlük Yazı'dan al <span class="t-meta" style="text-transform:none;letter-spacing:0">(birden fazla başlık seçilebilir)</span></label><div class="slink-gy" id="slinkGy">${slinkGyAlanHtml(y)}</div></div>
     <div class="frow"><label>Şartnameler <span class="t-meta" style="text-transform:none;letter-spacing:0">(birden fazla seçilebilir)</span></label>${sartAlani}</div>
-    <div class="frow two"><div><label>Kat</label><select onchange="SLINK.yeni.katId=this.value">${opt('',kats.length?'- linki açan kişi her kalemde seçsin -':'- binada kat tanımı yok -',!y.katId)}${kats.map(k=>opt(k.id,k.name+(k.kot!=null&&k.kot!==''?' ('+k.kot+')':''),y.katId===k.id)).join('')}</select></div>
+    <div class="frow two"><div><label>Kat</label><select onchange="slinkKatSec(this.value)">${opt('',kats.length?'- linki açan kişi her kalemde seçsin -':'- binada kat tanımı yok -',!y.katId)}${kats.map(k=>opt(k.id,k.name+(k.kot!=null&&k.kot!==''?' ('+k.kot+')':''),y.katId===k.id)).join('')}</select></div>
       <div><label>Geçerlilik</label><select onchange="SLINK.yeni.sure=this.value">${SLINK_SURELER.map(([v,t])=>opt(v,t,y.sure===v)).join('')}</select></div></div>
     <label class="rapor-stock-check"><input type="checkbox" ${y.stokDus?'checked':''} onchange="SLINK.yeni.stokDus=this.checked"> Stoktan düş (kabul edilince işlenen miktarlar stoktan azaltılsın)</label>
     ${ozet}
@@ -40725,7 +40771,7 @@ async function slinkOlustur(){
     // gySec/gyKaynak formun Gunluk Yazi seciminin durumu - linke yalniz sonuc sayisi (adam) gider
     // gySec/gyKaynak formun Gunluk Yazi seciminin durumu. Zorunlu modda (adamGy) linke yazilir:
     // onayda Saha Kaydi formuna geri gelir; secilmediyse linki acana adam sorulmaz
-    const {gySec, gyKaynak, ...gonder}=y;
+    const {gySec, gyKaynak, catOto, sartOto, katOto, ...gonder}=y;
     const z=adamGyZorunlu();
     const r=await sbSahaLinkIslem({op:'olustur', ...gonder, dolduran:y.dolduran.trim(), adam:adam===''?'':Number(adam),
       ...(z?{adamGy:true, gySec:gySec.slice(), gyKaynak:gyKaynak||''}:{})});
@@ -42432,9 +42478,10 @@ function skKatSirala(list,bina){
    {yz, ayni (yazi formun binasina mi ait), bina,
     basliklar:[{ad,odali,kisi,bolum,oto,katlar:[{kat,odalar,c}],yok,cok}],
     bolumler:Set, katlar:[{kat,odalar:Set(lokId)}], odalar:[{lok,kat,kisi,basliklar:Set}]} */
-function skBlokBag(bk){
-  if(!bk||!(bk.gySec||[]).length) return null;
-  const y=rGyDurum(bk); if(!y.tarih) return null;
+function skBlokBag(bk){ return (bk&&(bk.gySec||[]).length)?skBagHesapla(rGyDurum(bk)):null; }
+// y: {tarih,bina,vardiya,cat,gySec,gyKaynak} - Saha Kaydi blogu (rGyDurum) ve Saha Linki formu (SLINK.yeni) ortak
+function skBagHesapla(y){
+  if(!y||!(y.gySec||[]).length||!y.tarih) return null;
   const yz=slinkGyKaynak(y); if(!yz) return null;
   const set=new Set(y.gySec), bina=y.bina, ayni=!!bina&&String(yz.bina||'')===String(bina);
   const idx=ayni?gyOdaIndeks(bina):new Map(), ayar=skAyar();
@@ -42517,14 +42564,21 @@ function skBolumlereAyir(bi){
 }
 // blogun altindaki bag seridi: baslik -> bolum -> kat -> sartname, eksik baglar uyari olarak
 function skBagHtml(bk,bi){
-  const b=skBlokBag(bk); if(!b) return '';
+  return skBagSerit(skBlokBag(bk), bk.cat, {ayir:`skBolumlereAyir(${bi})`, cokBolum:'Bu kayıt bölümü tek bölüm tutar, bu yüzden bölüm otomatik seçilmedi.', kim:'bu kayıt bölümü',
+    ipucu:'Bu katlar ve odalar iş kalemlerinin lokasyon menüsünde en üstte; seçince şartname satıra otomatik gelir.'});
+}
+/* Bag seridi govdesi. b: skBagHesapla sonucu, cat: formun bolumu, o: {ayir: "bolumlere ayir" dugmesinin
+   onclick metni (yoksa dugme cikmaz), cokBolum: coklu bolum notu, kim: bolum uyusmazligi notunda formun adi,
+   ipucu: alt bilgi} */
+function skBagSerit(b,cat,o){
+  if(!b) return ''; o=o||{};
   const ayarBtn=`<button type="button" class="skb-ayar" onclick="openSkAyar()" title="Baslik → bolum baglarini kur (Saha Kaydi Ayarlari)">${icoDisli(11)} Bağlar</button>`;
   const bas=`<div class="skb-h"><span>Günlük Yazı → Bölüm → Kat → Şartname</span>${ayarBtn}</div>`;
   if(!b.ayni) return `<div class="skb">${bas}<div class="skb-not">Seçilen yazı ${esc(b.yz.bina||'bina bağımsız')} için - formun binası ${esc(b.bina||'-')}. Odalar bu binanın ağacında aranmaz, kat ve şartname bağı kurulmadı.</div></div>`;
   const uyar=[]; let genel=false;
   const bl=[...b.bolumler];
-  if(bl.length>1) uyar.push(`<div class="skb-not">Seçilen başlıklar ${bl.length} ayrı bölüme düşüyor (${bl.map(esc).join(', ')}). Bu kayıt bölümü tek bölüm tutar, bu yüzden bölüm otomatik seçilmedi. <button type="button" class="skb-btn" onclick="skBolumlereAyir(${bi})">Her bölüme ayrı kayıt bölümü aç</button></div>`);
-  else if(bl.length===1&&bk.cat&&bk.cat!==bl[0]) uyar.push(`<div class="skb-not">Başlıklar <b>${esc(bl[0])}</b> bölümüne bağlı, bu kayıt bölümü <b>${esc(bk.cat)}</b>.</div>`);
+  if(bl.length>1) uyar.push(`<div class="skb-not">Seçilen başlıklar ${bl.length} ayrı bölüme düşüyor (${bl.map(esc).join(', ')}). ${esc(o.cokBolum||'')}${o.ayir?` <button type="button" class="skb-btn" onclick="${o.ayir}">Her bölüme ayrı kayıt bölümü aç</button>`:''}</div>`);
+  else if(bl.length===1&&cat&&cat!==bl[0]) uyar.push(`<div class="skb-not">Başlıklar <b>${esc(bl[0])}</b> bölümüne bağlı, ${esc(o.kim||'form')} <b>${esc(cat)}</b>.</div>`);
   const satir=x=>{
     const bol=x.bolum
       ?`<span class="skb-bol" title="${x.oto?'Addan otomatik eslesti - Baglar dugmesinden degistirilebilir':'Saha Kaydi Ayarlari\'nda baglandi'}">${esc(x.bolum)}${x.oto?'<i>oto</i>':''}</span>`
@@ -42544,7 +42598,7 @@ function skBagHtml(bk,bi){
   };
   const govde=b.basliklar.map(satir).join('');
   if(genel) uyar.push(`<div class="skb-not">⚠ Kat atanmamış şartname bina geneli sayıldı. Doğru eşleşme için Bölüm &amp; Şartname ekranından o şartnameye kat atayın.</div>`);
-  return `<div class="skb">${bas}${govde}${uyar.join('')}${b.katlar.length?`<div class="skb-ipucu">Bu katlar ve odalar iş kalemlerinin lokasyon menüsünde en üstte; seçince şartname satıra otomatik gelir.</div>`:''}</div>`;
+  return `<div class="skb">${bas}${govde}${uyar.join('')}${b.katlar.length&&o.ipucu?`<div class="skb-ipucu">${esc(o.ipucu)}</div>`:''}</div>`;
 }
 /* PARCALI BINADA SATIR SARTNAMESI: kalemi olmayan (ya da sartnamesi kattan gelmis) satirin
    sartnamesi katindan yeniden bulunur; blogun sartnamesi satirlardan turetilir. Kalemin kendi
