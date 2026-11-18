@@ -4222,6 +4222,13 @@ p.yp-ayar-not{margin:2px 0 8px}
 .slink-url{width:100%;margin-top:9px;font-family:var(--mono);font-size:11.5px}
 .slink-bos{padding:10px 2px;font-size:12.5px;color:var(--dim)}
 .slink-uyari{margin-bottom:14px;padding:10px 12px;border:1px solid var(--amber);border-radius:10px;background:rgba(240,160,32,.08);font-size:12.5px;line-height:1.55}
+.slink-sablon{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:-4px 0 12px;padding:7px 10px;border:1px dashed var(--line);border-radius:8px;font-size:11.5px;color:var(--mute);line-height:1.5}
+.slink-sablon>span{flex:1;min-width:200px}
+.slink-sablon b{color:var(--ink)}
+.slink-sablon.var{border-style:solid;border-color:color-mix(in srgb,var(--green) 40%,transparent);background:color-mix(in srgb,var(--green) 7%,transparent)}
+.slink-sablon button{background:none;border:1px solid var(--line);border-radius:20px;padding:2px 10px;color:var(--primary);font:600 10.5px var(--sans);cursor:pointer;white-space:nowrap}
+.slink-sablon button:hover{border-color:var(--primary)}
+.slink-sablon button.sil{color:var(--mute)}
 .slink-ozet{margin-top:10px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);font-size:12.5px}
 .slink-ozet.bos{border-color:var(--red);color:var(--red)}
 .slink-hazir-url{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);font:12.5px var(--mono);word-break:break-all;user-select:all}
@@ -40358,6 +40365,58 @@ function icoSahaLink(){ return '<svg width="13" height="13" viewBox="0 0 24 24" 
 // adresleri de SSO korumalidir. Link verisi ortak veritabaninda oldugu icin her yerden ayni calisir.
 const SLINK_ADRES='https://hesap.yugati.com.tr';
 const SLINK_SURELER=[['6s','6 saat'],['12s','12 saat'],['ertesi','Ertesi gün sonuna kadar']];
+/* BOLUM SABLONU: bina + bolum basina kayitli link ayari. app_settings 'saha_link_sablon' =
+   {"bina|bolum": {ekip, dolduran, sartlar, katId, sure, stokDus, t}}. Yeni Saha Linki'nde bolum
+   (ya da bina) secilince form bu sablonla dolar; adam sayisi sablonda TUTULMAZ, o gunun Gunluk
+   Yazisindan bolume bagli basliklarla toplanir (gyOtoSec). Sablondan gelen sartname/kat elle
+   secim sayilir (sartOto/katOto kapali) - Gunluk Yazi bagi onlari ezmez. */
+const SLINK_SABLON='saha_link_sablon';
+function slinkSablonlar(){ const a=DB&&DB.meta&&DB.meta[SLINK_SABLON]; return (a&&typeof a==='object')?a:{}; }
+function slinkSablonAnahtar(y){ return (y&&y.bina&&y.cat)?String(y.bina)+'|'+String(y.cat):''; }
+function slinkSablon(y){ const k=slinkSablonAnahtar(y); return k?(slinkSablonlar()[k]||null):null; }
+// sablonu forma yazar; o anki binada gecersiz sartname/kat/ekip atlanir. Doner: sablon var miydi
+function slinkSablonUygula(y){
+  const s=slinkSablon(y); if(!s) return false;
+  if(s.ekip&&(DB.rapor.ekipler||[]).includes(s.ekip)) y.ekip=s.ekip;
+  if(s.dolduran!=null){ y.dolduran=String(s.dolduran||''); y.dolduranElle=false; }
+  if(Array.isArray(s.sartlar)&&s.sartlar.length){ y.sartlar=slinkSartListesi(y).map(x=>x.code).filter(c=>s.sartlar.includes(c)); y.sartOto=false; }
+  if(s.katId!=null){ y.katId=s.katId&&slinkKatSecenek(y).some(k=>k.id===s.katId)?s.katId:''; y.katOto=false; }
+  if(s.sure&&SLINK_SURELER.some(([v])=>v===s.sure)) y.sure=s.sure;
+  if(typeof s.stokDus==='boolean') y.stokDus=s.stokDus;
+  return true;
+}
+async function slinkSablonlarYaz(hepsi,mesaj){
+  try{ await sbSetSetting(SLINK_SABLON,hepsi); }
+  catch(e){ toast('Şablon kaydedilemedi: '+((e&&e.message)||e),'err'); return false; }
+  if(!DB.meta) DB.meta={};
+  DB.meta[SLINK_SABLON]=hepsi;
+  logAction('define',mesaj);
+  return true;
+}
+async function slinkSablonKaydet(){
+  const y=SLINK.yeni, k=slinkSablonAnahtar(y); if(!k){ toast('Önce bina ve bölüm seçin','err'); return; }
+  const hepsi={...slinkSablonlar()};
+  hepsi[k]={ekip:y.ekip||'', dolduran:String(y.dolduran||'').trim(), sartlar:y.sartlar.slice(), katId:y.katId||'', sure:y.sure, stokDus:!!y.stokDus, t:Date.now()};
+  if(!await slinkSablonlarYaz(hepsi,'Saha linki bölüm şablonu kaydedildi: '+k)) return;
+  toast(y.cat+' şablonu kaydedildi - bölüm seçilince bu ayarlar gelir','ok');
+  slinkModalCiz(true);
+}
+async function slinkSablonSil(){
+  const y=SLINK.yeni, k=slinkSablonAnahtar(y); if(!k||!slinkSablon(y)) return;
+  if(!confirm(`${y.cat} şablonu silinsin mi? Bölüm seçilince ayarlar artık otomatik gelmez.`)) return;
+  const hepsi={...slinkSablonlar()}; delete hepsi[k];
+  if(!await slinkSablonlarYaz(hepsi,'Saha linki bölüm şablonu silindi: '+k)) return;
+  toast(y.cat+' şablonu silindi'); slinkModalCiz(true);
+}
+function slinkSablonHtml(y){
+  if(!y.cat) return '';
+  const s=slinkSablon(y);
+  if(!s) return `<div class="slink-sablon"><span><b>${esc(y.cat)}</b> için kayıtlı şablon yok. Aşağıyı (ekip, kişi, şartname, kat, geçerlilik) doldurup kaydedin; bir dahaki sefer bölüm seçilince hazır gelsin.</span><button type="button" onclick="slinkSablonKaydet()">Şablon olarak kaydet</button></div>`;
+  const sure=(SLINK_SURELER.find(([v])=>v===s.sure)||[])[1]||'';
+  const kat=s.katId?(binaKatlar(y.bina).find(k=>k.id===s.katId)||{}).name:'';
+  const ozet=[s.ekip?shortEkip(s.ekip):'', s.dolduran||'', (s.sartlar||[]).length?(s.sartlar.length+' şartname'):'', kat?'KAT '+kat:'', sure, s.stokDus===false?'stoktan düşme':''].filter(Boolean).join(' · ');
+  return `<div class="slink-sablon var"><span>${icoCheckSm()} <b>${esc(y.cat)}</b> şablonu uygulandı: ${esc(ozet)}. Adam sayısı Günlük Yazı'dan gelir.</span><button type="button" onclick="slinkSablonKaydet()" title="Formdaki ayarları bu bölümün şablonu olarak kaydet">Güncelle</button><button type="button" class="sil" onclick="slinkSablonSil()">Sil</button></div>`;
+}
 function slinkUrl(l){ return SLINK_ADRES+'/s/'+encodeURIComponent(l.token); }
 function slinkBul(id){ return (SLINK.linkler||[]).find(x=>x.id===id)||null; }
 function slinkAcik(l){ return !l.iptal && Number(l.bitis)>Date.now(); }
@@ -40720,8 +40779,9 @@ function slinkYeniSet(k,v){
   // bina degisince Gunluk Yazi kaynagi yeni binanin yazisina doner, secili basliklar oradan toplanir
   if(k==='bina'){ y.sartlar=[]; y.katId=''; y.gyKaynak=''; slinkGyUygula(); }
   if(k==='cat'){ y.catOto=false; const ok=new Set(slinkSartListesi(y).map(s=>s.code)); y.sartlar=y.sartlar.filter(c=>ok.has(c)); }
-  // bolum / bina degisince: bolume bagli basliklar otomatik secilir (adam sayisi dolar), sonra sartname/kat baglari
-  if(k==='bina'||k==='cat'){ if(gyOtoSec(y)){ if(y.gySec.length) slinkGyUygula(); else y.adam=''; } slinkGyOtoUygula(); }
+  // bolum / bina degisince: once bolum sablonu (ekip, kisi, sartname, kat, sure), sonra bolume bagli
+  // basliklar otomatik secilir (adam sayisi dolar), en son sartname/kat baglari (sablonun bos biraktigi alanlar)
+  if(k==='bina'||k==='cat'){ slinkSablonUygula(y); if(gyOtoSec(y)){ if(y.gySec.length) slinkGyUygula(); else y.adam=''; } slinkGyOtoUygula(); }
   // ekip degisince listeden secilmis kisi yeni ekipte yoksa bosalir; elle yazilan ad kalir
   if(k==='ekip'&&!y.dolduranElle&&y.dolduran){ const k2=slinkEkipKisileri(v); if(!k2.includes(y.dolduran)&&!slinkDolduranGecmis(v,k2).includes(y.dolduran)) y.dolduran=''; }
   if(y.katId&&!slinkKatSecenek(y).some(x=>x.id===y.katId)) y.katId='';
@@ -40765,6 +40825,7 @@ function slinkYeniHtml(){
       <div><label>Vardiya *</label><select onchange="slinkVardiyaDegis(this.value)">${VARDIYALAR.map(v=>opt(v,v,y.vardiya===v)).join('')}</select></div></div>
     <div class="frow two"><div><label>Bina *</label><select onchange="slinkYeniSet('bina',this.value)">${binaOptsFor(y.bina).map(b=>opt(b,b,y.bina===b)).join('')}</select></div>
       <div><label>Bölüm *</label><select onchange="slinkYeniSet('cat',this.value)">${opt('','- bölüm seçin -',!y.cat)}${(DB.proje.sections||[]).map(s=>opt(s,s,y.cat===s)).join('')}</select></div></div>
+    ${slinkSablonHtml(y)}
     <div class="frow"><label>Ekip *</label><select onchange="slinkYeniSet('ekip',this.value)">${opt('','- ekip seçin -',!y.ekip)}${(DB.rapor.ekipler||[]).map(e=>opt(e,e,y.ekip===e)).join('')}</select></div>
     <div class="frow two"><div><label>Dolduracak kişi${y.ekip?' <span class="t-meta" style="text-transform:none;letter-spacing:0">(ekipten seçin)</span>':''}</label>${slinkDolduranHtml(y)}</div>
       <div><label>Adam sayısı</label>${adamGyZorunlu()
