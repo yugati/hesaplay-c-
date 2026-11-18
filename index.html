@@ -1028,8 +1028,18 @@ main{flex:1;padding:clamp(16px,2vw,28px);max-width:var(--main-max);width:100%;ma
   #app:not(.sb-none):not(.sb-kapali) main{width:auto;
     margin:0 0 0 calc(var(--sb-w) + max(0px,(100% - var(--sb-w) - var(--main-max)) / 2))}
 }
-#mainArea.sec-transition{animation:secFadeIn .32s cubic-bezier(.16,.8,.3,1)}
-@keyframes secFadeIn{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:translateY(0)}}
+/* SAYFA GECISLERI: ekran (bolum / panel / bina-bolum-sartname adimi / sekme) degisince
+   #mainArea yumusakca belirir - bkz. gecisOynat. Yon: ust (yeni sayfa), ileri (iceri girme),
+   geri (ust adima donus), sol (yalnizca solma: sekme degisimi ve sabit alt cubuklu sayfalar -
+   transform, icindeki position:fixed cubuklari gecis boyunca yerinden oynatirdi). */
+#mainArea.sec-transition{animation:secFadeIn .38s cubic-bezier(.22,1,.36,1) both}
+#mainArea.sec-transition[data-gecis="ileri"]{animation-name:secIleri}
+#mainArea.sec-transition[data-gecis="geri"]{animation-name:secGeri}
+#mainArea.sec-transition[data-gecis="sol"]{animation-name:secSol;animation-duration:.24s;animation-timing-function:ease-out}
+@keyframes secFadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes secIleri{from{opacity:0;transform:translateX(18px)}to{opacity:1;transform:none}}
+@keyframes secGeri{from{opacity:0;transform:translateX(-18px)}to{opacity:1;transform:none}}
+@keyframes secSol{from{opacity:0}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){#mainArea.sec-transition{animation:none}}
 /* Sol menu dugmesi: masaustunde menuyu gizler/gosterir (sb-kapali, tercih hatirlanir),
    tablet/mobilde drawer'i acar. Menu hic yoksa (sb-none) dugme de gizlenir. */
@@ -8911,8 +8921,7 @@ function switchSection(s){ if(!canSee(s)){ toast('Bu bolume erisim yetkiniz yok'
   if(typeof GORDF!=='undefined') GORDF={ted:'',from:'',to:'',mat:'',pdf:''};                 // siparis/fatura sutun filtreleri
   PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PCOMP=false; PEKIP=false; PNEWORD=false; PBINAY=false; PODM=false; PSPECF=false; PRIMP=false; PINV=false; PTUT=false; PIHT=false; PFAT=false; PTOPM=false; PTOPG=false; PTOPA=false; PARAC=false; PEGL=false; _RIMP=null; _TOPM=null; _TOPG=null; _TOPA=null; // acik panelleri kapat
   RV.silMod=false; RV.silGun=new Set(); _RSIL=null; // silme modu bolum degisince kapanir
-  if(s==='saha'){ render(); initSaha(); } else render();
-  playSectionTransition(); }
+  if(s==='saha'){ render(); initSaha(); } else render(); }
 // Baslangic: proje bolumune EN BASTAN doner - bina/bolum/sartname secimleri sifirlanir (ana ekran)
 function goHome(){ if(!canSee('proje')){ toast('Bu bolume erisim yetkiniz yok','err'); return; } PBINA=""; PCAT=""; PSPEC=""; switchSection('proje'); }
 /* HEADER LOGO/BASLIK TIKLAMASI: element gercek bir <a href="/"> oldugu icin sag tik menusunde
@@ -8928,12 +8937,39 @@ function brandHome(e){
   if(canSeeOrders()){ e.preventDefault(); openAllOrders(); return false; }
   return true;
 }
-// sekmeler arasi (Proje Malzemesi / Mobilizasyon / ...) geciste mainArea'ya kisa bir fade+slide
-// oynatir - sadece bolum degisiminde tetiklenir, render()'in her cagrisinda degil (asiri hareketi onlemek icin)
-function playSectionTransition(){
+/* SAYFA GECIS ANIMASYONU. Ekranin "kimligi" (acik panel, bolum, bina/bolum/sartname adimi,
+   sekme) her cizimden sonra cikarilir; onceki cizimden FARKLIYSA #mainArea'ya kisa bir gecis
+   oynatilir. Boylece sol menudeki her gecis (Siparisler, Binalar, Kutuphane, ...) tek yerden
+   animasyon alir; ayni ekranin yeniden cizimi (veri esitlemesi, arama, satir duzenleme)
+   kimligi degistirmedigi icin HAREKETSIZ kalir. Ilk cizimde (giris sonrasi) oynatilmaz. */
+let _GECIS_ONCE=null;
+function gecisKimlik(){
+  const panel=[PINV&&'inv:'+((typeof _INV!=='undefined'&&_INV&&_INV.id)||''),PTOPM&&'topm',PTOPG&&'topg',PTOPA&&'topa',
+    PUSERS&&'users',PAUDIT&&'audit',PLIB&&'lib',PDEF&&'def',PBINAY&&'binay',PNEWORD&&'neword',PORD&&'ord',PCOMP&&'comp',
+    PEKIP&&'ekip',PODM&&'odm',PRIMP&&'rimp',PSPECF&&'specf',PARAC&&'arac',PEGL&&'egl',PFAT&&'fat',PIHT&&'iht',PTUT&&'tut'].find(Boolean)||'';
+  let alt='';
+  if(panel==='ord') alt=ORDVIEW;
+  else if(panel==='binay') alt=(typeof BINAYVIEW!=='undefined'?BINAYVIEW:'');
+  else if(!panel&&SEC==='rapor') alt=(typeof RV!=='undefined'&&RV.view)||'';
+  const derin=(!panel&&SEC==='proje')?[PBINA,PCAT,PSPEC].filter(Boolean).length:0;
+  return {kok:panel||('sec:'+SEC), yol:(!panel&&SEC==='proje')?[PBINA,PCAT,PSPEC].join('\u0001'):'', derin, sekme:panel?alt:(TAB+'|'+alt)};
+}
+function gecisIzle(){
+  let k; try{ k=gecisKimlik(); }catch(e){ return; }
+  const o=_GECIS_ONCE; _GECIS_ONCE=k;
+  if(!o) return;
+  if(o.kok!==k.kok) return gecisOynat('ust');
+  if(o.yol!==k.yol) return gecisOynat(k.derin>o.derin?'ileri':k.derin<o.derin?'geri':'ust');
+  if(o.sekme!==k.sekme) return gecisOynat('sol');
+}
+function gecisOynat(yon){
   const m=document.getElementById('mainArea'); if(!m)return;
+  // sabit alt cubuklu tam sayfalar: transform cubugu kaydirirdi - yalnizca solma
+  if(m.querySelector('.kata-page-foot')) yon='sol';
+  m.dataset.gecis=yon||'ust';
   m.classList.remove('sec-transition'); void m.offsetWidth; m.classList.add('sec-transition');
 }
+function playSectionTransition(){ gecisOynat('ust'); }
 
 // sartname bazli Excel ice/disa aktarma dugmeleri: proje modulunde TEK bir sartname acikken
 // (Bolum Secimi / Sartname Secimi / "Tum Sartnameler" ekranlarinda DEGIL) sayfanin sag altinda sabit durur.
@@ -9081,6 +9117,7 @@ function hesapDizin(ad,dizi,kur){
 function render(){
   hesapOnbellekAc();
   try{ _renderIc(); } finally{ hesapOnbellekKapat(); }
+  gecisIzle();
 }
 function _renderIc(){
   const m=document.getElementById('mainArea');
