@@ -17218,7 +17218,7 @@ function renderDefinitions(){
   return `<div class="sel-wrap" style="max-width:1240px">
     <div class="sel-bc"><button onclick="closeDefinitions()">${icoArr('left')} Binalara Don</button></div>
     <div class="def-head-row">
-      <div class="sel-head"><h2>Bolum &amp; Sartname Tanimlari</h2><p>Bolumler tum binalarda ortaktir. Sartnameler bina + bolume ozeldir. Excel sync bu tanimlari dogrular.</p></div>
+      <div class="sel-head"><h2>Bolum &amp; Sartname Tanimlari</h2><p>Bolumler tum binalarda ortaktir. Sartnameler bina + bolume ozeldir. Excel sync bu tanimlari dogrular; yeni bolum yalnizca "Bolum Ekle" ile acilir, Excel'den acilmaz.</p></div>
       <div class="def-head-act">
         <button class="btn ${DEFMV.on?'btn-add':'btn-ghost'}" style="padding:7px 13px;font-size:12px" title="Sartname Tasi - secilen sartnameleri (kalem ve hareketleriyle) baska bir bolume tasir; Excel aktarimi sonrasi olusan cift bolumleri birlestirmek icin" onclick="defMvToggle()">${DEFMV.on?'Tasima Modu Acik':'Sartname Tasi'}</button>
         <button class="btn btn-ciplak" title="Uygulanan Sartnameleri Kopyala - kalemi olan (uygulanmis) tum sartname kodlarini alt alta panoya kopyalar" aria-label="Uygulanan sartnameleri kopyala" onclick="defCopyUygulanan()">${icoCopy()}</button>
@@ -17319,6 +17319,10 @@ function importDefinitionsExcel(e){ if(!guard('define')){e.target.value='';retur
   }catch(err){ toast('Excel okunamadi: '+err.message,'err'); } e.target.value=''; };
   r.readAsBinaryString(f);
 }
+/* EXCEL'DEN BOLUM ACILMAZ: tanimsiz bir bolum adi ya mevcut bir bolume eslenir ya da
+   satirlari atlanir. "Aydinlatma" / "Aydinlatma Sistemi" gibi ikiz bolumler hep Excel'in
+   tanimadigi adi kendiliginden acmasindan dogdu; yeni bolum yalnizca soldaki "Bolum Ekle"
+   ile, bilincli olarak acilir. */
 // benzer adli mevcut bolum onerisi: biri digerini iceriyorsa ya da 4+ harfli ortak kelime varsa
 function defImpOneri(ad){
   const n=norm(ad), kel=n.split(/[^a-zçğıöşü0-9]+/).filter(k=>k.length>=4);
@@ -17331,12 +17335,12 @@ function defImpOneri(ad){
 }
 function defImpOnizleme(){
   const P=_DEFIMP; if(!P)return;
-  const secOpt=(sel)=>`<option value="">+ Yeni bolum olarak ekle</option>`+(DB.proje.sections||[]).map(s=>`<option value="${esc(s)}" ${sel===s?'selected':''}>${esc(s)}</option>`).join('');
+  const secOpt=(sel)=>`<option value="">— Bu satirlari atla —</option>`+(DB.proje.sections||[]).map(s=>`<option value="${esc(s)}" ${sel===s?'selected':''}>${esc(s)}</option>`).join('');
   const satir=P.yeniBolum.map((b,i)=>{ const n=P.satirlar.filter(r=>r.sec===b&&r.code).length; const oneri=defImpOneri(b);
     return `<div class="srt-row" style="gap:12px"><div style="flex:1;min-width:0"><div class="srt-code">${esc(b)}</div><div class="srt-name">${n} sartname satiri${oneri?' · benzer: <b>'+esc(oneri)+'</b>':''}</div></div>
       <select class="def-imp-map" data-i="${i}" style="min-width:230px;padding:6px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--text);font-family:inherit;font-size:12px">${secOpt(oneri)}</select></div>`; }).join('');
-  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:720px"><div class="modal-head"><h3>Ice Aktarma Onizleme - ${P.yeniBolum.length} yeni bolum adi</h3><button class="mini-btn" onclick="closeModal();_DEFIMP=null">x</button></div><div class="modal-body">
-    <p class="t-meta" style="margin-bottom:12px;line-height:1.5">Excel'de sistemde olmayan bolum adlari var. Her biri icin ya <b>yeni bolum</b> acilir ya da satirlari <b>mevcut bir bolume</b> yazilir (benzer adli bolum varsa onerildi). Hicbir mevcut kayit silinmez ya da yeniden adlandirilmaz; aktarim onaylanmadan hicbir sey yazilmaz.</p>
+  const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:720px"><div class="modal-head"><h3>Ice Aktarma Onizleme - ${P.yeniBolum.length} tanimsiz bolum adi</h3><button class="mini-btn" onclick="closeModal();_DEFIMP=null">x</button></div><div class="modal-body">
+    <p class="t-meta" style="margin-bottom:12px;line-height:1.5">Excel'de sistemde tanimli olmayan bolum adlari var. <b>Excel'den yeni bolum acilmaz.</b> Her biri icin satirlar ya <b>mevcut bir bolume</b> yazilir (benzer adli bolum varsa onerildi) ya da <b>atlanir</b>. Gercekten yeni bir bolum gerekiyorsa once soldaki "Bolum Ekle" ile tanimlayip aktarimi tekrarlayin. Hicbir mevcut kayit silinmez ya da yeniden adlandirilmaz; aktarim onaylanmadan hicbir sey yazilmaz.</p>
     ${satir}
   </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal();_DEFIMP=null">Iptal</button><button class="btn btn-add" onclick="defImpOnayla()">Aktar</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
@@ -17350,11 +17354,15 @@ async function defImpOnayla(){
 async function defImpUygula(map){
   const P=_DEFIMP; if(!P)return; _DEFIMP=null;
   const validBinas=new Set(projBuildings().map(b=>norm(b)));
-  const report={secCreated:0,sartCreated:0,sartUpdated:0,errors:[],eslenen:Object.keys(map).length};
-  const newSections=[]; const newSartnames=[]; const updSartnames=[];
+  const report={secCreated:0,sartCreated:0,sartUpdated:0,atlanan:0,errors:[],eslenen:Object.keys(map).length};
+  const newSartnames=[]; const updSartnames=[];
+  const atlananBolum=new Set();
   P.satirlar.forEach(r=>{
     const sec=map[r.sec]||r.sec;
-    if(!DB.proje.sections.some(x=>norm(x)===norm(sec)) && !newSections.some(x=>norm(x)===norm(sec))) newSections.push(sec);
+    const tanimli=DB.proje.sections.find(x=>norm(x)===norm(sec));
+    if(!tanimli){ // Excel'den bolum acilmaz: eslenmemis tanimsiz bolumun satirlari atlanir
+      if(r.bina||r.code) report.atlanan++;
+      atlananBolum.add(sec); return; }
     if(!r.bina && !r.code) return; // sadece bolum satiri, sartname yok
     if(!r.code){ report.errors.push(`Satir ${r.no}: sartname kodu bos ("${r.bina}")`); return; }
     if(!r.bina||!validBinas.has(norm(r.bina))){ report.errors.push(`Satir ${r.no}: "${r.bina||'(bos)'}" binasi tanimli degil`); return; }
@@ -17364,14 +17372,14 @@ async function defImpUygula(map){
     if(existing){
       if(norm(existing.section)!==norm(sec)) report.errors.push(`Satir ${r.no}: ${r.code} zaten "${existing.section}" bolumunde tanimli - "${sec}" altina ikinci kez acilmadi`);
       if(r.name && existing.name!==r.name && (DB.proje.sartnames||[]).includes(existing)) updSartnames.push({existing,name:r.name});
-    } else newSartnames.push({id:uid(),bina:r.bina,section:sec,code:r.code,name:r.name||r.code});
+    } else newSartnames.push({id:uid(),bina:r.bina,section:tanimli,code:r.code,name:r.name||r.code});
   });
-  if(newSections.length){ await sbInsertProjeSections(newSections); DB.proje.sections.push(...newSections); report.secCreated=newSections.length; }
+  [...atlananBolum].forEach(b=>report.errors.push(`"${b}" bolumu tanimli degil - satirlari atlandi (gerekiyorsa once "Bolum Ekle" ile tanimlayin)`));
   if(newSartnames.length){ await sbInsertProjeSartnames(newSartnames); DB.proje.sartnames.push(...newSartnames); report.sartCreated=newSartnames.length; }
   for(const {existing,name} of updSartnames){ existing.name=name; await sbUpdateProjeSartname(existing.id,{...existing}); report.sartUpdated++; }
   if(!DEF_SEC && DB.proje.sections.length) DEF_SEC=DB.proje.sections[0];
   render();
-  logAction('import',`Bolum & Sartname (${P.dosya}): +${report.secCreated} bolum, +${report.sartCreated} sartname, ~${report.sartUpdated} guncel${report.eslenen?', '+report.eslenen+' Excel bolumu mevcut bolume eslendi ('+Object.entries(map).map(([a,b])=>a+' -> '+b).join(', ')+')':''}`);
+  logAction('import',`Bolum & Sartname (${P.dosya}): +${report.sartCreated} sartname, ~${report.sartUpdated} guncel${report.atlanan?', '+report.atlanan+' satir tanimsiz bolum nedeniyle atlandi ('+[...atlananBolum].join(', ')+')':''}${report.eslenen?', '+report.eslenen+' Excel bolumu mevcut bolume eslendi ('+Object.entries(map).map(([a,b])=>a+' -> '+b).join(', ')+')':''}`);
   showDefImportReport(report);
 }
 function showDefImportReport(rep){
@@ -17385,9 +17393,9 @@ function showDefImportReport(rep){
   const html=`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal"><div class="modal-head"><h3>Bolum & Sartname - Ice Aktarma Sonucu</h3><button class="mini-btn" onclick="closeModal()">x</button></div><div class="modal-body">
     <div style="text-align:center;padding:10px 0 16px"><div style="font-size:34px">${ok?'✓':'⚠'}</div><div style="color:${ok?'var(--green)':'var(--amber)'};font-weight:700;margin-top:4px">${total} kayit islendi${ok?'':' ('+rep.errors.length+' uyari)'}</div></div>
     <div style="font-size:13px">
-      ${stat('Yeni bolum','+'+rep.secCreated,'var(--green)')}
       ${stat('Yeni sartname','+'+rep.sartCreated,'var(--green)')}
       ${stat('Guncellenen sartname',rep.sartUpdated,'var(--blue)')}
+      ${stat('Atlanan satir (tanimsiz bolum)',rep.atlanan||0,'var(--amber)')}
     </div>
     ${total===0&&!rep.errors.length?'<p style="color:var(--mute);text-align:center;font-size:13px">Islenecek yeni veri bulunamadi.</p>':''}
     ${errHtml}
