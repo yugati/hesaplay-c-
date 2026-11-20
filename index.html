@@ -10829,7 +10829,8 @@ async function giSil(id){
        TOP-ИТО 45
 
    BICIM KURALLARI (ornekten birebir cikarildi):
-   - 1. satir "FIRMA GG.AA.YYYY", 2. satir bina; ilk baslik hemen altina gelir.
+   - 1. satir "FIRMA GG.AA.YYYY (GÜNDÜZ-ДЕНЬ)", 2. satir bina; ilk baslik hemen altina gelir.
+     Gece bolumu ayni tarihle "FIRMA GG.AA.YYYY (GECE-НОЧЬ)" basligiyla TOP satirindan sonra gelir.
    - Odali baslik: basligin altinda "oda kodu / kisi" satirlari, sonrasinda BOS satir.
    - Odasiz baslik (GENEL SAHA, AMBAR): "baslik / kisi" TEK satir; ard arda gelen
      odasiz basliklarin arasina bos satir KONMAZ (ornekte oyle).
@@ -10850,15 +10851,13 @@ async function giSil(id){
    ══════════════════════════════════════════════════════════════════════════ */
 const GY_FIRMA_VARSAYILAN='BYKARA';
 const GY_TOP_ETIKET='TOP-ИТО';
-/* GECE BOLUMU: gece vardiyasi bir onceki aksam baslar, bu yuzden basligi ONCEKI GUNUN
-   tarihini tasir ('GECE-НОЧЬ 19.11.2026' - gunduz 20.11.2026 iken). Alt satiri
-   'TOP-ИТО GECE-НОЧЬ <n>', en sonda gunduz+gece 'TOPLAM-ВСЕГО <n>'. Okurken eski
-   'GECE' / 'TOPLAM GECE n' bicimi de taninir; tarihli gece basligi FIRMA+tarih
-   satiriyla karismasin diye gece denetimi tarih satirindan ONCE yapilir. */
+/* VARDIYA BOLUMLERI: gunduz girilen gunduz, gece girilen gece bolumune yazilir ve
+   IKISI DE AYNI TARIHI tasir. Basliklar 'FIRMA 20.11.2026 (GÜNDÜZ-ДЕНЬ)' ve
+   'FIRMA 20.11.2026 (GECE-НОЧЬ)'; gece alt satiri 'TOP-ИТО GECE-НОЧЬ <n>', en sonda
+   gunduz+gece 'TOPLAM-ВСЕГО <n>'. Okurken eski 'GECE' / 'TOPLAM GECE n' bicimi de taninir. */
+const GY_GUNDUZ_ETIKET='GÜNDÜZ-ДЕНЬ';
 const GY_GECE_ETIKET='GECE-НОЧЬ';
 const GY_GENEL_ETIKET='TOPLAM-ВСЕГО';
-// 'YYYY-AA-GG' -> bir onceki gun (ay/yil devri Date ile cozulur)
-function gyOncekiGun(k){ const p=giParcala(k); if(!p) return ''; const d=new Date(Date.UTC(p[0],p[1]-1,p[2]-1)); return d.getUTCFullYear()+'-'+giZ(d.getUTCMonth()+1)+'-'+giZ(d.getUTCDate()); }
 // odali=true -> altina oda kodlari yazilir; false -> basligin kendisi tek satirdir
 const GY_GRUPLAR=[
   {ad:'AYDINLATMA-ОСВЕЩЕНИЯ',          odali:true},
@@ -10995,8 +10994,8 @@ function gyFirmaMetni(yazilar){
   // TOPLAM HESAPLANIR: sahada yazilan deger (toplamElle) yalnizca kontrol icindir
   const toplam=sirali.reduce((s,y)=>s+gyToplam(y),0);
   const geceToplam=sirali.reduce((s,y)=>s+(y.geceVar===true?gyGeceToplam(y):0),0);
-  return bas+'\n'+binalar.join('\n\n')+'\n\n'+GY_TOP_ETIKET+' '+toplam
-    +(geceToplam?'\n\n'+GY_GECE_ETIKET+' '+gyTarihTR(gyOncekiGun(sirali[0].tarih))+'\n'+geceBinalar.join('\n\n')+'\n\n'+GY_TOP_ETIKET+' '+GY_GECE_ETIKET+' '+geceToplam+'\n\n'+GY_GENEL_ETIKET+' '+(toplam+geceToplam):'');
+  return bas+' ('+GY_GUNDUZ_ETIKET+')\n'+binalar.join('\n\n')+'\n\n'+GY_TOP_ETIKET+' '+toplam
+    +(geceToplam?'\n\n'+bas+' ('+GY_GECE_ETIKET+')\n'+geceBinalar.join('\n\n')+'\n\n'+GY_TOP_ETIKET+' '+GY_GECE_ETIKET+' '+geceToplam+'\n\n'+GY_GENEL_ETIKET+' '+(toplam+geceToplam):'');
 }
 // tek bir yazinin metni (kayit icinde saklanan ozet bu degil - bkz. gyKaydet)
 function gyMetin(y){ return y?gyFirmaMetni([y]):''; }
@@ -11033,7 +11032,7 @@ function gyFirmaninGunu(y){
 
    Mahal kodu icinde '/' gecebilir (kural: kod oldugu gibi korunur), bu yuzden
    ayirici olarak SON " / sayi" alinir. */
-const GY_TARIH_SATIRI=/^(.*\S)\s+(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
+const GY_TARIH_SATIRI=/^(.*\S)\s+(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s*\((GÜNDÜZ-ДЕНЬ|GÜNDÜZ|GUNDUZ|GECE-НОЧЬ|GECE)\))?$/i;
 const GY_SAYILI_SATIR=/^(.+?)\s*\/\s*(\d+)$/;
 function gyBolSayili(satir){
   const m=GY_SAYILI_SATIR.exec(String(satir||'').trim());
@@ -11082,16 +11081,20 @@ function gyMetinCoz(metin){
   };
 
   bloklar.forEach(blok=>{
-    // gece basligi firma satiri gibi hemen altindaki binayla ayni bloktadir (bos satir yok); eski metinde tek basina da olabilir
-    if(/^GECE(-НОЧЬ)?(\s+\d{1,2}\.\d{1,2}\.\d{4})?$/i.test(blok[0])){ if(k) k.geceVar=true; vardiya='GECE'; bl=null; blokIsle(blok.slice(1)); return; }
+    // eski bicim: tek basina 'GECE' satiri gece bolumunu acar
+    if(blok.length===1&&/^GECE(-НОЧЬ)?$/i.test(blok[0])){ if(k) k.geceVar=true; vardiya='GECE'; bl=null; return; }
     if(blok.length===1&&/^(TOPLAM GECE|TOP-ИТО GECE(-НОЧЬ)?|TOPLAM-ВСЕГО)\s+\d+$/i.test(blok[0])) return;
     // TOP satiri tek basina durur ve FIRMANIN toplamidir (binalarin degil)
     const top=blok.length===1&&new RegExp('^'+GY_TOP_ETIKET.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s+(\\d+)$','i').exec(blok[0]);
     if(top){ if(k) k.top=Number(top[1]); return; }
     const bas=GY_TARIH_SATIRI.exec(blok[0]);
     if(bas){
-      // yakalananlar: 1=firma, 2=gun, 3=ay, 4=yil  ->  YYYY-AA-GG
-      yeniKayit(bas[1], bas[4]+'-'+giZ(+bas[3])+'-'+giZ(+bas[2]));
+      // yakalananlar: 1=firma, 2=gun, 3=ay, 4=yil, 5=vardiya etiketi  ->  YYYY-AA-GG
+      const tarih=bas[4]+'-'+giZ(+bas[3])+'-'+giZ(+bas[2]);
+      const geceBas=/^GECE/i.test(bas[5]||'');
+      // '(GECE-НОЧЬ)' basligi ayni firma+tarihin gece bolumudur: yeni kayit acilmaz, eldekine eklenir
+      if(geceBas&&k&&norm(k.firma)===norm(bas[1])&&k.tarih===tarih){ k.geceVar=true; vardiya='GECE'; bl=null; }
+      else { yeniKayit(bas[1], tarih); if(geceBas){ k.geceVar=true; vardiya='GECE'; } }
       blokIsle(blok.slice(1)); return;
     }
     if(!k) yeniKayit('','');            // basliksiz metin: eldeki yaziya islenir
