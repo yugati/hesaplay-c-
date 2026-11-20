@@ -10850,8 +10850,15 @@ async function giSil(id){
    ══════════════════════════════════════════════════════════════════════════ */
 const GY_FIRMA_VARSAYILAN='BYKARA';
 const GY_TOP_ETIKET='TOP-ИТО';
-// gece bolumu: baslik 'GECE-НОЧЬ', alt satir 'TOP-ИТО GECE-НОЧЬ <n>' (eski 'GECE' / 'TOPLAM GECE n' de okunur)
+/* GECE BOLUMU: gece vardiyasi bir onceki aksam baslar, bu yuzden basligi ONCEKI GUNUN
+   tarihini tasir ('GECE-НОЧЬ 19.11.2026' - gunduz 20.11.2026 iken). Alt satiri
+   'TOP-ИТО GECE-НОЧЬ <n>', en sonda gunduz+gece 'TOPLAM-ВСЕГО <n>'. Okurken eski
+   'GECE' / 'TOPLAM GECE n' bicimi de taninir; tarihli gece basligi FIRMA+tarih
+   satiriyla karismasin diye gece denetimi tarih satirindan ONCE yapilir. */
 const GY_GECE_ETIKET='GECE-НОЧЬ';
+const GY_GENEL_ETIKET='TOPLAM-ВСЕГО';
+// 'YYYY-AA-GG' -> bir onceki gun (ay/yil devri Date ile cozulur)
+function gyOncekiGun(k){ const p=giParcala(k); if(!p) return ''; const d=new Date(Date.UTC(p[0],p[1]-1,p[2]-1)); return d.getUTCFullYear()+'-'+giZ(d.getUTCMonth()+1)+'-'+giZ(d.getUTCDate()); }
 // odali=true -> altina oda kodlari yazilir; false -> basligin kendisi tek satirdir
 const GY_GRUPLAR=[
   {ad:'AYDINLATMA-ОСВЕЩЕНИЯ',          odali:true},
@@ -10989,7 +10996,7 @@ function gyFirmaMetni(yazilar){
   const toplam=sirali.reduce((s,y)=>s+gyToplam(y),0);
   const geceToplam=sirali.reduce((s,y)=>s+(y.geceVar===true?gyGeceToplam(y):0),0);
   return bas+'\n'+binalar.join('\n\n')+'\n\n'+GY_TOP_ETIKET+' '+toplam
-    +(geceToplam?'\n\n'+GY_GECE_ETIKET+'\n\n'+geceBinalar.join('\n\n')+'\n\n'+GY_TOP_ETIKET+' '+GY_GECE_ETIKET+' '+geceToplam:'');
+    +(geceToplam?'\n\n'+GY_GECE_ETIKET+' '+gyTarihTR(gyOncekiGun(sirali[0].tarih))+'\n\n'+geceBinalar.join('\n\n')+'\n\n'+GY_TOP_ETIKET+' '+GY_GECE_ETIKET+' '+geceToplam+'\n\n'+GY_GENEL_ETIKET+' '+(toplam+geceToplam):'');
 }
 // tek bir yazinin metni (kayit icinde saklanan ozet bu degil - bkz. gyKaydet)
 function gyMetin(y){ return y?gyFirmaMetni([y]):''; }
@@ -11075,8 +11082,8 @@ function gyMetinCoz(metin){
   };
 
   bloklar.forEach(blok=>{
-    if(blok.length===1&&/^GECE(-НОЧЬ)?$/i.test(blok[0])){ if(k) k.geceVar=true; vardiya='GECE'; bl=null; return; }
-    if(blok.length===1&&/^(TOPLAM GECE|TOP-ИТО GECE(-НОЧЬ)?)\s+\d+$/i.test(blok[0])) return;
+    if(blok.length===1&&/^GECE(-НОЧЬ)?(\s+\d{1,2}\.\d{1,2}\.\d{4})?$/i.test(blok[0])){ if(k) k.geceVar=true; vardiya='GECE'; bl=null; return; }
+    if(blok.length===1&&/^(TOPLAM GECE|TOP-ИТО GECE(-НОЧЬ)?|TOPLAM-ВСЕГО)\s+\d+$/i.test(blok[0])) return;
     // TOP satiri tek basina durur ve FIRMANIN toplamidir (binalarin degil)
     const top=blok.length===1&&new RegExp('^'+GY_TOP_ETIKET.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s+(\\d+)$','i').exec(blok[0]);
     if(top){ if(k) k.top=Number(top[1]); return; }
