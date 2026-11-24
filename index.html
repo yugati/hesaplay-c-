@@ -16525,9 +16525,9 @@ async function ordPdfBirlestir(){
      siparis bilgisi her satirda tekrar eder; boylece suzulur / pivot yapilir. Iade fisi
      satirlari EKSI miktarla (toplam = net).
    Fatura dosyasi indirilmez (egress yok); iade fisi PDF'i olmasa da yazilir. Iki sayfa da
-   SADE tablodur (bkz. tabloYaz): baslik satiri + veri, otomatik filtre, donmus baslik; renk
-   yok. Kalin baslik / hizalama / kaydirma xlsx-js-style ile; bilesen yuklenemezse genislik
-   ve satir yukseklikleri yine yazilir, yalniz bu bicimler duser. */
+   SADE tablodur (bkz. tabloYaz): baslik, ozet, sutun basliklari (filtreli, donmus) ve veri;
+   renk yok. Kalin baslik / hizalama / kaydirma xlsx-js-style ile; bilesen yuklenemezse
+   genislik ve satir yukseklikleri yine yazilir, yalniz bu bicimler duser. */
 async function ordExcelAktar(){
   const st=_OPDF; if(!st||st.calisiyor) return;
   const {list,girdiler}=oxlsGirdiler(st.sira,st.iade);
@@ -16545,51 +16545,62 @@ async function ordExcelAktar(){
     const iadeVar=girdiler.some(g=>g.iade);
     const belge=g=>g.iade?'İade fişi'+(g.ia.no?' '+g.ia.no:''):'Sipariş';
     const tarih=g=>seri(g.ia?g.ia.tarih:g.o.date);
-    /* SADE TABLO: 1. satir sutun basliklari, altinda veri - yalniz otomatik filtre ve donmus
-       baslik satiri. Renk, dolgu, kenarlik yok; baslik kalin, sayilar sagda. Sutun genislikleri
-       icerige gore hesaplanir (baslikta filtre oku payi dahil); ust siniri asan uzun metin
-       (malzeme / sirket adi) hucrede kaydirilir ve satir yuksekligi satir sayisina gore verilir -
-       boylece hicbir yazi hucrede kesik kalmaz. */
-    const NUM='#,##0.##', TAR='dd.mm.yyyy';
+    /* SADE TABLO (kullanicinin elle duzelttigi ornege gore): 1. satir sayfa basligi, 2. satir
+       secim/filtre ozeti, 3. satir sutun basliklari (otomatik filtre burada, ilk 3 satir
+       donmus), altinda veri. Renk, dolgu, kenarlik yok; baslik kalin ve ortali, siparis no
+       baglantisi yalniz alti cizili. Sutunlar icerige gore ama ust sinirli genislikte; siniri
+       asan metin (sirket, malzeme, sartname) hucrede alt satira kayar ve satir yuksekligi satir
+       sayisina gore verilir - yazilar dikeyde ortali, hicbiri hucrede kesik kalmaz. Sayi ve
+       tarih sutunlari kaydirilmaz. */
+    const simdi=new Date(), iki=n=>String(n).padStart(2,'0');
+    const zaman=`${fmtDate(simdi)} ${iki(simdi.getHours())}:${iki(simdi.getMinutes())}`+((CURRENT_USER&&CURRENT_USER.username)?' · '+CURRENT_USER.username:'');
+    const olcutler=ORDSEC?[['Seçim',fmtNum(list.length)+' sipariş elle seçildi']]:opdfKapakOlcut();
+    const filtre=olcutler.map(([a,v])=>a+': '+v).join(' · ')||'Filtre yok - tüm siparişler';
+    const NUM='#,##0.##', TAR='dd.mm.yyyy', UST=3;   // UST: baslik + ozet + sutun basliklari
     // Excel sutun birimi '0' rakaminin genisligidir; Calibri 11'de buyuk harf daha genis - kaba olcu
     const gen=s=>{ let w=0; for(const ch of String(s)) w+=/[A-ZÇĞİÖŞÜА-ЯЁWMШЩЖЮ]/.test(ch)?1.25:1; return w; };
     const goster=(v,z)=>typeof v==='number'?(z===TAR?'00.00.0000':fmtNum(v)):String(v==null?'':v);
     const HIZ={c:'center',left:'left',right:'right'};
-    // kol: [baslik, hiza, ust sinir (karakter), sayi bicimi]
-    const tabloYaz=(ws,kol,veriSay)=>{
-      const genis=kol.map(k=>gen(k[0])+5);
-      for(let r=1;r<=veriSay;r++) kol.forEach((k,c)=>{ const h=ws[X.utils.encode_cell({r,c})];
+    // kol: [baslik, hiza, ust sinir (karakter), sayi bicimi]; rows: [baslik],[ozet],[sutunlar],...veri
+    const tabloYaz=(ws,kol,rows)=>{
+      const son=rows.length-1, H=UST-1;
+      const genis=kol.map(()=>0);
+      for(let r=UST;r<=son;r++) kol.forEach((k,c)=>{ const h=ws[X.utils.encode_cell({r,c})];
         if(h) genis[c]=Math.max(genis[c],gen(goster(h.v,k[3]))+2); });
-      // sayi / tarih sutunu kaydirilmaz: siniri yok, en genis degere gore acilir
       // baslik + filtre oku her zaman sigar; uzun metin sutunu ust sinirda durur
-      kol.forEach((k,c)=>{ genis[c]=Math.ceil(k[3]?genis[c]:Math.max(gen(k[0])+5,Math.min(genis[c],k[2]))); });
+      kol.forEach((k,c)=>{ genis[c]=Math.ceil(Math.max(gen(k[0])+5,k[3]?genis[c]:Math.min(genis[c],k[2]))); });
       ws['!cols']=genis.map(w=>({wch:w}));
-      const yuk=[{hpt:20}];
-      kol.forEach((k,c)=>{ const h=ws[X.utils.encode_cell({r:0,c})];
-        if(h&&stilli) h.s={font:{bold:true},alignment:{horizontal:'center',vertical:'center'}}; });
-      for(let r=1;r<=veriSay;r++){ let satir=1;
+      ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:kol.length-1}},{s:{r:1,c:0},e:{r:1,c:kol.length-1}}];
+      const yuk=[{hpt:22},{hpt:16},{hpt:20}];
+      if(stilli){
+        ws.A1.s={font:{sz:14}}; ws.A2.s={font:{sz:9}};
+        kol.forEach((k,c)=>{ const h=ws[X.utils.encode_cell({r:H,c})];
+          if(h) h.s={font:{bold:true},alignment:{horizontal:'center',vertical:'center'}}; });
+      }
+      for(let r=UST;r<=son;r++){ let satir=1;
         kol.forEach((k,c)=>{ const a=X.utils.encode_cell({r,c}); if(!ws[a]) ws[a]={t:'s',v:''}; const h=ws[a];
           const w=gen(goster(h.v,k[3]))+2, sar=w>genis[c];
-          // kelimeden kaydirma tam boy doldurmaz: %15 pay
+          // kelimeden kaydirma satiri tam doldurmaz: %15 pay
           if(sar) satir=Math.max(satir,Math.ceil(w*1.15/genis[c]));
           if(k[3]&&h.t==='n') h.z=(k[3]===NUM&&Number.isInteger(h.v))?'#,##0':k[3];
-          if(stilli) h.s={alignment:{horizontal:HIZ[k[1]],vertical:'top',...(sar?{wrapText:true}:{})}}; });
+          if(stilli) h.s={alignment:{horizontal:HIZ[k[1]],vertical:'center',...(sar?{wrapText:true}:{})}}; });
         if(satir>1) yuk[r]={hpt:satir*15}; }
       ws['!rows']=yuk;
-      ws['!autofilter']={ref:X.utils.encode_range({s:{r:0,c:0},e:{r:Math.max(0,veriSay),c:kol.length-1}})};
+      ws['!autofilter']={ref:X.utils.encode_range({s:{r:H,c:0},e:{r:Math.max(H,son),c:kol.length-1}})};
     };
     const wb=X.utils.book_new(), dondur={};
     const bloklar=st.xDetay?opdfDetayBloklar(girdiler,st):null;
     const ilkSatir=new Map();   // girdi -> Detay sayfasindaki ilk satiri (0 tabanli)
     let wsD=null, detaySay=0;
     if(st.xDetay){
-      const kol=[['Sıra','c',8],['Sipariş No','left',30]];
-      if(iadeVar) kol.push(['Belge','left',30]);
-      kol.push(['Tarih','c',12,TAR],['Bina','left',20],['Şirket','left',45],['Spek No','left',30],['Malzeme','left',70]);
-      if(st.detaySart) kol.push(['Şartname','left',40]);
-      if(st.detayEtiket) kol.push(['Etiket','left',30]);
-      kol.push(['Miktar','right',16,NUM],['Birim','c',10]);
-      const rows=[kol.map(k=>k[0])];
+      const kol=[['Sıra','c',8],['Sipariş No','left',22]];
+      if(iadeVar) kol.push(['Belge','left',22]);
+      kol.push(['Tarih','c',12,TAR],['Bina','left',14],['Şirket','left',26],['Spek No','left',20],['Malzeme','left',50]);
+      if(st.detaySart) kol.push(['Şartname','left',32]);
+      if(st.detayEtiket) kol.push(['Etiket','left',18]);
+      kol.push(['Miktar','right',14,NUM],['Birim','c',8]);
+      const alt=filtre+' · '+(st.detayKapsam==='tum'?'siparişin tüm ürünleri':'yalnız filtreye uyan ürünler')+' · '+zaman;
+      const rows=[['Sipariş Detayı'],[alt],kol.map(k=>k[0])];
       bloklar.forEach((b,i)=>{ const g=b.g;
         const bas=[i+1,g.o.no||'',...(iadeVar?[belge(g)]:[]),tarih(g),g.o.bina||'',orderCompany(g.o)||''];
         ilkSatir.set(g,rows.length);
@@ -16601,16 +16612,17 @@ async function ordExcelAktar(){
           detaySay++; });
       });
       wsD=X.utils.aoa_to_sheet(rows);
-      tabloYaz(wsD,kol,rows.length-1);
+      tabloYaz(wsD,kol,rows);
     }
     if(st.xListe){
-      const kol=[['Sıra','c',8],['Sipariş No','left',30]];
-      if(iadeVar) kol.push(['Belge','left',30]);
-      kol.push(['Tarih','c',12,TAR],['Bina','left',20],['Şirket','left',45],['Şartname','left',60],['Kalem','right',10,NUM]);
+      const kol=[['Sıra','c',8],['Sipariş No','left',22]];
+      if(iadeVar) kol.push(['Belge','left',22]);
+      kol.push(['Tarih','c',12,TAR],['Bina','left',14],['Şirket','left',30],['Şartname','left',36],['Kalem','right',10,NUM]);
       if(st.xDetay) kol.push(['Detay Satırı','right',14,NUM]);
       kol.push(['PDF','c',8]);
       const iNo=1;
-      const rows=[kol.map(k=>k[0])];
+      const alt=`${fmtNum(list.length)} sipariş${iadeVar?' · '+fmtNum(girdiler.filter(g=>g.iade).length)+' iade fişi':''} · ${filtre} · ${zaman}`;
+      const rows=[['Sipariş Listesi'],[alt],kol.map(k=>k[0])];
       girdiler.forEach((g,i)=>{
         const sat=g.ia?(g.ia.satirlar||[]):(g.o.lines||[]);
         const sartlar=[...new Set(sat.map(l=>l.grup||g.o.grup||'').filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr',{numeric:true}));
@@ -16619,13 +16631,15 @@ async function ordExcelAktar(){
           ...(st.xDetay?[(bloklar[i]||{satirlar:[]}).satirlar.length]:[]),opdfVar(pdf)?'Var':'Yok']);
       });
       const wsL=X.utils.aoa_to_sheet(rows);
-      tabloYaz(wsL,kol,rows.length-1);
-      // siparis no -> Detay sayfasindaki ilk satiri (PDF icindekilerindeki "sayfa" sutununun karsiligi)
+      tabloYaz(wsL,kol,rows);
+      // siparis no -> Detay sayfasindaki ilk satiri (PDF icindekilerindeki "sayfa" sutununun karsiligi); renksiz, alti cizili
       girdiler.forEach((g,i)=>{ const hedef=ilkSatir.get(g); if(hedef==null) return;
-        const a=X.utils.encode_cell({r:i+1,c:iNo}); if(wsL[a]) wsL[a].l={Target:`#'Detay'!A${hedef+1}`,Tooltip:'Detay satırlarına git'}; });
-      X.utils.book_append_sheet(wb,wsL,'Siparişler'); dondur['Siparişler']={satir:1,sutun:0};
+        const a=X.utils.encode_cell({r:UST+i,c:iNo}); if(!wsL[a]) return;
+        wsL[a].l={Target:`#'Detay'!A${hedef+1}`,Tooltip:'Detay satırlarına git'};
+        if(stilli) wsL[a].s={...wsL[a].s,font:{underline:true}}; });
+      X.utils.book_append_sheet(wb,wsL,'Siparişler'); dondur['Siparişler']={satir:UST,sutun:0};
     }
-    if(wsD){ X.utils.book_append_sheet(wb,wsD,'Detay'); dondur['Detay']={satir:1,sutun:0}; }
+    if(wsD){ X.utils.book_append_sheet(wb,wsD,'Detay'); dondur['Detay']={satir:UST,sutun:0}; }
     if(kesici.signal.aborted) return;
     const ad=`Siparis_Listesi_${ORDSEC?'secim':(ORDBINA||'tum')}_${new Date().toISOString().slice(0,10)}.xlsx`.replace(/[\\/:*?"<>|]/g,'-');
     xlsxDondurIndir(wb,ad,dondur,X);
