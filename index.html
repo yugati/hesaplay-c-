@@ -3161,6 +3161,9 @@ td.dup-hl{background:#f0a02016;box-shadow:inset 0 0 0 1px #f0a02045;color:var(--
 .inv-imza-warn .ord-imza-warn{width:22px;height:22px;font-size:13px;margin:0;cursor:default}
 .order-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;cursor:pointer;transition:border-color .15s,transform .1s,box-shadow .15s;box-shadow:var(--shadow-sm)}
 .order-card:hover{border-color:#a855f7;transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.order-card.ord-sec-on{border-color:var(--amber);box-shadow:0 0 0 2px var(--amber) inset}
+.ord-sec-kutu{width:16px;height:16px;margin:0 2px 0 0;cursor:pointer;accent-color:var(--amber);pointer-events:none}
+.ord-sec-cubuk{position:sticky;bottom:16px;z-index:20;margin-top:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px;background:var(--panel);border:1px solid var(--amber);border-radius:12px;box-shadow:var(--shadow-md);font-size:13px}
 .order-card-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding-bottom:8px;margin-bottom:9px;border-bottom:1px dashed var(--line);min-height:17px}
 .order-badges{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .order-badges>*{margin-left:0!important}
@@ -15188,8 +15191,8 @@ function closeDefinitions(){ PDEF=false; DEFMV={on:false,sel:new Set()}; render(
 
 /* ============ TUM SIPARISLER (bina filtreli) ============ */
 function openAllOrders(){ if(!canSeeOrders()){toast('Bu bolume erisim yetkiniz yok','err');return;} PORD=true; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PCOMP=false; PEKIP=false; PNEWORD=false; PBINAY=false; ORDBINA=""; ORDF={sec:'',sart:'',mat:'',code:'',comp:'',from:'',to:'',pdf:'',tur:'',tag:''}; ORDVIEW='orders'; SEARCH=""; render(); }
-function setOrdView(v){ ORDVIEW=v; SEARCH=""; render(); }
-function closeAllOrders(){ PORD=false; render(); }
+function setOrdView(v){ ORDVIEW=v; SEARCH=""; if(v!=='orders') ORDSEC=null; render(); }
+function closeAllOrders(){ PORD=false; ORDSEC=null; render(); }
 
 /* ============ SIRKETLER (proje siparis/fatura girisinde secilir) ============ */
 function openCompanies(){ PCOMP=true; PEKIP=false; PUSERS=false; PAUDIT=false; PLIB=false; PDEF=false; PORD=false; PNEWORD=false; PBINAY=false; SEARCH=""; render(); }
@@ -15885,9 +15888,10 @@ function renderAllOrders(){
       const notIz=(MKR.acik&&SEARCH&&![o.no,o.bina,o.grup,orderCompany(o),...(o.lines||[]).flatMap(l=>[l.ad,l.code])].some(x=>markVarMi(x,SEARCH)))
         ?markGizliIz([['Not',orderNotlar(o).map(nt=>nt.text||'')]],SEARCH):'';
       const badges=[atamaBadge(o),irsaliyeBadge(o),imzaWarnBadge(o),iadeBadge(o),notBadge(o)].join('');
-      cards+=`<div class="order-card" onclick="orderCardClick(event,'${o.id}')" onauxclick="orderCardAux(event,'${o.id}')">
+      const secOn=ORDSEC&&ORDSEC.has(String(o.id));
+      cards+=`<div class="order-card${secOn?' ord-sec-on':''}" data-oid="${esc(String(o.id))}" onclick="orderCardClick(event,'${o.id}')" onauxclick="orderCardAux(event,'${o.id}')">
         <div class="order-card-head">
-          <div class="order-badges">${badges}</div>
+          <div class="order-badges">${ORDSEC?`<input type="checkbox" class="ord-sec-kutu" ${secOn?'checked':''} tabindex="-1">`:''}${badges}</div>
           <span class="order-date">${fmtDate(o.date)}</span>
         </div>
         <div class="order-card-top">
@@ -15922,7 +15926,8 @@ function renderAllOrders(){
       <button class="btn btn-grid" onclick="openOrdersPdfBirlestir()" title="Filtrelenmis siparislerin siparis PDF'lerini sirayla tek PDF'te birlestirir">${icoDoc()} Siparis PDF'leri</button></div>
     ${filterbar}
     ${sumline}
-    ${cards}`;
+    ${cards}
+    ${ORDSEC?`<div id="ordSecCubuk" class="ord-sec-cubuk">${ordSecCubukIc()}</div>`:''}`;
 }
 /* BORCLAR sekmesi: DB.proje.borclar (bkz. borcMu) - siparis listesinden AYRI durur, ust
    arama kutusu ve kendi suzgecleri vardir. Sira: once acik/kismi borclar (takip edilecek
@@ -16162,8 +16167,7 @@ const opdfVar=p=>!!(p&&!p.yukleniyor&&(p.path||p.data));
    siparis {o, yok:true} olarak kalir (icindekilerde gorunsun). Ayni PDF iki siparise
    eklenmisse ikinci kez indirilmez/basilmaz, ilkinin sayfasini gosterir (tekrar). */
 function opdfGirdiler(sira,iadeDahil){
-  let list=allOrdersFiltered(); if(sira==='eski') list.reverse();
-  if(_OPDF&&_OPDF.secerek) list=list.filter(o=>_OPDF.secili.has(String(o.id)));
+  const list=ORDSEC?ordSecSiparisler():allOrdersFiltered(); if(sira==='eski') list.reverse();
   const out=[], gor=new Map();
   // ia: iade fisi girdisinde fisin kendisi (tarih + iade edilen satirlar detay tablosunda kullanilir)
   const ekle=(o,pdf,etiket,ia)=>{ const k=pdf.path||pdf.data, iade=!!ia;
@@ -16176,10 +16180,10 @@ function opdfGirdiler(sira,iadeDahil){
   return {list,girdiler:out};
 }
 function openOrdersPdfBirlestir(){
-  if(!allOrdersFiltered().length){ toast('Siparis yok','err'); return; }
+  if(ORDSEC?!ORDSEC.size:!allOrdersFiltered().length){ toast(ORDSEC?'Once siparis secin':'Siparis yok','err'); return; }
   if(!_OPDF){ let kayitli={}; try{ kayitli=JSON.parse(localStorage.getItem('opdfAyar')||'{}')||{}; }catch(_){}
     _OPDF={...OPDF_VARSAYILAN,...kayitli}; }
-  _OPDF.calisiyor=false; _OPDF.secerek=false; _OPDF.secili=new Set(); _OPDF.secAra='';
+  _OPDF.calisiyor=false;
   closeModal();
   document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg" onclick="if(event.target===this&&!_OPDF.calisiyor)closeModal()"><div class="modal" style="max-width:560px">
     <div class="modal-head"><h3>Siparis PDF'lerini Birlestir</h3><button class="mini-btn" onclick="opdfVazgec()">x</button></div>
@@ -16196,35 +16200,38 @@ function opdfSet(k,v){ if(!_OPDF||_OPDF.calisiyor) return; _OPDF[k]=v;
   try{ const kayit={}; Object.keys(OPDF_VARSAYILAN).forEach(x=>kayit[x]=_OPDF[x]); localStorage.setItem('opdfAyar',JSON.stringify(kayit)); }catch(_){}
   opdfCiz(); }
 // detay tablosunda "filtreye uyan" ile "tum" ayrimi yalniz satir duzeyi bir suzgec varken anlamlidir
-/* SECEREK CIKAR: filtredeki siparisler kutulu listede gosterilir, yalniz isaretlenenler
-   birlestirilir (icindekiler / detay tablosu da yalniz onlari kapsar). Secim kaydedilmez. */
-function opdfSecerek(v){ if(!_OPDF||_OPDF.calisiyor) return; _OPDF.secerek=v; opdfCiz(); }
-function opdfSecTek(id,v){ if(!_OPDF||_OPDF.calisiyor) return; v?_OPDF.secili.add(id):_OPDF.secili.delete(id); opdfCiz(); }
-function opdfSecHepsi(v){ if(!_OPDF||_OPDF.calisiyor) return;
-  opdfSecGorunen().forEach(o=>v?_OPDF.secili.add(String(o.id)):_OPDF.secili.delete(String(o.id))); opdfCiz(); }
-function opdfSecGorunen(){ const q=String(_OPDF.secAra||'').trim().toLocaleLowerCase('tr');
-  const list=allOrdersFiltered(); if(_OPDF.sira==='eski') list.reverse();
-  return q?list.filter(o=>[o.no,o.bina,orderCompanyKisa(o),fmtDate(o.date)].join(' ').toLocaleLowerCase('tr').includes(q)):list; }
-function opdfSecAra(v){ if(!_OPDF) return; _OPDF.secAra=v; opdfCiz();
-  const i=document.getElementById('opdfSecAra'); if(i){ i.focus(); i.setSelectionRange(v.length,v.length); } }
-function opdfSecListe(){
-  const st=_OPDF, gor=opdfSecGorunen(), hepsi=gor.length&&gor.every(o=>st.secili.has(String(o.id)));
-  const satir=o=>`<label style="display:grid;grid-template-columns:18px 1fr auto;gap:8px;align-items:center;padding:5px 8px;cursor:pointer;border-bottom:1px solid var(--line)">
-      <input type="checkbox" ${st.secili.has(String(o.id))?'checked':''} onchange="opdfSecTek('${esc(String(o.id))}',this.checked)">
-      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>${esc(o.no||'(no yok)')}</b> <span class="t-meta">${esc([fmtDate(o.date),o.bina||'',orderCompanyKisa(o)].filter(Boolean).join(' · '))}</span></span>
-      <span class="t-meta">${opdfVar(o.pdf)?'':'PDF yok'}</span></label>`;
-  return `<div style="display:grid;gap:8px;margin-bottom:12px">
-    <div style="display:flex;gap:8px;align-items:center">
-      <input id="opdfSecAra" type="text" autocomplete="off" style="flex:1;background:var(--bg);border:1px solid var(--line);color:var(--ink);padding:7px 10px;border-radius:9px;font-size:13px;outline:none" placeholder="Siparis no, bina, sirket ara…" value="${esc(st.secAra||'')}" oninput="opdfSecAra(this.value)">
-      <button class="btn btn-ghost" onclick="opdfSecHepsi(${!hepsi})">${hepsi?'Hicbiri':'Tumunu sec'}</button></div>
-    <div id="opdfSecKutu" style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;font-size:13px">
-      ${gor.length?gor.map(satir).join(''):'<div class="t-meta" style="padding:10px">Eslesen siparis yok</div>'}</div>
-    <div class="t-meta"><b>${fmtNum(st.secili.size)}</b> siparis secili</div></div>`;
+/* SECEREK CIKAR: modaldan "Secerek cikar" secilince modal kapanir, Tum Siparisler sayfasi
+   SECIM MODUNA gecer (ORDSEC = secili siparis id'leri). Kartlarda kutu cikar, karta tiklamak
+   secer/birakir; alttaki cubuktan "PDF Olustur" modali yalniz secilenlerle acar. Secim,
+   filtre degisse de korunur (gizlenen secili siparis de PDF'e girer). Sayfadan cikinca biter. */
+let ORDSEC=null;
+function ordSecBasla(){ if(_OPDF&&_OPDF.calisiyor) return; closeModal(); ORDSEC=ORDSEC||new Set(); render();
+  toast('Secim modu: PDF\'e girecek siparisleri isaretleyin'); }
+function ordSecBitir(){ ORDSEC=null; render(); }
+function ordSecSiparisler(){ if(!ORDSEC) return [];
+  return (DB.proje.orders||[]).filter(o=>ORDSEC.has(String(o.id))).sort((a,b)=>(b.date||0)-(a.date||0)); }
+function ordSecTek(id){ if(!ORDSEC) return; id=String(id); ORDSEC.has(id)?ORDSEC.delete(id):ORDSEC.add(id); ordSecGuncelle(); }
+function ordSecGorunen(v){ if(!ORDSEC) return; allOrdersFiltered().forEach(o=>v?ORDSEC.add(String(o.id)):ORDSEC.delete(String(o.id))); ordSecGuncelle(); }
+function ordSecTemizle(){ if(!ORDSEC) return; ORDSEC.clear(); ordSecGuncelle(); }
+// kart tiklamasinda butun sayfayi yeniden cizmek yerine yalniz kartlar ve cubuk guncellenir (kaydirma yerinde kalir)
+function ordSecGuncelle(){ if(!ORDSEC) return;
+  document.querySelectorAll('.order-card[data-oid]').forEach(k=>{ const on=ORDSEC.has(k.dataset.oid);
+    k.classList.toggle('ord-sec-on',on); const c=k.querySelector('.ord-sec-kutu'); if(c) c.checked=on; });
+  const el=document.getElementById('ordSecCubuk'); if(el) el.innerHTML=ordSecCubukIc(); }
+function ordSecCubukIc(){
+  const n=ORDSEC.size, gor=allOrdersFiltered(), gorId=new Set(gor.map(o=>String(o.id)));
+  const gizli=[...ORDSEC].filter(id=>!gorId.has(id)).length, hepsi=gor.length&&gor.every(o=>ORDSEC.has(String(o.id)));
+  return `<span style="display:flex;align-items:center;gap:8px">${icoDoc()} <b>Secim modu</b></span>
+    <span class="t-meta"><b style="color:var(--ink)">${fmtNum(n)}</b> siparis secili${gizli?` · ${gizli} tanesi su an filtrede gizli`:''}</span>
+    <span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost" onclick="ordSecGorunen(${!hepsi})">${hepsi?'Gorunenleri birak':'Gorunenleri sec'}</button>
+      ${n?'<button class="btn btn-ghost" onclick="ordSecTemizle()">Temizle</button>':''}
+      <button class="btn btn-ghost" onclick="ordSecBitir()">Vazgec</button>
+      <button class="btn btn-add" ${n?'':'disabled'} onclick="openOrdersPdfBirlestir()">${icoDoc()} PDF Olustur${n?` (${n})`:''}</button></span>`;
 }
 function opdfSatirSuzgeciVar(){ return !!(SEARCH||ORDF.sart||ORDF.sec||ORDF.mat||ORDF.code||ORDF.tag); }
 function opdfCiz(){
   const el=document.getElementById('opdfGovde'); if(!el||!_OPDF) return;
-  const eskiKutu=document.getElementById('opdfSecKutu'), kaydir=eskiKutu?eskiKutu.scrollTop:0;
   const st=_OPDF, {list,girdiler}=opdfGirdiler(st.sira,st.iade);
   const inecek=girdiler.filter(g=>g.pdf&&!g.tekrar);
   const yok=girdiler.filter(g=>g.yok);
@@ -16246,9 +16253,11 @@ function opdfCiz(){
   const tumSay=allOrdersFiltered().length;
   el.innerHTML=`
     <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:13px;margin-bottom:12px">
-      <label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="opdf_secerek" ${st.secerek?'':'checked'} onchange="opdfSecerek(false)">Tum siparisler (${fmtNum(tumSay)})</label>
-      <label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="opdf_secerek" ${st.secerek?'checked':''} onchange="opdfSecerek(true)">Secerek cikar</label></div>
-    ${st.secerek?opdfSecListe():''}
+      ${ORDSEC?`<span><b>${fmtNum(ORDSEC.size)}</b> secili siparis</span>
+        <a href="#" style="color:var(--amber)" onclick="event.preventDefault();ordSecBasla()">Secimi degistir</a>
+        <a href="#" style="color:var(--mute)" onclick="event.preventDefault();ORDSEC=null;render();opdfCiz()">Secimi birak, tum siparisler (${fmtNum(tumSay)})</a>`
+      :`<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="opdf_mod" checked>Tum siparisler (${fmtNum(tumSay)})</label>
+        <label style="display:flex;gap:8px;align-items:center;cursor:pointer" title="Pencere kapanir, siparis kartlarinda secim kutusu cikar"><input type="radio" name="opdf_mod" onchange="ordSecBasla()">Secerek cikar</label>`}</div>
     <div class="ord-sumline" style="margin:0 0 12px"><b>${fmtNum(list.length)}</b> siparis · <b>${fmtNum(inecek.length)}</b> PDF birlestirilecek${mb}</div>
     ${yok.length?`<p class="mdp-bosbilgi" style="margin-bottom:12px">${icoInfoSm()}<span><b>${yok.length}</b> sipariste PDF yok - atlanir${st.icindekiler?', icindekilerde "PDF yok" diye yazar':''}: ${esc(yok.slice(0,8).map(g=>g.etiket).join(', '))}${yok.length>8?` +${yok.length-8}`:''}</span></p>`:''}
     <div style="display:grid;gap:10px;font-size:13px">
@@ -16261,7 +16270,6 @@ function opdfCiz(){
     </div>
     <div class="t-meta" id="opdfDurum" style="margin-top:14px;min-height:18px"></div>`;
   const btn=document.getElementById('opdfBtn'); if(btn) btn.disabled=!inecek.length;
-  const yeniKutu=document.getElementById('opdfSecKutu'); if(yeniKutu) yeniKutu.scrollTop=kaydir;
 }
 function opdfDurum(t){ const el=document.getElementById('opdfDurum'); if(el) el.textContent=t; }
 /* Vazgec: calisirken basilirsa surmekte olan indirmeler kesilir (AbortController), birlestirme
@@ -16435,8 +16443,7 @@ async function ordPdfBirlestir(){
     /* On sayfalar: icindekiler + (istenirse) detay tablosu, faturalarin ONUNE eklenir; fatura
        sayfa numaralari bu yuzden on sayfa sayisi kadar kayar. Detay sayfa sayisi once
        kodlamadan sayilir, sonra gercek numaralarla cizilir. */
-    const olcutler=opdfKapakOlcut();
-    if(st.secerek) olcutler.push(['Secim',fmtNum(st.secili.size)+' siparis secildi']);
+    const olcutler=ORDSEC?[['Secim',fmtNum(girdiler.filter(g=>!g.iade).length)+' siparis elle secildi']]:opdfKapakOlcut();
     const filtre=olcutler.map(([a,v])=>a+': '+v).join(' · ')||'Filtre yok - tüm siparişler';
     const icP=st.icindekiler?opdfIcSayfaDilim(girdiler.length,olcutler.length).length:0;
     let bloklar=null, dP=0;
@@ -35236,6 +35243,8 @@ function orderYeniSekme(id){
   if(!w) toast('Tarayici yeni sekmeyi engelledi - bu site icin acilir pencereye izin verin','err');
 }
 function orderCardClick(e,id){
+  // secim modu yalniz Tum Siparisler kartlarinda (data-oid) gecerli
+  if(ORDSEC&&e&&e.currentTarget&&e.currentTarget.dataset&&e.currentTarget.dataset.oid){ e.preventDefault(); ordSecTek(id); return; }
   if(e&&(e.ctrlKey||e.metaKey)){ e.preventDefault(); orderYeniSekme(id); return; }
   openOrderDetail(id);
 }
