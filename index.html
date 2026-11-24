@@ -16522,11 +16522,12 @@ async function ordPdfBirlestir(){
    - "Siparişler" sayfasi (icindekilerin karsiligi): girdi basina bir satir. Siparis no hucresi
      Detay sayfasindaki ilk satirina baglantidir (PDF'teki "siparis no -> sayfa").
    - "Detay" sayfasi (detay tablosunun karsiligi): DUZ tablo - her urun satiri bir satir,
-     siparis bilgisi her satirda tekrar eder; boylece suzulur / pivot yapilir. Siparisler
-     sirayla acik gri / beyaz seritlenir. Iade fisi satirlari EKSI miktarla (toplam = net).
-   Fatura dosyasi indirilmez (egress yok); iade fisi PDF'i olmasa da yazilir. Her iki sayfada
-   ust 4 satir (baslik, filtre ozeti, bos, sutun basliklari) dondurulur. Stil xlsx-js-style
-   ile; bilesen yuklenemezse ayni dosya stilsiz iner. */
+     siparis bilgisi her satirda tekrar eder; boylece suzulur / pivot yapilir. Iade fisi
+     satirlari EKSI miktarla (toplam = net).
+   Fatura dosyasi indirilmez (egress yok); iade fisi PDF'i olmasa da yazilir. Iki sayfa da
+   SADE tablodur (bkz. tabloYaz): baslik satiri + veri, otomatik filtre, donmus baslik; renk
+   yok. Kalin baslik / hizalama / kaydirma xlsx-js-style ile; bilesen yuklenemezse genislik
+   ve satir yukseklikleri yine yazilir, yalniz bu bicimler duser. */
 async function ordExcelAktar(){
   const st=_OPDF; if(!st||st.calisiyor) return;
   const {list,girdiler}=oxlsGirdiler(st.sira,st.iade);
@@ -16541,74 +16542,75 @@ async function ordExcelAktar(){
   try{
     const seri=ts=>{ if(ts==null||ts==='') return ''; const d=new Date(ts); if(isNaN(d)) return String(ts);
       return (Date.UTC(d.getFullYear(),d.getMonth(),d.getDate())-Date.UTC(1899,11,30))/86400000; };
-    const simdi=new Date(), iki=n=>String(n).padStart(2,'0');
-    const zaman=`${fmtDate(simdi)} ${iki(simdi.getHours())}:${iki(simdi.getMinutes())}`+((CURRENT_USER&&CURRENT_USER.username)?' · '+CURRENT_USER.username:'');
-    const olcutler=ORDSEC?[['Seçim',fmtNum(list.length)+' sipariş elle seçildi']]:opdfKapakOlcut();
-    const filtre=olcutler.map(([a,v])=>a+': '+v).join(' · ')||'Filtre yok - tüm siparişler';
     const iadeVar=girdiler.some(g=>g.iade);
     const belge=g=>g.iade?'İade fişi'+(g.ia.no?' '+g.ia.no:''):'Sipariş';
     const tarih=g=>seri(g.ia?g.ia.tarih:g.o.date);
-    const ince={style:'thin',color:{rgb:'FFD1D5DB'}}, kenar={top:ince,bottom:ince,left:ince,right:ince};
-    const S={
-      baslik:{font:{bold:true,sz:16,color:{rgb:'FF111827'}}},
-      alt:{font:{sz:10,color:{rgb:'FF6B7280'}}},
-      th:{font:{bold:true,color:{rgb:'FFFFFFFF'}},fill:{fgColor:{rgb:'FF1F2937'}},border:kenar,alignment:{horizontal:'center',vertical:'center',wrapText:true}},
-    };
-    // govde hucresi: hizalama + (serit) dolgu + (iade) kirmizi + (bos satir) gri italik + (baglanti) mavi altcizgi
-    const td=(hiz,{serit,kirmizi,soluk,link,kalin}={})=>({border:kenar,alignment:{horizontal:hiz,vertical:'center',wrapText:hiz==='left'},
-      ...(serit?{fill:{fgColor:{rgb:'FFF3F4F6'}}}:{}),
-      font:{...(kirmizi?{color:{rgb:'FFDC2626'}}:soluk?{color:{rgb:'FF9CA3AF'},italic:true}:link?{color:{rgb:'FF2563EB'},underline:true}:{}),...(kalin?{bold:true}:{})}});
+    /* SADE TABLO: 1. satir sutun basliklari, altinda veri - yalniz otomatik filtre ve donmus
+       baslik satiri. Renk, dolgu, kenarlik yok; baslik kalin, sayilar sagda. Sutun genislikleri
+       icerige gore hesaplanir (baslikta filtre oku payi dahil); ust siniri asan uzun metin
+       (malzeme / sirket adi) hucrede kaydirilir ve satir yuksekligi satir sayisina gore verilir -
+       boylece hicbir yazi hucrede kesik kalmaz. */
     const NUM='#,##0.##', TAR='dd.mm.yyyy';
-    const ata=(ws,r,c,s,z)=>{ const a=X.utils.encode_cell({r,c}); if(!ws[a]) ws[a]={t:'s',v:''}; if(stilli&&s) ws[a].s=s;
-      if(z&&ws[a].t==='n') ws[a].z=(z===NUM&&Number.isInteger(ws[a].v))?'#,##0':z; };
-    // ust bolum: baslik + ozet satiri (sutun genisliginde birlesik), bos satir, sutun basliklari (4. satir)
-    const sayfaKur=(ws,kolSay,sonSatir)=>{
-      ws['!merges']=[{s:{r:0,c:0},e:{r:0,c:kolSay-1}},{s:{r:1,c:0},e:{r:1,c:kolSay-1}}];
-      ws['!rows']=[{hpt:26},{hpt:16},{hpt:8},{hpt:22}];
-      ata(ws,0,0,S.baslik); ata(ws,1,0,S.alt);
-      for(let c=0;c<kolSay;c++) ata(ws,3,c,S.th);
-      ws['!autofilter']={ref:X.utils.encode_range({s:{r:3,c:0},e:{r:Math.max(3,sonSatir),c:kolSay-1}})};
+    // Excel sutun birimi '0' rakaminin genisligidir; Calibri 11'de buyuk harf daha genis - kaba olcu
+    const gen=s=>{ let w=0; for(const ch of String(s)) w+=/[A-ZÇĞİÖŞÜА-ЯЁWMШЩЖЮ]/.test(ch)?1.25:1; return w; };
+    const goster=(v,z)=>typeof v==='number'?(z===TAR?'00.00.0000':fmtNum(v)):String(v==null?'':v);
+    const HIZ={c:'center',left:'left',right:'right'};
+    // kol: [baslik, hiza, ust sinir (karakter), sayi bicimi]
+    const tabloYaz=(ws,kol,veriSay)=>{
+      const genis=kol.map(k=>gen(k[0])+5);
+      for(let r=1;r<=veriSay;r++) kol.forEach((k,c)=>{ const h=ws[X.utils.encode_cell({r,c})];
+        if(h) genis[c]=Math.max(genis[c],gen(goster(h.v,k[3]))+2); });
+      // sayi / tarih sutunu kaydirilmaz: siniri yok, en genis degere gore acilir
+      // baslik + filtre oku her zaman sigar; uzun metin sutunu ust sinirda durur
+      kol.forEach((k,c)=>{ genis[c]=Math.ceil(k[3]?genis[c]:Math.max(gen(k[0])+5,Math.min(genis[c],k[2]))); });
+      ws['!cols']=genis.map(w=>({wch:w}));
+      const yuk=[{hpt:20}];
+      kol.forEach((k,c)=>{ const h=ws[X.utils.encode_cell({r:0,c})];
+        if(h&&stilli) h.s={font:{bold:true},alignment:{horizontal:'center',vertical:'center'}}; });
+      for(let r=1;r<=veriSay;r++){ let satir=1;
+        kol.forEach((k,c)=>{ const a=X.utils.encode_cell({r,c}); if(!ws[a]) ws[a]={t:'s',v:''}; const h=ws[a];
+          const w=gen(goster(h.v,k[3]))+2, sar=w>genis[c];
+          // kelimeden kaydirma tam boy doldurmaz: %15 pay
+          if(sar) satir=Math.max(satir,Math.ceil(w*1.15/genis[c]));
+          if(k[3]&&h.t==='n') h.z=(k[3]===NUM&&Number.isInteger(h.v))?'#,##0':k[3];
+          if(stilli) h.s={alignment:{horizontal:HIZ[k[1]],vertical:'top',...(sar?{wrapText:true}:{})}}; });
+        if(satir>1) yuk[r]={hpt:satir*15}; }
+      ws['!rows']=yuk;
+      ws['!autofilter']={ref:X.utils.encode_range({s:{r:0,c:0},e:{r:Math.max(0,veriSay),c:kol.length-1}})};
     };
     const wb=X.utils.book_new(), dondur={};
     const bloklar=st.xDetay?opdfDetayBloklar(girdiler,st):null;
     const ilkSatir=new Map();   // girdi -> Detay sayfasindaki ilk satiri (0 tabanli)
     let wsD=null, detaySay=0;
     if(st.xDetay){
-      const kol=[['Sıra','c',6],['Sipariş No','left',18]];
-      if(iadeVar) kol.push(['Belge','left',16]);
-      kol.push(['Tarih','c',11],['Bina','left',12],['Şirket','left',24],['Spek No','left',18],['Malzeme','left',50]);
-      if(st.detaySart) kol.push(['Şartname','left',26]);
-      if(st.detayEtiket) kol.push(['Etiket','left',20]);
-      kol.push(['Miktar','right',12],['Birim','c',8]);
-      const iMik=kol.findIndex(k=>k[0]==='Miktar'), iTar=kol.findIndex(k=>k[0]==='Tarih'), iMal=kol.findIndex(k=>k[0]==='Malzeme');
-      const alt=filtre+' · '+(st.detayKapsam==='tum'?'siparişin tüm ürünleri':'yalnız filtreye uyan ürünler')+' · '+zaman;
-      const rows=[['Sipariş Detayı'],[alt],[],kol.map(k=>k[0])], bicim=[];
+      const kol=[['Sıra','c',8],['Sipariş No','left',30]];
+      if(iadeVar) kol.push(['Belge','left',30]);
+      kol.push(['Tarih','c',12,TAR],['Bina','left',20],['Şirket','left',45],['Spek No','left',30],['Malzeme','left',70]);
+      if(st.detaySart) kol.push(['Şartname','left',40]);
+      if(st.detayEtiket) kol.push(['Etiket','left',30]);
+      kol.push(['Miktar','right',16,NUM],['Birim','c',10]);
+      const rows=[kol.map(k=>k[0])];
       bloklar.forEach((b,i)=>{ const g=b.g;
         const bas=[i+1,g.o.no||'',...(iadeVar?[belge(g)]:[]),tarih(g),g.o.bina||'',orderCompany(g.o)||''];
         ilkSatir.set(g,rows.length);
         if(!b.satirlar.length){
           const r=[...bas,'',st.detayKapsam==='tum'?'— bu siparişte ürün yok —':'— bu siparişte filtreye uyan ürün yok —'];
           while(r.length<kol.length) r.push('');
-          rows.push(r); bicim.push({i,bos:true,iade:g.iade}); return; }
+          rows.push(r); return; }
         b.satirlar.forEach(l=>{ rows.push([...bas,l.code,l.ad,...(st.detaySart?[l.sart]:[]),...(st.detayEtiket?[l.etiket]:[]),l.q,birimAd(l.unit)]);
-          bicim.push({i,iade:g.iade}); detaySay++; });
+          detaySay++; });
       });
       wsD=X.utils.aoa_to_sheet(rows);
-      wsD['!cols']=kol.map(k=>({wch:k[2]}));
-      sayfaKur(wsD,kol.length,rows.length-1);
-      bicim.forEach((f,j)=>{ const r=j+4, serit=f.i%2===1;
-        kol.forEach((k,c)=>{ const hiz=k[1]==='c'?'center':k[1];
-          ata(wsD,r,c,td(hiz,{serit,kirmizi:f.iade&&c===iMik,soluk:f.bos&&c===iMal,kalin:c===iMik}),c===iMik?NUM:c===iTar?TAR:null); }); });
+      tabloYaz(wsD,kol,rows.length-1);
     }
     if(st.xListe){
-      const kol=[['Sıra','c',6],['Sipariş No','left',20]];
-      if(iadeVar) kol.push(['Belge','left',16]);
-      kol.push(['Tarih','c',11],['Bina','left',12],['Şirket','left',28],['Şartname','left',34],['Kalem','right',8]);
-      if(st.xDetay) kol.push(['Detay Satırı','right',11]);
-      kol.push(['PDF','c',7]);
-      const iNo=1, iTar=kol.findIndex(k=>k[0]==='Tarih'), sayi=new Set(kol.map((k,i)=>k[1]==='right'?i:-1));
-      const alt=`${fmtNum(list.length)} sipariş${iadeVar?' · '+fmtNum(girdiler.filter(g=>g.iade).length)+' iade fişi':''} · ${filtre} · ${zaman}`;
-      const rows=[['Sipariş Listesi'],[alt],[],kol.map(k=>k[0])];
+      const kol=[['Sıra','c',8],['Sipariş No','left',30]];
+      if(iadeVar) kol.push(['Belge','left',30]);
+      kol.push(['Tarih','c',12,TAR],['Bina','left',20],['Şirket','left',45],['Şartname','left',60],['Kalem','right',10,NUM]);
+      if(st.xDetay) kol.push(['Detay Satırı','right',14,NUM]);
+      kol.push(['PDF','c',8]);
+      const iNo=1;
+      const rows=[kol.map(k=>k[0])];
       girdiler.forEach((g,i)=>{
         const sat=g.ia?(g.ia.satirlar||[]):(g.o.lines||[]);
         const sartlar=[...new Set(sat.map(l=>l.grup||g.o.grup||'').filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr',{numeric:true}));
@@ -16617,23 +16619,19 @@ async function ordExcelAktar(){
           ...(st.xDetay?[(bloklar[i]||{satirlar:[]}).satirlar.length]:[]),opdfVar(pdf)?'Var':'Yok']);
       });
       const wsL=X.utils.aoa_to_sheet(rows);
-      wsL['!cols']=kol.map(k=>({wch:k[2]}));
-      sayfaKur(wsL,kol.length,rows.length-1);
-      girdiler.forEach((g,i)=>{ const r=i+4, serit=i%2===1, hedef=ilkSatir.get(g);
-        kol.forEach((k,c)=>{ const hiz=k[1]==='c'?'center':k[1];
-          ata(wsL,r,c,td(hiz,{serit,link:c===iNo&&hedef!=null,soluk:k[0]==='PDF'&&!opdfVar(g.ia?g.ia.pdf:g.o.pdf)}),sayi.has(c)?NUM:c===iTar?TAR:null); });
-        // siparis no -> Detay sayfasindaki ilk satiri (PDF icindekilerindeki "sayfa" sutununun karsiligi)
-        if(hedef!=null){ const a=X.utils.encode_cell({r,c:iNo}); wsL[a].l={Target:`#'Detay'!A${hedef+1}`,Tooltip:'Detay satırlarına git'}; }
-      });
-      X.utils.book_append_sheet(wb,wsL,'Siparişler'); dondur['Siparişler']={satir:4,sutun:0};
+      tabloYaz(wsL,kol,rows.length-1);
+      // siparis no -> Detay sayfasindaki ilk satiri (PDF icindekilerindeki "sayfa" sutununun karsiligi)
+      girdiler.forEach((g,i)=>{ const hedef=ilkSatir.get(g); if(hedef==null) return;
+        const a=X.utils.encode_cell({r:i+1,c:iNo}); if(wsL[a]) wsL[a].l={Target:`#'Detay'!A${hedef+1}`,Tooltip:'Detay satırlarına git'}; });
+      X.utils.book_append_sheet(wb,wsL,'Siparişler'); dondur['Siparişler']={satir:1,sutun:0};
     }
-    if(wsD){ X.utils.book_append_sheet(wb,wsD,'Detay'); dondur['Detay']={satir:4,sutun:0}; }
+    if(wsD){ X.utils.book_append_sheet(wb,wsD,'Detay'); dondur['Detay']={satir:1,sutun:0}; }
     if(kesici.signal.aborted) return;
     const ad=`Siparis_Listesi_${ORDSEC?'secim':(ORDBINA||'tum')}_${new Date().toISOString().slice(0,10)}.xlsx`.replace(/[\\/:*?"<>|]/g,'-');
     xlsxDondurIndir(wb,ad,dondur,X);
     st.calisiyor=false; opdfKilit(false); closeModal();
     const ozet=`${fmtNum(girdiler.length)} belge`+(st.xDetay?`, ${fmtNum(detaySay)} urun satiri`:'');
-    toast(stilli?`Excel indirildi: ${ozet}`:`Excel indirildi: ${ozet} (stil bileseni yuklenemedi - renksiz)`);
+    toast(`Excel indirildi: ${ozet}`);
   }catch(e){ console.error('Siparis Excel',e); toast('Excel olusturulamadi: '+((e&&e.message)||e),'err'); opdfDurum('Hata: '+((e&&e.message)||e)); st.calisiyor=false; opdfKilit(false); }
 }
 /* ═══ MALZEME TESLIMAT MUTABAKATI (Tum Siparisler 3. sekme) ═══════════════════════════
