@@ -6823,6 +6823,82 @@ function showLoadError(e){
   </div>`;
   document.body.appendChild(d);
 }
+/* ═══ SEKMELER ARASI ESITLEME (alici) ═════════════════════════════════════════════
+   Ayni tarayicinin BASKA SEKMESINDE kutuphaneye / sartnameye yazilan satir buraya
+   mesajla gelir (gonderen: src/supabase.js sekmelereDuyur) ve bellekteki diziye
+   uygulanir - sayfa yenilenmeden, sunucuya istek atilmadan.
+   Tipik durum: siparis girilirken eksik urun ikinci sekmede kutuphaneye + sartnameye
+   eklenir. Siparis satirinin arama listesi (nordSpecSrc) her acilista DB.proje.specs'ten
+   kuruldugu icin urun bir sonraki aramada kendiliginden cikar; liste o an aciksa
+   yerinde tazelenir.
+   Satir dizide YERINE KONUR (Object.assign degil): bu sekmede acik bir duzenleme
+   penceresinin tuttugu eski nesne altindan degismez; o pencere kaydedilirse son yazan
+   kazanir - sunucudaki kural da bu.
+   EKRAN YALNIZCA KUTUPHANE LISTESI GORUNURKEN yeniden cizilir. Siparis formu, toplu
+   ekleme sayfalari, saha haritasi gibi ekranlar cizilmez: yarim girilmis form ya da
+   harita durumu bir arka plan mesajiyla bozulmamali - veri bellekte hazirdir, ekran
+   bir sonraki dogal cizimde onu gosterir. */
+const ESITLE_HEDEF={
+  proje_materials:()=>[DB.proje,'materials'],
+  proje_specs:()=>[DB.proje,'specs'],
+  proje_sartnames:()=>[DB.proje,'sartnames'],
+  proje_alternatives:()=>[DB.proje,'alternatives'],
+  companies:()=>[DB,'companies'],
+  gecici_lib:()=>[DB.gecici,'lib'],
+  alet_lib:()=>[DB.alet,'lib'],
+};
+let _esitBasladi=false, _esitCizimBekliyor=false, _esitCizimTimer=null;
+// acilista (DB yuklenip migrate edildikten sonra) cagrilir; ikinci cagri zararsiz
+function esitlemeBaslat(){
+  if(_esitBasladi||typeof sbEsitlemeDinle!=='function') return;
+  _esitBasladi=!!sbEsitlemeDinle(esitlemeUygula);
+  // arka plandayken gelen degisiklik, sekmeye donuldugunde ekrana yansir
+  if(_esitBasladi) document.addEventListener('visibilitychange',()=>{ if(!document.hidden&&_esitCizimBekliyor) esitlemeCiz(); });
+}
+function esitlemeUygula(m){
+  if(!DB||!CURRENT_USER) return;
+  const h=ESITLE_HEDEF[m.table]; const hk=h&&h(); if(!hk||!hk[0]) return;
+  const [kap,ad]=hk;
+  if(!Array.isArray(kap[ad])) kap[ad]=[];
+  if(m.op==='hepsi'){ kap[ad]=[]; }
+  else if(m.op==='sil'){
+    const s=new Set(m.ids||[]); if(!s.size) return;
+    kap[ad]=kap[ad].filter(x=>!s.has(x.id));
+  }
+  else if(m.op==='yaz'){
+    let satirlar; try{ satirlar=JSON.parse(m.satirlar||'[]'); }catch(_){ return; }
+    if(!Array.isArray(satirlar)||!satirlar.length) return;
+    const dizi=kap[ad], yer=new Map(dizi.map((x,i)=>[x.id,i]));
+    satirlar.forEach(r=>{
+      if(!r||!r.id) return;
+      if(m.table==='proje_materials'&&r.brand===undefined) r.brand='';   // migrate() ile ayni normalizasyon
+      const i=yer.get(r.id);
+      if(i!==undefined) dizi[i]=r; else { yer.set(r.id,dizi.length); dizi.push(r); }
+    });
+  }
+  else return;
+  esitlemeCiz();
+}
+function esitlemeCiz(){
+  _esitCizimBekliyor=true;
+  if(document.hidden) return;                 // sekmeye donulunce (visibilitychange)
+  clearTimeout(_esitCizimTimer);
+  _esitCizimTimer=setTimeout(esitlemeCizSimdi,150);   // toplu yazimin parcalari tek cizimde toplanir
+}
+function esitlemeCizSimdi(){
+  _esitCizimTimer=null;
+  if(document.hidden||!DB) return;
+  // bu sekmede islem perdesi acik (kayit suruyor): bitince denenir
+  if(_WP.acik||_WP.kapaniyor){ _esitCizimTimer=setTimeout(esitlemeCizSimdi,1000); return; }
+  _esitCizimBekliyor=false;
+  // acik SIPARIS arama listesi acOpen aninda alinmis bir kopyadir - yeni kalem gorunsun
+  if(AC&&AC.drop&&AC.el&&AC.el.isConnected&&NORD&&/^nord_ad_\d+$/.test(AC.el.id||'')){
+    AC.src=nordAtama()?nordAtamaSrc():nordSpecSrc(); acRender();
+  }
+  // kutuphane listesi (herhangi bir kapsami) ekrandaysa yeniden cizilir; kapsam cubugu onun imzasi
+  const ana=document.getElementById('mainArea');
+  if(ana&&ana.querySelector('[onclick^="setMatScope("]')) render();
+}
 function migrate(){
   if(!DB.companies) DB.companies=[];
   // MALZEME TESLIM TUTANAKLARI (TR/RU) - Rapor'un altindaki "Tutanak Ac" ekrani
@@ -8360,6 +8436,7 @@ async function afterLogin(user, token, remember, opts){
   try{
     if(!DB){ DB=await loadDB(); if(btn) btn.textContent='Veriler hazırlanıyor...'; migrate(); }
   } finally { window.__sbLoadProgress=_oncekiIlerleme; }
+  esitlemeBaslat();   // diger sekmelerdeki kutuphane yazimlarini dinle
   /* GIRIS KAYDINI ARTIK SUNUCU YAZIYOR (api/login.js, api/davet/[token]/kabul.js).
      Buradaki logAction kaldirildi: veri yuklendikten SONRA calistigi icin yukleme
      hata verdiginde giris hic kaydedilmiyordu, ustelik tarayicidan atilan her kayit
@@ -8871,6 +8948,7 @@ document.addEventListener('DOMContentLoaded', async function(){
       ldDurum('Veriler hazırlanıyor',90,'');
       migrate();
     }
+    esitlemeBaslat();   // diger sekmelerdeki kutuphane yazimlarini dinle
     ldDurum('Arayüz hazırlanıyor',96,'');
     SEC=firstAllowedSection();
     // Sayfa yenilemeden önceki gezinti durumunu geri yükle

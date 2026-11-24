@@ -692,8 +692,83 @@ async function sbGetAllTam(table, total) {
   return pages.flat().map(r => ({ ...r.data, id: r.id }))
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SEKMELER ARASI ESITLEME (BroadcastChannel)
+//
+// Siparis bir sekmede girilirken eksik urun ikinci bir sekmede kutuphaneye /
+// sartnameye eklenince, siparis sekmesi onu SAYFA YENILENMEDEN gormuyordu: veri
+// acilista bir kez iner ve bellekte (DB) tutulur, baska sekmenin yazdigindan
+// haberi olmaz. Artik basarili her kutuphane yazimi ayni tarayicidaki diger
+// sekmelere DUYURULUR; onlar da yazilan satiri kendi bellegine uygular
+// (index.html esitlemeUygula). SUNUCUYA HIC ISTEK GITMEZ - satirin kendisi
+// mesajla tasinir (egress kotasi, bkz. ONBELLEK notu).
+//
+// Yalnizca KUTUPHANE NITELIGINDEKI tablolar: siparis aramasini ve urun
+// kunyesini besleyenler. Siparis/hareket gibi is kayitlari BILEREK disarida -
+// onlarin bellekteki turevleri (borcAyir, ilerleme sayaclari) satir eklemekle
+// kendiliginden kurulmaz; o tablolarda bayat gorunum, yanlis hesaptan iyidir.
+//
+// KAPSAM: mesaj, yazanin org|tasari|birim'ini tasir; alici kendi kapsamiyla
+// tutmuyorsa yok sayar - baska projenin sartname kalemi bu projenin siparis
+// aramasina dusmesin. Ortak (kutuphane) tablolarda yalnizca org karsilastirilir
+// (lib/tasari.js ORTAK_TABLOLAR ile ayni kume - ikisi birlikte degisir).
+// Mesaj ancak sunucu yazimi BASARILI olduktan sonra gider: yazilamayan satir
+// diger sekmede de gorunmez.
+// ─────────────────────────────────────────────────────────────────────────────
+const ESITLE_TABLOLAR = new Set([
+  'proje_materials', 'proje_specs', 'proje_sartnames', 'proje_alternatives', 'companies', 'gecici_lib', 'alet_lib',
+])
+const ESITLE_ORTAK = new Set(['companies', 'proje_materials', 'alet_lib', 'gecici_lib'])
+let _esitKanal = null   // null: henuz kurulmadi, false: tarayici desteklemiyor
+function esitKanal() {
+  if (_esitKanal === null) {
+    try {
+      _esitKanal = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('saha-veri-esitle') : false
+    } catch (e) { _esitKanal = false }
+  }
+  return _esitKanal || null
+}
+function esitKapsam(table) {
+  const w = typeof window !== 'undefined' ? window : {}
+  const org = w.AKTIF_ORG || ''
+  return ESITLE_ORTAK.has(table) ? org : org + '|' + (w.AKTIF_TASARI || '') + '|' + (w.AKTIF_BIRIM || '')
+}
+function esitKullanici() {
+  const u = typeof window !== 'undefined' && window.CURRENT_USER
+  return (u && u.id) || ''
+}
+/* op: 'yaz' (satirlar = tam varliklar; eklenir ya da id'si tutan degistirilir),
+   'sil' (ids), 'hepsi' (tablo bosaltildi). Satirlar JSON METNI olarak gider:
+   alici sunucuya yazilanin (veri() de JSON'a cevirir) birebir aynisini gorur -
+   Date/undefined gibi degerler sekmeler arasinda farkli bicim almaz, klonlanamayan
+   bir alan da DataCloneError atmaz. Hata yutulur: esitleme bir kolayliktir,
+   sunucu yazimi zaten basarili oldu - cagirana hata donmemeli. */
+function sekmelereDuyur(table, op, satirlar, ids) {
+  if (!ESITLE_TABLOLAR.has(table)) return
+  const k = esitKanal(); if (!k) return
+  try {
+    k.postMessage({ v: 1, table, op, satirlar: satirlar ? JSON.stringify(satirlar) : null, ids: ids || null,
+      kapsam: esitKapsam(table), kullanici: esitKullanici() })
+  } catch (e) { console.warn('Sekme esitleme mesaji gonderilemedi:', e) }
+}
+/* Alici: index.html acilista bir kez cagirir. Ayni BroadcastChannel nesnesi
+   kullanildigi icin sekme KENDI mesajini almaz (BroadcastChannel kurali).
+   Kapsam ve kullanici burada suzulur - cagirana yalnizca uygulanabilir mesaj gelir. */
+export function sbEsitlemeDinle(cb) {
+  const k = esitKanal(); if (!k) return false
+  k.onmessage = (e) => {
+    const m = e && e.data
+    if (!m || m.v !== 1 || !ESITLE_TABLOLAR.has(m.table)) return
+    if (!esitKullanici() || m.kullanici !== esitKullanici()) return
+    if (m.kapsam !== esitKapsam(m.table)) return
+    try { cb(m) } catch (err) { console.warn('Sekme esitlemesi uygulanamadi:', err) }
+  }
+  return true
+}
+
 async function sbInsertEntity(table, entity) {
   await veri({ op: 'insert', table, rows: [{ id: entity.id, data: entity }] })
+  sekmelereDuyur(table, 'yaz', [entity])
 }
 
 // Satir sayisinin yaninda TOPLAM BAYT boyutuna gore de parcalar: gomulu foto/PDF
@@ -721,6 +796,7 @@ async function sbInsertEntities(table, entities) {
   if (!entities || !entities.length) return
   for (const chunk of bayaGoreParcala(entities)) {
     await veri({ op: 'insert', table, rows: chunk.map(e => ({ id: e.id, data: e })) })
+    sekmelereDuyur(table, 'yaz', chunk)   // parca parca: yarida kalan toplu yazimda yazilan kisim yansir
   }
 }
 
@@ -728,19 +804,24 @@ async function sbUpsertEntities(table, entities) {
   if (!entities || !entities.length) return
   for (const chunk of bayaGoreParcala(entities)) {
     await veri({ op: 'upsert', table, onConflict: 'id', rows: chunk.map(e => ({ id: e.id, data: e })) })
+    sekmelereDuyur(table, 'yaz', chunk)
   }
 }
 
 async function sbUpdateEntity(table, id, entity) {
   await veri({ op: 'update', table, eq: { col: 'id', val: id }, patch: { data: entity } })
+  // sunucu satiri {...data, id} olarak doner (sbGetAll) - alici da ayni bicimi gorsun
+  sekmelereDuyur(table, 'yaz', [{ ...entity, id }])
 }
 
 async function sbDeleteEntity(table, id) {
   await veri({ op: 'delete', table, eq: { col: 'id', val: id } })
+  sekmelereDuyur(table, 'sil', null, [id])
 }
 
 async function sbDeleteAll(table) {
   await veri({ op: 'delete', table, all: true })
+  sekmelereDuyur(table, 'hepsi')
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1081,7 +1162,9 @@ export async function sbUpdateProjeLokasyon(id, e) { return sbUpdateEntity('proj
 // 200'luk parcalar hem sinirin altinda kalir hem sunucudaki satir ust siniriyla catismaz.
 async function sbSilParcali(table, ids) {
   for (let i = 0; i < ids.length; i += 200) {
-    await veri({ op: 'delete', table, in: { col: 'id', vals: ids.slice(i, i + 200) } })
+    const parca = ids.slice(i, i + 200)
+    await veri({ op: 'delete', table, in: { col: 'id', vals: parca } })
+    sekmelereDuyur(table, 'sil', null, parca)
   }
 }
 export async function sbDeleteProjeLokasyonlar(ids) {

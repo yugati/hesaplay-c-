@@ -59,6 +59,7 @@ import {
   sbWipeTutanakData,
   // Settings & Audit
   sbOnbellekTemizle,
+  sbEsitlemeDinle,
   sbGetSetting,
   sbSetSetting,
   sbInsertAuditLog,
@@ -344,6 +345,7 @@ window.sbWipeTutanakData   = sbWipeTutanakData
 
 // ─── Settings & Audit ────────────────────────────────────────────────────────
 window.sbOnbellekTemizle   = sbOnbellekTemizle
+window.sbEsitlemeDinle     = sbEsitlemeDinle   // sekmeler arasi kutuphane esitlemesi (index.html esitlemeUygula)
 window.sbGetSetting        = sbGetSetting
 window.sbSetSetting        = sbSetSetting
 window.sbInsertAuditLog    = sbInsertAuditLog
