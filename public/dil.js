@@ -64,6 +64,13 @@
     // kenarlarda sayi kalmaz ('#' kenar karakteri degil); sayilar sirasi cekirdekle ayni
     var t=cekirdekCevir(p[2],sayilar,onSayi);
     if(t==null){
+      // "12 kat olusturuldu" / "Iade fisi: 3": kodda n+' metin' diye birlesen metnin sozlukteki
+      // anahtari sayisizdir - bastaki / sondaki sayi ayrilip kalan cevrilir (cogul o sayiya gore)
+      var bs=/^# (.+)$/.exec(p[2]);
+      if(bs){ var tb2=cekirdekCevir(bs[1],sayilar.slice(1),sayilar[0]); if(tb2!=null) return p[1]+sayilar[0]+' '+tb2+p[3]; }
+      var ss=/^(.+?)(:? )#$/.exec(p[2]);
+      if(ss){ var n3=(ss[1].match(/#/g)||[]).length, tb3=cekirdekCevir(ss[1],sayilar.slice(0,n3),null);
+        if(tb3!=null) return p[1]+tb3+ss[2]+sayilar[sayilar.length-1]+p[3]; }
       // "Bir sey yapilamadi: <ayrinti>" - iki noktadan oncesi cevrilir, ayrinti oldugu gibi kalir
       var i=p[2].indexOf(': ');
       if(i>0){
