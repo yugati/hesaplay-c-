@@ -16162,7 +16162,8 @@ const opdfVar=p=>!!(p&&!p.yukleniyor&&(p.path||p.data));
    siparis {o, yok:true} olarak kalir (icindekilerde gorunsun). Ayni PDF iki siparise
    eklenmisse ikinci kez indirilmez/basilmaz, ilkinin sayfasini gosterir (tekrar). */
 function opdfGirdiler(sira,iadeDahil){
-  const list=allOrdersFiltered(); if(sira==='eski') list.reverse();
+  let list=allOrdersFiltered(); if(sira==='eski') list.reverse();
+  if(_OPDF&&_OPDF.secerek) list=list.filter(o=>_OPDF.secili.has(String(o.id)));
   const out=[], gor=new Map();
   // ia: iade fisi girdisinde fisin kendisi (tarih + iade edilen satirlar detay tablosunda kullanilir)
   const ekle=(o,pdf,etiket,ia)=>{ const k=pdf.path||pdf.data, iade=!!ia;
@@ -16178,7 +16179,7 @@ function openOrdersPdfBirlestir(){
   if(!allOrdersFiltered().length){ toast('Siparis yok','err'); return; }
   if(!_OPDF){ let kayitli={}; try{ kayitli=JSON.parse(localStorage.getItem('opdfAyar')||'{}')||{}; }catch(_){}
     _OPDF={...OPDF_VARSAYILAN,...kayitli}; }
-  _OPDF.calisiyor=false;
+  _OPDF.calisiyor=false; _OPDF.secerek=false; _OPDF.secili=new Set(); _OPDF.secAra='';
   closeModal();
   document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg" onclick="if(event.target===this&&!_OPDF.calisiyor)closeModal()"><div class="modal" style="max-width:560px">
     <div class="modal-head"><h3>Siparis PDF'lerini Birlestir</h3><button class="mini-btn" onclick="opdfVazgec()">x</button></div>
@@ -16195,9 +16196,35 @@ function opdfSet(k,v){ if(!_OPDF||_OPDF.calisiyor) return; _OPDF[k]=v;
   try{ const kayit={}; Object.keys(OPDF_VARSAYILAN).forEach(x=>kayit[x]=_OPDF[x]); localStorage.setItem('opdfAyar',JSON.stringify(kayit)); }catch(_){}
   opdfCiz(); }
 // detay tablosunda "filtreye uyan" ile "tum" ayrimi yalniz satir duzeyi bir suzgec varken anlamlidir
+/* SECEREK CIKAR: filtredeki siparisler kutulu listede gosterilir, yalniz isaretlenenler
+   birlestirilir (icindekiler / detay tablosu da yalniz onlari kapsar). Secim kaydedilmez. */
+function opdfSecerek(v){ if(!_OPDF||_OPDF.calisiyor) return; _OPDF.secerek=v; opdfCiz(); }
+function opdfSecTek(id,v){ if(!_OPDF||_OPDF.calisiyor) return; v?_OPDF.secili.add(id):_OPDF.secili.delete(id); opdfCiz(); }
+function opdfSecHepsi(v){ if(!_OPDF||_OPDF.calisiyor) return;
+  opdfSecGorunen().forEach(o=>v?_OPDF.secili.add(String(o.id)):_OPDF.secili.delete(String(o.id))); opdfCiz(); }
+function opdfSecGorunen(){ const q=String(_OPDF.secAra||'').trim().toLocaleLowerCase('tr');
+  const list=allOrdersFiltered(); if(_OPDF.sira==='eski') list.reverse();
+  return q?list.filter(o=>[o.no,o.bina,orderCompanyKisa(o),fmtDate(o.date)].join(' ').toLocaleLowerCase('tr').includes(q)):list; }
+function opdfSecAra(v){ if(!_OPDF) return; _OPDF.secAra=v; opdfCiz();
+  const i=document.getElementById('opdfSecAra'); if(i){ i.focus(); i.setSelectionRange(v.length,v.length); } }
+function opdfSecListe(){
+  const st=_OPDF, gor=opdfSecGorunen(), hepsi=gor.length&&gor.every(o=>st.secili.has(String(o.id)));
+  const satir=o=>`<label style="display:grid;grid-template-columns:18px 1fr auto;gap:8px;align-items:center;padding:5px 8px;cursor:pointer;border-bottom:1px solid var(--line)">
+      <input type="checkbox" ${st.secili.has(String(o.id))?'checked':''} onchange="opdfSecTek('${esc(String(o.id))}',this.checked)">
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>${esc(o.no||'(no yok)')}</b> <span class="t-meta">${esc([fmtDate(o.date),o.bina||'',orderCompanyKisa(o)].filter(Boolean).join(' · '))}</span></span>
+      <span class="t-meta">${opdfVar(o.pdf)?'':'PDF yok'}</span></label>`;
+  return `<div style="display:grid;gap:8px;margin-bottom:12px">
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="opdfSecAra" type="text" autocomplete="off" style="flex:1;background:var(--bg);border:1px solid var(--line);color:var(--ink);padding:7px 10px;border-radius:9px;font-size:13px;outline:none" placeholder="Siparis no, bina, sirket ara…" value="${esc(st.secAra||'')}" oninput="opdfSecAra(this.value)">
+      <button class="btn btn-ghost" onclick="opdfSecHepsi(${!hepsi})">${hepsi?'Hicbiri':'Tumunu sec'}</button></div>
+    <div id="opdfSecKutu" style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px;font-size:13px">
+      ${gor.length?gor.map(satir).join(''):'<div class="t-meta" style="padding:10px">Eslesen siparis yok</div>'}</div>
+    <div class="t-meta"><b>${fmtNum(st.secili.size)}</b> siparis secili</div></div>`;
+}
 function opdfSatirSuzgeciVar(){ return !!(SEARCH||ORDF.sart||ORDF.sec||ORDF.mat||ORDF.code||ORDF.tag); }
 function opdfCiz(){
   const el=document.getElementById('opdfGovde'); if(!el||!_OPDF) return;
+  const eskiKutu=document.getElementById('opdfSecKutu'), kaydir=eskiKutu?eskiKutu.scrollTop:0;
   const st=_OPDF, {list,girdiler}=opdfGirdiler(st.sira,st.iade);
   const inecek=girdiler.filter(g=>g.pdf&&!g.tekrar);
   const yok=girdiler.filter(g=>g.yok);
@@ -16216,7 +16243,12 @@ function opdfCiz(){
         <div style="display:flex;gap:18px;flex-wrap:wrap">${kutu('detaySart','Sartname')}${kutu('detayEtiket','Etiket')}</div></div>
       <div class="t-meta"><b>${fmtNum(detaySatir)}</b> urun satiri tabloya girecek</div>
     </div>`:'';
+  const tumSay=allOrdersFiltered().length;
   el.innerHTML=`
+    <div style="display:flex;gap:18px;flex-wrap:wrap;font-size:13px;margin-bottom:12px">
+      <label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="opdf_secerek" ${st.secerek?'':'checked'} onchange="opdfSecerek(false)">Tum siparisler (${fmtNum(tumSay)})</label>
+      <label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="radio" name="opdf_secerek" ${st.secerek?'checked':''} onchange="opdfSecerek(true)">Secerek cikar</label></div>
+    ${st.secerek?opdfSecListe():''}
     <div class="ord-sumline" style="margin:0 0 12px"><b>${fmtNum(list.length)}</b> siparis · <b>${fmtNum(inecek.length)}</b> PDF birlestirilecek${mb}</div>
     ${yok.length?`<p class="mdp-bosbilgi" style="margin-bottom:12px">${icoInfoSm()}<span><b>${yok.length}</b> sipariste PDF yok - atlanir${st.icindekiler?', icindekilerde "PDF yok" diye yazar':''}: ${esc(yok.slice(0,8).map(g=>g.etiket).join(', '))}${yok.length>8?` +${yok.length-8}`:''}</span></p>`:''}
     <div style="display:grid;gap:10px;font-size:13px">
@@ -16229,6 +16261,7 @@ function opdfCiz(){
     </div>
     <div class="t-meta" id="opdfDurum" style="margin-top:14px;min-height:18px"></div>`;
   const btn=document.getElementById('opdfBtn'); if(btn) btn.disabled=!inecek.length;
+  const yeniKutu=document.getElementById('opdfSecKutu'); if(yeniKutu) yeniKutu.scrollTop=kaydir;
 }
 function opdfDurum(t){ const el=document.getElementById('opdfDurum'); if(el) el.textContent=t; }
 /* Vazgec: calisirken basilirsa surmekte olan indirmeler kesilir (AbortController), birlestirme
@@ -16403,6 +16436,7 @@ async function ordPdfBirlestir(){
        sayfa numaralari bu yuzden on sayfa sayisi kadar kayar. Detay sayfa sayisi once
        kodlamadan sayilir, sonra gercek numaralarla cizilir. */
     const olcutler=opdfKapakOlcut();
+    if(st.secerek) olcutler.push(['Secim',fmtNum(st.secili.size)+' siparis secildi']);
     const filtre=olcutler.map(([a,v])=>a+': '+v).join(' · ')||'Filtre yok - tüm siparişler';
     const icP=st.icindekiler?opdfIcSayfaDilim(girdiler.length,olcutler.length).length:0;
     let bloklar=null, dP=0;
