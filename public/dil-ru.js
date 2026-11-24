@@ -4477,6 +4477,7 @@ window.DIL_RU={
   "Siparis Ekle sayfasinda Siparis Turu olarak \"Borc\" secin":"На странице «Добавить заказ» выберите тип заказа «Займ»",
   "siparis elle secildi":"заказов выбрано вручную",
   "siparis Excel'e aktarilacak":"{заказ будет экспортирован|заказа будут экспортированы|заказов будут экспортированы} в Excel",
+  "Siparis detayini ac - secimi degistirmez":"Открыть детали заказа — выбор не меняется",
   "Siparis faturalari sirayla tek PDF dosyasinda birlestirilir":"Счета заказов по порядку объединяются в один PDF-файл",
   "Siparis girince veya malzeme ekleyince burada ozetlenir":"Сводка появится здесь после ввода заказа или добавления материала",
   "Siparis girince veya sevk yapinca burada zaman sirali gorunur":"После ввода заказа или отгрузки здесь появится хронология",
