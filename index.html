@@ -16358,11 +16358,12 @@ function opdfSarmala(g,s,w,maxSatir){
    kodla=false: yalniz sayfa SAYISI icin cizilir (sayfa numaralari detay sayfalarinin
    sayisina bagli, detay duzeni ise numaralara bagli degil - once say, sonra ciz). */
 function opdfDetayPng(bloklar,altBaslik,sayfaOf,st,kodla){
-  const W=1240,H=1754,sol=90,sag=1150,ust=232,altSin=H-110,yazi='system-ui,"Segoe UI",Arial,sans-serif',lh=25;
-  const kol=[{k:'n',ad:'#',w:44,m:1},{k:'code',ad:'Spek No',w:190,m:2},{k:'ad',ad:'Malzeme',w:0,m:4}];
-  if(st.detaySart) kol.push({k:'sart',ad:'Şartname',w:180,m:2});
-  if(st.detayEtiket) kol.push({k:'etiket',ad:'Etiket',w:140,m:2});
-  kol.push({k:'qty',ad:'Miktar',w:110,m:1,sag:true},{k:'unit',ad:'Birim',w:72,m:1});
+  // YATAY A4 (1754x1240): genis Malzeme sutunu, satirlar daha az sarar
+  const W=1754,H=1240,sol=90,sag=W-90,ust=232,altSin=H-110,yazi='system-ui,"Segoe UI",Arial,sans-serif',lh=25;
+  const kol=[{k:'n',ad:'#',w:50,m:1},{k:'code',ad:'Spek No',w:250,m:2},{k:'ad',ad:'Malzeme',w:0,m:3}];
+  if(st.detaySart) kol.push({k:'sart',ad:'Şartname',w:250,m:2});
+  if(st.detayEtiket) kol.push({k:'etiket',ad:'Etiket',w:180,m:2});
+  kol.push({k:'qty',ad:'Miktar',w:130,m:1,sag:true},{k:'unit',ad:'Birim',w:90,m:1});
   kol.find(k=>k.k==='ad').w=(sag-sol)-kol.reduce((s,k)=>s+k.w,0);
   let x=sol; kol.forEach(k=>{ k.x=x; x+=k.w; });
   const sayfalar=[]; let g=null, y=0;
@@ -16452,14 +16453,15 @@ async function ordPdfBirlestir(){
     const ofset=icP+dP;
     const sayfaNo=g=>{ const k=g.tekrar||g; return k.ilk?k.ilk+ofset:0; };
     const notu=g=>{ const k=g.tekrar||g; return g.yok?'PDF yok':(k.hata?'açılamadı':''); };
-    const onEkle=async(pngs,bas)=>{ for(let i=0;i<pngs.length;i++){ const img=await out.embedPng(pngs[i]); const pg=out.insertPage(bas+i,OPDF_A4);
-      pg.drawImage(img,{x:0,y:0,width:OPDF_A4[0],height:OPDF_A4[1]}); } };
+    const onEkle=async(pngs,bas,yatay)=>{ const bt=yatay?[OPDF_A4[1],OPDF_A4[0]]:OPDF_A4;
+      for(let i=0;i<pngs.length;i++){ const img=await out.embedPng(pngs[i]); const pg=out.insertPage(bas+i,bt);
+      pg.drawImage(img,{x:0,y:0,width:bt[0],height:bt[1]}); } };
     if(st.icindekiler){
       const satirlar=girdiler.map((g,i)=>({sira:i+1,no:g.etiket,tarih:opdfGirdiTarih(g),bina:g.o.bina||'',sirket:orderCompanyKisa(g.o),iade:g.iade,
           sayfa:sayfaNo(g), not:notu(g)}));
       await onEkle(opdfIcindekilerPng(satirlar,olcutler),0);
     }
-    if(st.detay) await onEkle(opdfDetayPng(bloklar,detayAlt,g=>sayfaNo(g)||notu(g),st,true).png,icP);
+    if(st.detay) await onEkle(opdfDetayPng(bloklar,detayAlt,g=>sayfaNo(g)||notu(g),st,true).png,icP,true);
     if(iptal()) return;
     const blob=new Blob([await out.save()],{type:'application/pdf'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
