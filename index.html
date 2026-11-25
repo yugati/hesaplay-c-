@@ -5481,9 +5481,11 @@ datalist{display:none}
 .tut-lines th span{display:block;font-size:8.5px;color:var(--dim);font-weight:500;letter-spacing:.2px}
 .tut-lines td{padding:3px 4px;border-bottom:1px solid var(--line);vertical-align:middle}
 .tut-lines tr:last-child td{border-bottom:none}
-.tut-lines input{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:7px;
+.tut-lines input,.tut-lines select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:7px;
   color:var(--ink);font-size:12px;padding:5px 7px;outline:none;transition:border-color var(--transition)}
-.tut-lines input:focus{border-color:var(--primary);box-shadow:var(--ring) color-mix(in srgb,var(--primary) 22%,transparent)}
+/* birim secicisi (Birim Sozlugu): satir yuksekligi diger kutularla ayni kalsin */
+.tut-lines select{padding:4px 4px;cursor:pointer;min-width:0}
+.tut-lines select:focus,.tut-lines input:focus{border-color:var(--primary);box-shadow:var(--ring) color-mix(in srgb,var(--primary) 22%,transparent)}
 .tut-lines input.num{text-align:right;font-family:var(--mono)}
 .tut-lines .tl-no{width:28px;text-align:center;font-family:var(--mono);font-size:11.5px;color:var(--dim)}
 .tut-lines .tl-img{width:36px;padding-left:0;padding-right:0}
@@ -48748,6 +48750,14 @@ function tutIcMi(t){ if(!t) return false; if(t.sirketIci!=null) return !!t.sirke
 function tutTakasMi(t){ if(!t) return false; if(t.karsilik!=null) return !!t.karsilik; return t.tur==='takas'||t.tur==='icTakas'; }
 function tutTurOf(t){ const ic=tutIcMi(t), tk=tutTakasMi(t);
   return TUT_BICIMLER[ic&&tk?'icTakas':ic?'ic':tk?'takas':'teslim']; }
+/* Satir birimi Birim Sozlugu'nden secilir; kayitta ANAHTAR durur ('metre'). Iki dilli
+   ciktiya TR ve RU kisa yazimi basilir ("m / м", "ad. / шт."). Sozlukte olmayan eski
+   serbest yazim oldugu gibi kalir. (Onizleme aracinda sozluk yok - oldugu gibi basar.) */
+function tutBirimYaz(b){
+  const ham=String(b==null?'':b).trim();
+  const t=(ham&&typeof birimTanim==='function')?birimTanim(ham):null;
+  return t?[...new Set([t.TR,t.RU].filter(Boolean))].join(' / '):ham;
+}
 // Bolum 2'nin (B -> A) dolu satirlari (tutFilledLines'in esi)
 function tutFilledKarsi(t){ return tutFilledLines({lines:(t&&t.karsiLines)||[]}); }
 function tutIadeVar(t){ return !!(t&&t.iade); }
@@ -49617,7 +49627,7 @@ function tutLineRows(liste){
       <td style="width:110px"><input value="${esc(l.code||'')}" placeholder="urun kodu" onchange="tutSetLine(${i},'code',this.value.trim()${ek})"></td>
       <td><input value="${esc(l.ad||'')}" placeholder="malzeme adi ve ozelligi" onchange="tutSetLine(${i},'ad',this.value.trim()${ek})"></td>
       <td style="width:110px"><input value="${esc(l.marka||'')}" placeholder="marka" onchange="tutSetLine(${i},'marka',this.value.trim()${ek})"></td>
-      <td style="width:80px"><input value="${esc(l.birim||'')}" placeholder="adet" onchange="tutSetLine(${i},'birim',this.value.trim()${ek})"></td>
+      <td style="width:118px">${birimSecHtml(`tutBrm_${liste}_${i}`,l.birim||'',`oninput="tutSetLine(${i},'birim',this.value${ek})"`)}</td>
       <td style="width:88px"><input class="num" value="${esc(l.qty==null?'':String(l.qty))}" placeholder="0" oninput="tutSetLine(${i},'qty',this.value${ek});tutUpdateTotals('${liste}')"></td>
       <td style="width:120px"><input value="${esc(l.barkod||'')}" placeholder="barkod / seri no" onchange="tutSetLine(${i},'barkod',this.value.trim()${ek})"></td>
       <td style="width:100px"><input value="${esc(l.sirketKodu||'')}" placeholder="sirket kodu" onchange="tutSetLine(${i},'sirketKodu',this.value.trim()${ek})"></td>
@@ -50310,7 +50320,7 @@ function tutanakPrintHtml(t,iadeMod){
       <td class="c">${esc(l.marka||'')}</td>
       <td class="c">${esc(l.barkod||'')}</td>
       <td class="c">${esc(l.sirketKodu||'')}</td>
-      <td class="c bir">${esc(l.birim||'')}</td>
+      <td class="c bir">${esc(tutBirimYaz(l.birim))}</td>
       <td class="r">${l.qty!==''&&l.qty!=null?esc(fmtNum(String(l.qty).replace(',','.'))):''}</td>
     </tr>`;
   }

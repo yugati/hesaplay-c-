@@ -29,7 +29,7 @@ const PORT = Number(process.env.PORT) || 5180;
    satir kaydiran her duzenlemeden sonra da calisir. */
 const FONKSIYONLAR = [
   'sirketAntet', 'tutFirma', 'tutIadeVar', 'tutIadeTarihi', 'tutAntet', 'tutLineImg',
-  'tutFilledLines', 'tutTotals', 'tutTurOf', 'tutIcMi', 'tutTakasMi', 'tutFilledKarsi', 'antetAltLogo',
+  'tutFilledLines', 'tutTotals', 'tutBirimYaz', 'tutTurOf', 'tutIcMi', 'tutTakasMi', 'tutFilledKarsi', 'antetAltLogo',
   'tutanakPrintCss', 'tutPrintHead', 'tutPrintFoot', 'tutPrintTableHead', 'tutanakPrintHtml'
 ];
 const SABITLER = ['TUT_ROWS_FIRST', 'TUT_ROWS_FIRST_ARA', 'TUT_ROWS_PER_PAGE', 'TUT_ROWS_ARA'];
