@@ -108,10 +108,10 @@ function sabitCikar(satirlar, ad) {
 function ciktiKodu() {
   const src = fs.readFileSync(KAYNAK, 'utf8');
   const satirlar = src.split(/\r?\n/);
-  // TUT_TURLERI cok satirli bir dizi: tek satirlik sabitCikar onu alamaz, kapanisa kadar kesilir
-  const turBas = src.indexOf('const TUT_TURLERI=[');
-  if (turBas < 0) throw new Error('index.html icinde "const TUT_TURLERI=[" bulunamadi');
-  const turlar = src.slice(turBas, src.indexOf('\n];', turBas) + 3);
+  // TUT_BICIMLER cok satirli bir nesne: tek satirlik sabitCikar onu alamaz, kapanisa kadar kesilir
+  const turBas = src.indexOf('const TUT_BICIMLER={');
+  if (turBas < 0) throw new Error('index.html icinde "const TUT_BICIMLER={" bulunamadi');
+  const turlar = src.slice(turBas, src.indexOf('\n};', turBas) + 3);
   return [
     turlar,
     ...SABITLER.map(a => sabitCikar(satirlar, a)),
@@ -190,12 +190,16 @@ function ornekTutanak(q) {
       marka: m[2], birim: m[3], qty: String(m[4]), barkod: '', renk: m[5] };
   }) : undefined;
   const iade = !takas && q.iade === '1';
+  // ic=1: sirket ici - iki taraf ayni firmanin iki calisani (bkz. index.html TUT_BICIMLER)
+  const ic = q.ic === '1';
   return {
     // belge kodu: KISALTMA-TNK-ggaayyyy-sira (bkz. index.html tutKodOnek)
-    id: 't1', no: 'YU-TNK-' + ornekKodTarih() + '-0007', tarih: Date.now(), tur: takas ? 'takas' : 'teslim',
+    id: 't1', no: 'YU-TNK-' + ornekKodTarih() + '-0007', tarih: Date.now(),
+    sirketIci: ic, karsilik: takas,
     iade, iadeTarih: (iade && q.iadetarih !== '0') ? Date.now() + 30 * 86400000 : null,
     eden: { firmaId: 'c1', ad: 'Mahmut U.', gorev: 'Saha Depo Sorumlusu' },
-    alan: { firma: 'STROY MONTAJ OOO', ad: 'Иванов И.И.', gorev: 'Прораб' },
+    alan: ic ? { firmaId: 'c1', ad: 'Ahmet Y.', gorev: 'Elektrik Formeni' }
+             : { firma: 'STROY MONTAJ OOO', ad: 'Иванов И.И.', gorev: 'Прораб' },
     aciklama: NOTLAR[q.not || 'uzun'] == null ? NOTLAR.uzun : NOTLAR[q.not || 'uzun'],
     lines, karsiLines
   };
@@ -246,7 +250,9 @@ const SENARYOLAR = [
   ['Antet boş', 'n=8&iade=0&not=kisa&antet=0'],
   ['Takas (3 + 2)', 'takas=1&n=3&k=2&not=kisa'],
   ['Takas sınır (4 + 2)', 'takas=1&n=4&k=2&not=kisa'],
-  ['Takas uzun (14 + 9)', 'takas=1&n=14&k=9&not=uzun']
+  ['Takas uzun (14 + 9)', 'takas=1&n=14&k=9&not=uzun'],
+  ['Şirket içi (6, iade)', 'ic=1&n=6&iade=1&not=kisa'],
+  ['Şirket içi değişim (3 + 2)', 'ic=1&takas=1&n=3&k=2&not=kisa']
 ];
 
 function kabuk(html, qs, rev) {

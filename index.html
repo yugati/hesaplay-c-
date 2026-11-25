@@ -5428,6 +5428,10 @@ datalist{display:none}
 .tut-opt.on .im{border-color:var(--primary)}
 .tut-opt.on .im:after{content:'';position:absolute;inset:2px;border-radius:50%;background:var(--primary)}
 .tut-opt small{display:block;font-size:11px;font-weight:500;color:var(--dim);margin-top:2px;letter-spacing:0}
+/* Yeni Tutanak penceresinde secimlerden cikan belge turu - kullanici ne basilacagini secerken gorur */
+.tut-bicim{margin-top:12px;padding:9px 12px;border-radius:9px;border:1px dashed var(--line);background:var(--panel2);font-size:12px;color:var(--dim)}
+.tut-bicim b{color:var(--ink);letter-spacing:.3px}
+.tut-bicim i{font-style:normal;display:block;font-size:11px;margin-top:2px}
 /* listedeki IADE damgasi */
 .tut-iade{display:inline-block;margin-left:7px;font-size:9.5px;font-weight:800;letter-spacing:.5px;
   padding:2px 7px;border-radius:20px;vertical-align:middle;
@@ -48710,31 +48714,42 @@ const TUT_ROWS_FIRST_ARA=10;      // ilk sayfa, arkasindan baska sayfa geliyorsa
 const TUT_ROWS_PER_PAGE=11;       // devam sayfasi, ayni zamanda son sayfaysa
 const TUT_ROWS_ARA=14;            // devam sayfasi, arkasindan baska sayfa geliyorsa
 
-/* TUTANAK TURLERI. Yeni tur eklemek icin bu listeye bir satir yetiyor - tur penceresi,
-   form ve liste hep buradan okuyor. Ciktinin basligi da baslikTr/baslikRu'dan gelir;
-   bos birakilirsa varsayilan "Malzeme Teslim" basligi kullanilir (bkz. tutBaslik).
-   "ic:true" ISARETLI TURLER SIRKET ICI SAYILIR: Taraflar karti tek firma + iki
-   calisan (ad soyad, gorev) olarak sadelesir, cikti metni de "X firmasi Y firmasina"
-   yerine "X firmasi bunyesinde A calisanindan B calisanina" diye kurulur - bkz.
-   tutIcMi, renderTutanakForm ve tutanakPrintHtml.
-   Eski kayitlarda tur/iade alanlari yok; hepsi "Malzeme Teslim, iade yok" sayilir. */
-const TUT_TURLERI=[
-  {id:'teslim', tr:'Malzeme Teslim', ru:'Приёма-передачи материалов'},
-  {id:'ic', tr:'Sirket Ici Malzeme Teslimi', ru:'Внутренняя передача материалов', ic:true,
-   baslikTr:'ŞİRKET İÇİ MALZEME TESLİM TUTANAĞI', baslikRu:'АКТ О ВНУТРЕННЕЙ ПЕРЕДАЧЕ МАТЕРИАЛОВ'},
-  /* TAKAS: iki yonlu teslim, TEK belge TEK imza. t.lines = VERILEN (1. taraf -> 2. taraf),
-     t.karsiLines = KARSILIGINDA ALINAN (2. taraf -> 1. taraf). Iade sorusu yoktur -
-     karsilik zaten takasin icinde alinmistir. Kod/antet yine 1. taraftan (eden). */
-  {id:'takas', tr:'Malzeme Takas', ru:'Обмен материалами', takas:true,
-   baslikTr:'MALZEME TAKAS TUTANAĞI', baslikRu:'АКТ ОБМЕНА МАТЕРИАЛАМИ'}
-];
-function tutTakasMi(t){ return !!tutTurOf(t).takas; }
-// takasin KARSILIK tablosunun dolu satirlari (tutFilledLines'in esi)
+/* ===== TUTANAK MODELI (butun haller icin tek yapi) ================================
+   Bir tutanak = IKI TARAF + bir ya da iki TESLIM BOLUMU:
+     t.eden       Taraf A - belgeyi duzenleyen (kod ve antet buradan)
+     t.alan       Taraf B
+     t.lines      Bolum 1: A -> B
+     t.karsiLines Bolum 2: B -> A  (yalnizca "karsiliginda malzeme alindi" ise)
+   BELGE TURU SECILMEZ, kayittaki iki bayraktan CIKAR (tutTurOf):
+     t.sirketIci  iki taraf ayni firmanin iki calisani mi
+     t.karsilik   karsiliginda malzeme alindi mi (iki yonlu = takas / degisim)
+   Bayraklar kayitta ACIKCA tutulur: yalniz firma adlarina bakmak yetmez - yeni
+   tutanakta firma henuz yazilmamisken de "sirket ici" secilebilmeli. Iki tarafa ayni
+   firma yazilinca bayrak kendiliginden acilir (bkz. tutSetParty).
+   ESKI KAYITLAR tasinmaz: bayrak yoksa eski t.tur'den okunur ('ic' -> sirket ici,
+   'takas' -> karsilik). Kayitta t.tur yine yazilir (turetilmis kimlik), boylece eski
+   okuyucular ve arama bozulmaz.
+   "Iade sartli teslim" bir tur degil, Bolum 1'e eklenen kosuldur (t.iade) - iki yonlu
+   tutanakta yoktur, karsilik zaten icinde alinmistir. Iade tutanagi ciktisi ayni
+   modelin taraflari takas edilmis gorunumudur (bkz. tutanakPrintHtml iadeMod). */
+const TUT_BICIMLER={
+  teslim: {id:'teslim',  tr:'Malzeme Teslim', ru:'Приёма-передачи материалов',
+           baslikTr:'MALZEME TESLİM TUTANAĞI', baslikRu:'АКТ ПРИЁМА-ПЕРЕДАЧИ МАТЕРИАЛОВ'},
+  ic:     {id:'ic',      tr:'Sirket Ici Malzeme Teslimi', ru:'Внутренняя передача материалов', ic:true,
+           baslikTr:'ŞİRKET İÇİ MALZEME TESLİM TUTANAĞI', baslikRu:'АКТ О ВНУТРЕННЕЙ ПЕРЕДАЧЕ МАТЕРИАЛОВ'},
+  takas:  {id:'takas',   tr:'Malzeme Takas', ru:'Обмен материалами', takas:true,
+           baslikTr:'MALZEME TAKAS TUTANAĞI', baslikRu:'АКТ ОБМЕНА МАТЕРИАЛАМИ'},
+  icTakas:{id:'icTakas', tr:'Sirket Ici Malzeme Degisimi', ru:'Внутренний обмен материалами', ic:true, takas:true,
+           baslikTr:'ŞİRKET İÇİ MALZEME DEĞİŞİM TUTANAĞI', baslikRu:'АКТ О ВНУТРЕННЕМ ОБМЕНЕ МАТЕРИАЛАМИ'}
+};
+// sirket ici mi: Taraflar karti tek firma + iki calisana sadelesir, cikti metni "X bunyesinde A'dan B'ye"
+function tutIcMi(t){ if(!t) return false; if(t.sirketIci!=null) return !!t.sirketIci; return t.tur==='ic'||t.tur==='icTakas'; }
+// iki yonlu mu: formda ikinci tablo, ciktida iki bolum
+function tutTakasMi(t){ if(!t) return false; if(t.karsilik!=null) return !!t.karsilik; return t.tur==='takas'||t.tur==='icTakas'; }
+function tutTurOf(t){ const ic=tutIcMi(t), tk=tutTakasMi(t);
+  return TUT_BICIMLER[ic&&tk?'icTakas':ic?'ic':tk?'takas':'teslim']; }
+// Bolum 2'nin (B -> A) dolu satirlari (tutFilledLines'in esi)
 function tutFilledKarsi(t){ return tutFilledLines({lines:(t&&t.karsiLines)||[]}); }
-function tutTurOf(t){ const id=(t&&t.tur)||TUT_TURLERI[0].id;
-  return TUT_TURLERI.find(x=>x.id===id)||TUT_TURLERI[0]; }
-// sirket ici teslim mi: Taraflar karti ve cikti metni buna gore degisir
-function tutIcMi(t){ return !!tutTurOf(t).ic; }
 function tutIadeVar(t){ return !!(t&&t.iade); }
 /* Taraf firmasi. Alan serbest metin; yazilan ad Sirketler listesindeki bir kayda
    uyuyorsa firmaId de saklaniyor ve ad bundan sonra CANLI sirket kaydindan okunuyor.
@@ -49171,7 +49186,7 @@ function renderTutanakList(){
     rows+=`<tr>
       <td><span class="tut-no">${esc(t.no||'-')}</span>${tutIcMi(t)
         ?`<span class="tut-iade" style="background:color-mix(in srgb,var(--violet) 16%,transparent);color:var(--violet);border-color:color-mix(in srgb,var(--violet) 42%,transparent)" title="${esc(tutTurOf(t).tr)} - firma kendi calisanlari arasinda">IC</span>`:''}${tutTakasMi(t)
-        ?`<span class="tut-iade" style="background:color-mix(in srgb,#14b8a6 16%,transparent);color:#14b8a6;border-color:color-mix(in srgb,#14b8a6 42%,transparent)" title="Malzeme takas tutanagi - verilen ve karsiliginda alinan malzeme tek belgede">TAKAS</span>`:''}</td>
+        ?`<span class="tut-iade" style="background:color-mix(in srgb,#14b8a6 16%,transparent);color:#14b8a6;border-color:color-mix(in srgb,#14b8a6 42%,transparent)" title="${tutIcMi(t)?'Sirket ici malzeme degisimi':'Malzeme takas tutanagi'} - verilen ve karsiliginda alinan malzeme tek belgede">${tutIcMi(t)?'DEGISIM':'TAKAS'}</span>`:''}</td>
       <td class="t-meta">${esc(fmtDate(t.tarih))}${tutIadeAlindiMi(t)
         ?`<div style="color:var(--green);font-size:11px">iade alindi: ${esc(fmtDate(t.iadeKaydi.tarih))}</div>`
         :tutIadeTarihi(t)?`<div style="color:${akis==='iadeGec'?'var(--red)':'var(--amber)'};font-size:11px">iade: ${esc(fmtDate(tutIadeTarihi(t)))}</div>`
@@ -49382,14 +49397,16 @@ function icoTutPrint(){ return '<svg width="13" height="13" viewBox="0 0 24 24" 
 function icoTutAntet(){ return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M7 13h6"/></svg>'; }
 
 /* ---------- OLUSTUR / DUZENLE / SIL ---------- */
-/* Tutanak acilmadan once tur soruluyor: tur -> iade var/yok -> (iade varsa) tarih var/yok.
-   Secim yalnizca baslangic degeri; form icinden de degistirilebiliyor. */
+/* Tutanak acilmadan once IKI SORU sorulur (tur listesi yok, tur bunlardan cikar - bkz.
+   TUT_BICIMLER): 1) kimden kime (baska firmaya / sirket icinde), 2) karsiliginda
+   malzeme alindi mi (takas / degisim). Tek yonlu teslimde ucuncu soru iade, gerekirse
+   iade tarihi. Secimler yalnizca baslangic degeri; formdan da degistirilebilir. */
 let _TUTSEC=null;
 function openTutTur(){
   if(!guard('define',{mod:'rapor'}))return;
-  _TUTSEC={ tur:TUT_TURLERI[0].id, iade:false, tarihVar:false, tarih:tutISO(Date.now()) };
+  _TUTSEC={ sirketIci:false, karsilik:false, iade:false, tarihVar:false, tarih:tutISO(Date.now()) };
   document.body.insertAdjacentHTML('beforeend',
-    `<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:530px">
+    `<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:560px">
       <div class="modal-head"><h3>Yeni Tutanak</h3><button class="mini-btn" onclick="closeModal()">x</button></div>
       <div class="modal-body" id="tutTurBody">${tutTurBody()}</div>
       <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Vazgec</button>
@@ -49397,22 +49414,33 @@ function openTutTur(){
 }
 function tutTurSet(k,v){ if(!_TUTSEC)return;
   _TUTSEC[k]=v;
-  if(k==='tur'&&(TUT_TURLERI.find(x=>x.id===v)||{}).takas){ _TUTSEC.iade=false; _TUTSEC.tarihVar=false; }
+  if(k==='karsilik'&&v){ _TUTSEC.iade=false; _TUTSEC.tarihVar=false; }   // iki yonlude iade sorusu yok
   if(k==='iade'&&!v) _TUTSEC.tarihVar=false;      // iade yoksa tarih sorusu da kalkar
   const b=document.getElementById('tutTurBody'); if(b)b.innerHTML=tutTurBody();
 }
-// tur/iade secenek kartlari - formda da ayni gorunum kullaniliyor
+// secenek kartlari - formda da ayni gorunum kullaniliyor
 function tutOptBtn(secili,bas,alt,tik){
   return `<button class="tut-opt${secili?' on':''}" onclick="${tik}"><span class="im"></span>
     <span>${bas}<small>${alt}</small></span></button>`;
 }
+// iki temel soru: Yeni Tutanak penceresi ve formun Tutanak Bilgisi karti AYNI kartlari kullanir
+function tutYapiSorulari(ic,karsilik,tikIc,tikKarsilik){
+  return `<div class="tut-tur"><h6>Kimden Kime <i>Стороны</i></h6>
+      <div class="tut-sec">
+        ${tutOptBtn(!ic,'Baska Firmaya','Malzeme baska bir firmaya teslim edilir',tikIc(false))}
+        ${tutOptBtn(ic,'Sirket Icinde','Ayni firmanin iki calisani arasinda',tikIc(true))}
+      </div></div>
+    <div class="tut-tur"><h6>Karsiliginda Malzeme <i>Встречная передача</i></h6>
+      <div class="tut-sec">
+        ${tutOptBtn(!karsilik,'Alinmadi','Tek yonlu teslim - tek malzeme tablosu',tikKarsilik(false))}
+        ${tutOptBtn(karsilik,ic?'Alindi (Degisim)':'Alindi (Takas)','Iki tablo: verilen ve karsiliginda alinan',tikKarsilik(true))}
+      </div></div>`;
+}
 function tutTurBody(){
   const s=_TUTSEC;
-  return `<div class="tut-tur"><h6>Tutanak Turu <i>Тип акта</i></h6>
-      <div class="tut-sec">${TUT_TURLERI.map(x=>tutOptBtn(s.tur===x.id,esc(x.tr),esc(x.ru),
-        `tutTurSet('tur','${x.id}')`)).join('')}</div></div>
-    ${(TUT_TURLERI.find(x=>x.id===s.tur)||{}).takas?`<p class="t-meta" style="margin:0 0 4px;font-size:11.5px">Takas tutanaginda
-      iki malzeme tablosu olur: <b>Verilen</b> ve <b>Karsiliginda Alinan</b>. Iki taraf tek kagidi imzalar; iade sorusu yoktur.</p>`:`
+  const bicim=tutTurOf({sirketIci:s.sirketIci,karsilik:s.karsilik});
+  return `${tutYapiSorulari(s.sirketIci,s.karsilik,v=>`tutTurSet('sirketIci',${v})`,v=>`tutTurSet('karsilik',${v})`)}
+    ${s.karsilik?'':`
     <div class="tut-tur"><h6>Iade Durumu <i>Возврат</i></h6>
       <div class="tut-sec">
         ${tutOptBtn(!s.iade,'Iade Yok','Malzeme karsi tarafta kalir',"tutTurSet('iade',false)")}
@@ -49426,15 +49454,16 @@ function tutTurBody(){
       ${s.tarihVar?`<div class="frow" style="margin:0"><label>Iade Tarihi / Дата возврата *</label>
         <input type="date" value="${esc(s.tarih||'')}" onchange="tutTurSet('tarih',this.value)"></div>`:''}
     </div>`:''}`}
-    <p class="t-meta" style="margin:2px 0 0;font-size:11.5px">Secimler ciktida da gorunur; tutanagi
+    <div class="tut-bicim">Belge: <b>${esc(bicim.baslikTr)}</b> <i>${esc(bicim.baslikRu)}</i></div>
+    <p class="t-meta" style="margin:6px 0 0;font-size:11.5px">Belge turu bu secimlerden kendiliginden belirlenir; tutanagi
       actiktan sonra <b>Tutanak Bilgisi</b> kartindan degistirebilirsiniz.</p>`;
 }
 function tutTurDevam(){
   const s=_TUTSEC; if(!s)return;
   if(s.iade&&s.tarihVar&&!s.tarih){ toast('Iade tarihini secin','err'); return; }
   closeModal();
-  newTutanak({ tur:s.tur, iade:s.iade,
-    iadeTarih:(s.iade&&s.tarihVar&&s.tarih)?new Date(s.tarih+'T12:00:00').getTime():null });
+  newTutanak({ sirketIci:s.sirketIci, karsilik:s.karsilik, iade:!s.karsilik&&s.iade,
+    iadeTarih:(!s.karsilik&&s.iade&&s.tarihVar&&s.tarih)?new Date(s.tarih+'T12:00:00').getTime():null });
 }
 
 function newTutanak(sec){
@@ -49442,10 +49471,11 @@ function newTutanak(sec){
   sec=sec||{};
   // no BOS acilir: kod, form acilirken degil KESINLESTIRME aninda uretilir (bkz. saveTutanak)
   _TUT={ id:uid(), no:'', tarih:Date.now(), bina:'', durum:'taslak',
-    tur:sec.tur||TUT_TURLERI[0].id, iade:!!sec.iade, iadeTarih:sec.iadeTarih||null,
+    sirketIci:!!sec.sirketIci, karsilik:!!sec.karsilik, iade:!!sec.iade, iadeTarih:sec.iadeTarih||null,
     eden:{firma:'',ad:'',gorev:''}, alan:{firma:'',ad:'',gorev:''},
     lines:[tutBlankLine()], aciklama:'',   // TEK bos satir: gerekince "Bos Satir" ile eklenir
     createdBy:(CURRENT_USER&&CURRENT_USER.username)||'', createdAt:Date.now(), updatedAt:Date.now(), _yeni:true };
+  _TUT.tur=tutTurOf(_TUT).id;
   if(tutTakasMi(_TUT)){ _TUT.karsiLines=[tutBlankLine()]; _TUT.iade=false; _TUT.iadeTarih=null; }
   TUTV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
 }
@@ -49460,8 +49490,8 @@ function editTutanak(id){
   if(!_TUT.lines||!_TUT.lines.length) _TUT.lines=[tutBlankLine()];
   if(!_TUT.eden) _TUT.eden={firma:'',ad:'',gorev:''};
   if(!_TUT.alan) _TUT.alan={firma:'',ad:'',gorev:''};
-  // tur/iade alanlari sonradan eklendi: eski kayitlar "Malzeme Teslim, iade yok"
-  if(!_TUT.tur) _TUT.tur=TUT_TURLERI[0].id;
+  // ESKI KAYIT: bayraklar eski t.tur'den bir kez okunup acik yazilir (bkz. TUT_BICIMLER)
+  _TUT.sirketIci=tutIcMi(_TUT); _TUT.karsilik=tutTakasMi(_TUT); _TUT.tur=tutTurOf(_TUT).id;
   _TUT.iade=!!_TUT.iade;
   if(!_TUT.iade) _TUT.iadeTarih=null;
   if(tutTakasMi(_TUT)&&!(_TUT.karsiLines&&_TUT.karsiLines.length)) _TUT.karsiLines=[tutBlankLine()];
@@ -49509,18 +49539,28 @@ function tutSetIadeTarihVar(v){ if(!_TUT)return;
   _TUT.iadeTarih=v?(_TUT.iadeTarih||Date.now()):null; render(); }
 function tutSetIadeTarih(v){ if(!_TUT)return;
   _TUT.iadeTarih=v?new Date(v+'T12:00:00').getTime():null; render(); }
-// Tur secimi Taraflar kartinin duzenini (tek firma / iki firma) degistirir - iade gibi yeniden cizim ister
-function tutSetTur(v){ if(!_TUT)return; _TUT.tur=v;
-  const tur=TUT_TURLERI.find(x=>x.id===v);
-  /* Takasa geciste iade kapanir, karsilik tablosu acilir. Takastan cikista karsilik
-     tablosu SILINMEZ (yanlislikla tur degistirip geri donen kullanici satirlarini
-     kaybetmesin) - kaydederken takas olmayan turde yazilmaz (bkz. saveTutanak). */
-  if(tur&&tur.takas){ _TUT.iade=false; _TUT.iadeTarih=null;
-    if(!(_TUT.karsiLines&&_TUT.karsiLines.length)) _TUT.karsiLines=[tutBlankLine()]; }
-  if(tur&&tur.ic){       // sirket ici: alan tarafi eden ile ayni firmaya cekilir (iki firma karisik kalmasin)
-    if(!_TUT.alan)_TUT.alan={};
-    _TUT.alan.firma=(_TUT.eden||{}).firma||''; _TUT.alan.firmaId=(_TUT.eden||{}).firmaId||'';
+/* YAPI SORULARI (bkz. TUT_BICIMLER). Ikisi de Taraflar / malzeme kartlarinin duzenini
+   degistirir - yeniden cizim ister. Belge turu (t.tur) her degisimde yeniden turetilir. */
+function tutSetIc(v){ if(!_TUT)return; v=!!v;
+  if(!_TUT.eden)_TUT.eden={}; if(!_TUT.alan)_TUT.alan={};
+  if(v){   // sirket ici: alan tarafi eden ile ayni firmaya cekilir (iki firma karisik kalmasin)
+    _TUT.alan.firma=_TUT.eden.firma||''; _TUT.alan.firmaId=_TUT.eden.firmaId||'';
+  } else if(tutIcMi(_TUT) && norm(_TUT.alan.firma||'')===norm(_TUT.eden.firma||'')){
+    // sirket icinden cikis: ayni firma kopyasi B tarafinda kalirsa hemen geri sirket iciye donerdi
+    _TUT.alan.firma=''; _TUT.alan.firmaId='';
   }
+  _TUT.sirketIci=v; _TUT.tur=tutTurOf(_TUT).id;
+  render();
+}
+/* Karsilik (iki yonlu) acilinca iade kapanir, Bolum 2 tablosu acilir. Kapatilinca
+   tablo bellekte KALIR (yanlislikla kapatip geri acan kullanici satirlarini kaybetmesin) -
+   kaydederken tek yonlu tutanakta yazilmaz (bkz. saveTutanak). */
+function tutSetKarsilik(v){ if(!_TUT)return; v=!!v;
+  if(v){ _TUT.iade=false; _TUT.iadeTarih=null;
+    if(!(_TUT.karsiLines&&_TUT.karsiLines.length)) _TUT.karsiLines=[tutBlankLine()]; }
+  else if(tutFilledKarsi(_TUT).length && !confirm('Karsiliginda alinan malzeme tablosunda '+tutFilledKarsi(_TUT).length
+      +' satir var. Tek yonlu teslime donulurse bu satirlar kaydedilmez (geri acarsaniz yerinde durur).\n\nDevam edilsin mi?')) { render(); return; }
+  _TUT.karsilik=v; _TUT.tur=tutTurOf(_TUT).id;
   render();
 }
 // Sirket ici tutanakta TEK firma girisi var, iki tarafa birden yazilir
@@ -49536,8 +49576,14 @@ function tutSetParty(side,k,v){ if(!_TUT)return; if(!_TUT[side])_TUT[side]={}; _
     // Yazilan ad listedeki bir sirkete uyuyorsa bag kurulur, uymuyorsa bag kalkar.
     const c=(DB.companies||[]).find(x=>norm(x.ad)===norm(v));
     _TUT[side].firmaId=c?c.id:'';
+    // iki tarafa AYNI firma yazildiysa tutanak kendiliginden sirket ici duzene gecer
+    const ea=String((_TUT.eden||{}).firma||'').trim(), aa=String((_TUT.alan||{}).firma||'').trim();
+    if(!tutIcMi(_TUT) && ea && aa && norm(ea)===norm(aa)){
+      _TUT.sirketIci=true; _TUT.tur=tutTurOf(_TUT).id;
+      toast('Iki taraf ayni firma - tutanak sirket ici duzene gecti');
+    }
     render();                       // bagli/serbest rozeti guncellensin
-  }
+  } else if(k==='ad'&&tutIcMi(_TUT)&&tutTakasMi(_TUT)) render();   // degisimde tablo yon etiketi calisan adini yazar
 }
 /* SATIR TABLOLARI. Takas tutanaginda IKI tablo var: 'lines' (verilen) ve
    'karsiLines' (karsiliginda alinan). Butun satir islemleri hangi tabloya
@@ -49607,6 +49653,8 @@ function renderTutanakForm(){
       <input value="${esc((t[side]||{}).gorev||'')}" placeholder="gorev" onchange="tutSetParty('${side}','gorev',this.value.trim())"></div>
   </div>`;
   const ic=tutIcMi(t), takas=tutTakasMi(t);
+  // yon etiketlerinde taraf adi: sirket icinde iki taraf ayni firma - calisan adi ayirt eder
+  const tarafAd=(side,yedek)=>(ic?((t[side]||{}).ad||''):tutFirma(t,side))||yedek;
   /* Malzeme tablosu karti. Takasta iki kez cizilir (verilen / karsiliginda alinan);
      liste adi butun satir islemlerine ve "Kutuphaneden Ekle"ye gecer (bkz. TUT_TABLO). */
   const tabloKart=(liste,baslik,ru,yon)=>{
@@ -49656,17 +49704,16 @@ function renderTutanakForm(){
           <input value="${esc(tutKodGoster(t)||'-')}" readonly tabindex="-1" style="font-family:Consolas,monospace;letter-spacing:.4px"></div>
         <div class="frow"><label>Tarih / Дата *<span class="bbal" tabindex="0">B<span>Kodun tarih bolumu buradan gelir</span></span></label>
           <input type="date" value="${tutISO(t.tarih)}" onchange="tutSetTarih(this.value)"></div>
-        <div class="frow"><label>Tur / Тип акта<span class="bbal" tabindex="0">B<span>Ciktinin iki dilli basligini belirler; Sirket Ici secilirse Taraflar karti tek firmaya gore sadelesir</span></span></label>
-          <select onchange="tutSetTur(this.value)">
-            ${TUT_TURLERI.map(x=>`<option value="${esc(x.id)}" ${tutTurOf(t).id===x.id?'selected':''}>${esc(x.tr)}</option>`).join('')}
-          </select></div>
+        <div class="frow"><label>Belge Turu / Тип акта<span class="bbal" tabindex="0">B<span>Secilmez - asagidaki iki sorudan kendiliginden belirlenir ve ciktinin iki dilli basligi olur</span></span></label>
+          <input value="${esc(tutTurOf(t).tr)}" readonly tabindex="-1"></div>
         <div class="frow"><label>Bina<span class="bbal" tabindex="0">B<span>Opsiyonel - yalniz kayit ve suzme icin, ciktida gecmez</span></span></label>
           <select onchange="tutSet('bina',this.value)">
             <option value="">- secilmedi -</option>
             ${binalar.map(b=>`<option ${t.bina===b?'selected':''}>${esc(b)}</option>`).join('')}
           </select></div>
       </div>
-      ${takas?`<p class="t-meta" style="margin:12px 0 0;font-size:11.5px">Takas tutanagi: <b>Verilen</b> malzeme
+      <div style="margin-top:14px">${tutYapiSorulari(ic,takas,v=>`tutSetIc(${v})`,v=>`tutSetKarsilik(${v})`)}</div>
+      ${takas?`<p class="t-meta" style="margin:4px 0 0;font-size:11.5px">${ic?'Degisim':'Takas'} tutanagi: <b>Verilen</b> malzeme
         1. taraftan 2. tarafa, <b>Karsiliginda Alinan</b> malzeme 2. taraftan 1. tarafa gecer. Iki taraf tek kagidi imzalar; iade sorusu yoktur.</p>`:`
       <div class="tut-tur" style="margin-top:14px"><h6>Iade Durumu <i>Возврат</i></h6>
         <div class="tut-sec">
@@ -49698,8 +49745,8 @@ function renderTutanakForm(){
         firma harfleri ve ciktinin anteti de bu firmadan gelir; bunun icin firmanin
         <b>Sirketler</b> listesinde kayitli olmasi gerekir.</p>
       <div class="tut-parties">
-        ${partyIc('eden','Teslim Eden','СДАЛ','eden')}
-        ${partyIc('alan','Teslim Alan','ПРИНЯЛ','alan')}
+        ${takas?partyIc('eden','1. Taraf','СТОРОНА 1','eden'):partyIc('eden','Teslim Eden','СДАЛ','eden')}
+        ${takas?partyIc('alan','2. Taraf','СТОРОНА 2','alan'):partyIc('alan','Teslim Alan','ПРИНЯЛ','alan')}
       </div>`:`
       <p class="t-meta" style="margin:-6px 0 12px;font-size:11.5px">Tutanak kodunun firma
         harfleri ve ciktinin anteti <b>${takas?'1. Taraf':'Teslim Eden'}</b> firmasindan gelir; bunun icin
@@ -49711,9 +49758,9 @@ function renderTutanakForm(){
     </div>
 
     ${takas?tabloKart('lines','1. Verilen Malzeme','Переданные материалы',
-        `${esc(tutFirma(t,'eden')||'1. taraf')} &rarr; ${esc(tutFirma(t,'alan')||'2. taraf')}`)
+        `${esc(tarafAd('eden','1. taraf'))} &rarr; ${esc(tarafAd('alan','2. taraf'))}`)
       +tabloKart('karsiLines','2. Karsiliginda Alinan Malzeme','Полученные взамен материалы',
-        `${esc(tutFirma(t,'alan')||'2. taraf')} &rarr; ${esc(tutFirma(t,'eden')||'1. taraf')}`)
+        `${esc(tarafAd('alan','2. taraf'))} &rarr; ${esc(tarafAd('eden','1. taraf'))}`)
       :tabloKart('lines','Teslim Edilen Malzeme','Вид и количество переданных материалов','')}
 
     <div class="tut-card"><h4>Aciklamalar <i>Примечания</i></h4>
@@ -49866,8 +49913,13 @@ async function saveTutanak(andPrint,kesin=true){
   // kayitta duran eski PDF: yalnizca yazma BASARILI olursa kovadan alinir
   const eskiKayit=(DB.tutanaklar||[]).find(x=>x.id===_TUT.id)||null;
   const eskiYol=(eskiKayit&&eskiKayit.pdf&&eskiKayit.pdf.path)||'';
-  if(!_TUT.tur) _TUT.tur=TUT_TURLERI[0].id;
-  if(tutTakasMi(_TUT)) _TUT.iade=false;   // takasta iade yok - karsilik takasin icinde
+  // bayraklar acik yazilir, tur onlardan turetilir (bkz. TUT_BICIMLER)
+  _TUT.sirketIci=tutIcMi(_TUT); _TUT.karsilik=tutTakasMi(_TUT); _TUT.tur=tutTurOf(_TUT).id;
+  if(_TUT.sirketIci){   // sirket icinde iki taraf AYNI firma - B tarafi A'dan kopyalanir
+    if(!_TUT.alan)_TUT.alan={};
+    _TUT.alan.firma=(_TUT.eden||{}).firma||''; _TUT.alan.firmaId=(_TUT.eden||{}).firmaId||'';
+  }
+  if(tutTakasMi(_TUT)) _TUT.iade=false;   // iki yonlude iade yok - karsilik zaten icinde
   _TUT.iade=!!_TUT.iade;
   if(!_TUT.iade) _TUT.iadeTarih=null;   // iade kapaliyken tarih kaydedilmez
   /* Iade kapatildiysa yapilmis iade kaydi da duser (PDF'i yazma basarili olunca
@@ -50133,7 +50185,7 @@ function tutPrintHead(A){
 function antetAltLogo(){
   return `<img class="ph-mark" src="${esc(location.origin+'/logo.png')}" alt="" onerror="this.style.display='none'">`;
 }
-// basTr/basRu turden gelir (bkz. TUT_TURLERI) - verilmezse varsayilan "Malzeme Teslim" basligi basilir
+// basTr/basRu turden gelir (bkz. TUT_BICIMLER) - verilmezse varsayilan "Malzeme Teslim" basligi basilir
 function tutPrintFoot(sayfa,toplam,basTr,basRu){
   return `<div class="ph-foot">${antetAltLogo()}<span>${esc(basTr||'MALZEME TESLİM TUTANAĞI')} &nbsp;/&nbsp; ${esc(basRu||'АКТ ПРИЁМА-ПЕРЕДАЧИ МАТЕРИАЛОВ')}
     &nbsp;&nbsp;&nbsp;&nbsp; Sayfa / Стр. ${sayfa} / ${toplam}</span></div>`;
@@ -50236,7 +50288,8 @@ function tutanakPrintHtml(t,iadeMod){
     chunks.push(kalemler.slice(i,j)); i=j;
   }
   if(!chunks.length) chunks.push([]);
-  const yonTr=(no)=>{ const a=esc(edenFirma||'1. Taraf'), b=esc(alanFirma||'2. Taraf'); return no===1?a+' → '+b:b+' → '+a; };
+  // bolum basligindaki yon: sirket icinde iki taraf ayni firma - calisan adi ayirt eder
+  const yonTr=(no)=>{ const a=esc((ic?edenAd:edenFirma)||'1. Taraf'), b=esc((ic?alanAd:alanFirma)||'2. Taraf'); return no===1?a+' → '+b:b+' → '+a; };
   const secHtml=no=>`<tr class="sec s${no}"><td colspan="9">${no===1
       ?'1. VERİLEN MALZEME<i>ПЕРЕДАННЫЕ МАТЕРИАЛЫ</i>'
       :'2. KARŞILIĞINDA ALINAN MALZEME<i>ПОЛУЧЕННЫЕ ВЗАМЕН МАТЕРИАЛЫ</i>'}<span>${yonTr(no)}</span></td></tr>`;
@@ -50371,7 +50424,15 @@ function tutanakPrintHtml(t,iadeMod){
         <div class="ph-col ru">
           <p>Настоящий акт составлен о возврате компанией ${eR} компании ${alanFirma?`<b>${esc(alanFirma)}</b>`:aR} материалов, полученных по акту приёма-передачи № <b>${teslimNo}</b> от ${teslimTarih}.</p>
           <p>Материалы, вид, количество и характеристики которых указаны ниже, возвращены в полном объёме и в исправном состоянии.</p>
-        </div>`):takas?`
+        </div>`):(takas&&ic)?`
+        <div class="ph-col tr">
+          <p>İşbu tutanak, ${fTt} bünyesinde ${eAt} ile ${aAt} çalışanları arasında aşağıda cinsi, miktarı ve özellikleri belirtilen malzemelerin karşılıklı olarak değiştirildiğini göstermek amacıyla düzenlenmiştir.</p>
+          <p><b>1. bölümdeki</b> malzemeler ${eAt} tarafından ${aAt} çalışanına, <b>2. bölümdeki</b> malzemeler ${aAt} tarafından ${eAt} çalışanına eksiksiz ve sağlam şekilde teslim edilmiştir.</p>
+        </div>
+        <div class="ph-col ru">
+          <p>Настоящий акт составлен в подтверждение взаимного обмена материалами, вид, количество и характеристики которых указаны ниже, между сотрудниками ${eAr} и ${aAr} в рамках компании ${firmaTek?`<b>${esc(noktasiz(firmaTek))}</b>`:fTr}.</p>
+          <p>Материалы <b>раздела 1</b> переданы сотрудником ${eAr} сотруднику ${aAr}, материалы <b>раздела 2</b> — сотрудником ${aAr} сотруднику ${eAr}, в полном объёме и в исправном состоянии.</p>
+        </div>`:takas?`
         <div class="ph-col tr">
           <p>İşbu tutanak, ${eF} ile ${aF} arasında aşağıda cinsi, miktarı ve özellikleri belirtilen malzemelerin karşılıklı olarak takas edildiğini göstermek amacıyla düzenlenmiştir.</p>
           <p><b>1. bölümdeki</b> malzemeler ${eF} tarafından ${aF} firmasına, <b>2. bölümdeki</b> malzemeler ${aF} tarafından ${eF} firmasına eksiksiz ve sağlam şekilde teslim edilmiştir.</p>
@@ -50399,7 +50460,7 @@ function tutanakPrintHtml(t,iadeMod){
       </div>
       ${iadeSerit}`:'';
     // Devam sayfalari tek baslarina dolasabildigi icin bantta tutanak numarasi da yazar
-    const bant=`<div class="ph-bar">${takas?'TAKAS EDİLEN MALZEME TÜR VE MİKTARI &nbsp;<i>| &nbsp;ВИД И КОЛИЧЕСТВО ОБМЕНИВАЕМЫХ МАТЕРИАЛОВ':`${iadeMod?'İADE EDİLEN':'TESLİM EDİLEN'} MALZEME TÜR VE MİKTARI &nbsp;<i>| &nbsp;ВИД И КОЛИЧЕСТВО ${iadeMod?'ВОЗВРАЩАЕМЫХ':'ПЕРЕДАННЫХ'} МАТЕРИАЛОВ`}${ci>0?` &nbsp;(devam / продолжение${t.no?' · '+esc(t.no):''})`:''}</i></div>`;
+    const bant=`<div class="ph-bar">${takas?`${ic?'DEĞİŞTİRİLEN':'TAKAS EDİLEN'} MALZEME TÜR VE MİKTARI &nbsp;<i>| &nbsp;ВИД И КОЛИЧЕСТВО ОБМЕНИВАЕМЫХ МАТЕРИАЛОВ`:`${iadeMod?'İADE EDİLEN':'TESLİM EDİLEN'} MALZEME TÜR VE MİKTARI &nbsp;<i>| &nbsp;ВИД И КОЛИЧЕСТВО ${iadeMod?'ВОЗВРАЩАЕМЫХ':'ПЕРЕДАННЫХ'} МАТЕРИАЛОВ`}${ci>0?` &nbsp;(devam / продолжение${t.no?' · '+esc(t.no):''})`:''}</i></div>`;
     return `<div class="page">
       ${tutPrintHead(A)}
       ${ust}
