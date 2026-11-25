@@ -5438,6 +5438,23 @@ datalist{display:none}
   color:var(--dim);border-radius:7px;padding:3px 8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit}
 .tut-adim:hover{border-color:var(--amber);color:var(--amber);border-style:solid}
 .tut-adim svg{width:12px;height:12px}
+/* IMZALI NUSHA dugmesi: dolaptaki imzali kagida tek tikla ulasmak icin satir
+   islemlerinden AYRI, buyuk ve uzerine gelince yesile donen dugme. Iade alinmis
+   tutanakta yaninda ikinci (mavi) dugme iade nushasini acar. */
+.tut-nusha-kutu{display:flex;flex-direction:column;gap:5px;align-items:flex-start}
+.tut-nusha{display:inline-flex;align-items:center;gap:8px;padding:6px 12px 6px 9px;border-radius:9px;cursor:pointer;
+  font-family:inherit;font-size:12px;font-weight:700;color:var(--ink);white-space:nowrap;
+  background:color-mix(in srgb,var(--green) 8%,var(--panel2));border:1px solid color-mix(in srgb,var(--green) 35%,var(--line));
+  transition:background .15s,border-color .15s,color .15s,transform .15s,box-shadow .15s}
+.tut-nusha svg{width:18px;height:18px;color:var(--green);flex:none;transition:color .15s}
+.tut-nusha span{display:flex;flex-direction:column;line-height:1.15;text-align:left}
+.tut-nusha i{font-style:normal;font-size:10px;font-weight:500;color:var(--dim);transition:color .15s}
+.tut-nusha:hover{background:var(--green);border-color:var(--green);color:#fff;transform:translateY(-1px);
+  box-shadow:0 4px 14px color-mix(in srgb,var(--green) 35%,transparent)}
+.tut-nusha:hover svg,.tut-nusha:hover i{color:#fff}
+.tut-nusha.iade{background:color-mix(in srgb,var(--blue) 8%,var(--panel2));border-color:color-mix(in srgb,var(--blue) 35%,var(--line))}
+.tut-nusha.iade svg{color:var(--blue)}
+.tut-nusha.iade:hover{background:var(--blue);border-color:var(--blue);box-shadow:0 4px 14px color-mix(in srgb,var(--blue) 35%,transparent)}
 .tut-parties{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media(max-width:820px){.tut-parties{grid-template-columns:1fr}}
 .tut-party{border:1px solid var(--line);border-radius:12px;padding:14px 15px;background:var(--panel2)}
@@ -49029,6 +49046,7 @@ function tutPdfSil(){
 }
 // listeden acma (kunye kayittan okunur, openProjeOrderPdf'in esi)
 function tutPdfAcId(id){ const t=(DB.tutanaklar||[]).find(x=>x.id===id); acPdf(t&&t.pdf); }
+function tutIadePdfAcId(id){ const t=(DB.tutanaklar||[]).find(x=>x.id===id); acPdf(t&&t.iadeKaydi&&t.iadeKaydi.pdf); }
 function icoPdfSm(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/></svg>'; }
 
 function renderTutanakPage(){ return (TUTV.mode==='form'&&_TUT) ? renderTutanakForm() : renderTutanakList(); }
@@ -49124,7 +49142,7 @@ function renderTutanakList(){
       </div></div>
   </div>`;
   let rows='';
-  if(!list.length) rows=emptyRow(8,anyF?'Eslesen tutanak yok':'Henuz tutanak duzenlenmedi',
+  if(!list.length) rows=emptyRow(9,anyF?'Eslesen tutanak yok':'Henuz tutanak duzenlenmedi',
     anyF?'Filtreyi degistirin veya "Filtreyi Temizle" ile hepsini gorun':'"Yeni Tutanak" ile ilk teslim tutanagini olusturun');
   else list.forEach(t=>{
     const tt=tutTotals(t);
@@ -49146,9 +49164,12 @@ function renderTutanakList(){
       <td class="t-meta">${esc(t.bina||'-')}</td>
       <td class="t-qty">${fmtNum(tt.kalem)} kalem <span style="color:var(--mute)">· ${fmtNum(tt.miktar)}</span></td>
       <td>${tutAkisRozet(t)}${adim?`<div style="margin-top:5px">${adim}</div>`:''}</td>
+      <td>${t.pdf||(t.iadeKaydi&&t.iadeKaydi.pdf)?`<div class="tut-nusha-kutu">
+        ${t.pdf?`<button class="tut-nusha" title="Imzali teslim nushasini ac: ${esc(t.pdf.name||'belge')}" onclick="tutPdfAcId('${t.id}')">${icoTutNusha()}<span>Teslim<i>imzali nusha</i></span></button>`:''}
+        ${tutIadeAlindiMi(t)&&t.iadeKaydi.pdf?`<button class="tut-nusha iade" title="Imzali iade nushasini ac: ${esc(t.iadeKaydi.pdf.name||'belge')}" onclick="tutIadePdfAcId('${t.id}')">${icoTutNusha()}<span>Iade<i>imzali nusha</i></span></button>`:''}
+      </div>`:'<span class="t-meta">-</span>'}</td>
       <td><div class="row-actions">
         <button class="mini-btn" title="Teslim tutanagini yazdir / PDF olarak kaydet" onclick="printTutanak('${t.id}')">${icoTutPrint()}</button>
-        ${t.pdf?`<button class="mini-btn" title="Imzali teslim nushasini ac: ${esc(t.pdf.name||'belge')}" onclick="tutPdfAcId('${t.id}')">${icoPdfSm()}</button>`:''}
         ${tutIadeVar(t)&&!tutTaslakMi(t)?`<button class="mini-btn" title="${tutIadeAlindiMi(t)?'Iade kaydi: tarih ve iade tutanagi PDF\'i':'Iade Al / iade tutanagi yazdir'}" style="color:${TUT_AKIS[akis].renk}" onclick="openTutIade('${t.id}')">${icoTutIade()}</button>`:''}
         ${canEdit('rapor')?`<button class="mini-btn" title="Duzenle" onclick="editTutanak('${t.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>`:''}
         ${canEdit('rapor')?`<button class="mini-btn" title="Kopyala - ayni satirlarla yeni tutanak" onclick="copyTutanak('${t.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}
@@ -49163,11 +49184,13 @@ function renderTutanakList(){
     ${filterbar}
     <div class="ord-sumline"><b>${fmtNum(list.length)}</b> tutanak · <b>${fmtNum(toplamKalem)}</b> kalem · bu ay <b>${fmtNum(buAy)}</b>${akisOzet}${anyF?` <span class="t-meta">(${fmtNum(all.length)} kayit icinden filtrelendi)</span>`:''}</div>
     <div class="tablewrap"><table><thead><tr>
-      <th>Tutanak Kodu</th><th>Tarih</th><th>Teslim Eden</th><th>Teslim Alan</th><th>Bina</th><th>Icerik</th><th>Durum</th><th></th>
+      <th>Tutanak Kodu</th><th>Tarih</th><th>Teslim Eden</th><th>Teslim Alan</th><th>Bina</th><th>Icerik</th><th>Durum</th><th>Imzali Nusha</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>
     <input type="file" id="tutListePdfInput" accept="application/pdf,.pdf" class="hidden" onchange="tutListePdfAl(event)">
   </div>`;
 }
+// imzali kagit: belge + imza karalamasi
+function icoTutNusha(){ return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M7 17c1.2-1.6 2.2-1.6 2.6 0 .4 1.4 1.4 1.4 2.4-.4.6-1 1.4-1 2 0"/></svg>'; }
 function icoTutIade(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/></svg>'; }
 
 /* ---------- LISTEDEN IMZALI PDF YUKLEME ----------

@@ -3888,6 +3888,7 @@ window.DIL_RU={
   "Imzali kagitta kabul edilen - kagit onaylaninca kalandan duser":"Принятое в подписанном листе — при утверждении вычитается из остатка",
   "Imzali kagitta kabul edilen miktar. En fazla kagitta yazan ve":"Количество, принятое в подписанном листе. Не больше указанного в листе и",
   "Imzali Nusha":"Подписанный экземпляр",
+  "imzali nusha":"подписанный экземпляр",
   "Imzali/taranmis nusha yuklu:":"Загружен подписанный/отсканированный экземпляр:",
   "Imzali/taranmis nusha yuklu: #":"Загружен подписанный/отсканированный экземпляр: #",
   "Indirilecek urun yok - urun secin ya da filtreyi degistirin":"Нет товаров для выгрузки — выберите товары или измените фильтр",
