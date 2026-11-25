@@ -49994,9 +49994,12 @@ function tutPickAdd(src,matId){
    bir belge degil, yarim kalmis bir nottur. Butun bu kontroller KESINLESTIRMEDE
    (kesin=true, varsayilan) calisir - "Kaydet" / "Kaydet ve Yazdir" hep kesinlestirir,
    "Taslak Kaydet" ise kesin=false gonderir. */
+let _tutKaydediyor=false;
 async function saveTutanak(andPrint,kesin=true){
   if(!guard('define',{mod:'rapor'}))return;
   if(!_TUT)return;
+  if(_tutKaydediyor) return;                    // cift tik: ikinci kayit/kod uretimi olmasin
+  const _taslaktan=tutTaslakMi(_TUT);           // perde basligi icin: kesinlestirme mi guncelleme mi
   let no=String(_TUT.no||'').trim();
   if(kesin){
     /* KOD BIR KEZ verilir, bir daha DEGISMEZ: belge numarasi kimliktir - sonradan
@@ -50053,6 +50056,18 @@ async function saveTutanak(andPrint,kesin=true){
      reddediliyordu; o bayrak sayfa yuklenirken alinan anlik bir durum ve SQL bu arada
      calistirilmis olabiliyor - yani kaydedilebilecek tutanaklar geri cevriliyordu.
      Hata olursa taslak formda kalir (_yeni geri verilir), girilen bilgi kaybolmaz. */
+  /* ISLEM PERDESI (bkz. wperdeAc): basligi basilan dugmeye gore - Taslak Kaydet /
+     Kesinlestir / Kaydet (guncelleme). Tek istek, olculebilir ilerleme yok (belirsiz);
+     gecikme 250: hizli biten kayitta perde hic gorunmez. Alt dugmeler kayit boyunca
+     kilitlenir (cift tik). */
+  const _wpBaslik=!kesin?'Taslak kaydediliyor':_taslaktan?'Tutanak kesinlestiriliyor':'Tutanak guncelleniyor';
+  let _wpBitis='Kaydedilemedi';
+  const _dugmeler=[...document.querySelectorAll('.kata-page-foot button')].map(b=>btnBekle(b));
+  _tutKaydediyor=true;
+  const _kalem=tutFilledLines(kayit).length+tutFilledKarsi(kayit).length;
+  wperdeAc(_wpBaslik,{gecikme:250,belirsiz:true,
+    alt:(kayit.no||tutTurOf(kayit).tr)+' · '+_kalem+' kalem sunucuya yaziliyor - sayfayi kapatmayin'});
+  wperdeDurum({metin:[tutFirma(kayit,'eden'),tutFirma(kayit,'alan')].filter(Boolean).join(' → ')});
   try{
     if(yeni){ await sbInsertTutanak(kayit); if(!DB.tutanaklar)DB.tutanaklar=[]; DB.tutanaklar.push(kayit); }
     else {
@@ -50060,6 +50075,7 @@ async function saveTutanak(andPrint,kesin=true){
       const i=(DB.tutanaklar||[]).findIndex(x=>x.id===kayit.id);
       if(i>=0) DB.tutanaklar[i]=kayit; else DB.tutanaklar.push(kayit);
     }
+    _wpBitis=!kesin?'Taslak kaydedildi':_taslaktan?'Tutanak kesinlesti':'Tutanak guncellendi';
   }catch(e){
     if(yeni) _TUT._yeni=true;                       // tekrar denenince yine INSERT olsun
     const msj=String((e&&e.message)||e||'');
@@ -50069,7 +50085,7 @@ async function saveTutanak(andPrint,kesin=true){
       ? 'Tutanak tablosu Supabase\'de yok. migration_tutanak.sql dosyasini SQL Editor\'de bir kez calistirip sayfayi yenileyin - girdikleriniz formda duruyor.'
       : 'Tutanak kaydedilemedi: '+msj,'err');
     return;
-  }
+  }finally{ _tutKaydediyor=false; _dugmeler.forEach(f=>f()); wperdeKapat(_wpBitis); }
   window.__tutanakTableMissing=false;               // yazabildiysek uyari bandi kalksin
   const yeniYol=(kayit.pdf&&kayit.pdf.path)||'';
   if(eskiYol&&eskiYol!==yeniYol&&window.sbBelgeSil) window.sbBelgeSil(eskiYol);
