@@ -5433,6 +5433,11 @@ datalist{display:none}
   padding:2px 7px;border-radius:20px;vertical-align:middle;
   background:color-mix(in srgb,var(--amber) 16%,transparent);color:var(--amber);
   border:1px solid color-mix(in srgb,var(--amber) 42%,transparent)}
+/* listede durumun altindaki SIRADAKI ADIM dugmesi (Imzali PDF Yukle / Iade Al) */
+.tut-adim{display:inline-flex;align-items:center;gap:5px;background:transparent;border:1px dashed var(--line);
+  color:var(--dim);border-radius:7px;padding:3px 8px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;font-family:inherit}
+.tut-adim:hover{border-color:var(--amber);color:var(--amber);border-style:solid}
+.tut-adim svg{width:12px;height:12px}
 .tut-parties{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media(max-width:820px){.tut-parties{grid-template-columns:1fr}}
 .tut-party{border:1px solid var(--line);border-radius:12px;padding:14px 15px;background:var(--panel2)}
@@ -48669,7 +48674,7 @@ async function saveAletOrder(){
 /* Liste filtreleri TEK yerden uretilir: TUTV uc ayri noktada sifirlaniyor
    (openTutanak / closeTutanak / burasi) - alan eklendiginde biri unutulursa
    filtre "yapisan" bir deger tasirdi. */
-function tutVarsayilanV(){ return { mode:'list', q:'', from:'', to:'', eden:'', alan:'', bina:'', iade:'', pdf:'', durum:'' }; }
+function tutVarsayilanV(){ return { mode:'list', q:'', from:'', to:'', eden:'', alan:'', bina:'', durum:'' }; }
 let TUTV=tutVarsayilanV();   // liste / form
 let _TUT=null;                    // duzenlenen tutanak taslagi (kaydedilene kadar bellekte)
 /* Sayfa basina malzeme satiri. Kapasite iki seye bagli:
@@ -48722,6 +48727,40 @@ function tutIadeOzet(t){ if(!tutIadeVar(t)) return 'iade yok';
    asla taslaga geri donmez; taslak->kesin gecisi tek yonludur. */
 function tutDurumu(t){ return (t&&t.durum==='taslak')?'taslak':'kesin'; }
 function tutTaslakMi(t){ return tutDurumu(t)==='taslak'; }
+
+/* ===== TUTANAK AKISI (tek durum cizgisi) =========================================
+   Eskiden "bitti mi" sorusu uc ayri filtreye dagilmisti (Kayit Durumu, Imzali Nusha,
+   Iade Durumu) ve iade yalnizca bir NIYETTI: "iade var" isareti + planlanan tarih -
+   iadenin gerceklestigi hicbir yere yazilmiyordu, iadeli tutanak hic kapanmiyordu.
+   Simdi durum kayittan TURETILIR (ayri alan tutulmaz, eski kayitlar tasima
+   gerektirmeden dogru duruma duser):
+     taslak -> imza -> tamam                      (iade yok)
+     taslak -> imza -> iadeBekl/iadeGec -> iadeAlindi   (iade var)
+   IADE KAYDI t.iadeKaydi = {tarih, pdf:{name,path,size}, not, by, at}: iade
+   tutanaginin taranmis nushasi teslim PDF'inden AYRI ikinci yuvadir. Kismi iade
+   yok - iade tek seferde "alindi" olur. */
+const TUT_AKIS={
+  taslak:    {ad:'Taslak',         renk:'var(--amber)',  ipucu:'Kod verilmemis, yarim kalmis tutanak'},
+  imza:      {ad:'Imza Bekliyor',  renk:'#f97316',       ipucu:'Cikti alindi, imzali nusha henuz yuklenmedi'},
+  tamam:     {ad:'Tamamlandi',     renk:'var(--green)',  ipucu:'Imzali nusha yuklu, iade yok'},
+  iadeBekl:  {ad:'Iade Bekliyor',  renk:'var(--blue)',   ipucu:'Imzali nusha yuklu, malzemenin iadesi bekleniyor'},
+  iadeGec:   {ad:'Iade Gecikti',   renk:'var(--red)',    ipucu:'Planlanan iade tarihi gecti, iade alinmadi'},
+  iadeAlindi:{ad:'Iade Alindi',    renk:'var(--green)',  ipucu:'Iade tutanagi yuklendi - tutanak kapandi'}
+};
+function tutIadeAlindiMi(t){ return !!(tutIadeVar(t)&&t.iadeKaydi&&t.iadeKaydi.tarih); }
+function tutAkis(t){
+  if(tutTaslakMi(t)) return 'taslak';
+  if(!t.pdf) return 'imza';
+  if(!tutIadeVar(t)) return 'tamam';
+  if(tutIadeAlindiMi(t)) return 'iadeAlindi';
+  const d=tutIadeTarihi(t);
+  if(d){ const bugun=new Date(); bugun.setHours(0,0,0,0); if(d<bugun.getTime()) return 'iadeGec'; }
+  return 'iadeBekl';
+}
+function tutAkisRozet(t){
+  const k=tutAkis(t), a=TUT_AKIS[k];
+  return `<span class="tut-iade" style="margin-left:0;background:color-mix(in srgb,${a.renk} 16%,transparent);color:${a.renk};border-color:color-mix(in srgb,${a.renk} 42%,transparent)" title="${esc(a.ipucu)}">${esc(a.ad)}</span>`;
+}
 
 function openTutanak(){
   if(!canSee('rapor')){ toast('Bu bolume erisim yetkiniz yok','err'); return; }
@@ -49013,11 +49052,22 @@ function setTutQ(v){ TUTV.q=v; render(); }
    ve artik FILTRELENMIS kumeyi anlatiyor. */
 function setTutF(k,v){ TUTV[k]=v; render(); }
 function clearTutF(){ const m=TUTV.mode; TUTV=tutVarsayilanV(); TUTV.mode=m; render(); }
-function tutAnyF(){ return !!(TUTV.q||TUTV.from||TUTV.to||TUTV.eden||TUTV.alan||TUTV.bina||TUTV.iade||TUTV.pdf||TUTV.durum); }
+function tutAnyF(){ return !!(TUTV.q||TUTV.from||TUTV.to||TUTV.eden||TUTV.alan||TUTV.bina||TUTV.durum); }
+/* Durum filtresi tek secim: bilesik secenekler (acik, iade) birden fazla akis
+   durumunu kapsar - "Iade Bekliyor" gecikmis olanlari da gosterir. */
+const TUT_DURUM_FILTRE=[
+  ['acik','Islem bekleyen (imza / iade)',k=>k==='imza'||k==='iadeBekl'||k==='iadeGec'],
+  ['taslak','Taslak',k=>k==='taslak'],
+  ['imza','Imza Bekliyor',k=>k==='imza'],
+  ['iade','Iade Bekliyor',k=>k==='iadeBekl'||k==='iadeGec'],
+  ['iadeGec','Iade Gecikti',k=>k==='iadeGec'],
+  ['tamam','Tamamlandi',k=>k==='tamam'],
+  ['iadeAlindi','Iade Alindi',k=>k==='iadeAlindi']
+];
 // aramada tutanagin ICINDEKI malzeme satirlari da taranir (eski davranis korundu)
 function tutAraMetin(t){
   return [t.no,tutFirma(t,'eden'),tutFirma(t,'alan'),t.bina,tutTurOf(t).tr,tutIadeOzet(t),
-    tutTaslakMi(t)?'taslak':'',
+    TUT_AKIS[tutAkis(t)].ad,
     ...((t.lines||[]).map(l=>(l.ad||'')+' '+(l.code||'')))].join(' ');
 }
 function tutFiltrele(all){
@@ -49030,11 +49080,7 @@ function tutFiltrele(all){
     if(f.eden && tutFirma(t,'eden')!==f.eden) return false;
     if(f.alan && tutFirma(t,'alan')!==f.alan) return false;
     if(f.bina && (t.bina||'')!==f.bina) return false;
-    if(f.iade==='var' && !tutIadeVar(t)) return false;
-    if(f.iade==='yok' &&  tutIadeVar(t)) return false;
-    if(f.pdf==='var'  && !t.pdf) return false;
-    if(f.pdf==='yok'  &&  t.pdf) return false;
-    if(f.durum && tutDurumu(t)!==f.durum) return false;
+    if(f.durum){ const fd=TUT_DURUM_FILTRE.find(x=>x[0]===f.durum); if(fd && !fd[2](tutAkis(t))) return false; }
     return true;
   });
 }
@@ -49048,7 +49094,12 @@ function renderTutanakList(){
   const now=new Date(), ayBasi=new Date(now.getFullYear(),now.getMonth(),1).getTime();
   // ozet sayilari FILTRELENMIS kumeyi anlatir - "su an ekranda ne var" sorusunun cevabi
   const buAy=list.filter(t=>(t.tarih||0)>=ayBasi).length;
-  const taslakSayisi=list.filter(tutTaslakMi).length;
+  const akisSay={}; list.forEach(t=>{ const k=tutAkis(t); akisSay[k]=(akisSay[k]||0)+1; });
+  // ozet: yalnizca ISLEM BEKLEYEN durumlar sayilir, tiklaninca o duruma suzer
+  const akisOzet=[['taslak','taslak',akisSay.taslak],['imza','imza bekliyor',akisSay.imza],
+    ['iade','iade bekliyor',(akisSay.iadeBekl||0)+(akisSay.iadeGec||0)],['iadeGec','gecikmis iade',akisSay.iadeGec]]
+    .filter(x=>x[2]).map(x=>{ const r=x[0]==='taslak'?TUT_AKIS.taslak.renk:x[0]==='imza'?TUT_AKIS.imza.renk:x[0]==='iade'?TUT_AKIS.iadeBekl.renk:TUT_AKIS.iadeGec.renk;
+      return ` · <a href="#" style="color:${r};text-decoration:none" onclick="event.preventDefault();setTutF('durum','${x[0]}')"><b>${fmtNum(x[2])}</b> ${x[1]}</a>`; }).join('');
   const toplamKalem=list.reduce((s,t)=>s+tutTotals(t).kalem,0);
   const edenler=tutSecenekler(all,t=>tutFirma(t,'eden'));
   const alanlar=tutSecenekler(all,t=>tutFirma(t,'alan'));
@@ -49062,18 +49113,9 @@ function renderTutanakList(){
     ${edenler.length?`<div class="ord-f"><label>Teslim Eden</label><select onchange="setTutF('eden',this.value)"><option value="">Tumu</option>${tutOpts(edenler,TUTV.eden)}</select></div>`:''}
     ${alanlar.length?`<div class="ord-f"><label>Teslim Alan</label><select onchange="setTutF('alan',this.value)"><option value="">Tumu</option>${tutOpts(alanlar,TUTV.alan)}</select></div>`:''}
     ${binalar.length?`<div class="ord-f"><label>Bina</label><select onchange="setTutF('bina',this.value)"><option value="">Tumu</option>${tutOpts(binalar,TUTV.bina)}</select></div>`:''}
-    <div class="ord-f"><label>Iade Durumu</label><select onchange="setTutF('iade',this.value)">
+    <div class="ord-f"><label>Durum</label><select onchange="setTutF('durum',this.value)" title="Taslak → Imza Bekliyor → Tamamlandi; iadeli tutanakta → Iade Bekliyor → Iade Alindi">
       <option value="">Tumu</option>
-      <option value="var" ${TUTV.iade==='var'?'selected':''}>Iade var</option>
-      <option value="yok" ${TUTV.iade==='yok'?'selected':''}>Iade yok</option></select></div>
-    <div class="ord-f"><label>Imzali Nusha</label><select onchange="setTutF('pdf',this.value)" title="Tutanaga yuklenmis imzali/taranmis PDF">
-      <option value="">Tumu</option>
-      <option value="var" ${TUTV.pdf==='var'?'selected':''}>PDF yuklu</option>
-      <option value="yok" ${TUTV.pdf==='yok'?'selected':''}>PDF eksik</option></select></div>
-    <div class="ord-f"><label>Kayit Durumu</label><select onchange="setTutF('durum',this.value)" title="Taslak: kod verilmemis, yarim kalmis tutanak">
-      <option value="">Tumu</option>
-      <option value="taslak" ${TUTV.durum==='taslak'?'selected':''}>Taslak</option>
-      <option value="kesin" ${TUTV.durum==='kesin'?'selected':''}>Kesinlesmis</option></select></div>
+      ${TUT_DURUM_FILTRE.map(x=>`<option value="${x[0]}" ${TUTV.durum===x[0]?'selected':''}>${esc(x[1])}</option>`).join('')}</select></div>
     <div class="ord-f" style="flex:none;margin-left:auto;justify-content:flex-end"><label>&nbsp;</label>
       <div style="display:flex;gap:9px;flex-wrap:wrap">
         ${anyF?`<button class="btn btn-ghost" style="padding:8px 14px" onclick="clearTutF()">Filtreyi Temizle</button>`:''}
@@ -49082,25 +49124,32 @@ function renderTutanakList(){
       </div></div>
   </div>`;
   let rows='';
-  if(!list.length) rows=emptyRow(7,anyF?'Eslesen tutanak yok':'Henuz tutanak duzenlenmedi',
+  if(!list.length) rows=emptyRow(8,anyF?'Eslesen tutanak yok':'Henuz tutanak duzenlenmedi',
     anyF?'Filtreyi degistirin veya "Filtreyi Temizle" ile hepsini gorun':'"Yeni Tutanak" ile ilk teslim tutanagini olusturun');
   else list.forEach(t=>{
     const tt=tutTotals(t);
+    const akis=tutAkis(t), yaz=canEdit('rapor');
+    // SIRADAKI ADIM durumun hemen altinda: imza bekleyen satirda PDF yukle, iade bekleyende Iade Al
+    const adim=!yaz?'':akis==='imza'
+      ?`<button class="tut-adim" onclick="tutListePdfSec('${t.id}')" title="Imzalanmis/taranmis teslim nushasini yukle">${icoPdfSm()} Imzali PDF Yukle</button>`
+      :(akis==='iadeBekl'||akis==='iadeGec')
+      ?`<button class="tut-adim" onclick="openTutIade('${t.id}')" title="Iade tarihini ve iade tutanaginin taranmis nushasini gir">${icoArr('left')} Iade Al</button>`:'';
     rows+=`<tr>
-      <td><span class="tut-no">${esc(t.no||'-')}</span>${tutTaslakMi(t)
-        ?`<span class="tut-iade" style="background:color-mix(in srgb,var(--amber) 16%,transparent);color:var(--amber);border-color:color-mix(in srgb,var(--amber) 42%,transparent)" title="Taslak - kod verilmemis, yarim kalmis tutanak">TASLAK</span>`:''}${tutIcMi(t)
-        ?`<span class="tut-iade" style="background:color-mix(in srgb,var(--violet) 16%,transparent);color:var(--violet);border-color:color-mix(in srgb,var(--violet) 42%,transparent)" title="${esc(tutTurOf(t).tr)} - firma kendi calisanlari arasinda">IC</span>`:''}${tutIadeVar(t)
-        ?`<span class="tut-iade" title="${esc(tutTurOf(t).tr)} - ${esc(tutIadeOzet(t))}">IADE</span>`:''}${t.pdf
-        ?`<span class="tut-iade" style="background:color-mix(in srgb,var(--blue) 16%,transparent);color:var(--blue)" title="Imzali/taranmis nusha yuklu: ${esc(t.pdf.name||'belge')}">PDF</span>`:''}</td>
-      <td class="t-meta">${esc(fmtDate(t.tarih))}${tutIadeTarihi(t)
-        ?`<div style="color:var(--amber);font-size:11px">iade: ${esc(fmtDate(tutIadeTarihi(t)))}</div>`:''}</td>
+      <td><span class="tut-no">${esc(t.no||'-')}</span>${tutIcMi(t)
+        ?`<span class="tut-iade" style="background:color-mix(in srgb,var(--violet) 16%,transparent);color:var(--violet);border-color:color-mix(in srgb,var(--violet) 42%,transparent)" title="${esc(tutTurOf(t).tr)} - firma kendi calisanlari arasinda">IC</span>`:''}</td>
+      <td class="t-meta">${esc(fmtDate(t.tarih))}${tutIadeAlindiMi(t)
+        ?`<div style="color:var(--green);font-size:11px">iade alindi: ${esc(fmtDate(t.iadeKaydi.tarih))}</div>`
+        :tutIadeTarihi(t)?`<div style="color:${akis==='iadeGec'?'var(--red)':'var(--amber)'};font-size:11px">iade: ${esc(fmtDate(tutIadeTarihi(t)))}</div>`
+        :tutIadeVar(t)?`<div style="color:var(--amber);font-size:11px">iade: tarihsiz</div>`:''}</td>
       <td><span class="tut-party-tag"><i style="background:#9e5f5f"></i>${esc(tutFirma(t,'eden')||'-')}</span></td>
       <td><span class="tut-party-tag"><i style="background:#4d6288"></i>${esc(tutFirma(t,'alan')||'-')}</span></td>
       <td class="t-meta">${esc(t.bina||'-')}</td>
       <td class="t-qty">${fmtNum(tt.kalem)} kalem <span style="color:var(--mute)">· ${fmtNum(tt.miktar)}</span></td>
+      <td>${tutAkisRozet(t)}${adim?`<div style="margin-top:5px">${adim}</div>`:''}</td>
       <td><div class="row-actions">
-        <button class="mini-btn" title="Yazdir / PDF olarak kaydet" onclick="printTutanak('${t.id}')">${icoTutPrint()}</button>
-        ${t.pdf?`<button class="mini-btn" title="Yuklenen tutanak PDF'ini ac: ${esc(t.pdf.name||'belge')}" onclick="tutPdfAcId('${t.id}')">${icoPdfSm()}</button>`:''}
+        <button class="mini-btn" title="Teslim tutanagini yazdir / PDF olarak kaydet" onclick="printTutanak('${t.id}')">${icoTutPrint()}</button>
+        ${t.pdf?`<button class="mini-btn" title="Imzali teslim nushasini ac: ${esc(t.pdf.name||'belge')}" onclick="tutPdfAcId('${t.id}')">${icoPdfSm()}</button>`:''}
+        ${tutIadeVar(t)&&!tutTaslakMi(t)?`<button class="mini-btn" title="${tutIadeAlindiMi(t)?'Iade kaydi: tarih ve iade tutanagi PDF\'i':'Iade Al / iade tutanagi yazdir'}" style="color:${TUT_AKIS[akis].renk}" onclick="openTutIade('${t.id}')">${icoTutIade()}</button>`:''}
         ${canEdit('rapor')?`<button class="mini-btn" title="Duzenle" onclick="editTutanak('${t.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button>`:''}
         ${canEdit('rapor')?`<button class="mini-btn" title="Kopyala - ayni satirlarla yeni tutanak" onclick="copyTutanak('${t.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>`:''}
         ${canDelete('rapor')?`<button class="mini-btn del" title="Sil" onclick="delTutanak('${t.id}')">${icoTrash()}</button>`:''}
@@ -49112,11 +49161,179 @@ function renderTutanakList(){
       <p class="page-sub">Malzeme teslim tutanagi · АКТ ПРИЁМА-ПЕРЕДАЧИ МАТЕРИАЛОВ · iki dilli (TR/RU) A4 cikti</p></div>
     ${tutMissingWarn()}
     ${filterbar}
-    <div class="ord-sumline"><b>${fmtNum(list.length)}</b> tutanak · <b>${fmtNum(toplamKalem)}</b> kalem · bu ay <b>${fmtNum(buAy)}</b>${taslakSayisi?` · <b style="color:var(--amber)">${fmtNum(taslakSayisi)}</b> taslak`:''}${anyF?` <span class="t-meta">(${fmtNum(all.length)} kayit icinden filtrelendi)</span>`:''}</div>
+    <div class="ord-sumline"><b>${fmtNum(list.length)}</b> tutanak · <b>${fmtNum(toplamKalem)}</b> kalem · bu ay <b>${fmtNum(buAy)}</b>${akisOzet}${anyF?` <span class="t-meta">(${fmtNum(all.length)} kayit icinden filtrelendi)</span>`:''}</div>
     <div class="tablewrap"><table><thead><tr>
-      <th>Tutanak Kodu</th><th>Tarih</th><th>Teslim Eden</th><th>Teslim Alan</th><th>Bina</th><th>Icerik</th><th></th>
+      <th>Tutanak Kodu</th><th>Tarih</th><th>Teslim Eden</th><th>Teslim Alan</th><th>Bina</th><th>Icerik</th><th>Durum</th><th></th>
     </tr></thead><tbody>${rows}</tbody></table></div>
+    <input type="file" id="tutListePdfInput" accept="application/pdf,.pdf" class="hidden" onchange="tutListePdfAl(event)">
   </div>`;
+}
+function icoTutIade(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/></svg>'; }
+
+/* ---------- LISTEDEN IMZALI PDF YUKLEME ----------
+   "Imza Bekliyor" satirinda formu acmadan imzali nusha yuklenir: dosya kovaya
+   gider, kayda yalnizca pdf kunyesi yazilir. Yazma basarisiz olursa yuklenen
+   dosya kovadan geri alinir (yetim kalmasin). */
+let _tutListePdfId=null;
+function tutListePdfSec(id){
+  if(!guard('define',{mod:'rapor'}))return;
+  _tutListePdfId=id;
+  const inp=document.getElementById('tutListePdfInput'); if(inp) inp.click();
+}
+async function tutListePdfAl(e){
+  const f=e.target.files&&e.target.files[0]; e.target.value='';
+  const id=_tutListePdfId; _tutListePdfId=null;
+  const t=(DB.tutanaklar||[]).find(x=>x.id===id);
+  if(!f||!t) return;
+  if(!/\.pdf$/i.test(f.name)&&f.type!=='application/pdf'){ toast('Yalnizca PDF yuklenebilir','err'); return; }
+  if(f.size>20*1024*1024){ toast("PDF 20MB'tan buyuk",'err'); return; }
+  let yuklenen=null, bitis='Yuklenemedi';
+  wperdeAc('Imzali nusha yukleniyor',{gecikme:250,belirsiz:true,alt:(t.no||'Tutanak')+' - sayfayi kapatmayin'});
+  wperdeDurum({metin:f.name});
+  try{
+    yuklenen=await window.sbBelgeYukle('tutanak',t.id,f);
+    const kayit={...t,pdf:yuklenen,updatedAt:Date.now()};
+    await sbUpdateTutanak(t.id,kayit);
+    const i=DB.tutanaklar.findIndex(x=>x.id===t.id); if(i>=0) DB.tutanaklar[i]=kayit;
+    bitis='Imzali nusha yuklendi';
+  }catch(err){
+    if(yuklenen&&yuklenen.path&&window.sbBelgeSil) window.sbBelgeSil(yuklenen.path);
+    toast('PDF yuklenemedi: '+((err&&err.message)||'baglanti hatasi'),'err');
+    return;
+  }finally{ wperdeKapat(bitis); }
+  logAction('define','Tutanak imzali nusha yuklendi: '+(t.no||t.id));
+  render();
+  toast(tutIadeVar(t)?'Imzali nusha yuklendi - tutanak iade bekliyor':'Imzali nusha yuklendi - tutanak tamamlandi');
+}
+
+/* ---------- IADE AL ----------
+   Iade tarihi + iade tutanaginin taranmis nushasi (zorunlu) + not. Kaydedilince
+   tutanak "Iade Alindi" olur. Ayni pencere sonradan acilinca kaydi duzeltir ya da
+   geri alir. Bos iade tutanagi da buradan yazdirilir (sahaya goturulup imzalatilir).
+   YETIM DOSYA: tutPdf ile ayni kural - bu pencerede yuklenip kayda islenmeyen dosya
+   Vazgec'te silinir; kayittaki eski dosya ancak yazma BASARILI olunca silinir. */
+let _TIADE=null;
+function openTutIade(id){
+  const t=(DB.tutanaklar||[]).find(x=>x.id===id); if(!t){ toast('Tutanak bulunamadi','err'); return; }
+  const k=t.iadeKaydi||{};
+  _TIADE={ id, tarih:tutISO(k.tarih||Date.now()), pdf:k.pdf||null, not:k.not||'', yukleniyor:false };
+  // dis tik / Esc: degisiklik ya da yeni yuklenmis PDF varsa kapatmaz; yoksa tutIadeVazgec temizler
+  document.body.insertAdjacentHTML('beforeend',`<div class="modal-bg" onclick="if(event.target===this)modalKazaKapat()"><div class="modal" style="max-width:540px">
+    <div class="modal-head"><h3>${tutIadeAlindiMi(t)?'Iade Kaydi':'Iade Al'} · ${esc(t.no||'')}</h3><button class="mini-btn" onclick="tutIadeVazgec()">x</button></div>
+    <div class="modal-body" id="tutIadeBody">${tutIadeBody()}</div>
+    <div class="modal-foot">
+      ${tutIadeAlindiMi(t)&&canEdit('rapor')?`<button class="btn btn-ghost" style="margin-right:auto;color:var(--red)" onclick="tutIadeGeriAl()">Iade Kaydini Geri Al</button>`:''}
+      <button class="btn btn-ghost" onclick="tutIadeVazgec()">Vazgec</button>
+      ${canEdit('rapor')?`<button class="btn btn-add" id="tutIadeKaydet" onclick="tutIadeKaydet()">${tutIadeAlindiMi(t)?'Kaydet':'Iadeyi Kaydet'}</button>`:''}
+    </div></div></div>`);
+  setModalGuard(()=>modalDegistiMi(_acikModal())||!!(_TIADE&&_TIADE.pdf&&_TIADE.pdf.path!==tutIadeKayitliYol()),tutIadeVazgec);
+}
+function tutIadeBody(){
+  const s=_TIADE; if(!s) return '';
+  const t=(DB.tutanaklar||[]).find(x=>x.id===s.id)||{};
+  const plan=tutIadeTarihi(t);
+  const p=s.pdf;
+  const kutu=p
+    ?`<div class="file-pill" style="margin:0">${icoDoc()}
+        <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name||'belge')}</span>
+        ${s.yukleniyor?`<span style="opacity:.7;flex:none">· ${icoBekle()} yukleniyor…</span>`
+          :`${p.size?`<span style="opacity:.7;flex:none">· ${fmtBytes(p.size)}</span>`:''}
+        ${p.path?`<button type="button" style="color:var(--blue)" onclick="acPdf(_TIADE&&_TIADE.pdf)">Ac</button>`:''}
+        <button type="button" title="Kaldir" onclick="tutIadePdfSil()">&times;</button>`}</div>`
+    :`<div class="drop" onclick="document.getElementById('tutIadePdfInput').click()" ondragover="event.preventDefault()" ondrop="tutIadePdfBirak(event)">${icoDoc()}<div style="margin-top:6px">Iade tutanaginin PDF'ini ekleyin</div><div class="t-meta" style="font-size:11px;margin-top:3px">ya da dosyayi buraya surukleyin</div></div>`;
+  return `<p class="t-meta" style="margin:0 0 12px;font-size:12px">
+      <b>${esc(tutFirma(t,'alan')||'-')}</b> &rarr; <b>${esc(tutFirma(t,'eden')||'-')}</b> · ${fmtNum(tutTotals(t).kalem)} kalem ·
+      teslim ${esc(fmtDate(t.tarih))}${plan?` · planlanan iade <b style="color:${tutAkis(t)==='iadeGec'?'var(--red)':'inherit'}">${esc(fmtDate(plan))}</b>`:' · iade tarihi belirtilmemisti'}</p>
+    <div class="frow" style="margin-bottom:14px">
+      <button class="btn btn-ghost" style="width:100%;justify-content:center" onclick="printTutIade('${s.id}')">${icoTutPrint()} Iade Tutanagi Yazdir</button>
+      <div class="t-meta" style="margin-top:5px;font-size:11px">Iki dilli iade tutanagi: taraflar yer degistirir (iade eden / iade alan), malzeme listesi teslim tutanagindan gelir. Imzalatip taradiktan sonra asagiya yukleyin.</div></div>
+    <div class="frow"><label>Iade Tarihi *</label>
+      <input type="date" id="tia_tarih" value="${esc(s.tarih)}" onchange="_TIADE.tarih=this.value"></div>
+    <div class="frow"><label>Iade Tutanagi PDF'i *</label>
+      <div id="tutIadePdfKutu">${kutu}</div>
+      <input type="file" id="tutIadePdfInput" accept="application/pdf,.pdf" class="hidden" onchange="tutIadePdfSec(event)"></div>
+    <div class="frow" style="margin-bottom:0"><label>Not <span class="t-meta">(opsiyonel - iade ciktisinin Aciklamalar kutusuna da basilir)</span></label>
+      <textarea id="tia_not" rows="2" style="width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:9px;color:var(--ink);padding:9px 11px;font-size:13px;resize:vertical" onchange="_TIADE.not=this.value">${esc(s.not)}</textarea></div>`;
+}
+function tutIadeCiz(){ const b=document.getElementById('tutIadeBody'); if(b) b.innerHTML=tutIadeBody(); }
+function tutIadeKayitliYol(){
+  const t=_TIADE&&(DB.tutanaklar||[]).find(x=>x.id===_TIADE.id);
+  return (t&&t.iadeKaydi&&t.iadeKaydi.pdf&&t.iadeKaydi.pdf.path)||'';
+}
+// bu pencerede yuklenmis ama kayda islenmemis dosyayi kovadan al
+function tutIadeCopAt(p){ if(p&&p.path&&p.path!==tutIadeKayitliYol()&&window.sbBelgeSil) window.sbBelgeSil(p.path); }
+function tutIadePdfSec(e){ const f=e.target.files&&e.target.files[0]; e.target.value=''; tutIadePdfAl(f); }
+function tutIadePdfBirak(e){
+  e.preventDefault(); e.stopPropagation();
+  const f=[...((e.dataTransfer&&e.dataTransfer.files)||[])].find(x=>x&&(x.type==='application/pdf'||/\.pdf$/i.test(x.name||'')));
+  if(!f){ toast('Yalnizca PDF dosyasi birakilabilir','err'); return; }
+  tutIadePdfAl(f);
+}
+async function tutIadePdfAl(f){
+  const s=_TIADE; if(!f||!s) return;
+  if(!/\.pdf$/i.test(f.name)&&f.type!=='application/pdf'){ toast('Yalnizca PDF yuklenebilir','err'); return; }
+  if(f.size>20*1024*1024){ toast("PDF 20MB'tan buyuk",'err'); return; }
+  if(s.yukleniyor){ toast('Onceki PDF hala yukleniyor','err'); return; }
+  const onceki=s.pdf;
+  s.pdf={name:f.name,size:f.size}; s.yukleniyor=true; tutIadeCiz();
+  try{
+    const p=await window.sbBelgeYukle('tutanak',s.id,f);
+    if(_TIADE!==s){ if(window.sbBelgeSil) window.sbBelgeSil(p.path); return; }   // pencere bu arada kapandi
+    s.pdf=p; tutIadeCopAt(onceki);
+  }catch(err){
+    s.pdf=onceki;
+    toast('PDF yuklenemedi: '+((err&&err.message)||'baglanti hatasi'),'err');
+  }finally{ s.yukleniyor=false; if(_TIADE===s) tutIadeCiz(); }
+}
+function tutIadePdfSil(){ const s=_TIADE; if(!s||!s.pdf) return; tutIadeCopAt(s.pdf); s.pdf=null; tutIadeCiz(); }
+function tutIadeVazgec(){
+  const s=_TIADE;
+  if(s&&s.pdf&&!s.yukleniyor) tutIadeCopAt(s.pdf);
+  _TIADE=null; closeModal();
+}
+async function tutIadeKaydet(){
+  const s=_TIADE; if(!s) return;
+  if(!guard('define',{mod:'rapor'}))return;
+  if(s.yukleniyor){ toast('PDF hala yukleniyor - bitince kaydedin','err'); return; }
+  const tEl=document.getElementById('tia_tarih'), nEl=document.getElementById('tia_not');
+  if(tEl) s.tarih=tEl.value; if(nEl) s.not=nEl.value;
+  if(!s.tarih){ toast('Iade tarihini secin','err'); return; }
+  if(!s.pdf||!s.pdf.path){ toast('Iade tutanaginin taranmis PDF\'ini yukleyin','err'); return; }
+  const t=(DB.tutanaklar||[]).find(x=>x.id===s.id); if(!t){ toast('Tutanak bulunamadi','err'); return; }
+  const tarih=new Date(s.tarih+'T12:00:00').getTime();
+  if(t.tarih&&tarih<new Date(new Date(t.tarih).toDateString()).getTime()){ toast('Iade tarihi teslim tarihinden once olamaz','err'); return; }
+  const eskiYol=tutIadeKayitliYol();
+  const kayit={...t, iadeKaydi:{ tarih, pdf:s.pdf, not:String(s.not||'').trim(),
+    by:(CURRENT_USER&&CURRENT_USER.username)||'', at:Date.now() }, updatedAt:Date.now()};
+  const _ac=btnBekle(document.getElementById('tutIadeKaydet'),'Kaydediliyor...');
+  let bitis='Kaydedilemedi';
+  wperdeAc('Iade kaydediliyor',{gecikme:250,belirsiz:true,alt:(t.no||'Tutanak')+' - sayfayi kapatmayin'});
+  try{
+    await sbUpdateTutanak(t.id,kayit);
+    const i=DB.tutanaklar.findIndex(x=>x.id===t.id); if(i>=0) DB.tutanaklar[i]=kayit;
+    bitis='Iade kaydedildi';
+  }catch(err){ toast('Iade kaydedilemedi: '+((err&&err.message)||err),'err'); return; }
+  finally{ _ac(); wperdeKapat(bitis); }
+  if(eskiYol&&eskiYol!==s.pdf.path&&window.sbBelgeSil) window.sbBelgeSil(eskiYol);
+  logAction('define','Tutanak iadesi alindi: '+(t.no||t.id)+' ('+fmtDate(tarih)+')');
+  _TIADE=null; closeModal(); render();
+  toast('Iade kaydedildi - tutanak kapandi');
+}
+async function tutIadeGeriAl(){
+  const s=_TIADE; if(!s) return;
+  if(!guard('define',{mod:'rapor'}))return;
+  const t=(DB.tutanaklar||[]).find(x=>x.id===s.id); if(!t||!t.iadeKaydi) return;
+  if(!confirm('Iade kaydi kaldirilacak ve tutanak yeniden "Iade Bekliyor" durumuna donecek.\nYuklenen iade tutanagi PDF\'i de silinir.\n\nDevam edilsin mi?')) return;
+  const eskiYol=tutIadeKayitliYol();
+  const kayit={...t, updatedAt:Date.now()}; delete kayit.iadeKaydi;
+  try{
+    await sbUpdateTutanak(t.id,kayit);
+    const i=DB.tutanaklar.findIndex(x=>x.id===t.id); if(i>=0) DB.tutanaklar[i]=kayit;
+  }catch(err){ toast('Geri alinamadi: '+((err&&err.message)||err),'err'); return; }
+  if(window.sbBelgeSil){ if(eskiYol) window.sbBelgeSil(eskiYol); if(s.pdf&&s.pdf.path&&s.pdf.path!==eskiYol) window.sbBelgeSil(s.pdf.path); }
+  logAction('define','Tutanak iade kaydi geri alindi: '+(t.no||t.id));
+  _TIADE=null; closeModal(); render();
+  toast('Iade kaydi geri alindi');
 }
 
 function icoTutPrint(){ return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2M6 14h12v8H6z"/></svg>'; }
@@ -49189,6 +49406,10 @@ function newTutanak(sec){
 function editTutanak(id){
   if(!guard('define',{mod:'rapor'}))return;
   const t=(DB.tutanaklar||[]).find(x=>x.id===id); if(!t){ toast('Tutanak bulunamadi','err'); return; }
+  /* IMZA KILIDI: imzali nusha yuklu tutanak kagitla eslesmis bir belgedir. Satir/taraf
+     degisirse kayit, dolapta duran imzali kagitla ayrisir - bilincli onay istenir. */
+  if(!tutTaslakMi(t)&&t.pdf&&!confirm(`"${t.no||'Tutanak'}" tutanaginin IMZALI NUSHASI yuklu.\n\nDegistirirseniz kayit, imzalanmis kagitla uyusmaz hale gelir. `
+    +`Duzeltme gerekiyorsa degisiklikten sonra yeni ciktiyi yeniden imzalatip PDF'i degistirmeniz onerilir.\n\nKilit acilip duzenlensin mi?`)) return;
   _TUT=JSON.parse(JSON.stringify(t));           // kopya uzerinde calis - Vazgec gercekten vazgecsin
   if(!_TUT.lines||!_TUT.lines.length) _TUT.lines=[tutBlankLine()];
   if(!_TUT.eden) _TUT.eden={firma:'',ad:'',gorev:''};
@@ -49206,6 +49427,7 @@ function copyTutanak(id){
   const c=JSON.parse(JSON.stringify(t));
   c.id=uid(); c.no=''; c.tarih=Date.now(); c._yeni=true; c.durum='taslak';   // kod kesinlestirince yeniden uretilir
   delete c.pdf;   // imzali nusha ASLINA aittir - kopya yeni bir tutanaktir
+  delete c.iadeKaydi;   // iade kaydi da (tarih + iade PDF'i) asla aittir
   c.createdBy=(CURRENT_USER&&CURRENT_USER.username)||''; c.createdAt=Date.now(); c.updatedAt=Date.now();
   (c.lines||[]).forEach(l=>l.id=uid());
   _TUT=c; TUTV.mode='form'; render(); try{ window.scrollTo(0,0); }catch(e){}
@@ -49219,6 +49441,7 @@ async function delTutanak(id){
   await sbDeleteTutanak(id);
   // kayit gidiyorsa yuklenen nusha da kovada kalmasin
   if(t.pdf&&t.pdf.path&&window.sbBelgeSil) window.sbBelgeSil(t.pdf.path);
+  if(t.iadeKaydi&&t.iadeKaydi.pdf&&t.iadeKaydi.pdf.path&&window.sbBelgeSil) window.sbBelgeSil(t.iadeKaydi.pdf.path);
   DB.tutanaklar=(DB.tutanaklar||[]).filter(x=>x.id!==id);
   logAction('delete','Tutanak silindi: '+(t.no||id));
   render(); toast('Tutanak silindi');
@@ -49325,6 +49548,9 @@ function renderTutanakForm(){
       <b>${esc(tutKodGoster(t)||'Yeni Tutanak')}</b></div>
     <div class="page-head"><h1>${t._yeni?'Yeni Tutanak':'Tutanak Duzenle'}${tutTaslakMi(t)?' <span class="sdraft-badge">TASLAK</span>':''}</h1>
       <p class="page-sub">Alanlari doldurun, "Yazdir" ile sablona birebir uyan iki dilli A4 ciktiyi alin.</p></div>
+    ${!tutTaslakMi(t)&&tutPdfKayitli()?`<div class="tut-warn" style="border-color:color-mix(in srgb,var(--amber) 45%,transparent)"><span style="font-size:16px;line-height:1">🔓</span><div>
+      <b>Imza kilidi acik.</b> Bu tutanagin imzali nushasi yuklu - yaptiginiz degisiklikler imzalanmis kagitla uyusmayabilir.
+      Satir ya da taraf degistiyse yeni ciktiyi imzalatip asagidaki <b>Tutanak PDF'i</b> kartindan dosyayi degistirin.</div></div>`:''}
     ${tutMissingWarn()}
 
     <div class="tut-card"><h4>Tutanak Bilgisi <i>Информация об акте</i></h4>
@@ -49358,6 +49584,10 @@ function renderTutanakForm(){
         </div>
         ${t.iadeTarih?`<div class="frow" style="margin:0;max-width:260px"><label>Iade Tarihi / Дата возврата</label>
           <input type="date" value="${tutISO(t.iadeTarih)}" onchange="tutSetIadeTarih(this.value)"></div>`:''}`:''}
+        ${t.iade&&t.iadeKaydi&&t.iadeKaydi.tarih?`<div class="t-meta" style="margin-top:10px;font-size:12px">
+          <span style="color:var(--green)">✓ Iade alindi: <b>${esc(fmtDate(t.iadeKaydi.tarih))}</b></span>
+          ${t.iadeKaydi.pdf?` · <a href="#" style="color:var(--blue)" onclick="event.preventDefault();acPdf((_TUT&&_TUT.iadeKaydi||{}).pdf)">iade tutanagi PDF'i</a>`:''}
+          · degistirmek icin listedeki iade dugmesini kullanin</div>`:''}
       </div>
     </div>
 
@@ -49558,6 +49788,15 @@ async function saveTutanak(andPrint,kesin=true){
   if(!_TUT.tur) _TUT.tur=TUT_TURLERI[0].id;
   _TUT.iade=!!_TUT.iade;
   if(!_TUT.iade) _TUT.iadeTarih=null;   // iade kapaliyken tarih kaydedilmez
+  /* Iade kapatildiysa yapilmis iade kaydi da duser (PDF'i yazma basarili olunca
+     kovadan silinir). Kaydin GUNCEL hali DB'den alinir: form acikken listeden
+     yapilan iade, eski kopyayla ezilmesin. */
+  const eskiIade=(eskiKayit&&eskiKayit.iadeKaydi)||null;
+  if(_TUT.iade){ if(eskiIade) _TUT.iadeKaydi=eskiIade; else delete _TUT.iadeKaydi; }
+  else if(_TUT.iadeKaydi||eskiIade){
+    if(eskiIade&&!confirm('Bu tutanagin iadesi alinmis olarak kayitli. Iade "Yok" yapilirsa iade kaydi ve iade tutanagi PDF\'i silinir.\n\nDevam edilsin mi?')) return;
+    delete _TUT.iadeKaydi;
+  }
   _TUT.updatedAt=Date.now();
   // bos satirlar kaydedilmez; ciktida da gorunmezlerdi
   _TUT.lines=tutFilledLines(_TUT);
@@ -49592,6 +49831,7 @@ async function saveTutanak(andPrint,kesin=true){
   window.__tutanakTableMissing=false;               // yazabildiysek uyari bandi kalksin
   const yeniYol=(kayit.pdf&&kayit.pdf.path)||'';
   if(eskiYol&&eskiYol!==yeniYol&&window.sbBelgeSil) window.sbBelgeSil(eskiYol);
+  if(eskiIade&&!kayit.iadeKaydi&&eskiIade.pdf&&eskiIade.pdf.path&&window.sbBelgeSil) window.sbBelgeSil(eskiIade.pdf.path);
   logAction('define',(kesin?'':'[TASLAK] ')+(yeni?'Tutanak olusturuldu: ':'Tutanak guncellendi: ')+(kayit.no||'(kod yok)'));
   const id=kayit.id;
   tutBackToList();
@@ -49819,37 +50059,49 @@ function tutPrintTableHead(){
     </tr></thead>`;
 }
 
-function tutanakPrintHtml(t){
+/* iadeMod: IADE TUTANAGI. Ayni sablon, ayni malzeme satirlari (kismi iade yok);
+   taraflar YER DEGISTIRIR (teslim alan -> iade eden, teslim eden -> iade alan),
+   baslik/giris/bant/imza basliklari iadeye gore yazilir. Antet DEGISMEZ: belgeyi
+   yine teslim eden (malzemenin sahibi) firma duzenler. Tarih iade kaydindan gelir;
+   iade henuz kaydedilmediyse elle doldurulacak nokta cizgisi basar (bos cikti
+   sahaya goturulup imzalatilir). */
+function tutanakPrintHtml(t,iadeMod){
   const A=tutAntet(t);   // antet = teslim eden firmasinin Sirketler kaydi
   const lines=tutFilledLines(t);
+  const T0=t;            // asil tutanak (iade modunda taraflar takas edilmeden once)
+  if(iadeMod) t={...t, eden:t.alan, alan:t.eden};
   const tot=tutTotals(t);
   // "TSM ENERJİ A.Ş." gibi noktayla biten unvanlarda cumle sonunda cift nokta olusmasin
   const noktasiz=s=>String(s||'').replace(/\.\s*$/,'');
   const edenFirma=tutFirma(t,'eden'), alanFirma=tutFirma(t,'alan');
-  const eF=edenFirma?`<b>${esc(edenFirma)}</b>`:'<span class="ph">[ TESLİM EDEN FİRMA ]</span>';
-  const aF=alanFirma?`<b>${esc(alanFirma)}</b>`:'<span class="ph">[ TESLİM ALAN FİRMA ]</span>';
-  const eR=edenFirma?`<b>${esc(edenFirma)}</b>`:'<span class="ph">[ ПЕРЕДАЮЩАЯ КОМПАНИЯ ]</span>';
+  const eL=iadeMod?'İADE EDEN':'TESLİM EDEN', aL=iadeMod?'İADE ALAN':'TESLİM ALAN';
+  const eF=edenFirma?`<b>${esc(edenFirma)}</b>`:`<span class="ph">[ ${eL} FİRMA ]</span>`;
+  const aF=alanFirma?`<b>${esc(alanFirma)}</b>`:`<span class="ph">[ ${aL} FİRMA ]</span>`;
+  const eR=edenFirma?`<b>${esc(edenFirma)}</b>`:`<span class="ph">[ ${iadeMod?'ВОЗВРАЩАЮЩАЯ':'ПЕРЕДАЮЩАЯ'} КОМПАНИЯ ]</span>`;
   const aR=alanFirma?`<b>${esc(noktasiz(alanFirma))}</b>`:'<span class="ph">[ ПРИНИМАЮЩАЯ КОМПАНИЯ ]</span>';
   /* SIRKET ICI TESLIM: giris metni "X firmasi Y firmasina" yerine "X firmasi bunyesinde
      A calisanindan B calisanina" diye kurulur - iki taraf zaten ayni firmanin calisani. */
   const ic=tutIcMi(t);
   const edenAd=(t.eden||{}).ad||'', alanAd=(t.alan||{}).ad||'';
-  const eAt=edenAd?`<b>${esc(edenAd)}</b>`:'<span class="ph">[ TESLİM EDEN AD SOYAD ]</span>';
-  const aAt=alanAd?`<b>${esc(alanAd)}</b>`:'<span class="ph">[ TESLİM ALAN AD SOYAD ]</span>';
-  const eAr=edenAd?`<b>${esc(edenAd)}</b>`:'<span class="ph">[ Ф.И.О. ПЕРЕДАЮЩЕГО ]</span>';
+  const eAt=edenAd?`<b>${esc(edenAd)}</b>`:`<span class="ph">[ ${eL} AD SOYAD ]</span>`;
+  const aAt=alanAd?`<b>${esc(alanAd)}</b>`:`<span class="ph">[ ${aL} AD SOYAD ]</span>`;
+  const eAr=edenAd?`<b>${esc(edenAd)}</b>`:`<span class="ph">[ Ф.И.О. ${iadeMod?'ВОЗВРАЩАЮЩЕГО':'ПЕРЕДАЮЩЕГО'} ]</span>`;
   const aAr=alanAd?`<b>${esc(alanAd)}</b>`:'<span class="ph">[ Ф.И.О. ПРИНИМАЮЩЕГО ]</span>';
   const firmaTek=edenFirma||alanFirma;
   const fTt=firmaTek?`<b>${esc(firmaTek)}</b>`:'<span class="ph">[ FİRMA ]</span>';
   const fTr=firmaTek?`<b>${esc(firmaTek)}</b>`:'<span class="ph">[ КОМПАНИЯ ]</span>';
-  const basTr=tutTurOf(t).baslikTr||'MALZEME TESLİM TUTANAĞI';
-  const basRu=tutTurOf(t).baslikRu||'АКТ ПРИЁМА-ПЕРЕДАЧИ МАТЕРИАЛОВ';
-  const d=t.tarih?new Date(t.tarih):null;
+  const basTr=iadeMod?'MALZEME İADE TUTANAĞI':(tutTurOf(t).baslikTr||'MALZEME TESLİM TUTANAĞI');
+  const basRu=iadeMod?'АКТ ВОЗВРАТА МАТЕРИАЛОВ':(tutTurOf(t).baslikRu||'АКТ ПРИЁМА-ПЕРЕДАЧИ МАТЕРИАЛОВ');
+  // belgenin tarihi: teslimde tutanak tarihi, iadede KAYDEDILMIS iade tarihi (yoksa bos)
+  const tarihMs=iadeMod?((T0.iadeKaydi&&T0.iadeKaydi.tarih)||null):t.tarih;
+  const d=tarihMs?new Date(tarihMs):null;
+  const teslimNo=esc(T0.no||''), teslimTarih=esc(fmtDate(T0.tarih));
   const p2=n=>String(n).padStart(2,'0');
   const tarihTxt=(d&&!isNaN(d))?`${p2(d.getDate())} / ${p2(d.getMonth()+1)} / ${d.getFullYear()}`:'……… / ……… / 20………';
 
   // Sayfalama. Ayri imza sayfasi YOK - imza seridi her sayfanin altinda.
   // Iade seridi yalniz ilk sayfada, girisin altinda duruyor: o sayfa bir satir az alir.
-  const iadeEk=tutIadeVar(t)?1:0;
+  const iadeEk=(tutIadeVar(t)&&!iadeMod)?1:0;
   const kapasite=(ci,sonMu)=>ci===0
     ? (sonMu?TUT_ROWS_FIRST:TUT_ROWS_FIRST_ARA)-iadeEk
     : (sonMu?TUT_ROWS_PER_PAGE:TUT_ROWS_ARA);
@@ -49880,7 +50132,7 @@ function tutanakPrintHtml(t){
     </tr>`;
   };
 
-  const aciklama=String(t.aciklama||'').trim();
+  const aciklama=String((iadeMod?(T0.iadeKaydi&&T0.iadeKaydi.not):t.aciklama)||'').trim();
   const notKutu=txt=>`<div class="ph-not"><h6>AÇIKLAMALAR / ПРИМЕЧАНИЯ</h6>${txt
     ? `<div class="nb">${esc(txt)}</div>`
     : `<div class="nb"><div class="nl"></div><div class="nl"></div><div class="nl"></div></div>`}</div>`;
@@ -49928,7 +50180,7 @@ function tutanakPrintHtml(t){
         <div class="sgm-r"><span><b>Firma</b> <em>/ Компания</em> ${imzaAlan(tutFirma(t,side))}</span></div>
         <div class="sgm-r"><span><b>Ad Soyad</b> <em>/ Ф.И.О.</em> ${imzaAlan(s.ad)}</span></div>
         <div class="sgm-r"><span><b>Görev</b> <em>/ Должность</em> ${imzaAlan(s.gorev)}</span>
-          <span class="dar"><b>Tarih</b> <em>/ Дата</em> ${imzaAlan((d&&!isNaN(d))?fmtDate(t.tarih):'')}</span></div>
+          <span class="dar"><b>Tarih</b> <em>/ Дата</em> ${imzaAlan((d&&!isNaN(d))?fmtDate(tarihMs):'')}</span></div>
         <div class="sgm-i">İmza / Подпись</div>
       </div>
     </div>`;
@@ -49937,14 +50189,14 @@ function tutanakPrintHtml(t){
     ${son?`<div class="sgm-not">İşbu tutanak iki (2) nüsha düzenlenmiş, taraflarca okunarak imza altına alınmıştır.
       <i>Настоящий акт составлен в двух (2) экземплярах, прочитан сторонами и подписан.</i></div>`:''}
     <div class="sgm">
-      ${imzaKutu('eden','eden','TESLİM EDEN','СДАЛ')}
-      ${imzaKutu('alan','alan','TESLİM ALAN','ПРИНЯЛ')}
+      ${imzaKutu('eden','eden',eL,iadeMod?'ВОЗВРАТИЛ':'СДАЛ')}
+      ${imzaKutu('alan','alan',aL,'ПРИНЯЛ')}
     </div></div>`;
 
   /* IADE SERIDI: "iade var" secilen tutanaklarda girisin hemen altinda. Iade yok ise
      hicbir sey basilmaz - eski tutanaklarin ciktisi birebir ayni kalir. */
   const iadeTarih=tutIadeTarihi(t);
-  const iadeSerit=tutIadeVar(t)?`<div class="ph-iade">
+  const iadeSerit=(tutIadeVar(t)&&!iadeMod)?`<div class="ph-iade">
       <div><b>İADE ŞARTLI TESLİM</b> — Aşağıdaki malzemeler <b>iade edilmek üzere</b> teslim edilmiştir.
       İade tarihi: <b>${iadeTarih?esc(fmtDate(iadeTarih)):'belirtilmemiştir'}</b></div>
       <div><i><b>ПЕРЕДАЧА С УСЛОВИЕМ ВОЗВРАТА</b> — материалы переданы с обязательством возврата.
@@ -49968,11 +50220,29 @@ function tutanakPrintHtml(t){
         <p>${esc(basTr)} • ${esc(basRu)}</p>
       </div>
       <div class="ph-meta">
-        <div><b>Tutanak No / № акта:</b><span class="dot">${esc(t.no||'')}</span></div>
-        <div><b>Tarih / Дата:</b><span class="dot" style="min-width:30mm">${tarihTxt}</span></div>
+        ${iadeMod?`<div><b>İlgili Teslim Tutanağı / К акту №:</b><span class="dot">${teslimNo}</span></div>
+        <div><b>İade Tarihi / Дата возврата:</b><span class="dot" style="min-width:30mm">${tarihTxt}</span></div>`
+        :`<div><b>Tutanak No / № акта:</b><span class="dot">${esc(t.no||'')}</span></div>
+        <div><b>Tarih / Дата:</b><span class="dot" style="min-width:30mm">${tarihTxt}</span></div>`}
       </div>
       <div class="ph-cols">
-        ${ic?`
+        ${iadeMod?(ic?`
+        <div class="ph-col tr">
+          <p>İşbu tutanak, ${fTt} bünyesinde ${teslimTarih} tarihli ve <b>${teslimNo}</b> numaralı tutanak ile teslim edilen malzemelerin ${eAt} tarafından ${aAt} çalışanına iadesine ilişkin olarak düzenlenmiştir.</p>
+          <p>Aşağıda cinsi, miktarı ve özellikleri belirtilen malzemeler eksiksiz ve sağlam şekilde iade edilmiştir.</p>
+        </div>
+        <div class="ph-col ru">
+          <p>Настоящий акт составлен о возврате в рамках компании ${fTr} сотрудником ${eAr} сотруднику ${aAr} материалов, переданных по акту № <b>${teslimNo}</b> от ${teslimTarih}.</p>
+          <p>Материалы, вид, количество и характеристики которых указаны ниже, возвращены в полном объёме и в исправном состоянии.</p>
+        </div>`:`
+        <div class="ph-col tr">
+          <p>İşbu tutanak, ${teslimTarih} tarihli ve <b>${teslimNo}</b> numaralı teslim tutanağı ile teslim alınan malzemelerin ${eF} tarafından ${aF} firmasına iadesine ilişkin olarak düzenlenmiştir.</p>
+          <p>Aşağıda cinsi, miktarı ve özellikleri belirtilen malzemeler eksiksiz ve sağlam şekilde iade edilmiştir.</p>
+        </div>
+        <div class="ph-col ru">
+          <p>Настоящий акт составлен о возврате компанией ${eR} компании ${alanFirma?`<b>${esc(alanFirma)}</b>`:aR} материалов, полученных по акту приёма-передачи № <b>${teslimNo}</b> от ${teslimTarih}.</p>
+          <p>Материалы, вид, количество и характеристики которых указаны ниже, возвращены в полном объёме и в исправном состоянии.</p>
+        </div>`):ic?`
         <div class="ph-col tr">
           <p>İşbu tutanak, ${fTt} bünyesinde ${eAt} tarafından ${aAt} çalışanına şirket içi kullanım amacıyla teslim edilen malzemelere ilişkin olarak düzenlenmiştir.</p>
           <p>Aşağıda cinsi, miktarı ve özellikleri belirtilen malzemeler eksiksiz ve sağlam şekilde teslim edilmiştir.</p>
@@ -49992,7 +50262,7 @@ function tutanakPrintHtml(t){
       </div>
       ${iadeSerit}`:'';
     // Devam sayfalari tek baslarina dolasabildigi icin bantta tutanak numarasi da yazar
-    const bant=`<div class="ph-bar">TESLİM EDİLEN MALZEME TÜR VE MİKTARI &nbsp;<i>| &nbsp;ВИД И КОЛИЧЕСТВО ПЕРЕДАННЫХ МАТЕРИАЛОВ${ci>0?` &nbsp;(devam / продолжение${t.no?' · '+esc(t.no):''})`:''}</i></div>`;
+    const bant=`<div class="ph-bar">${iadeMod?'İADE EDİLEN':'TESLİM EDİLEN'} MALZEME TÜR VE MİKTARI &nbsp;<i>| &nbsp;ВИД И КОЛИЧЕСТВО ${iadeMod?'ВОЗВРАЩАЕМЫХ':'ПЕРЕДАННЫХ'} МАТЕРИАЛОВ${ci>0?` &nbsp;(devam / продолжение${t.no?' · '+esc(t.no):''})`:''}</i></div>`;
     return `<div class="page">
       ${tutPrintHead(A)}
       ${ust}
@@ -50012,7 +50282,7 @@ function tutanakPrintHtml(t){
     ${tutPrintFoot(chunks.length+pi+1,toplamSayfa,basTr,basRu)}
   </div>`).join('');
 
-  const baslik=`Tutanak ${t.no||''} - ${fmtDate(t.tarih)}`.trim();
+  const baslik=(iadeMod?`Iade Tutanagi ${t.no||''}`:`Tutanak ${t.no||''} - ${fmtDate(t.tarih)}`).trim();
   return `<!doctype html><html lang="tr"><head><meta charset="utf-8">
     <title>${esc(baslik)}</title><style>${tutanakPrintCss()}</style></head><body>
     <div class="tbar"><button onclick="window.print()">Yazdır / PDF olarak kaydet</button>
@@ -50033,6 +50303,24 @@ function printTutanak(id){
   const w=window.open('','_blank');
   if(!w){ toast('Cikti penceresi engellendi - tarayicinin acilir pencere iznini verin','err'); return; }
   w.document.write(tutanakPrintHtml(t));
+  w.document.close();
+  try{ w.focus(); }catch(e){}
+}
+// IADE TUTANAGI: kayitli, kesinlesmis ve iadeli tutanaktan (bkz. tutanakPrintHtml iadeMod)
+function printTutIade(id){
+  const t=(DB.tutanaklar||[]).find(x=>x.id===id);
+  if(!t){ toast('Tutanak bulunamadi','err'); return; }
+  if(!tutFilledLines(t).length){ toast('Ciktida gosterilecek malzeme satiri yok','err'); return; }
+  // pencerede girilmis ama henuz kaydedilmemis tarih/not da ciktiya yansisin
+  let v=t;
+  if(_TIADE&&_TIADE.id===id){
+    const tEl=document.getElementById('tia_tarih'), nEl=document.getElementById('tia_not');
+    const tar=tEl&&tEl.value?new Date(tEl.value+'T12:00:00').getTime():null;
+    v={...t, iadeKaydi:{...(t.iadeKaydi||{}), tarih:tar, not:nEl?nEl.value:''}};
+  }
+  const w=window.open('','_blank');
+  if(!w){ toast('Cikti penceresi engellendi - tarayicinin acilir pencere iznini verin','err'); return; }
+  w.document.write(tutanakPrintHtml(v,true));
   w.document.close();
   try{ w.focus(); }catch(e){}
 }
