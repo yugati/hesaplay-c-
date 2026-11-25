@@ -5220,6 +5220,8 @@ window.DIL_RU={
   "Metni Kopyala":"Копировать текст",
   "Metnin ucuncu satiri - bos birakilirsa varsayilana doner":"Третья строка текста — если оставить пустой, вернётся значение по умолчанию",
   "metraj / kalem kati kaynakli yer kalir":"место из источника объём / этаж позиции остаётся",
+  "Mersis":"MERSIS",
+  "Mersis No":"Номер MERSIS",
   "Metraj dagilimi":"Распределение объёма",
   "metraj dağılımından":"из распределения объёма",
   "Metraj Excel":"Excel объёмов",
