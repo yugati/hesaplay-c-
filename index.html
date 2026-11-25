@@ -15405,7 +15405,7 @@ function openCompanyModal(id,kaydet){ if(!guard('define'))return; const x=id?(DB
       <input id="c_logo" value="${x&&x.logo?esc(x.logo):''}" placeholder="https://..." oninput="sirketLogoOnizle()"></div>
     <div class="frow" style="margin-bottom:0"><label>Onizleme <span class="t-meta">(ciktilarin antetinde bu logo basilir)</span></label>
       <div class="marka-onizle" id="c_onizle" style="background:#fff">${x&&x.logo?`<img src="${esc(x.logo)}" alt="" onerror="sirketOnizleHata(this)">`:'<span class="t-meta" style="font-size:11px">Logo linki girilmedi</span>'}</div></div>
-  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="${kaydetJs}">Kaydet</button></div></div></div>`;
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" id="c_kaydet" onclick="${kaydetJs}">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   /* Kaza ile kapanma korumasi icin AYRI bir kayit YOK: bu pencerenin butun verisi
      DOM alanlarinda duruyor, genel kontrol (modalDegistiMi) onu kendiliginden
@@ -15447,6 +15447,7 @@ function sirketOnizleHata(img){
   const box=img&&img.parentElement; if(!box)return;
   box.innerHTML='<span class="t-meta" style="font-size:11px;color:var(--red)">Bu adresten resim yuklenemedi - linki kontrol edin</span>';
 }
+let _sirketKaydediyor=false;
 async function saveCompany(id){ if(!guard('define'))return;
   const al=k=>{ const e=document.getElementById(k); return e?e.value.trim():''; };
   const ad=al('c_ad');
@@ -15459,16 +15460,30 @@ async function saveCompany(id){ if(!guard('define'))return;
   /* Kisaltma NORMALLESTIRILEREK yazilir: kullanici "by-" yazsa bile kayitta "BY"
      durur, yoksa ayni sirket iki farkli kod oneki uretirdi. */
   const bilgi={ad, kisaAd, kisaltma:kodNorm(al('c_kisa'),5), vergi:al('c_vergi'), ticaretSicil:al('c_sicil'), mersis:al('c_mersis'), vergiDairesi:al('c_vd'), adres:al('c_adres'), tel:al('c_tel'), email:al('c_email'), web:al('c_web'), logo:al('c_logo')};
-  if(id){
-    const x=DB.companies.find(c=>c.id===id);
-    await sbUpdateCompany(id,{...x,...bilgi});
-    Object.assign(x,bilgi);
-  } else {
-    const entity={id:uid(),...bilgi};
-    await sbInsertCompany(entity);
-    if(!DB.companies)DB.companies=[];
-    DB.companies.push(entity);
-  }
+  /* ISLEM PERDESI (bkz. wperdeAc): tek istek - olculebilir ilerleme yok (belirsiz).
+     gecikme 250: hizli biten kayitta perde hic gorunmez, yanip sonmez. Hata olursa
+     pencere ACIK kalir, girilen bilgi kaybolmaz. */
+  if(_sirketKaydediyor) return;
+  _sirketKaydediyor=true;
+  const _ac=btnBekle(document.getElementById('c_kaydet'),'Kaydediliyor...');
+  let _wpBitis='Kaydedilemedi';
+  wperdeAc(id?'Sirket guncelleniyor':'Sirket kaydediliyor',{gecikme:250,belirsiz:true,alt:'Sirket bilgileri sunucuya yaziliyor - sayfayi kapatmayin'});
+  wperdeDurum({metin:ad});
+  try{
+    if(id){
+      const x=DB.companies.find(c=>c.id===id);
+      await sbUpdateCompany(id,{...x,...bilgi});
+      Object.assign(x,bilgi);
+      _wpBitis='Sirket guncellendi';
+    } else {
+      const entity={id:uid(),...bilgi};
+      await sbInsertCompany(entity);
+      if(!DB.companies)DB.companies=[];
+      DB.companies.push(entity);
+      _wpBitis='Sirket eklendi';
+    }
+  } catch(err){ console.error('saveCompany',err); toast('Kaydedilemedi: '+((err&&err.message)||err),'err'); return; }
+  finally{ _sirketKaydediyor=false; _ac(); wperdeKapat(_wpBitis); }
   logAction('define',(id?'Sirket guncellendi: ':'Sirket eklendi: ')+ad);
   closeModal(); render(); toast(id?"Sirket guncellendi":"Sirket eklendi");
 }
