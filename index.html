@@ -48785,6 +48785,17 @@ function tutFirma(t,side){
   if(p.firmaId){ const c=(DB.companies||[]).find(x=>x.id===p.firmaId); if(c) return c.ad||''; }
   return p.firma||'';
 }
+/* LISTE EKRANINDA KISA AD: Sirketler kaydinin "Kisa Ad"i (orn. BYKARA) - uzun unvan
+   satiri uc dort satira bolup listeyi okunmaz yapiyordu. Ihtiyac listesiyle ayni karar
+   (bkz. ihtIstenenFirmaKisa): ekranda kisa ad, RESMI CIKTIDA hep tam unvan (tutFirma).
+   Kisa adi girilmemis ya da listeye bagli olmayan firma tam/serbest adiyla kalir. */
+function tutFirmaKisa(t,side){
+  const p=(t&&t[side])||{};
+  if(p.firmaId){ const c=(DB.companies||[]).find(x=>x.id===p.firmaId); if(c) return c.kisaAd||c.ad||''; }
+  return p.firma||'';
+}
+// tam unvandan kisa ad (filtre kutusunun etiketi icin - deger tam unvan kalir)
+function tutKisaAdOf(ad){ const c=(DB.companies||[]).find(x=>x&&norm(x.ad)===norm(ad)); return (c&&c.kisaAd)||ad; }
 function tutFirmaBagli(t,side){
   const p=(t&&t[side])||{};
   return !!(p.firmaId&&(DB.companies||[]).some(x=>x.id===p.firmaId));
@@ -49143,7 +49154,7 @@ const TUT_DURUM_FILTRE=[
 ];
 // aramada tutanagin ICINDEKI malzeme satirlari da taranir (eski davranis korundu)
 function tutAraMetin(t){
-  return [t.no,tutFirma(t,'eden'),tutFirma(t,'alan'),t.bina,tutTurOf(t).tr,tutIadeOzet(t),
+  return [t.no,tutFirma(t,'eden'),tutFirma(t,'alan'),tutFirmaKisa(t,'eden'),tutFirmaKisa(t,'alan'),t.bina,tutTurOf(t).tr,tutIadeOzet(t),
     TUT_AKIS[tutAkis(t)].ad,
     tutTakasMi(t)?'takas':'',
     ...((t.lines||[]).map(l=>(l.ad||'')+' '+(l.code||''))),
@@ -49165,7 +49176,8 @@ function tutFiltrele(all){
 }
 // acilir listeler yalnizca GERCEKTEN kayitta gecen degerleri gosterir (bos secenek uretmez)
 function tutSecenekler(all,fn){ return [...new Set(all.map(fn).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr')); }
-function tutOpts(list,secili){ return list.map(v=>`<option value="${esc(v)}" ${secili===v?'selected':''}>${esc(v)}</option>`).join(''); }
+// etiket: verilirse gorunen yazi (firma filtresinde kisa ad); DEGER hep tam metin - suzme tam unvanla calisir
+function tutOpts(list,secili,etiket){ return list.map(v=>`<option value="${esc(v)}" ${secili===v?'selected':''} title="${esc(v)}">${esc(etiket?etiket(v):v)}</option>`).join(''); }
 function renderTutanakList(){
   const all=(DB.tutanaklar||[]).slice().sort((a,b)=>(b.tarih||0)-(a.tarih||0));
   const anyF=tutAnyF();
@@ -49180,8 +49192,10 @@ function renderTutanakList(){
     .filter(x=>x[2]).map(x=>{ const r=x[0]==='taslak'?TUT_AKIS.taslak.renk:x[0]==='imza'?TUT_AKIS.imza.renk:x[0]==='iade'?TUT_AKIS.iadeBekl.renk:TUT_AKIS.iadeGec.renk;
       return ` · <a href="#" style="color:${r};text-decoration:none" onclick="event.preventDefault();setTutF('durum','${x[0]}')"><b>${fmtNum(x[2])}</b> ${x[1]}</a>`; }).join('');
   const toplamKalem=list.reduce((s,t)=>s+tutTotals(t).kalem,0);
-  const edenler=tutSecenekler(all,t=>tutFirma(t,'eden'));
-  const alanlar=tutSecenekler(all,t=>tutFirma(t,'alan'));
+  // secenekler GORUNEN kisa ada gore siralanir (deger tam unvan)
+  const kisaSirali=a=>a.sort((x,y)=>tutKisaAdOf(x).localeCompare(tutKisaAdOf(y),'tr'));
+  const edenler=kisaSirali(tutSecenekler(all,t=>tutFirma(t,'eden')));
+  const alanlar=kisaSirali(tutSecenekler(all,t=>tutFirma(t,'alan')));
   const binalar=tutSecenekler(all,t=>t.bina||'');
   const filterbar=`<div class="ord-filterbar">
     <div class="ord-f" style="flex:2 1 240px"><label>Ara</label>
@@ -49189,8 +49203,8 @@ function renderTutanakList(){
     <div class="ord-f"><label>Tarih Araligi</label><div class="ord-f-dates">
       <input type="date" value="${esc(TUTV.from)}" onchange="setTutF('from',this.value)"><span class="t-meta">-</span>
       <input type="date" value="${esc(TUTV.to)}" onchange="setTutF('to',this.value)"></div></div>
-    ${edenler.length?`<div class="ord-f"><label>Teslim Eden</label><select onchange="setTutF('eden',this.value)"><option value="">Tumu</option>${tutOpts(edenler,TUTV.eden)}</select></div>`:''}
-    ${alanlar.length?`<div class="ord-f"><label>Teslim Alan</label><select onchange="setTutF('alan',this.value)"><option value="">Tumu</option>${tutOpts(alanlar,TUTV.alan)}</select></div>`:''}
+    ${edenler.length?`<div class="ord-f"><label>Teslim Eden</label><select onchange="setTutF('eden',this.value)"><option value="">Tumu</option>${tutOpts(edenler,TUTV.eden,tutKisaAdOf)}</select></div>`:''}
+    ${alanlar.length?`<div class="ord-f"><label>Teslim Alan</label><select onchange="setTutF('alan',this.value)"><option value="">Tumu</option>${tutOpts(alanlar,TUTV.alan,tutKisaAdOf)}</select></div>`:''}
     ${binalar.length?`<div class="ord-f"><label>Bina</label><select onchange="setTutF('bina',this.value)"><option value="">Tumu</option>${tutOpts(binalar,TUTV.bina)}</select></div>`:''}
     <div class="ord-f"><label>Durum</label><select onchange="setTutF('durum',this.value)" title="Taslak → Imza Bekliyor → Tamamlandi; iadeli tutanakta → Iade Bekliyor → Iade Alindi">
       <option value="">Tumu</option>
@@ -49221,8 +49235,8 @@ function renderTutanakList(){
         ?`<div style="color:var(--green);font-size:11px">iade alindi: ${esc(fmtDate(t.iadeKaydi.tarih))}</div>`
         :tutIadeTarihi(t)?`<div style="color:${akis==='iadeGec'?'var(--red)':'var(--amber)'};font-size:11px">iade: ${esc(fmtDate(tutIadeTarihi(t)))}</div>`
         :tutIadeVar(t)?`<div style="color:var(--amber);font-size:11px">iade: tarihsiz</div>`:''}</td>
-      <td><span class="tut-party-tag"><i style="background:#9e5f5f"></i>${esc(tutFirma(t,'eden')||'-')}</span></td>
-      <td><span class="tut-party-tag"><i style="background:#4d6288"></i>${esc(tutFirma(t,'alan')||'-')}</span></td>
+      <td><span class="tut-party-tag" title="${esc(tutFirma(t,'eden'))}${(t.eden||{}).ad?' · '+esc(t.eden.ad):''}"><i style="background:#9e5f5f"></i>${esc(tutFirmaKisa(t,'eden')||'-')}</span></td>
+      <td><span class="tut-party-tag" title="${esc(tutFirma(t,'alan'))}${(t.alan||{}).ad?' · '+esc(t.alan.ad):''}"><i style="background:#4d6288"></i>${esc(tutFirmaKisa(t,'alan')||'-')}</span></td>
       <td class="t-meta">${esc(t.bina||'-')}</td>
       <td class="t-qty">${tutTakasMi(t)
         ?`${fmtNum(tt.kalem)} verilen<div style="margin-top:2px">${fmtNum(tutFilledKarsi(t).length)} alinan</div>`
