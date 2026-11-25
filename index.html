@@ -5494,6 +5494,22 @@ datalist{display:none}
   border:1px solid var(--line);display:block;margin:0 auto;cursor:zoom-in;background:var(--panel2)}
 .tut-thumb-ph{width:30px;height:30px;border-radius:6px;border:1px dashed var(--line);display:flex;
   align-items:center;justify-content:center;margin:0 auto;color:var(--dim)}
+/* SATIRA OZEL FOTO hucresi (bkz. tutFotoAl): uzerine gelince kesikli amber cerceve ve
+   "Ctrl+V" ipucu - panodaki resmin buraya yapisacagini soyler. Ozel fotoda kose x ile kalkar. */
+.tut-foto{position:relative;width:38px;height:38px;margin:0 auto;border-radius:8px;display:flex;
+  align-items:center;justify-content:center;outline:1.5px dashed transparent;outline-offset:-1px;transition:outline-color .12s,background .12s}
+.tut-foto .tut-thumb-ph{cursor:pointer}
+.tut-foto:hover,.tut-foto.uzerinde{outline-color:var(--amber);background:color-mix(in srgb,var(--amber) 8%,transparent)}
+.tut-foto:hover .tut-thumb-ph{color:var(--amber);border-color:var(--amber)}
+/* ipucu hucrenin ICINDE (alt kenarda) durur: tablo sarmalayicisi overflow:auto - disari tasan son satirda kirpilirdi */
+.tut-foto-ipucu{position:absolute;left:50%;bottom:-4px;transform:translateX(-50%);font-size:8.5px;font-weight:800;
+  letter-spacing:.3px;color:#1a1300;background:var(--amber);border-radius:4px;padding:0 3px;line-height:12px;
+  white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s}
+.tut-foto:hover .tut-foto-ipucu,.tut-foto.uzerinde .tut-foto-ipucu{opacity:1}
+.tut-foto.ozel .tut-thumb{border-color:var(--amber)}
+.tut-foto-sil{position:absolute;top:-5px;right:-5px;width:16px;height:16px;border-radius:50%;border:none;
+  background:var(--red);color:#fff;font-size:11px;line-height:16px;padding:0;cursor:pointer;display:none}
+.tut-foto:hover .tut-foto-sil{display:block}
 .tut-lines-wrap{overflow-x:auto}
 .tut-lines-wrap table{min-width:940px}
 .tut-tot{display:flex;gap:22px;flex-wrap:wrap;align-items:center;justify-content:flex-end;
@@ -48943,8 +48959,12 @@ function tutBlankLine(){ return {id:uid(),matId:'',matSrc:'',code:'',ad:'',marka
    kutuphaneden okunur - tutanak kaydi kucuk kalir, kutuphanedeki foto degisirse cikti da
    guncellenir. matSrc'siz ESKI kayitlar proje kutuphanesinden gelmisti; orada bulunamazsa
    diger iki kutuphaneye de bakilir (id'ler uid(); kutuphaneler arasi cakisma yok). */
+/* Satir fotografi: once satira TEK SEFERLIK konmus foto (l.foto - kutuphanede olmayan
+   urun icin, bkz. tutFotoAl), yoksa kutuphanedeki foto (matId ile canli cozulur). */
 function tutLineImg(l){
-  if(!l||!l.matId) return null;
+  if(!l) return null;
+  if(l.foto) return l.foto;
+  if(!l.matId) return null;
   const k=tutKaynakBul(l.matSrc,l.matId);
   return (k&&k.img)||null;
 }
@@ -49615,6 +49635,76 @@ function tutUpdateTotals(liste){
 function tutRenderLines(liste){ liste=TUT_TABLO[liste]?liste:'lines';
   const b=document.getElementById(TUT_TABLO[liste].body); if(b)b.innerHTML=tutLineRows(liste); tutUpdateTotals(liste); }
 
+/* ===== SATIRA TEK SEFERLIK FOTO ====================================================
+   Kutuphanede olmayan urun icin satira ozel foto: fare foto hucresinin USTUNDEYKEN
+   Ctrl+V panodaki resmi (ekran goruntusu) alir; hucreye tiklamak dosya secer, dosya
+   surukleyip birakmak da calisir. Foto kutuphaneye YAZILMAZ, yalnizca o satira aittir.
+   KAYDA GOMULUR (l.foto, kucultulmus JPEG data URL): cikti penceresi resmi ANINDA
+   basabilmeli - ozel kovadaki dosyanin linki imzali ve 5 dakikalik olurdu. Kayit sismesin
+   diye uzun kenar 480 px'e indirilir (~20-40 KB); ciktida hucre 11mm, ekranda 30px.
+   Yapistirma dinleyicisi tek kez baglanir ve YALNIZCA bir foto hucresi uzerindeyken
+   ve panoda resim varken devreye girer - metin yapistirma alanlarda normal calisir. */
+const TUT_FOTO_MAX=480;
+let _tutFotoHedef=null, _tutFotoBagli=false;
+function tutFotoHover(liste,i){
+  _tutFotoHedef=liste?{liste,i}:null;
+  if(liste&&!_tutFotoBagli){ _tutFotoBagli=true; document.addEventListener('paste',tutFotoYapistir); }
+}
+function tutFotoYapistir(e){
+  const h=_tutFotoHedef;
+  if(!h||!_TUT||TUTV.mode!=='form') return;
+  // hedef hucre hala ekranda ve fare gercekten ustunde mi (yeniden cizimden sonra da dogru kalsin)
+  const el=document.querySelector(`[data-tutfoto="${h.liste}:${h.i}"]`);
+  if(!el||!el.matches(':hover')) return;
+  const it=(e.clipboardData&&e.clipboardData.items)||[];
+  let f=null;
+  for(let k=0;k<it.length&&!f;k++) if(it[k].kind==='file'&&/^image\//.test(it[k].type||'')) f=it[k].getAsFile();
+  if(!f) return;                                  // panoda resim yok: normal yapistirma
+  e.preventDefault();
+  tutFotoAl(f,h.liste,h.i);
+}
+function tutFotoSec(liste,i){
+  let inp=document.getElementById('tutFotoInput');
+  if(!inp){ inp=document.createElement('input'); inp.type='file'; inp.accept='image/*'; inp.id='tutFotoInput'; inp.className='hidden';
+    document.body.appendChild(inp); }
+  inp.onchange=()=>{ const f=inp.files&&inp.files[0]; inp.value=''; if(f) tutFotoAl(f,liste,i); };
+  inp.click();
+}
+function tutFotoBirak(e,liste,i){
+  e.preventDefault(); e.stopPropagation();
+  if(e.currentTarget) e.currentTarget.classList.remove('uzerinde');
+  const f=[...((e.dataTransfer&&e.dataTransfer.files)||[])].find(x=>/^image\//.test(x.type||''));
+  if(!f){ toast('Yalnizca resim dosyasi birakilabilir','err'); return; }
+  tutFotoAl(f,liste,i);
+}
+// uzun kenar TUT_FOTO_MAX'a indirilir; seffaf PNG (ekran goruntusu) beyaz zemine oturtulur
+function tutFotoKucult(file){
+  return new Promise((ok,red)=>{
+    const url=URL.createObjectURL(file), img=new Image();
+    img.onload=()=>{ URL.revokeObjectURL(url);
+      let w=img.naturalWidth, h=img.naturalHeight; const s=Math.min(1,TUT_FOTO_MAX/Math.max(w,h)); w=Math.round(w*s); h=Math.round(h*s);
+      const c=document.createElement('canvas'); c.width=w; c.height=h; const g=c.getContext('2d');
+      g.fillStyle='#fff'; g.fillRect(0,0,w,h); g.drawImage(img,0,0,w,h);
+      ok(c.toDataURL('image/jpeg',0.8)); };
+    img.onerror=()=>{ URL.revokeObjectURL(url); red(new Error('Resim okunamadi')); };
+    img.src=url;
+  });
+}
+async function tutFotoAl(file,liste,i){
+  if(!_TUT) return;
+  const L=tutListe(liste); if(!L[i]) return;
+  if(file.size>25*1024*1024){ toast("Resim 25MB'tan buyuk",'err'); return; }
+  try{
+    L[i].foto=await tutFotoKucult(file);
+    tutRenderLines(liste);
+    toast('Foto satira eklendi'+(L[i].matId?' - kutuphane fotosu yerine bu basilir':''));
+  }catch(err){ toast('Foto eklenemedi: '+((err&&err.message)||err),'err'); }
+}
+function tutFotoSil(liste,i){
+  const L=_TUT&&tutListe(liste); if(!L||!L[i]) return;
+  delete L[i].foto; tutRenderLines(liste);
+  toast(L[i].matId?'Ozel foto kaldirildi - kutuphane fotosu gorunur':'Foto kaldirildi');
+}
 function tutLineRows(liste){
   liste=TUT_TABLO[liste]?liste:'lines';
   const ek=liste==='lines'?'':`,'${liste}'`;   // onchange cagrilarina eklenen tablo adi
@@ -49622,8 +49712,14 @@ function tutLineRows(liste){
     const img=tutLineImg(l);
     return `<tr>
       <td class="tl-no">${i+1}</td>
-      <td class="tl-img">${img?`<img class="tut-thumb" src="${esc(img)}" onclick="lightbox('${esc(img)}')" title="Kutuphanedeki fotograf - ciktida da gorunur">`
-        :`<div class="tut-thumb-ph" title="Fotograf yok. Kutuphaneden secilen malzemelerin fotografi otomatik gelir."><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="9" cy="9" r="2"/></svg></div>`}</td>
+      <td class="tl-img"><div class="tut-foto${l.foto?' ozel':''}" data-tutfoto="${liste}:${i}"
+          onmouseenter="tutFotoHover('${liste}',${i})" onmouseleave="tutFotoHover(null)"
+          ondragover="event.preventDefault();this.classList.add('uzerinde')" ondragleave="this.classList.remove('uzerinde')" ondrop="tutFotoBirak(event,'${liste}',${i})"
+          title="${l.foto?'Bu satira ozel foto - ciktida da gorunur. Degistirmek icin uzerindeyken Ctrl+V ya da dosya surukleyin':img?'Kutuphanedeki fotograf - ciktida da gorunur. Bu satira ozel foto icin uzerindeyken Ctrl+V':'Foto ekle: fare buradayken Ctrl+V ile panodaki resmi yapistirin, tiklayip dosya secin ya da surukleyin'}">
+        ${img?`<img class="tut-thumb" src="${esc(img)}" onclick="lightbox(tutLineImg(tutListe('${liste}')[${i}]))">`
+          :`<div class="tut-thumb-ph" onclick="tutFotoSec('${liste}',${i})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15l-5-5L5 21M3 5a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><circle cx="9" cy="9" r="2"/></svg></div>`}
+        ${l.foto?`<button type="button" class="tut-foto-sil" title="Ozel fotoyu kaldir" onclick="event.stopPropagation();tutFotoSil('${liste}',${i})">&times;</button>`:''}
+        <span class="tut-foto-ipucu">Ctrl+V</span></div></td>
       <td style="width:110px"><input value="${esc(l.code||'')}" placeholder="urun kodu" onchange="tutSetLine(${i},'code',this.value.trim()${ek})"></td>
       <td><input value="${esc(l.ad||'')}" placeholder="malzeme adi ve ozelligi" onchange="tutSetLine(${i},'ad',this.value.trim()${ek})"></td>
       <td style="width:110px"><input value="${esc(l.marka||'')}" placeholder="marka" onchange="tutSetLine(${i},'marka',this.value.trim()${ek})"></td>
