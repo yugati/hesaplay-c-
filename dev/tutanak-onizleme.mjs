@@ -29,7 +29,7 @@ const PORT = Number(process.env.PORT) || 5180;
    satir kaydiran her duzenlemeden sonra da calisir. */
 const FONKSIYONLAR = [
   'sirketAntet', 'tutFirma', 'tutIadeVar', 'tutIadeTarihi', 'tutAntet', 'tutLineImg',
-  'tutFilledLines', 'tutTotals',
+  'tutFilledLines', 'tutTotals', 'tutTurOf', 'tutIcMi', 'tutTakasMi', 'tutFilledKarsi', 'antetAltLogo',
   'tutanakPrintCss', 'tutPrintHead', 'tutPrintFoot', 'tutPrintTableHead', 'tutanakPrintHtml'
 ];
 const SABITLER = ['TUT_ROWS_FIRST', 'TUT_ROWS_FIRST_ARA', 'TUT_ROWS_PER_PAGE', 'TUT_ROWS_ARA'];
@@ -108,7 +108,12 @@ function sabitCikar(satirlar, ad) {
 function ciktiKodu() {
   const src = fs.readFileSync(KAYNAK, 'utf8');
   const satirlar = src.split(/\r?\n/);
+  // TUT_TURLERI cok satirli bir dizi: tek satirlik sabitCikar onu alamaz, kapanisa kadar kesilir
+  const turBas = src.indexOf('const TUT_TURLERI=[');
+  if (turBas < 0) throw new Error('index.html icinde "const TUT_TURLERI=[" bulunamadi');
+  const turlar = src.slice(turBas, src.indexOf('\n];', turBas) + 3);
   return [
+    turlar,
     ...SABITLER.map(a => sabitCikar(satirlar, a)),
     ...FONKSIYONLAR.map(a => blokCikar(src, a))
   ].join('\n');
@@ -176,15 +181,23 @@ function ornekTutanak(q) {
       barkod: '869' + String(1000000000 + i * 7), renk: m[5]
     };
   });
-  const iade = q.iade === '1';
+  // takas=1: ikinci tablo (karsiliginda alinan) k satir, malzeme listesinin sonundan baslar
+  const takas = q.takas === '1';
+  const k = Math.max(0, Math.min(60, Number(q.k == null ? 4 : q.k) || 0));
+  const karsiLines = takas ? Array.from({ length: k }, (_, i) => {
+    const m = MALZEMELER[(MALZEMELER.length - 1 - i + MALZEMELER.length * 5) % MALZEMELER.length];
+    return { id: 'k' + i, matId: fotoVar ? 'm' + ((i % 6) + 1) : '', code: m[0], ad: m[1],
+      marka: m[2], birim: m[3], qty: String(m[4]), barkod: '', renk: m[5] };
+  }) : undefined;
+  const iade = !takas && q.iade === '1';
   return {
     // belge kodu: KISALTMA-TNK-ggaayyyy-sira (bkz. index.html tutKodOnek)
-    id: 't1', no: 'YU-TNK-' + ornekKodTarih() + '-0007', tarih: Date.now(), tur: 'teslim',
+    id: 't1', no: 'YU-TNK-' + ornekKodTarih() + '-0007', tarih: Date.now(), tur: takas ? 'takas' : 'teslim',
     iade, iadeTarih: (iade && q.iadetarih !== '0') ? Date.now() + 30 * 86400000 : null,
     eden: { firmaId: 'c1', ad: 'Mahmut U.', gorev: 'Saha Depo Sorumlusu' },
     alan: { firma: 'STROY MONTAJ OOO', ad: 'Иванов И.И.', gorev: 'Прораб' },
     aciklama: NOTLAR[q.not || 'uzun'] == null ? NOTLAR.uzun : NOTLAR[q.not || 'uzun'],
-    lines
+    lines, karsiLines
   };
 }
 
@@ -211,8 +224,13 @@ function ornekDB(q) {
 
 /* ---------- cikti uret ---------- */
 function ciktiUret(q) {
-  const uret = new Function('DB', 'getMaterial', ORTAM + '\n' + ciktiKodu() + '\nreturn tutanakPrintHtml;');
-  return uret(ornekDB(q), id => KUTUPHANE[id] || null)(ornekTutanak(q));
+  // tutLineImg fotografi tutKaynakBul(src,id) ile cozer; eski antet yedegi onizlemede DB.meta'dan
+  const uret = new Function('DB', 'getMaterial', 'tutKaynakBul', 'eskiAntet',
+    ORTAM + '\n' + ciktiKodu() + '\nreturn tutanakPrintHtml;');
+  const db = ornekDB(q);
+  const antet = db.meta && db.meta.tutanakAntet;
+  return uret(db, id => KUTUPHANE[id] || null, (src, id) => KUTUPHANE[id] || null,
+    () => (antet && Object.keys(antet).length ? antet : null))(ornekTutanak(q));
 }
 
 /* ---------- onizleme kabugu: dev seridi + olcum + canli yenileme ---------- */
@@ -225,7 +243,10 @@ const SENARYOLAR = [
   ['Açıklama yok', 'n=9&iade=0&not=yok'],
   ['Uzun malzeme adı', 'n=12&iade=1&not=kisa&uzun=1'],
   ['Fotoğrafsız', 'n=12&iade=0&not=kisa&foto=0'],
-  ['Antet boş', 'n=8&iade=0&not=kisa&antet=0']
+  ['Antet boş', 'n=8&iade=0&not=kisa&antet=0'],
+  ['Takas (3 + 2)', 'takas=1&n=3&k=2&not=kisa'],
+  ['Takas sınır (4 + 2)', 'takas=1&n=4&k=2&not=kisa'],
+  ['Takas uzun (14 + 9)', 'takas=1&n=14&k=9&not=uzun']
 ];
 
 function kabuk(html, qs, rev) {
