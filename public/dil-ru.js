@@ -5153,6 +5153,7 @@ window.DIL_RU={
   "Malzeme Ekle":"Добавить материал",
   "Malzeme Ekle\" ile ilk kunyeyi olusturun - bakiye sonra \"Siparis / Irsaliye\" ile girilir":"Создайте первую карточку кнопкой «Добавить материал» — остаток затем вводится через «Заказ / Накладная»",
   "malzeme eklendi":"материалов добавлено",
+  "Kutuphaneye ekleniyor":"Добавляется в справочник",
   "Malzeme eklendi":"Материал добавлен",
   "Malzeme ekleyin veya sartnamelerden otomatik dolar":"Добавьте материал или он заполнится автоматически из спецификаций",
   "malzeme Excel ice aktarmasiyla silindi":"материалов удалено импортом Excel",

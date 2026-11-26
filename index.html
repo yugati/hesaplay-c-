@@ -38523,7 +38523,7 @@ function openLibModal(id){ if(!canEdit('gecici')) return; modalImg=null; const x
       <div class="drop ${x&&x.img2?'has':''}" id="lImg2Drop" onclick="document.getElementById('lImg2Input').click()">${x&&x.img2?`<img class="img-prev" src="${x.img2}">`:phIco()+'<div style="margin-top:6px">Fotograf ekleyin</div>'}</div>
       <input type="file" id="lImg2Input" accept="image/*" class="hidden" onchange="pickImg2(event,'lImg2Drop')">
       <input id="l_img2Url" style="margin-top:7px" placeholder="veya resim linki: https://..." value="${x&&x.img2&&/^https?:/i.test(x.img2)?esc(x.img2):''}" onchange="setLibImgUrl2(this.value)"></div>
-  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveLib(${x?`'${x.id}'`:'null'})">Kaydet</button></div></div></div>`;
+  </div><div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" id="l_kaydet" onclick="saveLib(${x?`'${x.id}'`:'null'})">Kaydet</button></div></div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   renderTagsBox('l');
   if(x&&x.img) modalImg=x.img;
@@ -38532,7 +38532,9 @@ function openLibModal(id){ if(!canEdit('gecici')) return; modalImg=null; const x
 // resim linki yapistirma - proje malzeme modaliyle ayni uygulayici (bkz. applyImgUrl)
 function setLibImgUrl(v){ applyImgUrl(v,'lImgDrop',1); }
 function setLibImgUrl2(v){ applyImgUrl(v,'lImg2Drop',2); }
-async function saveLib(id){ const ad=document.getElementById('l_ad').value.trim(); if(!ad){toast("Malzeme adi zorunlu","err");return;}
+let _libKaydediyor=false;
+async function saveLib(id){ if(_libKaydediyor) return;   // cift tik: ikinci kayit olmasin
+  const ad=document.getElementById('l_ad').value.trim(); if(!ad){toast("Malzeme adi zorunlu","err");return;}
   if(!guard('define',{bina:PBINA}))return;
   const al=id=>{ const el=document.getElementById(id); return el?el.value.trim():''; };
   /* LINK ALANI BOSALTILDI = fotografi kaldir. applyImgUrl bunu onchange'de yapiyor ama
@@ -38550,6 +38552,16 @@ async function saveLib(id){ const ad=document.getElementById('l_ad').value.trim(
     tek:_libTekOku(al('l_tek')),
     img:modalImg,img2:modalImg2};
   let etkKardes=0, etkHata='';
+  /* ISLEM PERDESI (bkz. wperdeAc): basligi bu pencerenin adina uyar - "Kutuphaneye
+     Malzeme Ekle" -> "Kutuphaneye ekleniyor", "Malzeme Duzenle" -> "Malzeme guncelleniyor".
+     Tek istek (+ aile etiketi), olculebilir ilerleme yok (belirsiz); gecikme 250: hizli
+     biten kayitta perde hic gorunmez. Hata olursa pencere ve girilenler yerinde kalir. */
+  let _wpBitis='Kaydedilemedi';
+  _libKaydediyor=true;
+  const _ac=btnBekle(document.getElementById('l_kaydet'),'Kaydediliyor...');
+  wperdeAc(id?'Malzeme guncelleniyor':'Kutuphaneye ekleniyor',{gecikme:250,belirsiz:true,
+    alt:(data.kod?data.kod+' · ':'')+ad+' sunucuya yaziliyor - sayfayi kapatmayin'});
+  try{
   if(id){
     const x=DB.gecici.lib.find(i=>i.id===id); Object.assign(x,data,{updatedAt:Date.now()});
     /* ESKI KAYITLARDAKI OLU ALAN: bakiye bir zamanlar bu satirda saklaniyordu.
@@ -38566,6 +38578,9 @@ async function saveLib(id){ const ad=document.getElementById('l_ad').value.trim(
     await sbInsertGeciciLibItem(entity);
     DB.gecici.lib.push(entity);
   }
+  _wpBitis=id?'Malzeme guncellendi':'Kutuphaneye eklendi';
+  } catch(err){ console.error('saveLib',err); toast('Kaydedilemedi: '+((err&&err.message)||err),'err'); return; }
+  finally{ _libKaydediyor=false; _ac(); wperdeKapat(_wpBitis, etkHata?'Aile etiketi yazilamadi':''); }
   logAction('define',(id?'Mobilizasyon malzemesi guncellendi: ':'Mobilizasyon malzemesi eklendi: ')+ad+(etkKardes?' (etiket ailenin '+etkKardes+' urunune de yazildi)':''));
   closeModal(); render();
   if(etkHata) toast('Malzeme guncellendi ama etiket ailenin diger urunlerine yazilamadi: '+etkHata+' - sayfayi yenileyip tekrar kaydedin','err');
