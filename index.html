@@ -51517,7 +51517,7 @@ function renderIhtiyacForm(){
       <button class="btn btn-ghost" onclick="exportIhtiyacTalepXlsx(null)" title="Satin alma ekibi icin: ERP talep sablonu doldurulmus olarak iner (ayni urun bina basina tek satir) - kaydetmeden de alinabilir">${icoXls()} Satin Alma Excel</button>
       <button class="btn btn-ghost" onclick="printIhtiyacPdf(null,'detay')" title="Malzemeler bina/kat kumelerine ayrilir - kaydetmeden de alinabilir">${icoIhtPdf()} PDF Kat Detayi</button>
       <button class="btn btn-ghost" onclick="printIhtiyacPdf(null,'ozet')" title="Ayni urun tek satirda, miktarlar toplanir - kaydetmeden de alinabilir">${icoIhtOzet()} PDF Ozet</button>
-      <button class="btn btn-add" onclick="saveIhtiyac()">Kaydet</button>
+      <button class="btn btn-add" id="iht_kaydet" onclick="saveIhtiyac()">Kaydet</button>
     </div>
   </div>`;
 }
@@ -53608,7 +53608,8 @@ async function ihtSiparisToggle(id,on){
 }
 
 /* ---------- KAYDET ---------- */
-async function saveIhtiyac(){
+let _ihtKaydediyor=false;
+async function saveIhtiyac(){ if(_ihtKaydediyor) return;   // cift tik: ikinci kayit olmasin
   if(!ihtCanEdit()){ toast('Bu islem icin yetkiniz yok','err'); return; }
   if(!_IHT)return;
   const ad=String(_IHT.ad||'').trim();
@@ -53638,6 +53639,15 @@ async function saveIhtiyac(){
      Uretim KAYIT aninda, form acilirken degil: iki kullanici ayni anda form
      acsa ikisi de ayni numarayi gorur, ikincisi kaydederken carpardi. */
   if(!kayit.kod) kayit.kod=ihtSonrakiKod(kayit)||'';
+  /* ISLEM PERDESI (bkz. wperdeAc): basligi bu ekranin adina uyar - "Yeni Ihtiyac Listesi"
+     -> "Ihtiyac listesi kaydediliyor", "Ihtiyac Listesi Duzenle" -> "Ihtiyac listesi
+     guncelleniyor". Tek istek, olculebilir ilerleme yok (belirsiz); gecikme 250: hizli
+     biten kayitta perde hic gorunmez. Hata olursa form ve girilenler yerinde kalir. */
+  let _wpBitis='Kaydedilemedi';
+  _ihtKaydediyor=true;
+  const _ac=btnBekle(document.getElementById('iht_kaydet'),'Kaydediliyor...');
+  wperdeAc(yeni?'Ihtiyac listesi kaydediliyor':'Ihtiyac listesi guncelleniyor',{gecikme:250,belirsiz:true,
+    alt:(kayit.kod?kayit.kod+' · ':'')+(ihtAdGoster(kayit)||'')+' - '+kayit.lines.length+' kalem sunucuya yaziliyor - sayfayi kapatmayin'});
   try{
     if(yeni){ await sbInsertIhtiyacListesi(kayit); if(!DB.ihtiyaclar)DB.ihtiyaclar=[]; DB.ihtiyaclar.push(kayit); }
     else {
@@ -53645,7 +53655,9 @@ async function saveIhtiyac(){
       const i=(DB.ihtiyaclar||[]).findIndex(y=>y.id===kayit.id);
       if(i>=0) DB.ihtiyaclar[i]=kayit; else DB.ihtiyaclar.push(kayit);
     }
+    _wpBitis=yeni?'Ihtiyac listesi kaydedildi':'Ihtiyac listesi guncellendi';
   }catch(e){ ihtYazHatasi(e,'kaydedilemedi'); return; }
+  finally{ _ihtKaydediyor=false; _ac(); wperdeKapat(_wpBitis); }
   delete _IHT._yeni;                                // yazma gectiyse bundan sonrasi guncelleme
   window.__ihtiyacTableMissing=false;               // yazabildiysek uyari bandi kalksin
   logAction('define',(yeni?'Ihtiyac listesi olusturuldu: ':'Ihtiyac listesi guncellendi: ')
