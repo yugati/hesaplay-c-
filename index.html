@@ -19003,7 +19003,7 @@ function openMarkaModal(id){
         <textarea id="mk_not" rows="2" placeholder="orn. yalnizca kablo tavalarinda esdeger kabul ediliyor">${m&&m.not?esc(m.not):''}</textarea></div>
       ${m&&kullanim?`<p class="t-meta" style="font-size:11px;margin-top:12px;line-height:1.5">Bu marka su an <b>${fmtNum(kullanim)}</b> kayitta yaziyor. Adini degistirirseniz o kayitlarda ve bagli sartname satirlarinda da guncellenir.</p>`:''}
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" onclick="saveMarka(${m?`'${m.id}'`:'null'})">Kaydet</button></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Iptal</button><button class="btn btn-add" id="mk_kaydet" onclick="saveMarka(${m?`'${m.id}'`:'null'})">Kaydet</button></div>
   </div></div>`;
   document.body.insertAdjacentHTML('beforeend',html);
   setModalGuard(()=>formDoluMu(['mk_ad','mk_logo','mk_not']));
@@ -19043,7 +19043,8 @@ async function markaAdiDegistir(eski,yeni){
   return say;
 }
 
-async function saveMarka(id){
+let _markaKaydediyor=false;
+async function saveMarka(id){ if(_markaKaydediyor) return;   // cift tik: ikinci kayit olmasin
   if(!canEdit('kutuphane')){ toast('Bu islem icin yetkiniz yok','err'); return; }
   const ad=String((document.getElementById('mk_ad')||{}).value||'').trim();
   if(!ad){ toast('Marka adi zorunlu','err'); return; }
@@ -19060,12 +19061,26 @@ async function saveMarka(id){
   /* Once KAYITLARA yayilir, sonra liste yazilir: ters sirada yayilim yarida
      kalsaydi listede yeni ad, kayitlarda eski ad kalir ve fark gorunmezdi. */
   let yayildi=0;
+  /* ISLEM PERDESI (bkz. wperdeAc): basligi bu pencerenin adina uyar - "Yeni Marka" ->
+     "Marka ekleniyor", "Markayi Duzenle" -> "Marka guncelleniyor". Ad degistiyse once
+     kayitlara yayilim, sonra liste yazimi: iki adim ama olculebilir oran yok (belirsiz);
+     alt satir hangi adimda oldugunu soyler. gecikme 250: hizli biten kayitta perde hic
+     gorunmez. Hata olursa pencere ve girilenler yerinde kalir. */
+  let _wpBitis='Kaydedilemedi';
+  _markaKaydediyor=true;
+  const _ac=btnBekle(document.getElementById('mk_kaydet'),'Kaydediliyor...');
+  wperdeAc(id?'Marka guncelleniyor':'Marka ekleniyor',{gecikme:250,belirsiz:true,
+    alt:ad+(adDegisti?' - once kayitlardaki marka adi degistiriliyor':' sunucuya yaziliyor')+' - sayfayi kapatmayin'});
+  try{
   if(adDegisti){
     try{ yayildi=await markaAdiDegistir(eskiAd,ad); }
     catch(e){ toast('Marka kayitlarda guncellenemedi: '+((e&&e.message)||e),'err'); return; }
+    wperdeDurum({alt:ad+' - marka listesi sunucuya yaziliyor - sayfayi kapatmayin'});
   }
   if(kayit){ kayit.ad=ad; kayit.logo=logo; kayit.esnek=esnek; kayit.not=nt; } else liste.push({id:uid(),ad,logo,esnek,not:nt});
   try{ await markaListesiYaz(liste); }catch(e){ return; }
+  _wpBitis=id?'Marka guncellendi':'Marka eklendi';
+  } finally{ _markaKaydediyor=false; _ac(); wperdeKapat(_wpBitis, yayildi?fmtNum(yayildi)+' kayitta da degisti':''); }
   logAction('editMaterial',(id?'Marka guncellendi: ':'Marka eklendi: ')+(adDegisti?eskiAd+' -> '+ad:ad));
   closeModal(); render();
   toast(id?('Marka guncellendi'+(yayildi?' - '+fmtNum(yayildi)+' kayitta da degisti':'')):'Marka eklendi');

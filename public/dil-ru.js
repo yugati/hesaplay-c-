@@ -5248,6 +5248,8 @@ window.DIL_RU={
   "Marka Ekle\" ile baslayin - ya da kayitlarda gecen markalari \"Kayitlardan Topla\" ile tek seferde listeye alin":"Начните с «Добавить марку» — или одним разом внесите в список марки из записей кнопкой «Собрать из записей»",
   "Marka ekleme yetkiniz yok":"Нет прав на добавление марок",
   "Marka eklendi":"Марка добавлена",
+  "Marka ekleniyor":"Марка добавляется",
+  "Marka guncelleniyor":"Марка обновляется",
   "Marka guncellendi":"Марка обновлена",
   "Marka kayitlarda guncellenemedi":"Не удалось обновить марку в записях",
   "marka kayitlardan listeye eklendi":"марок добавлено в список из записей",
